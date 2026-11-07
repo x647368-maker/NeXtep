@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -11,7 +11,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 import java.util.concurrent.Executors
 
 internal object UpdateSection {

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.app.ActivityManager
 import android.content.Context
@@ -23,9 +23,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 

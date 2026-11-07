@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -16,9 +16,9 @@ import android.os.SystemClock
 import android.view.View
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
-import io.github.lujinxin.nextep.config.WorkspaceConfigContract
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.WorkspaceTransitionSpec
+import io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
 
 /** Own previews only for the exchange: animate both frames, cover the display
  * move, then hand off to the live buffers. Cancellation releases every frame. */

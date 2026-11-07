@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.Context
 import android.content.res.ColorStateList
@@ -22,7 +22,7 @@ import android.graphics.drawable.RippleDrawable
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.function.Consumer
 import kotlin.math.roundToInt
 

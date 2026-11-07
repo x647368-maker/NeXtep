@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -7,9 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 data class SelectedRecentTask(val taskId: Int, val userId: Int, val component: ComponentName)
 
@@ -20,7 +20,7 @@ sealed interface RecentTaskSelection {
 }
 
 object RecentTaskSelectionContract {
-    const val ACTION_QUERY = "io.github.lujinxin.nextep.action.QUERY_CENTER_RECENT_TASK"
+    const val ACTION_QUERY = "io.github.x647368maker.atomicworkbench.action.QUERY_CENTER_RECENT_TASK"
     const val EXTRA_IDENTITY = "systemui_identity"
     const val EXTRA_TASK_ID = "task_id"
     const val EXTRA_USER_ID = "user_id"

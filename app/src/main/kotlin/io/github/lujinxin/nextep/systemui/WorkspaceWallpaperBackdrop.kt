@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
@@ -11,7 +11,7 @@ import android.graphics.Paint
 import android.graphics.drawable.Drawable
 import android.os.PowerManager
 import androidx.core.graphics.ColorUtils
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 object WorkspaceWallpaperBackdrop {
     fun canCapture(context: Context): Boolean = runCatching {

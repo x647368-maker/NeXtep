@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.trigger
+package io.github.x647368maker.atomicworkbench.trigger
 
 enum class TriggerSource {
     QUICK_SETTINGS_TILE,

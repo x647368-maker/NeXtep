@@ -1,8 +1,8 @@
-package io.github.lujinxin.nextep.icons
+package io.github.x647368maker.atomicworkbench.icons
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 
 internal enum class LauncherIconStyle(
     val key: String,

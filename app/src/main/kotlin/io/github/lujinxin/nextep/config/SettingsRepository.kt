@@ -1,9 +1,9 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.Context
 
 class SettingsRepository(private val context: Context) {
-    private val preferences = context.getSharedPreferences("nextep_settings", Context.MODE_PRIVATE)
+    private val preferences = context.getSharedPreferences("atomic_settings", Context.MODE_PRIVATE)
 
     data class TopBarSettings(
         val title: String,

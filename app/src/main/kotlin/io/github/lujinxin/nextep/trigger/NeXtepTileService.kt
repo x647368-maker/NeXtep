@@ -1,9 +1,9 @@
-package io.github.lujinxin.nextep.trigger
+package io.github.x647368maker.atomicworkbench.trigger
 
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 
 class NeXtepTileService : TileService() {
     override fun onStartListening() {

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.Context
 import android.graphics.Canvas
@@ -13,7 +13,7 @@ import android.graphics.RenderNode
 import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.graphics.SweepGradient
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import kotlin.math.roundToInt
 
 /** Records only the page, then composites glass and an independent moving lens. */

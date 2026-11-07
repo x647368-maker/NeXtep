@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.app.LocaleManager
 import android.content.Context
@@ -10,7 +10,7 @@ import java.util.Locale
 
 /** Uses Android's persisted app language; host resources are never changed. */
 object AppLanguage {
-    private const val MODULE_PACKAGE = "io.github.lujinxin.nextep"
+    private const val MODULE_PACKAGE = "io.github.x647368maker.atomicworkbench"
     val languageTags = listOf("", "zh-Hans", "zh-Hant", "en", "ja", "ko")
 
     @Volatile private var hostLanguageTag = ""

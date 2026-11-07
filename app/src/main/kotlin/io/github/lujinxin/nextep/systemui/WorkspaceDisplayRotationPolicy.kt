@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 /** Keep an owned main rotation local even when a player also changes its fullscreen content. */
 internal object WorkspaceDisplayRotationPolicy {

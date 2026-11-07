@@ -1,10 +1,10 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
-import io.github.lujinxin.nextep.apps.LauncherAppRepository
+import io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository
 
 class TopAppRepository(context: Context) {
     data class AppEntry(

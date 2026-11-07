@@ -1,11 +1,11 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.content.ComponentName
 import android.view.View
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.workspace.RecentTaskSelection
-import io.github.lujinxin.nextep.workspace.SelectedRecentTask
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelection
+import io.github.x647368maker.atomicworkbench.workspace.SelectedRecentTask
 import java.lang.ref.WeakReference
 
 /** Read the actual centered OEM card, rather than guessing from recent-task ordering. */

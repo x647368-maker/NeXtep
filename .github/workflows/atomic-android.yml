@@ -60,11 +60,24 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: atomic-workbench-development-signing-v1
       - run: bash gradlew :app:assembleDebug :app:testDebugUnitTest --console=plain --stacktrace
+      - name: Check independent APK identity and module entry
+        shell: bash
+        run: |
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -n "$apk"
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test "$("$analyzer" manifest application-id "$apk")" = 'io.github.x647368maker.atomicworkbench'
+          unzip -p "$apk" META-INF/xposed/java_init.list | grep -Fx 'io.github.x647368maker.atomicworkbench.xposed.NeXtepHookEntry'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
       - run: sha256sum app/build/outputs/apk/debug/*.apk > development-apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: atomic-development-debug
+          name: atomic-workbench-0.1.0-debug
           if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk

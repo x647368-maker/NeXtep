@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.lujinxin.nextep"
+    namespace = "io.github.x647368maker.atomicworkbench"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -11,11 +11,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.lujinxin.nextep"
+        applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 17
-        versionName = "2.1.0"
+        versionCode = 1
+        versionName = "0.1.0-dev"
 
     }
 

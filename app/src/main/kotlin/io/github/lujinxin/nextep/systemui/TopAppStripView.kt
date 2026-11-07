@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.Context
 import android.content.Intent
@@ -19,15 +19,15 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.config.TopContentMode
-import io.github.lujinxin.nextep.config.WorkspaceConfigClient
-import io.github.lujinxin.nextep.config.WorkspaceTopConfig
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SidebarButtonLayout
-import io.github.lujinxin.nextep.workspace.SidebarSide
-import io.github.lujinxin.nextep.workspace.WorkspaceControlMetrics
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.config.TopContentMode
+import io.github.x647368maker.atomicworkbench.config.WorkspaceConfigClient
+import io.github.x647368maker.atomicworkbench.config.WorkspaceTopConfig
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SidebarButtonLayout
+import io.github.x647368maker.atomicworkbench.workspace.SidebarSide
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceControlMetrics
 import java.util.Date
 
 class TopAppStripView(
@@ -63,7 +63,7 @@ class TopAppStripView(
         outlineProvider = ViewOutlineProvider.BACKGROUND
         clipToOutline = true
         runCatching {
-            val packageName = "io.github.lujinxin.nextep"
+            val packageName = "io.github.x647368maker.atomicworkbench"
             val moduleResources = context.packageManager.getResourcesForApplication(packageName)
             val iconId = moduleResources.getIdentifier("ic_launcher_artwork", "drawable", packageName)
             // The circular artwork is already cropped to its visible bounds.
@@ -198,7 +198,7 @@ class TopAppStripView(
     private val configChangedReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             // Read configuration through the explicit module receiver; do not trust broadcast extras.
-            if (intent.action == io.github.lujinxin.nextep.config.WorkspaceConfigContract.ACTION_CHANGED ||
+            if (intent.action == io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract.ACTION_CHANGED ||
                 intent.action == android.content.Intent.ACTION_LOCALE_CHANGED) {
                 refreshRetryCount = 0
                 refresh(force = true)
@@ -237,7 +237,7 @@ class TopAppStripView(
         titleView.setScrolling(scroll, workspaceVisible)
         titleView.gravity = Gravity.CENTER
         titleView.textSize = if (custom) topConfig.textSizeSp.toFloat() else 16f
-        titleView.typeface = if (custom) io.github.lujinxin.nextep.config.TopTextStyle.typeface(
+        titleView.typeface = if (custom) io.github.x647368maker.atomicworkbench.config.TopTextStyle.typeface(
             topConfig.textFontFamily, topConfig.textBold,
         ) else android.graphics.Typeface.DEFAULT
         titleIcon.visibility = if (mode == TopContentMode.ICON) View.VISIBLE else View.GONE
@@ -265,7 +265,7 @@ class TopAppStripView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         context.registerReceiver(configChangedReceiver,
-            android.content.IntentFilter(io.github.lujinxin.nextep.config.WorkspaceConfigContract.ACTION_CHANGED).apply {
+            android.content.IntentFilter(io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract.ACTION_CHANGED).apply {
                 addAction(android.content.Intent.ACTION_LOCALE_CHANGED)
             },
             Context.RECEIVER_EXPORTED)

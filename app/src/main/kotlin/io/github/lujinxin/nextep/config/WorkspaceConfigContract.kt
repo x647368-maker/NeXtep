@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -7,7 +7,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
@@ -37,34 +37,34 @@ data class WorkspaceTopConfig(
 )
 
 object WorkspaceConfigContract {
-    const val ACTION_CHANGED = "io.github.lujinxin.nextep.action.WORKSPACE_CONFIG_CHANGED"
-    const val ACTION_QUERY = "io.github.lujinxin.nextep.action.QUERY_WORKSPACE_CONFIG"
-    const val EXTRA_TITLE = "io.github.lujinxin.nextep.extra.TOP_TITLE"
-    const val EXTRA_CONTENT_MODE = "io.github.lujinxin.nextep.extra.TOP_CONTENT_MODE"
-    const val EXTRA_SHOW_SECONDS = "io.github.lujinxin.nextep.extra.TOP_SHOW_SECONDS"
-    const val EXTRA_FROST_STRENGTH = "io.github.lujinxin.nextep.extra.FROST_STRENGTH"
-    const val EXTRA_APPS = "io.github.lujinxin.nextep.extra.TOP_APPS"
-    const val EXTRA_MANUAL_APP_ORDER = "io.github.lujinxin.nextep.extra.MANUAL_APP_ORDER"
-    const val EXTRA_TEXT_SCROLL = "io.github.lujinxin.nextep.extra.TOP_TEXT_SCROLL"
-    const val EXTRA_TEXT_FONT = "io.github.lujinxin.nextep.extra.TOP_TEXT_FONT"
-    const val EXTRA_TEXT_SIZE = "io.github.lujinxin.nextep.extra.TOP_TEXT_SIZE"
-    const val EXTRA_TEXT_BOLD = "io.github.lujinxin.nextep.extra.TOP_TEXT_BOLD"
-    const val EXTRA_STATUS_BAR_GESTURE_ENABLED = "io.github.lujinxin.nextep.extra.STATUS_BAR_GESTURE_ENABLED"
-    const val EXTRA_FOUR_FINGER_GESTURE_ENABLED = "io.github.lujinxin.nextep.extra.FOUR_FINGER_GESTURE_ENABLED"
-    const val EXTRA_FOUR_FINGER_GESTURE_BLOCK_GAMES = "io.github.lujinxin.nextep.extra.FOUR_FINGER_GESTURE_BLOCK_GAMES"
-    const val EXTRA_FOUR_FINGER_GESTURE_BLACKLIST = "io.github.lujinxin.nextep.extra.FOUR_FINGER_GESTURE_BLACKLIST"
-    const val EXTRA_SLOT_BACKGROUND_SWIPE_ENABLED = "io.github.lujinxin.nextep.extra.SLOT_BACKGROUND_SWIPE_ENABLED"
-    const val EXTRA_AUTO_MINIMIZE_MAIN = "io.github.lujinxin.nextep.extra.AUTO_MINIMIZE_MAIN_ON_TOP_APP_SWITCH"
-    const val EXTRA_NAVIGATION_BUTTONS_ENABLED = "io.github.lujinxin.nextep.extra.NAVIGATION_BUTTONS_ENABLED"
-    const val EXTRA_SWAP_ANIMATION_DURATION_MS = "io.github.lujinxin.nextep.extra.SWAP_ANIMATION_DURATION_MS"
-    const val EXTRA_LANGUAGE_TAG = "io.github.lujinxin.nextep.extra.LANGUAGE_TAG"
+    const val ACTION_CHANGED = "io.github.x647368maker.atomicworkbench.action.WORKSPACE_CONFIG_CHANGED"
+    const val ACTION_QUERY = "io.github.x647368maker.atomicworkbench.action.QUERY_WORKSPACE_CONFIG"
+    const val EXTRA_TITLE = "io.github.x647368maker.atomicworkbench.extra.TOP_TITLE"
+    const val EXTRA_CONTENT_MODE = "io.github.x647368maker.atomicworkbench.extra.TOP_CONTENT_MODE"
+    const val EXTRA_SHOW_SECONDS = "io.github.x647368maker.atomicworkbench.extra.TOP_SHOW_SECONDS"
+    const val EXTRA_FROST_STRENGTH = "io.github.x647368maker.atomicworkbench.extra.FROST_STRENGTH"
+    const val EXTRA_APPS = "io.github.x647368maker.atomicworkbench.extra.TOP_APPS"
+    const val EXTRA_MANUAL_APP_ORDER = "io.github.x647368maker.atomicworkbench.extra.MANUAL_APP_ORDER"
+    const val EXTRA_TEXT_SCROLL = "io.github.x647368maker.atomicworkbench.extra.TOP_TEXT_SCROLL"
+    const val EXTRA_TEXT_FONT = "io.github.x647368maker.atomicworkbench.extra.TOP_TEXT_FONT"
+    const val EXTRA_TEXT_SIZE = "io.github.x647368maker.atomicworkbench.extra.TOP_TEXT_SIZE"
+    const val EXTRA_TEXT_BOLD = "io.github.x647368maker.atomicworkbench.extra.TOP_TEXT_BOLD"
+    const val EXTRA_STATUS_BAR_GESTURE_ENABLED = "io.github.x647368maker.atomicworkbench.extra.STATUS_BAR_GESTURE_ENABLED"
+    const val EXTRA_FOUR_FINGER_GESTURE_ENABLED = "io.github.x647368maker.atomicworkbench.extra.FOUR_FINGER_GESTURE_ENABLED"
+    const val EXTRA_FOUR_FINGER_GESTURE_BLOCK_GAMES = "io.github.x647368maker.atomicworkbench.extra.FOUR_FINGER_GESTURE_BLOCK_GAMES"
+    const val EXTRA_FOUR_FINGER_GESTURE_BLACKLIST = "io.github.x647368maker.atomicworkbench.extra.FOUR_FINGER_GESTURE_BLACKLIST"
+    const val EXTRA_SLOT_BACKGROUND_SWIPE_ENABLED = "io.github.x647368maker.atomicworkbench.extra.SLOT_BACKGROUND_SWIPE_ENABLED"
+    const val EXTRA_AUTO_MINIMIZE_MAIN = "io.github.x647368maker.atomicworkbench.extra.AUTO_MINIMIZE_MAIN_ON_TOP_APP_SWITCH"
+    const val EXTRA_NAVIGATION_BUTTONS_ENABLED = "io.github.x647368maker.atomicworkbench.extra.NAVIGATION_BUTTONS_ENABLED"
+    const val EXTRA_SWAP_ANIMATION_DURATION_MS = "io.github.x647368maker.atomicworkbench.extra.SWAP_ANIMATION_DURATION_MS"
+    const val EXTRA_LANGUAGE_TAG = "io.github.x647368maker.atomicworkbench.extra.LANGUAGE_TAG"
     const val MIN_SWAP_ANIMATION_DURATION_MS = 100
     const val MAX_SWAP_ANIMATION_DURATION_MS = 1_000
     const val SWAP_ANIMATION_DURATION_STEP_MS = 100
     const val DEFAULT_SWAP_ANIMATION_DURATION_MS = 200
     const val RESULT_CONFIG = 35_001
-    private const val MODULE_PACKAGE = "io.github.lujinxin.nextep"
-    private const val RECEIVER_CLASS = "io.github.lujinxin.nextep.config.WorkspaceConfigReceiver"
+    private const val MODULE_PACKAGE = "io.github.x647368maker.atomicworkbench"
+    private const val RECEIVER_CLASS = "io.github.x647368maker.atomicworkbench.config.WorkspaceConfigReceiver"
 
     fun normalizeSwapAnimationDurationMs(durationMs: Int): Int {
         val clamped = durationMs.coerceIn(MIN_SWAP_ANIMATION_DURATION_MS, MAX_SWAP_ANIMATION_DURATION_MS)
@@ -124,7 +124,7 @@ object WorkspaceConfigClient {
         }
         val direct = runCatching {
             context.contentResolver.call(
-                android.net.Uri.parse("content://io.github.lujinxin.nextep.workspace.config"),
+                android.net.Uri.parse("content://io.github.x647368maker.atomicworkbench.workspace.config"),
                 "query", null, null,
             )
         }.getOrNull()
@@ -165,13 +165,13 @@ object WorkspaceConfigClient {
     }
 
     private fun snapshotPreferences(context: Context) = context.createDeviceProtectedStorageContext()
-        .getSharedPreferences("nextep_workspace_config", Context.MODE_PRIVATE)
+        .getSharedPreferences("atomic_workspace_config", Context.MODE_PRIVATE)
 
     private fun saveSnapshot(context: Context, extras: Bundle) {
         runCatching {
             val json = JSONObject()
             for (key in extras.keySet()) {
-                if (!key.startsWith("io.github.lujinxin.nextep.extra.")) continue
+                if (!key.startsWith("io.github.x647368maker.atomicworkbench.extra.")) continue
                 @Suppress("DEPRECATION")
                 when (val value = extras.get(key)) {
                     is String, is Boolean, is Int -> json.put(key, value)

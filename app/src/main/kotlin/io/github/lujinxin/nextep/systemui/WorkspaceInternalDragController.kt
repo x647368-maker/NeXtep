@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.Context
 import android.content.Intent
@@ -14,10 +14,10 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import io.github.lujinxin.nextep.display.SlotTaskDrag
-import io.github.lujinxin.nextep.display.TaskSwitcherView
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.display.SlotTaskDrag
+import io.github.x647368maker.atomicworkbench.display.TaskSwitcherView
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 
 /** Keeps the original touch stream inside SystemUI. No Android global drag is
  * started, so OEM drag portals never receive or intercept this operation. */

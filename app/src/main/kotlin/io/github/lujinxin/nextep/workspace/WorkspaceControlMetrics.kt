@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 /** Shared dimensions for control content and the workspace region it occupies. */
 internal object WorkspaceControlMetrics {

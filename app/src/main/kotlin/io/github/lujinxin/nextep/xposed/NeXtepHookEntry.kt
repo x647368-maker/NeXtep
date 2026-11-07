@@ -1,14 +1,14 @@
-package io.github.lujinxin.nextep.xposed
+package io.github.x647368maker.atomicworkbench.xposed
 
 import android.util.Log
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.launcher.ColorOsLauncherHook
-import io.github.lujinxin.nextep.multiapp.OplusMultiAppHook
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.safety.EmergencyDisable
-import io.github.lujinxin.nextep.safety.FeatureGate
-import io.github.lujinxin.nextep.systemui.SystemUiHook
-import io.github.lujinxin.nextep.systemserver.SystemServerHook
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.launcher.ColorOsLauncherHook
+import io.github.x647368maker.atomicworkbench.multiapp.OplusMultiAppHook
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.safety.EmergencyDisable
+import io.github.x647368maker.atomicworkbench.safety.FeatureGate
+import io.github.x647368maker.atomicworkbench.systemui.SystemUiHook
+import io.github.x647368maker.atomicworkbench.systemserver.SystemServerHook
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
 import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
@@ -50,7 +50,7 @@ class NeXtepHookEntry : XposedModule() {
             return
         }
 
-        if (packageName == "io.github.lujinxin.nextep") {
+        if (packageName == "io.github.x647368maker.atomicworkbench") {
             return
         }
 

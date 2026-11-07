@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.graphics.Rect
 import android.os.SystemClock
@@ -6,7 +6,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** A preview retains the physical display's native layout, including its status-bar space. */

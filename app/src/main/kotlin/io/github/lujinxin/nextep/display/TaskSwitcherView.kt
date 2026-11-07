@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.content.Context
 import android.content.Intent
@@ -14,8 +14,8 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SidebarSide
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SidebarSide
 
 class TaskSwitcherView(
     context: Context,
@@ -196,7 +196,7 @@ class TaskSwitcherView(
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean = true
 
     fun capturePreview(width: Int = textureView.width, height: Int = textureView.height): Bitmap? = runCatching {
-        io.github.lujinxin.nextep.monitoring.WorkspaceEnergyDiagnostics.previewCaptures.incrementAndGet()
+        io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics.previewCaptures.incrementAndGet()
         // Exchanges request the producer's recorded size. The no-argument
         // TextureView bitmap is only rail-sized and blurs when promoted to main.
         val bitmap = textureView.getBitmap(width, height) ?: return@runCatching null

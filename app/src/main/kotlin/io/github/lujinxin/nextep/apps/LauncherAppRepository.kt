@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.apps
+package io.github.x647368maker.atomicworkbench.apps
 
 import android.content.ComponentName
 import android.content.Context
@@ -10,9 +10,9 @@ import android.graphics.drawable.Drawable
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 /** Shared by SystemUI's app strip and the module's manual-order catalogue. */
 class LauncherAppRepository(private val context: Context) {

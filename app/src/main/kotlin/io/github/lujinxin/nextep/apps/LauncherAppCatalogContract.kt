@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.apps
+package io.github.x647368maker.atomicworkbench.apps
 
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -8,14 +8,14 @@ import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** SystemUI has cross-user access that the ordinary settings APK does not. */
 object LauncherAppCatalogContract {
-    private const val ACTION_QUERY = "io.github.lujinxin.nextep.action.QUERY_PROFILE_APPS"
+    private const val ACTION_QUERY = "io.github.x647368maker.atomicworkbench.action.QUERY_PROFILE_APPS"
     private const val RESULT_CATALOG = 35_201
     private const val EXTRA_APPS = "profile_apps"
     private const val EXTRA_LANGUAGE_TAG = "language_tag"

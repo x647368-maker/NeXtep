@@ -1,9 +1,9 @@
-package io.github.lujinxin.nextep.trigger
+package io.github.x647368maker.atomicworkbench.trigger
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 class WorkspaceControlBrokerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

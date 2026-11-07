@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -14,9 +14,9 @@ import android.view.SurfaceControl
 
 /** Ephemeral host capabilities. Surface and Binder handles must never be persisted in settings. */
 internal object ControlAreaVideoContract {
-    const val ACTION_HOST = "io.github.lujinxin.nextep.action.CONTROL_VIDEO_HOST"
-    const val ACTION_COMMAND = "io.github.lujinxin.nextep.action.CONTROL_VIDEO_COMMAND"
-    const val ACTION_STATE = "io.github.lujinxin.nextep.action.CONTROL_VIDEO_STATE"
+    const val ACTION_HOST = "io.github.x647368maker.atomicworkbench.action.CONTROL_VIDEO_HOST"
+    const val ACTION_COMMAND = "io.github.x647368maker.atomicworkbench.action.CONTROL_VIDEO_COMMAND"
+    const val ACTION_STATE = "io.github.x647368maker.atomicworkbench.action.CONTROL_VIDEO_STATE"
     const val COMMAND_CAPTURE = "capture"
     const val COMMAND_RELEASE = "release"
     const val COMMAND_PLAY = "play"
@@ -33,7 +33,7 @@ internal object ControlAreaVideoContract {
     const val EXTRA_FILL_VIEWPORT = "fill_viewport"
     const val EXTRA_COMMAND = "command"
     const val EXTRA_SOURCE_ID = "source_id"
-    const val RELEASE_DESCRIPTOR = "io.github.lujinxin.nextep.ControlAreaVideoRelease"
+    const val RELEASE_DESCRIPTOR = "io.github.x647368maker.atomicworkbench.ControlAreaVideoRelease"
     private const val EXTRA_IDENTITY = "identity"
     private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
 
@@ -129,7 +129,7 @@ internal object ControlAreaVideoContract {
 
     private fun identity(context: Context): PendingIntent = PendingIntent.getBroadcast(
         context, 0x4E56,
-        Intent("io.github.lujinxin.nextep.action.CONTROL_VIDEO_IDENTITY").setPackage(context.packageName),
+        Intent("io.github.x647368maker.atomicworkbench.action.CONTROL_VIDEO_IDENTITY").setPackage(context.packageName),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 

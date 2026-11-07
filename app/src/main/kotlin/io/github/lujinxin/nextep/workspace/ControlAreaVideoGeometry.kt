@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 /** The panel stays in phone axes; the native player's canvas stays in display axes. */
 internal object ControlAreaVideoGeometry {

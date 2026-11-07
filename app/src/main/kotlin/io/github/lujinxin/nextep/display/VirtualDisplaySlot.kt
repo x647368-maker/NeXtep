@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.app.ActivityOptions
 import android.content.Context
@@ -7,9 +7,9 @@ import android.graphics.SurfaceTexture
 import android.hardware.display.VirtualDisplay
 import android.view.Surface
 import android.view.TextureView
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.framework.UserTargetedActivityLauncher
-import io.github.lujinxin.nextep.workspace.WorkspaceLayoutProfile
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.framework.UserTargetedActivityLauncher
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile
 import android.graphics.Matrix
 
 class VirtualDisplaySlot(

@@ -1,6 +1,6 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import io.github.libxposed.api.XposedInterface
 
 class SystemUiStartupHooker : XposedInterface.Hooker {

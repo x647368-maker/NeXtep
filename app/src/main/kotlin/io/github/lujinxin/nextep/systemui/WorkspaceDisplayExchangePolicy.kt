@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 /** Reject mixed app, floating-window, rotation and lock transitions. */
 internal object WorkspaceDisplayExchangePolicy {

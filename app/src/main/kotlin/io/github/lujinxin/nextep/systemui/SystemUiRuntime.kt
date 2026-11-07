@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
@@ -15,22 +15,22 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.view.Display
 import android.view.SurfaceControl
-import io.github.lujinxin.nextep.apps.LauncherAppCatalogContract
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.config.WorkspaceConfigClient
-import io.github.lujinxin.nextep.config.WorkspaceConfigContract
-import io.github.lujinxin.nextep.config.WorkspaceTopConfig
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.monitoring.WorkspaceEnergyContract
-import io.github.lujinxin.nextep.monitoring.WorkspaceEnergyDiagnostics
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.task.MainTaskPresentationCoordinator
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
-import io.github.lujinxin.nextep.trigger.WorkspaceRecoveryPolicy
-import io.github.lujinxin.nextep.workspace.SidebarSide
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
-import io.github.lujinxin.nextep.workspace.WorkspaceController
-import io.github.lujinxin.nextep.workspace.WorkspaceStateBridge
+import io.github.x647368maker.atomicworkbench.apps.LauncherAppCatalogContract
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.config.WorkspaceConfigClient
+import io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract
+import io.github.x647368maker.atomicworkbench.config.WorkspaceTopConfig
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
+import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.task.MainTaskPresentationCoordinator
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.trigger.WorkspaceRecoveryPolicy
+import io.github.x647368maker.atomicworkbench.workspace.SidebarSide
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceController
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceStateBridge
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -447,7 +447,7 @@ object SystemUiRuntime {
             if (!isOrderedBroadcast || !::workspaceController.isInitialized) return
             val shouldCollapseFirst = intent.getStringExtra(
                 TriggerBroadcastContract.EXTRA_SOURCE,
-            ) == io.github.lujinxin.nextep.trigger.TriggerSource.QUICK_SETTINGS_TILE.name &&
+            ) == io.github.x647368maker.atomicworkbench.trigger.TriggerSource.QUICK_SETTINGS_TILE.name &&
                 requestedTarget(intent) == true
             if (shouldCollapseFirst) {
                 val pendingResult = goAsync()

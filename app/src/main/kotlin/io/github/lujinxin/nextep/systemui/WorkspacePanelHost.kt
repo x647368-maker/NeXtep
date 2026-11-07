@@ -1,11 +1,11 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.ViewGroup
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 /** Rotate panel content as a view subtree so Android also transforms touch and drag events. */
 internal class WorkspacePanelHost(context: Context, content: View) : ViewGroup(context) {

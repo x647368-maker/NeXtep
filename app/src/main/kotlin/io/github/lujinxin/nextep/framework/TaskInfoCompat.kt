@@ -1,9 +1,9 @@
-package io.github.lujinxin.nextep.framework
+package io.github.x647368maker.atomicworkbench.framework
 
 import android.app.ActivityManager
 import android.graphics.Rect
 import android.os.UserHandle
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 object TaskInfoCompat {
     data class WindowState(

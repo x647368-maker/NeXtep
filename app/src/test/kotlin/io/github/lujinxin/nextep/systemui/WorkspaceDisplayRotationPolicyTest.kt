@@ -1,9 +1,9 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import org.junit.Assert.*
 import org.junit.Test
-import io.github.lujinxin.nextep.systemui.WorkspaceDisplayRotationPolicy.Change
-import io.github.lujinxin.nextep.systemui.WorkspaceDisplayRotationPolicy.Kind
+import io.github.x647368maker.atomicworkbench.systemui.WorkspaceDisplayRotationPolicy.Change
+import io.github.x647368maker.atomicworkbench.systemui.WorkspaceDisplayRotationPolicy.Kind
 
 class WorkspaceDisplayRotationPolicyTest {
     private val main = Change(Kind.MAIN, 6, 0, 0, 1)

@@ -1,7 +1,7 @@
-package io.github.lujinxin.nextep.framework
+package io.github.x647368maker.atomicworkbench.framework
 
 import android.graphics.Rect
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 

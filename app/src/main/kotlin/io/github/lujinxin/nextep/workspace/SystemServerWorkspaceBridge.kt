@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 import android.content.Context
 import android.database.ContentObserver
@@ -7,15 +7,15 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.Display
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.concurrent.atomic.AtomicBoolean
 
 object SystemServerWorkspaceBridge {
-    private const val ACTIVE_KEY = "nextep_workspace_active_v1"
-    private const val WIDTH_KEY = "nextep_workspace_screen_width_v1"
-    private const val HEIGHT_KEY = "nextep_workspace_screen_height_v1"
-    private const val SIDEBAR_SIDE_KEY = "nextep_workspace_sidebar_side_v1"
-    private const val GEOMETRY_KEY = "nextep_workspace_geometry_v1"
+    private const val ACTIVE_KEY = "atomic_workspace_active_v1"
+    private const val WIDTH_KEY = "atomic_workspace_screen_width_v1"
+    private const val HEIGHT_KEY = "atomic_workspace_screen_height_v1"
+    private const val SIDEBAR_SIDE_KEY = "atomic_workspace_sidebar_side_v1"
+    private const val GEOMETRY_KEY = "atomic_workspace_geometry_v1"
     private val geometryObservationStarted = AtomicBoolean(false)
     @Volatile private var observedGeometry: WorkspaceGeometry? = null
 
@@ -44,7 +44,7 @@ object SystemServerWorkspaceBridge {
 
     fun publishLayout(context: Context, profile: WorkspaceLayoutProfile) {
         runCatching {
-            Settings.Global.putString(context.contentResolver, "nextep_workspace_layout_profile_v2", profile.encode())
+            Settings.Global.putString(context.contentResolver, "atomic_workspace_layout_profile_v2", profile.encode())
         }.onFailure { NeXtepLog.warn("system_server_bridge", "Unable to persist recorded layout", it) }
     }
 

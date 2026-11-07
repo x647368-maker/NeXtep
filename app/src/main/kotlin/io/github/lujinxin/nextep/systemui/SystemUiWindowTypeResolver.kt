@@ -1,7 +1,7 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.view.WindowManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 object SystemUiWindowTypeResolver {
     private val candidates = listOf(

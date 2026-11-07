@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.app.GameManager
 import android.app.KeyguardManager
@@ -12,9 +12,9 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.view.Display
-import io.github.lujinxin.nextep.config.WorkspaceTopConfig
-import io.github.lujinxin.nextep.task.TaskRepository
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.config.WorkspaceTopConfig
+import io.github.x647368maker.atomicworkbench.task.TaskRepository
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 /** Applies the current SystemUI policy before accepting a system-observed gesture. */
 internal class FourFingerGestureController(

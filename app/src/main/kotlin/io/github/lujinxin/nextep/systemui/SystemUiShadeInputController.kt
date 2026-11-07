@@ -1,12 +1,12 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.graphics.Rect
 import android.graphics.Region
 import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 import java.lang.reflect.Proxy
 import java.util.WeakHashMap
 

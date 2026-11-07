@@ -1,8 +1,8 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.view.View
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.xposed.HookGuard
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.xposed.HookGuard
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 

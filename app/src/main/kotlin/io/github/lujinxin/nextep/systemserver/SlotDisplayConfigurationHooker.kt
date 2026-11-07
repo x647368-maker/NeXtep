@@ -1,7 +1,7 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.content.res.Configuration
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import io.github.libxposed.api.XposedInterface
 
 /** A slot is a preview on the physical screen, not a different user input environment. */

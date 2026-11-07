@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.content.BroadcastReceiver
 import android.content.ComponentCallbacks
@@ -14,9 +14,9 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.Process
 import android.os.UserHandle
-import io.github.lujinxin.nextep.icons.AppIconAppearance
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.icons.AppIconAppearance
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import java.lang.ref.WeakReference

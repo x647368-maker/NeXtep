@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -100,57 +100,14 @@ class WorkspaceLayoutProfileTest {
     }
 
     @Test
-    fun oldFullCanvasProfileMigratesUsingItsRecordedNavigationInsets() {
-        val buttons = WorkspaceLayoutProfile.create(1080, 2354, 480, WorkspaceNavigationInsets(bottom = 132))
-        val old = buttons.encode().split(',').toMutableList()
-        old.removeAt(29)
-        old[0] = "2"
-        old[15] = "2354"
-        old[19] = "2354"
-        val migrated = checkNotNull(WorkspaceLayoutProfile.decode(old.joinToString(",")))
-        assertEquals(buttons, migrated)
-        assertEquals(2222, migrated.canvas.height)
-        assertEquals("5", migrated.encode().substringBefore(','))
-    }
-
-    @Test
-    fun oldRecordedRailDimensionsAreMigratedWithoutChangingTheNavigationMode() {
-        for (insets in listOf(WorkspaceNavigationInsets(), WorkspaceNavigationInsets(bottom = 132))) {
-            val oldGeometry = WorkspaceGeometry(1080, 2354, 624,
-                if (insets.bottom == 0) 286 else 303, SidebarSide.RIGHT, insets)
-            val recorded = WorkspaceLayoutProfile(oldGeometry, 480, 3)
-            for (version in listOf("2", "3")) {
-                val old = recorded.encode().split(',').toMutableList()
-                old.removeAt(29)
-                old[0] = version
-                if (version == "2") {
-                    old[15] = "2354"
-                    old[19] = "2354"
-                }
-                val migrated = checkNotNull(WorkspaceLayoutProfile.decode(old.joinToString(",")))
-                assertEquals(insets, migrated.geometry.navigationInsets)
-                assertEquals(1080, migrated.canvas.width)
-                assertEquals(2354 - insets.bottom, migrated.canvas.height)
-                assertEquals(WorkspaceLayoutProfile.create(1080, 2354, 480, insets), migrated)
-                assertNotEquals(oldGeometry.topHeight, migrated.geometry.topHeight)
-                assertNotEquals(recorded.slots, migrated.slots)
-                assertEquals(migrated, WorkspaceLayoutProfile.decode(migrated.encode()))
-            }
-        }
-    }
-
-    @Test
-    fun oldLayoutProfileKeepsRecordedDimensionsWhenRotationIsAdded() {
-        val profile = WorkspaceLayoutProfile.create(2354, 1080, 480, WorkspaceNavigationInsets(left = 132))
-        val old = profile.encode().split(',').toMutableList()
-        old[0] = "4"
-        old.removeAt(29)
-        val restored = checkNotNull(WorkspaceLayoutProfile.decode(old.joinToString(",")))
-        val reversed = restored.copy(geometry = restored.geometry.copy(displayRotation = 1))
-        assertEquals(profile, restored)
-        assertEquals(restored.canvas, reversed.canvas)
-        assertEquals(restored.slots, reversed.slots)
-        assertEquals(reversed, WorkspaceLayoutProfile.decode(reversed.encode()))
+    fun independentFourSlotProtocolRejectsThreeSlotProfiles() {
+        val profile = WorkspaceLayoutProfile.create(1080, 2354, 480, WorkspaceNavigationInsets())
+        assertEquals(4, profile.slots.size)
+        val legacy = profile.encode().split(',').toMutableList()
+        repeat(3) { legacy.removeAt(29) }
+        legacy[0] = "5"
+        assertNull(WorkspaceLayoutProfile.decode(legacy.joinToString(",")))
+        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("6,", "5,")))
     }
 
     @Test

@@ -1,13 +1,13 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.content.Context
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
-import io.github.lujinxin.nextep.workspace.WorkspaceNavigationInsets
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceNavigationInsets
 
 /** Keep the reserved physical navigation bar visible when a game requests immersive mode. */
 internal object WorkspaceNavigationBarHook {

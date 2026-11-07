@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -12,8 +12,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 internal object AdvancedScreen {
     fun create(activity: AppCompatActivity): View {

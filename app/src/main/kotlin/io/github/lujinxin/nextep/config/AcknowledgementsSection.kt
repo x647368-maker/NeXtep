@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.graphics.Color
 import android.graphics.Typeface
@@ -9,7 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.chip.ChipGroup
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 
 internal object AcknowledgementsSection {
     fun create(activity: AppCompatActivity): View {

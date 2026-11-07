@@ -1,8 +1,8 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.content.ComponentName
 
-const val WORKSPACE_SLOT_COUNT = 3
+const val WORKSPACE_SLOT_COUNT = 4
 
 sealed interface SlotState {
     data object Empty : SlotState

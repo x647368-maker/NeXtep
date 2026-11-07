@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -10,9 +10,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.icons.LauncherIconManager
-import io.github.lujinxin.nextep.icons.LauncherIconStyle
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.icons.LauncherIconManager
+import io.github.x647368maker.atomicworkbench.icons.LauncherIconStyle
 
 internal object LauncherIconPreference {
     fun createButton(activity: AppCompatActivity): MaterialButton {

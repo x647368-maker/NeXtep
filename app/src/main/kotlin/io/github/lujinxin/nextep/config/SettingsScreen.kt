@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.app.StatusBarManager
 import android.content.ClipData
@@ -28,10 +28,10 @@ import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.apps.LauncherAppCatalogContract
-import io.github.lujinxin.nextep.apps.LauncherAppRepository
-import io.github.lujinxin.nextep.trigger.NeXtepTileService
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.apps.LauncherAppCatalogContract
+import io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository
+import io.github.x647368maker.atomicworkbench.trigger.NeXtepTileService
 
 object SettingsScreen {
     private data class AppOption(
@@ -529,7 +529,7 @@ object SettingsScreen {
             }
         }
         addView(ImageView(activity).apply {
-            setImageResource(io.github.lujinxin.nextep.R.drawable.ic_drag_handle)
+            setImageResource(io.github.x647368maker.atomicworkbench.R.drawable.ic_drag_handle)
             scaleType = ImageView.ScaleType.CENTER
             contentDescription = activity.getString(R.string.app_drag_position, option.label)
         }, LinearLayout.LayoutParams(dp(activity, 44), dp(activity, 48)))

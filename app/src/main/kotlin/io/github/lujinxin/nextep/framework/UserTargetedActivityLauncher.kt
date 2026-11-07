@@ -1,11 +1,11 @@
-package io.github.lujinxin.nextep.framework
+package io.github.x647368maker.atomicworkbench.framework
 
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 object UserTargetedActivityLauncher {
     fun start(context: Context, source: Intent, options: Bundle? = null): Result<Unit> = runCatching {

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 /** A window's new rotation and new dimensions arrive on different callbacks. */
 internal class WorkspacePanelProjection {

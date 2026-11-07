@@ -1,11 +1,11 @@
-package io.github.lujinxin.nextep.multiapp
+package io.github.x647368maker.atomicworkbench.multiapp
 
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
-import io.github.lujinxin.nextep.xposed.HookGuard
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.xposed.HookGuard
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 

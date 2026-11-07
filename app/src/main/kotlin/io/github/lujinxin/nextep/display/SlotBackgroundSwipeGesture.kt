@@ -1,10 +1,10 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SidebarSide
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SidebarSide
 import kotlin.math.abs
 
 /** Uses slot-local axes so an outward swipe also follows the rotated rail. */

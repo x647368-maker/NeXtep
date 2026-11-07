@@ -1,6 +1,6 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoContract
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoContract
 
 /** Retry one native window without extending deadlines or overriding a manual return. */
 internal class ControlAreaVideoCapturePolicy {

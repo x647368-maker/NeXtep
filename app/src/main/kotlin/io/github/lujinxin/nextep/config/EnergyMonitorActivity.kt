@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
@@ -27,9 +27,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.google.android.material.button.MaterialButton
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.monitoring.BatterySample
-import io.github.lujinxin.nextep.monitoring.WorkspaceEnergyContract
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.monitoring.BatterySample
+import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
 import java.util.Date
 import java.util.concurrent.Executors
 

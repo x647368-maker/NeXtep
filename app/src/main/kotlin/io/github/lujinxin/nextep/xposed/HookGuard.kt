@@ -1,6 +1,6 @@
-package io.github.lujinxin.nextep.xposed
+package io.github.x647368maker.atomicworkbench.xposed
 
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 object HookGuard {
     inline fun run(feature: String, block: () -> Unit): Boolean = try {

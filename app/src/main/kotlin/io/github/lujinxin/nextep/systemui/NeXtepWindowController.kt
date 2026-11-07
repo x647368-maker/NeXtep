@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -15,23 +15,23 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.widget.FrameLayout
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.display.SlotState
-import io.github.lujinxin.nextep.display.SlotTaskCoordinator
-import io.github.lujinxin.nextep.display.SlotTaskDrag
-import io.github.lujinxin.nextep.display.VirtualDisplaySlot
-import io.github.lujinxin.nextep.display.WORKSPACE_SLOT_COUNT
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.safety.FeatureGate
-import io.github.lujinxin.nextep.task.MainTaskPresentationCoordinator
-import io.github.lujinxin.nextep.task.TaskRepository
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
-import io.github.lujinxin.nextep.workspace.SidebarSide
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
-import io.github.lujinxin.nextep.workspace.WorkspaceTransitionSpec
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.display.SlotState
+import io.github.x647368maker.atomicworkbench.display.SlotTaskCoordinator
+import io.github.x647368maker.atomicworkbench.display.SlotTaskDrag
+import io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot
+import io.github.x647368maker.atomicworkbench.display.WORKSPACE_SLOT_COUNT
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.safety.FeatureGate
+import io.github.x647368maker.atomicworkbench.task.MainTaskPresentationCoordinator
+import io.github.x647368maker.atomicworkbench.task.TaskRepository
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.workspace.SidebarSide
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
 
 class NeXtepWindowController(
     private val context: Context,
@@ -50,6 +50,9 @@ class NeXtepWindowController(
     @Volatile private var rotationPanelHosts: List<WorkspacePanelHost> = emptyList()
     private var initialized = false
     private var slotCoordinator: SlotTaskCoordinator? = null
+    private var sidebarCollapsed = false
+    private val workgroups = AtomicWorkgroups(context, taskRepository, { slotCoordinator },
+        { workspaceVisible && !suspended }, { setSidebarCollapsed(false) })
     private var topAppStrip: TopAppStripView? = null
     private var controlAreaPager: ControlAreaPager? = null
     private var sidebarView: FrameLayout? = null
@@ -127,6 +130,8 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        workgroups.cancel()
+        sidebarCollapsed = false
         cancelPendingRotationDraw()
         cancelPendingResumeContent()
         suspended = true
@@ -262,6 +267,8 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        workgroups.cancel()
+        sidebarCollapsed = false
         cancelPendingRotationDraw()
         cancelPendingResumeContent()
         workspaceVisible = false
@@ -381,6 +388,7 @@ class NeXtepWindowController(
     }
 
     fun setSidebarSide(side: SidebarSide): Result<WorkspaceGeometry> = runCatching {
+        setSidebarCollapsed(false)
         clearHomePreview()
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
@@ -465,7 +473,10 @@ class NeXtepWindowController(
                 },
                 onAppDragTouch = internalDrag::touch,
             ).also { topAppStrip = it }.let { strip ->
-                ControlAreaPager(context, strip).also { controlAreaPager = it }
+                ControlAreaPager(context, strip).also { controlAreaPager = it }.let { pager ->
+                    AtomicControlContainer(context, pager, workgroups::save, workgroups::choose,
+                        { setSidebarCollapsed(!sidebarCollapsed) })
+                }
             },
             width = geometry.screenWidth,
             height = geometry.topHeight,
@@ -502,6 +513,11 @@ class NeXtepWindowController(
             },
             y = geometry.topHeight,
             windowType = windowType,
+        )
+        addWindow(
+            title = "AtomicSidebarHandle", view = sidebarHandle(),
+            width = dp(20).toInt(), height = dp(80).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
+            touchable = true, windowType = windowType,
         )
         if (records.size != EXPECTED_WINDOW_COUNT) {
             records.forEach { record ->
@@ -554,7 +570,7 @@ class NeXtepWindowController(
                 privateFlags.setInt(this, privateFlags.getInt(this) or 0x40) // PRIVATE_FLAG_NO_MOVE_ANIMATION
             }.onFailure { NeXtepLog.warn("systemui_window", "Unable to disable panel move animation", it) }
         }
-        val hostedView = if (title == "NeXtepContentPanel") view else WorkspacePanelHost(context, view)
+        val hostedView = if (title == "NeXtepContentPanel" || title == "AtomicSidebarHandle") view else WorkspacePanelHost(context, view)
         val record = WindowRecord(hostedView, title)
         configureWindow(record, params, geometry())
         hostedView.visibility = View.GONE
@@ -586,8 +602,8 @@ class NeXtepWindowController(
         params: WindowManager.LayoutParams,
         geometry: WorkspaceGeometry,
     ) {
-        val touchable = !suspended && (record.title == "NeXtepTopBar" ||
-            (record.title == "NeXtepSidebar" && FeatureGate.TASK_SWAP.defaultEnabled))
+        val touchable = !suspended && (record.title == "NeXtepTopBar" || record.title == "AtomicSidebarHandle" ||
+            (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         // A foreground app normally hides live wallpaper, so screenshotWallpaper()
@@ -638,6 +654,21 @@ class NeXtepWindowController(
 
     private fun setWindowBounds(title: String, params: WindowManager.LayoutParams, geometry: WorkspaceGeometry) {
         when (title) {
+            "AtomicSidebarHandle" -> {
+                if (!geometry.isLandscape) {
+                    params.width = dp(20).toInt()
+                    params.height = dp(80).toInt()
+                    params.x = if (geometry.sidebarSide == SidebarSide.LEFT)
+                        geometry.sidebarLeft + geometry.sidebarPhysicalWidth - params.width else geometry.sidebarLeft
+                    params.y = geometry.sidebarTop + (geometry.sidebarPhysicalHeight - params.height) / 2
+                } else {
+                    params.width = dp(80).toInt()
+                    params.height = dp(20).toInt()
+                    params.x = geometry.sidebarLeft + (geometry.sidebarPhysicalWidth - params.width) / 2
+                    params.y = if (geometry.isSidebarAtTop)
+                        geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height else geometry.sidebarTop
+                }
+            }
             "NeXtepTopBar" -> {
                 params.width = geometry.controlWidth
                 params.height = geometry.controlHeight
@@ -658,6 +689,48 @@ class NeXtepWindowController(
                 params.x = 0
                 params.y = 0
             }
+        }
+    }
+
+    private fun sidebarHandle(): View = android.widget.TextView(context).apply {
+        text = "⋮"
+        gravity = Gravity.CENTER
+        textSize = 20f
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.argb(190, 35, 45, 60))
+        contentDescription = "滑动收起或展开侧栏"
+        isClickable = true
+        setOnClickListener { setSidebarCollapsed(!sidebarCollapsed) }
+        var downX = 0f
+        var downY = 0f
+        setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; true }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val g = geometry()
+                    val delta = if (g.isLandscape) event.rawY - downY else event.rawX - downX
+                    val outward = if (g.isLandscape) !g.isSidebarAtTop else g.sidebarSide == SidebarSide.RIGHT
+                    if (kotlin.math.abs(delta) > dp(24)) setSidebarCollapsed((delta > 0) == outward)
+                    else view.performClick()
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
+    }
+
+    private fun setSidebarCollapsed(value: Boolean) {
+        if (!workspaceVisible || suspended || sidebarCollapsed == value) return
+        cancelDragVisuals()
+        sidebarCollapsed = value
+        records.firstOrNull { it.title == "NeXtepSidebar" }?.let { record ->
+            val params = record.view.layoutParams as WindowManager.LayoutParams
+            configureWindow(record, params, geometry())
+            windowManager.updateViewLayout(record.view, params)
+            // Retain TextureViews and tasks; a GONE sidebar would destroy their displays.
+            record.view.animate().cancel()
+            record.view.animate().alpha(if (value) 0f else 1f).setDuration(180).start()
         }
     }
 
@@ -954,6 +1027,11 @@ class NeXtepWindowController(
         slotWindows.forEachIndexed { index, slot ->
             slot.setLayoutProfile(profile)
             slot.view.setBackgroundSwipeSide(logicalSidebarSide(geometry))
+            // View transforms keep drawing, hit tests and drag coordinates in one subtree.
+            slot.view.cameraDistance = dp(900)
+            slot.view.rotationY = if (logicalSidebarSide(geometry) == SidebarSide.RIGHT) -12f else 12f
+            slot.view.scaleX = 0.96f
+            slot.view.scaleY = 0.96f
             slot.view.layoutParams = FrameLayout.LayoutParams(
                 bounds[index].width,
                 bounds[index].height,
@@ -1052,7 +1130,7 @@ class NeXtepWindowController(
     private val transitionInterpolator = WorkspaceTransitionSpec.interpolator
 
     private companion object {
-        const val EXPECTED_WINDOW_COUNT = 3
+        const val EXPECTED_WINDOW_COUNT = 4
         const val BACKDROP_SETTLE_REFRESHES = 2
         const val BACKDROP_MAX_RETRIES = 8
         const val HOME_PREVIEW_SETTLE_DELAY_MS = 100L

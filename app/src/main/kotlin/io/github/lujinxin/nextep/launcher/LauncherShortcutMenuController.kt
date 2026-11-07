@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.provider.Settings
 import android.view.View
@@ -7,7 +7,7 @@ import android.view.WindowManager
 import android.widget.PopupWindow
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.WeakHashMap
 
 /** A desktop shortcut menu has its own native window and its own input coordinates. */

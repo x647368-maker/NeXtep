@@ -1,6 +1,6 @@
-package io.github.lujinxin.nextep.task
+package io.github.x647368maker.atomicworkbench.task
 
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 
 interface MainTaskPresenter {
     fun present(taskId: Int, geometry: WorkspaceGeometry): Result<Unit>

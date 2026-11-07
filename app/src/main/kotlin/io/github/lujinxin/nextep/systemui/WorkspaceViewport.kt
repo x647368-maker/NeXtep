@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.Context
 import android.graphics.Point
@@ -9,12 +9,12 @@ import android.os.SystemClock
 import android.view.Display
 import android.view.WindowInsets
 import android.view.WindowManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SidebarSide
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
-import io.github.lujinxin.nextep.workspace.WorkspaceNavigationInsets
-import io.github.lujinxin.nextep.workspace.WorkspaceLayoutProfile
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SidebarSide
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceNavigationInsets
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 import kotlin.math.roundToInt
 
 /** SystemUI records the physical viewport once per display configuration/manual mode. */
@@ -52,7 +52,7 @@ internal class WorkspaceViewport(
     // lets a restarted SystemUI retain the selected mode before the first unlock.
     private val preferences = runCatching {
         context.createDeviceProtectedStorageContext()
-            .getSharedPreferences("nextep_viewport_profiles_v1", Context.MODE_PRIVATE)
+            .getSharedPreferences("atomic_viewport_profiles_v1", Context.MODE_PRIVATE)
     }.onFailure { NeXtepLog.warn("workspace_viewport", "Viewport storage unavailable", it) }.getOrNull()
     private val handler = Handler(Looper.getMainLooper())
     private var navigationButtonsEnabled = preferences?.getBoolean(MODE_KEY, false) ?: false

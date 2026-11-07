@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.animation.ValueAnimator
 import android.content.Context
@@ -16,11 +16,11 @@ import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoState
-import io.github.lujinxin.nextep.workspace.WorkspaceControlMetrics
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoState
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceControlMetrics
 import java.lang.reflect.Proxy
 import kotlin.math.abs
 

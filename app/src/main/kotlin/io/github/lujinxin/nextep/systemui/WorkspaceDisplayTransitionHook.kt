@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.app.ActivityManager
 import android.content.Context
@@ -8,10 +8,10 @@ import android.view.Display
 import android.view.SurfaceControl
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.framework.TaskInfoCompat
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 /** Finish owned exchanges and main-display rotations through Shell's native fast path. */
 internal object WorkspaceDisplayTransitionHook {

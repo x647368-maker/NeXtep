@@ -1,7 +1,7 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
-import io.github.lujinxin.nextep.display.SlotGeometry
-import io.github.lujinxin.nextep.display.WORKSPACE_SLOT_COUNT
+import io.github.x647368maker.atomicworkbench.display.SlotGeometry
+import io.github.x647368maker.atomicworkbench.display.WORKSPACE_SLOT_COUNT
 
 /** One recorded layout shared by panels, main-task fitting and all preview displays. */
 data class WorkspaceLayoutProfile(
@@ -52,7 +52,7 @@ data class WorkspaceLayoutProfile(
             (height - source.height * scale) / 2f - source.top * scale)
     }
 
-    fun encode(): String = listOf("5", geometry.screenWidth, geometry.screenHeight,
+    fun encode(): String = listOf("6", geometry.screenWidth, geometry.screenHeight,
         geometry.topHeight, geometry.sidebarWidth, densityDpi, gapPixels,
         geometry.navigationInsets.left, geometry.navigationInsets.top,
         geometry.navigationInsets.right, geometry.navigationInsets.bottom,
@@ -71,34 +71,14 @@ data class WorkspaceLayoutProfile(
 
         fun decode(encoded: String?): WorkspaceLayoutProfile? = runCatching {
             val p = encoded?.split(',') ?: return@runCatching null
-            val version = p.firstOrNull() ?: return@runCatching null
-            if (version !in setOf("2", "3", "4", "5") ||
-                p.size != (if (version == "5") 30 else 29)) return@runCatching null
+            if (p.firstOrNull() != "6" || p.size != 21 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
             val profile = WorkspaceLayoutProfile(WorkspaceGeometry(p[1].toInt(), p[2].toInt(),
                 p[3].toInt(), p[4].toInt(), SidebarSide.RIGHT,
                 WorkspaceNavigationInsets(p[7].toInt(), p[8].toInt(), p[9].toInt(), p[10].toInt()),
-                displayRotation = if (version == "5") p[29].toInt() else 0),
-                p[5].toInt(), p[6].toInt())
-            val expected = profile.encode().split(',').toMutableList()
-            expected[0] = p[0]
-            if (version != "5") expected.removeAt(29)
-            if (p[0] == "2") {
-                // Migrate the old full-screen canvas using its recorded insets.
-                // This requires no WindowMetrics query or fresh calibration.
-                val oldCanvas = SlotGeometry.forRecordedDisplay(profile.geometry.screenWidth,
-                    profile.geometry.screenHeight, profile.densityDpi)
-                expected[14] = oldCanvas.width.toString()
-                expected[15] = oldCanvas.height.toString()
-                expected[18] = oldCanvas.width.toString()
-                expected[19] = oldCanvas.height.toString()
-            }
-            if (expected.joinToString(",") != encoded) return@runCatching null
-            if (version == "4" || version == "5") profile else {
-                // Recalculate the old slot proportions once using the already
-                // recorded display and navigation mode; never resample metrics.
-                create(profile.geometry.screenWidth, profile.geometry.screenHeight,
-                    profile.densityDpi, profile.geometry.navigationInsets)
-            }
+                displayRotation = p.last().toInt()), p[5].toInt(), p[6].toInt())
+            // This independent application never consumes NeXtep's three-slot records.
+            if (profile.encode() != encoded) return@runCatching null
+            profile
         }.getOrNull()
 
     }

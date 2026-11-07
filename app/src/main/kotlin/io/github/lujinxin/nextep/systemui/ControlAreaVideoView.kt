@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -23,13 +23,13 @@ import android.view.accessibility.AccessibilityManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoContract
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoGeometry
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoState
-import io.github.lujinxin.nextep.workspace.WorkspaceControlMetrics
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoContract
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoGeometry
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoState
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceControlMetrics
 import java.util.concurrent.Executors
 
 /** A persistent rendering host. Switching pages never destroys or hides this SurfaceView. */

@@ -1,10 +1,10 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.provider.Settings
 import android.view.View
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 /** COUI's detached menu uses the display origin, not HOME's translated decor origin. */
 internal object LauncherMenuGeometryController {

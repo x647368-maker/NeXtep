@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.safety
+package io.github.x647368maker.atomicworkbench.safety
 
 enum class FeatureGate(val defaultEnabled: Boolean) {
     TOP_RIGHT_STATUS_BAR_GESTURE(true),

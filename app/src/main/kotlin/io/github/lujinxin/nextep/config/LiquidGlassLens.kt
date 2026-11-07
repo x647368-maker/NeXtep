@@ -4,7 +4,7 @@
 // Upstream: compose-miuix-ui/miuix, commit 0657575a0259f89b3863166ec2cef4223ea01156.
 // Miuix's original is adapted from Kyant0/AndroidLiquidGlass (Apache-2.0).
 
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.graphics.RectF
 import android.graphics.RenderEffect

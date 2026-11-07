@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.content.ComponentName
 import android.content.Context
@@ -8,20 +8,20 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.framework.ActivityTaskManagerCompat
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.framework.UserTargetedActivityLauncher
-import io.github.lujinxin.nextep.framework.WindowContainerTransactionCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.task.MainTaskPresentationCoordinator
-import io.github.lujinxin.nextep.task.TaskRepository
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
-import io.github.lujinxin.nextep.workspace.RecentTaskSelection
-import io.github.lujinxin.nextep.workspace.RecentTaskSelectionContract
-import io.github.lujinxin.nextep.workspace.SelectedRecentTask
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.UserTargetedActivityLauncher
+import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.task.MainTaskPresentationCoordinator
+import io.github.x647368maker.atomicworkbench.task.TaskRepository
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelection
+import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelectionContract
+import io.github.x647368maker.atomicworkbench.workspace.SelectedRecentTask
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 
 class SlotTaskCoordinator(
     context: Context,
@@ -296,20 +296,45 @@ class SlotTaskCoordinator(
         return assignIntent(slotIndex, intent)
     }
 
-    fun openInMain(sourceIntent: Intent, autoMinimizeCurrent: Boolean = false): Result<Unit> {
+    /** Park existing side tasks before a named group restore. Never kill them. */
+    fun prepareGroupRestore(): Result<Unit> {
+        ensureMainThread()
+        if (!active || suspended || activeDrag != null) return Result.failure(IllegalStateException("工作区忙碌"))
+        return runTransition("prepare workgroup restore") {
+            parkTasksBeforeExit()
+            slotRecords.indices.forEach { index ->
+                clearSlotAssignment(index)
+                slotRecords[index].exitTask = null
+                setState(index, slots[index].displayId()?.let(SlotState::Ready) ?: SlotState.Empty, "group restore ready")
+            }
+        }
+    }
+
+    fun restoreInSlot(intent: Intent, index: Int, preferredTaskId: Int): Result<Unit> {
+        ensureMainThread()
+        return assignIntent(index, intent, preferredTaskId)
+    }
+
+    fun isGroupRestoreReady(): Boolean = active && !suspended && !transitionInProgress &&
+        !recentSelectionPending && slotRecords.none { it.pendingComponent != null }
+
+    fun openInMain(sourceIntent: Intent, autoMinimizeCurrent: Boolean = false, preferredTaskId: Int? = null): Result<Unit> {
         ensureMainThread()
         if (!active || suspended) {
             return Result.failure(IllegalStateException("Workspace transition is busy"))
         }
         if (transitionInProgress || recentSelectionPending) {
             val selected = Intent(sourceIntent)
-            pendingSelection = { openInMain(selected, autoMinimizeCurrent) }
+            pendingSelection = { openInMain(selected, autoMinimizeCurrent, preferredTaskId) }
             return Result.success(Unit)
         }
         val normalized = normalizeLaunchIntent(sourceIntent)
             ?: return Result.failure(IllegalArgumentException("App does not resolve to a launcher Activity"))
         val component = checkNotNull(normalized.component)
-        val existing = findLaunchTask(component, normalized.targetUser())
+        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
+            it.component.packageName == component.packageName &&
+                it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
+        } ?: findLaunchTask(component, normalized.targetUser())
 
         return runTransition("open main component=$component") {
             val currentMain = taskRepository.foregroundTask()
@@ -400,7 +425,7 @@ class SlotTaskCoordinator(
             return Result.success(Unit)
         }
         val targetUser = session.sessionActivity?.creatorUserHandle ?: android.os.Process.myUserHandle()
-        val userId = io.github.lujinxin.nextep.framework.TaskInfoCompat.userIdentifier(targetUser)
+        val userId = io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat.userIdentifier(targetUser)
         val sourceSlot = slotRecords.indexOfFirst { record ->
             val occupied = record.state as? SlotState.Occupied ?: return@indexOfFirst false
             occupied.component.packageName == session.packageName &&
@@ -458,7 +483,10 @@ class SlotTaskCoordinator(
         val normalized = normalizeLaunchIntent(sourceIntent)
             ?: return Result.failure(IllegalArgumentException("App does not resolve to a launcher Activity"))
         val component = checkNotNull(normalized.component)
-        val existing = findLaunchTask(component, normalized.targetUser())
+        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
+            it.component.packageName == component.packageName &&
+                it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
+        } ?: findLaunchTask(component, normalized.targetUser())
         val sourceSlot = existing?.let { task ->
             slotRecords.indexOfFirst { record ->
                 (record.state as? SlotState.Occupied)?.taskId == task.taskId
@@ -865,7 +893,7 @@ class SlotTaskCoordinator(
         setState(index, state, "drag exchange")
     }
 
-    private fun assignIntent(slotIndex: Int, sourceIntent: Intent): Result<Unit> {
+    private fun assignIntent(slotIndex: Int, sourceIntent: Intent, preferredTaskId: Int? = null): Result<Unit> {
         if (!validActiveSlot(slotIndex)) {
             return Result.failure(IllegalStateException("Slot $slotIndex is unavailable"))
         }
@@ -877,7 +905,10 @@ class SlotTaskCoordinator(
         }
         val targetDisplayId = slots[slotIndex].displayId()
             ?: return Result.failure(IllegalStateException("Slot $slotIndex display is pending"))
-        val existing = findLaunchTask(component, normalized.targetUser())
+        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
+            it.component.packageName == component.packageName &&
+                it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
+        } ?: findLaunchTask(component, normalized.targetUser())
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
 
         if (existing?.displayId == targetDisplayId) {

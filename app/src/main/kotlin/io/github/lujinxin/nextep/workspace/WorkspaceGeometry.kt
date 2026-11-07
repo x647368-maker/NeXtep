@@ -1,6 +1,6 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
-import io.github.lujinxin.nextep.display.WORKSPACE_SLOT_COUNT
+import io.github.x647368maker.atomicworkbench.display.WORKSPACE_SLOT_COUNT
 import kotlin.math.roundToInt
 
 data class WorkspaceNavigationInsets(

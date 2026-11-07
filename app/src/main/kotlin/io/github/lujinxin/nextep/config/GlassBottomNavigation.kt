@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.animation.ValueAnimator
 import android.content.Context
@@ -17,8 +17,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt

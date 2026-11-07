@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.content.Context
 import android.graphics.Typeface
@@ -6,7 +6,7 @@ import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
 import android.graphics.fonts.FontStyle
 import android.graphics.fonts.SystemFonts
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 import java.io.File
 
 object TopTextStyle {

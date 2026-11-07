@@ -1,8 +1,8 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.content.Context
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 import io.github.libxposed.api.XposedInterface
 
 class FixedOrientationAspectRatioHooker : XposedInterface.Hooker {

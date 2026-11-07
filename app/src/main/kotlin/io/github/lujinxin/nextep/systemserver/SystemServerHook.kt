@@ -1,10 +1,10 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.content.res.Configuration
 import android.util.Log
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.safety.FeatureGate
-import io.github.lujinxin.nextep.xposed.HookGuard
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.safety.FeatureGate
+import io.github.x647368maker.atomicworkbench.xposed.HookGuard
 import io.github.libxposed.api.XposedModule
 import java.util.concurrent.atomic.AtomicBoolean
 

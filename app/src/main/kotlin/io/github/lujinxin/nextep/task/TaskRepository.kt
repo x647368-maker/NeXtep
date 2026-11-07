@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.task
+package io.github.x647368maker.atomicworkbench.task
 
 import android.annotation.SuppressLint
 import android.app.ActivityManager
@@ -7,10 +7,10 @@ import android.content.Context
 import android.graphics.Rect
 import android.view.Display
 import android.os.UserHandle
-import io.github.lujinxin.nextep.framework.TaskInfoCompat
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.monitoring.WorkspaceEnergyDiagnostics
+import io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics
 
 class TaskRepository(context: Context) {
     data class RetainedTask(

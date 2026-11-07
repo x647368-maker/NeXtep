@@ -1,6 +1,6 @@
-package io.github.lujinxin.nextep.safety
+package io.github.x647368maker.atomicworkbench.safety
 
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.io.File
 
 object EmergencyDisable {

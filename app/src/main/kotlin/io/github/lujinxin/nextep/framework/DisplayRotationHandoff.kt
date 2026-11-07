@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.framework
+package io.github.x647368maker.atomicworkbench.framework
 
 /** Freeze fitted-task polling while the panel viewport catches up with native rotation. */
 internal class DisplayRotationHandoff {

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 /** Fast recovery around task changes, with a slow fallback when Shell callbacks are absent. */
 internal class WorkspaceRefreshPolicy {

@@ -1,10 +1,10 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 object WorkspaceStateBridge {
     fun requestInactiveFromSystemUi(context: Context) {

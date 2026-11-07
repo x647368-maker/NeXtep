@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.content.ClipData
 import android.content.ClipDescription
@@ -6,7 +6,7 @@ import android.content.ComponentName
 import android.content.Intent
 
 object AppDragContract {
-    const val MIME_TYPE = "application/vnd.io.github.lujinxin.nextep.launcher-activity"
+    const val MIME_TYPE = "application/vnd.io.github.x647368maker.atomicworkbench.launcher-activity"
 
     fun accepts(description: ClipDescription?): Boolean =
         description?.hasMimeType(MIME_TYPE) == true

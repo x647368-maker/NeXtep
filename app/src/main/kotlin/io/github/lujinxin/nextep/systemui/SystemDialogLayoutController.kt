@@ -1,11 +1,11 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 import java.util.WeakHashMap
 
 /** Layout real dialog windows, so drawing and native touch coordinates stay aligned. */

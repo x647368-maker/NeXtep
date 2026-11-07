@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.animation.ValueAnimator
 import android.animation.Animator
@@ -14,11 +14,11 @@ import android.view.Display
 import android.view.WindowManager
 import android.graphics.Matrix
 import android.graphics.Rect
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.systemui.SystemDialogLayoutController
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
-import io.github.lujinxin.nextep.workspace.WorkspaceTransitionSpec
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.systemui.SystemDialogLayoutController
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 

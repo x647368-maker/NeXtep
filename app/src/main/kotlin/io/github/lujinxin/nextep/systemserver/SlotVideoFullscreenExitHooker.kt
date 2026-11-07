@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.content.Context
 import android.content.pm.ActivityInfo
@@ -16,7 +16,7 @@ import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.View
 import android.view.WindowManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import io.github.libxposed.api.XposedInterface
 
 /** Exit a retained player fullscreen UI once after moving it into a portrait slot. */

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.text.Editable
 import android.text.TextWatcher
@@ -12,7 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 
 internal object SystemFontPicker {
     fun show(activity: AppCompatActivity, selected: String, sample: String, onSelected: (String) -> Unit) {

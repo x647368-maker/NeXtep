@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.graphics.Color
 import android.os.Bundle
@@ -15,8 +15,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.viewpager.widget.PagerAdapter
 import androidx.viewpager.widget.ViewPager
-import io.github.lujinxin.nextep.R
-import io.github.lujinxin.nextep.icons.LauncherIconManager
+import io.github.x647368maker.atomicworkbench.R
+import io.github.x647368maker.atomicworkbench.icons.LauncherIconManager
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {

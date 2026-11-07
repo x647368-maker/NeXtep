@@ -1,12 +1,12 @@
-package io.github.lujinxin.nextep.display
+package io.github.x647368maker.atomicworkbench.display
 
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.hardware.display.VirtualDisplayConfig
 import android.view.Surface
-import io.github.lujinxin.nextep.framework.VirtualDisplayFlagsCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.framework.VirtualDisplayFlagsCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 class VirtualDisplayFactory(context: Context) {
     private val displayManager = context.getSystemService(DisplayManager::class.java)

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.monitoring
+package io.github.x647368maker.atomicworkbench.monitoring
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -7,11 +7,11 @@ import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 /** A read-only, signature-protected snapshot. No monitor service or background sampling. */
 internal object WorkspaceEnergyContract {
-    private const val ACTION = "io.github.lujinxin.nextep.action.QUERY_ENERGY_DIAGNOSTICS"
+    private const val ACTION = "io.github.x647368maker.atomicworkbench.action.QUERY_ENERGY_DIAGNOSTICS"
     private const val RESULT_SNAPSHOT = 0x4E45
 
     data class Snapshot(

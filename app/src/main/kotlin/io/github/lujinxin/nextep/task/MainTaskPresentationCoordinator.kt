@@ -1,14 +1,14 @@
-package io.github.lujinxin.nextep.task
+package io.github.x647368maker.atomicworkbench.task
 
 import android.content.Context
 import android.graphics.Rect
 import android.view.Display
-import io.github.lujinxin.nextep.framework.ActivityTaskManagerCompat
-import io.github.lujinxin.nextep.framework.TaskSurfaceCompat
-import io.github.lujinxin.nextep.framework.WindowContainerTransactionCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
-import io.github.lujinxin.nextep.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 
 class MainTaskPresentationCoordinator(context: Context) {
     private val applicationContext = context.applicationContext ?: context

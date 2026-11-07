@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.logging
+package io.github.x647368maker.atomicworkbench.logging
 
 import android.os.Build
 import android.util.Log

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.app.Activity
 import android.app.PendingIntent
@@ -10,14 +10,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
-import io.github.lujinxin.nextep.config.AppLanguage
-import io.github.lujinxin.nextep.framework.TaskInfoCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
-import io.github.lujinxin.nextep.trigger.WorkspaceRecoveryPolicy
-import io.github.lujinxin.nextep.workspace.RecentTaskSelection
-import io.github.lujinxin.nextep.workspace.RecentTaskSelectionContract
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.config.AppLanguage
+import io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.trigger.WorkspaceRecoveryPolicy
+import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelection
+import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelectionContract
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 import java.util.concurrent.atomic.AtomicBoolean
 
 object LauncherRuntime {

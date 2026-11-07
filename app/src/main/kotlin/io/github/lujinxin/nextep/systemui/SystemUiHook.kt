@@ -1,13 +1,13 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import android.app.Application
 import android.app.Instrumentation
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.xposed.HookGuard
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.xposed.HookGuard
 import io.github.libxposed.api.XposedModule
 import android.view.MotionEvent
 import android.view.ViewGroup
-import io.github.lujinxin.nextep.safety.FeatureGate
+import io.github.x647368maker.atomicworkbench.safety.FeatureGate
 
 object SystemUiHook {
     private data class StartupCandidate(val className: String, val methodName: String)
@@ -39,9 +39,9 @@ object SystemUiHook {
                         val info = chain.args.firstOrNull() as? android.app.ActivityManager.RunningTaskInfo
                         if (info != null) HookGuard.run("task_surface_ownership_update") {
                             if (method.name == "onTaskVanished") {
-                                io.github.lujinxin.nextep.framework.TaskSurfaceCompat.forgetTaskSurface(info.taskId)
+                                io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat.forgetTaskSurface(info.taskId)
                             } else {
-                                io.github.lujinxin.nextep.framework.TaskSurfaceCompat.observeTaskInfo(
+                                io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat.observeTaskInfo(
                                     info, if (method.name == "onTaskAppeared") chain.args.getOrNull(1) else null,
                                 )
                             }
@@ -66,7 +66,7 @@ object SystemUiHook {
                 module.hook(method).intercept(object : io.github.libxposed.api.XposedInterface.Hooker {
                     override fun intercept(chain: io.github.libxposed.api.XposedInterface.Chain): Any? {
                         val transaction = chain.thisObject ?: return chain.proceed()
-                        return io.github.lujinxin.nextep.framework.TaskSurfaceCompat
+                        return io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
                             .interceptTransactionApply(transaction) { chain.proceed() }
                     }
                 })
@@ -83,9 +83,9 @@ object SystemUiHook {
                             HookGuard.run("slot_retention_display_area_info") {
                                 chain.args.firstOrNull()?.let {
                                     if (method.name == "onDisplayAreaVanished") {
-                                        io.github.lujinxin.nextep.framework.WindowContainerTransactionCompat.forgetDisplayArea(it)
+                                        io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat.forgetDisplayArea(it)
                                     } else {
-                                        io.github.lujinxin.nextep.framework.WindowContainerTransactionCompat.observeDisplayArea(it)
+                                        io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat.observeDisplayArea(it)
                                     }
                                 }
                             }

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.icons
+package io.github.x647368maker.atomicworkbench.icons
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -6,7 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.time.Duration
 import java.time.Instant
 
@@ -14,7 +14,7 @@ import java.time.Instant
 internal object LauncherIconManager {
     const val PREFERENCES = "launcher_icon"
     const val AUTOMATIC = "auto"
-    const val ACTION_REFRESH = "io.github.lujinxin.nextep.action.REFRESH_LAUNCHER_ICON"
+    const val ACTION_REFRESH = "io.github.x647368maker.atomicworkbench.action.REFRESH_LAUNCHER_ICON"
     private const val KEY_CHOICE = "choice"
     private const val KEY_STARTED = "first_open_completed"
     private const val KEY_APPLIED = "applied_icon"

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.content.Context
 import android.content.res.Configuration
@@ -7,8 +7,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceControl
 import android.view.WindowManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 import io.github.libxposed.api.XposedInterface
 import java.lang.reflect.Field
 import java.lang.reflect.Method

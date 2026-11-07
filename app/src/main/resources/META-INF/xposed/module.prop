@@ -1,9 +1,9 @@
-id=nextep
-name=NeXtep
-version=2.1.0
-versionCode=17
-author=lujinxin
-description=ColorOS 16 native side workspace foundation
+id=atomic_workbench
+name=原子工作台
+version=0.1.0-dev
+versionCode=1
+author=x647368-maker; based on lujinxin/NeXtep
+description=Experimental four-slot Android workspace; device validation pending
 minApiVersion=101
 targetApiVersion=102
 staticScope=false

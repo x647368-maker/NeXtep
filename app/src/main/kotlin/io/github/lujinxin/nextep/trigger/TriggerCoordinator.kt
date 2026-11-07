@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.trigger
+package io.github.x647368maker.atomicworkbench.trigger
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -6,8 +6,8 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 
 object TriggerCoordinator {
     sealed interface RequestResult {

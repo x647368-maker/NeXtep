@@ -1,10 +1,10 @@
-package io.github.lujinxin.nextep.systemui
+package io.github.x647368maker.atomicworkbench.systemui
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import io.github.lujinxin.nextep.systemui.WorkspaceDisplayExchangePolicy.Change
-import io.github.lujinxin.nextep.systemui.WorkspaceDisplayExchangePolicy.Kind
+import io.github.x647368maker.atomicworkbench.systemui.WorkspaceDisplayExchangePolicy.Change
+import io.github.x647368maker.atomicworkbench.systemui.WorkspaceDisplayExchangePolicy.Kind
 
 class WorkspaceDisplayExchangePolicyTest {
     @Test fun capturedColorOsToFrontMoveUsesNativeImmediateFinish() {

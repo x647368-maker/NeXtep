@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.workspace
+package io.github.x647368maker.atomicworkbench.workspace
 
 /** The button diagram is the authority for rail placement in the control panel's axes. */
 internal object SidebarButtonLayout {

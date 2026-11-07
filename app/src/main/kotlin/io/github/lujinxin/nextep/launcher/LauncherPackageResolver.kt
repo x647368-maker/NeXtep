@@ -1,7 +1,7 @@
-package io.github.lujinxin.nextep.launcher
+package io.github.x647368maker.atomicworkbench.launcher
 
 import android.content.Context
-import io.github.lujinxin.nextep.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 
 object LauncherPackageResolver {
     fun isCurrentHome(context: Context): Boolean =

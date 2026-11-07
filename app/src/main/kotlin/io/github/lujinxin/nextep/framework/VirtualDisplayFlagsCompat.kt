@@ -1,7 +1,7 @@
-package io.github.lujinxin.nextep.framework
+package io.github.x647368maker.atomicworkbench.framework
 
 import android.hardware.display.DisplayManager
-import io.github.lujinxin.nextep.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 object VirtualDisplayFlagsCompat {
     data class Resolved(val value: Int, val names: List<String>)

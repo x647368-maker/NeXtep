@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.config
+package io.github.x647368maker.atomicworkbench.config
 
 import android.graphics.Typeface
 import android.view.View
@@ -7,7 +7,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
-import io.github.lujinxin.nextep.R
+import io.github.x647368maker.atomicworkbench.R
 
 internal object AboutScreen {
     fun create(activity: AppCompatActivity): View {

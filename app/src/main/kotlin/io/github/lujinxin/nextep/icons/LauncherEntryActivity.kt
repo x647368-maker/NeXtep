@@ -1,9 +1,9 @@
-package io.github.lujinxin.nextep.icons
+package io.github.x647368maker.atomicworkbench.icons
 
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import io.github.lujinxin.nextep.config.MainActivity
+import io.github.x647368maker.atomicworkbench.config.MainActivity
 
 /** An alias can be disabled without closing the settings task that it opens. */
 class LauncherEntryActivity : Activity() {

@@ -1,4 +1,4 @@
-package io.github.lujinxin.nextep.systemserver
+package io.github.x647368maker.atomicworkbench.systemserver
 
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
@@ -20,12 +20,12 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.SurfaceControl
 import android.view.WindowManager
-import io.github.lujinxin.nextep.framework.ActivityTaskManagerCompat
-import io.github.lujinxin.nextep.logging.NeXtepLog
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoContract
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoGeometry
-import io.github.lujinxin.nextep.workspace.ControlAreaVideoState
-import io.github.lujinxin.nextep.workspace.SystemServerWorkspaceBridge
+import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoContract
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoGeometry
+import io.github.x647368maker.atomicworkbench.workspace.ControlAreaVideoState
+import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.lang.reflect.Method
@@ -728,7 +728,7 @@ internal object ControlAreaVideoController {
     }
 
     private fun externalPackage(packageName: String): Boolean = packageName.isNotBlank() &&
-        packageName !in setOf("android", "com.android.systemui", "io.github.lujinxin.nextep")
+        packageName !in setOf("android", "com.android.systemui", "io.github.x647368maker.atomicworkbench")
 
     private fun sameSurface(first: SurfaceControl, second: SurfaceControl?): Boolean =
         second != null && first.isValid && second.isValid &&
