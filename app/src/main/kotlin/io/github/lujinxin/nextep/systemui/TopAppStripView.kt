@@ -54,7 +54,7 @@ class TopAppStripView(
         ellipsize = android.text.TextUtils.TruncateAt.END
     }
     private val titleIcon = ImageView(context).apply {
-        contentDescription = "NeXtep"
+        contentDescription = "原子工作台"
         scaleType = ImageView.ScaleType.FIT_CENTER
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL

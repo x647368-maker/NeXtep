@@ -8,14 +8,14 @@
     <string name="module_description">ColorOS 16 原生側邊工作區 LSPosed 模組</string>
     <string name="tile_unavailable">桌面驗證掛鉤尚未就緒</string>
     <string name="action_add">新增</string>
-    <string name="tile_add_description">將 NeXtep 新增至控制中心</string>
+    <string name="tile_add_description">將 原子工作台 新增至控制中心</string>
     <string name="tile_added">已新增至控制中心</string>
-    <string name="tile_already_added">控制中心已有 NeXtep 入口</string>
+    <string name="tile_already_added">控制中心已有 原子工作台 入口</string>
     <string name="tile_not_added">未新增，可稍後重試</string>
     <string name="tile_add_unavailable">暫時無法新增，請在控制中心編輯頁面重試</string>
-    <string name="tile_add_manually">請在控制中心編輯頁面新增 NeXtep</string>
+    <string name="tile_add_manually">請在控制中心編輯頁面新增 原子工作台</string>
     <string name="tile_entry_title">控制中心入口</string>
-    <string name="tile_entry_summary">新增 NeXtep 快捷開關</string>
+    <string name="tile_entry_summary">新增 原子工作台 快捷開關</string>
     <string name="gesture_title">狀態列觸發手勢</string>
     <string name="gesture_summary">從右側向左滑動，開啟或關閉工作區。</string>
     <string name="background_swipe_title">小視窗 App 橫滑移至背景</string>
@@ -82,7 +82,7 @@
     <string name="font_coloros_serif">ColorOS 襯線體</string>
     <string name="font_system_hans">系統黑體 · 簡體中文</string>
     <string name="font_system_hant">系統黑體 · 繁體中文</string>
-    <string name="app_icon_description">NeXtep 圖示</string>
+    <string name="app_icon_description">原子工作台 圖示</string>
     <string name="about_tagline">一步，再進一步。</string>
     <string name="about_tribute">向 OneStep 致敬，在原生 ColorOS 桌面上延續側邊多工的體驗。</string>
     <string name="about_windows_title">一個主視窗，三個小視窗</string>
@@ -90,7 +90,7 @@
     <string name="about_compatibility">本專案透過 LSPosed 接入系統介面，保留手機原有桌面。系統升級後，部分功能可能需要調整。</string>
     <string name="about_credits">開源授權 · Apache License 2.0\n作者 · lujinxin (Jensen Lu)</string>
     <string name="acknowledgements_title">致謝</string>
-    <string name="acknowledgements_summary">感謝為 NeXtep 提出建議、協助測試的朋友。</string>
+    <string name="acknowledgements_summary">感謝為 原子工作台 提出建議、協助測試的朋友。</string>
     <string name="update_current_version">目前版本 %1$s（%2$d）\n點選檢查更新以取得最新版本。</string>
     <string name="update_title">應用程式更新</string>
     <string name="update_releases">查看發行版本</string>
@@ -118,7 +118,7 @@
     <string name="media_play">播放</string>
     <string name="media_next">下一首</string>
     <string name="media_not_playing">未播放</string>
-    <string name="media_control_title">NeXtep 媒體控制</string>
+    <string name="media_control_title">原子工作台 媒體控制</string>
     <string name="media_pause">暫停</string>
     <string name="media_empty_hint">開啟音樂應用程式後顯示控制</string>
     <string name="media_open_failed">暫時無法開啟播放應用程式</string>
@@ -138,7 +138,7 @@
     <string name="window_side_right">小視窗靠右</string>
     <string name="window_exit">結束小視窗模式</string>
     <string name="window_drop_background">放開以移至背景</string>
-    <string name="open_settings">開啟 NeXtep 設定</string>
+    <string name="open_settings">開啟 原子工作台 設定</string>
     <string name="apps_none_available">沒有可啟動的 App</string>
     <string name="launcher_icon_title">桌面圖示</string>
     <string name="launcher_icon_summary">依季節或手動選擇顯示；系統深色或省電模式下暫時使用暗黑圖示。</string>

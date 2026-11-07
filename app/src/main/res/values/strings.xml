@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">NeXtep</string>
+    <string name="app_name" translatable="false">原子工作台</string>
     <!-- Optional HTTPS JSON endpoint. Empty uses public GitHub Releases. -->
     <string name="update_manifest_url" translatable="false"></string>
     <string name="language_hans" translatable="false">简体中文</string>
@@ -16,14 +16,14 @@
     <string name="module_description">ColorOS 16 native side workspace LSPosed module</string>
     <string name="tile_unavailable">Launcher verification hook is not ready</string>
     <string name="action_add">Add</string>
-    <string name="tile_add_description">Add NeXtep to Quick Settings</string>
+    <string name="tile_add_description">Add 原子工作台 to Quick Settings</string>
     <string name="tile_added">Added to Quick Settings</string>
-    <string name="tile_already_added">NeXtep is already in Quick Settings</string>
+    <string name="tile_already_added">原子工作台 is already in Quick Settings</string>
     <string name="tile_not_added">Not added. Try again later.</string>
     <string name="tile_add_unavailable">Unable to add now. Try editing Quick Settings.</string>
-    <string name="tile_add_manually">Add NeXtep from the Quick Settings editor.</string>
+    <string name="tile_add_manually">Add 原子工作台 from the Quick Settings editor.</string>
     <string name="tile_entry_title">Quick Settings shortcut</string>
-    <string name="tile_entry_summary">Add the NeXtep tile</string>
+    <string name="tile_entry_summary">Add the 原子工作台 tile</string>
     <string name="gesture_title">Status bar gesture</string>
     <string name="gesture_summary">Swipe left from the right side to open or close the workspace.</string>
     <string name="background_swipe_title">Swipe small windows to background</string>
@@ -90,7 +90,7 @@
     <string name="font_coloros_serif">ColorOS serif</string>
     <string name="font_system_hans">System sans · Simplified Chinese</string>
     <string name="font_system_hant">System sans · Traditional Chinese</string>
-    <string name="app_icon_description">NeXtep icon</string>
+    <string name="app_icon_description">原子工作台 icon</string>
     <string name="about_tagline">One step, then another.</string>
     <string name="about_tribute">A tribute to OneStep, bringing side-by-side multitasking to the native ColorOS launcher.</string>
     <string name="about_windows_title">One main window, three small windows</string>
@@ -98,7 +98,7 @@
     <string name="about_compatibility">This project integrates with the system UI through LSPosed and keeps your phone’s original launcher. Some features may need adjustments after system updates.</string>
     <string name="about_credits">License · Apache License 2.0\nAuthor · lujinxin (Jensen Lu)</string>
     <string name="acknowledgements_title">Acknowledgements</string>
-    <string name="acknowledgements_summary">Thanks to everyone who shared suggestions and helped test NeXtep.</string>
+    <string name="acknowledgements_summary">Thanks to everyone who shared suggestions and helped test 原子工作台.</string>
     <string name="update_current_version">Current version %1$s (%2$d)\nTap Check for updates to find the latest version.</string>
     <string name="update_title">App updates</string>
     <string name="update_releases">View releases</string>
@@ -126,7 +126,7 @@
     <string name="media_play">Play</string>
     <string name="media_next">Next track</string>
     <string name="media_not_playing">Not playing</string>
-    <string name="media_control_title">NeXtep media controls</string>
+    <string name="media_control_title">原子工作台 media controls</string>
     <string name="media_pause">Pause</string>
     <string name="media_empty_hint">Open a music app to show controls.</string>
     <string name="media_open_failed">Unable to open the media app right now.</string>
@@ -146,7 +146,7 @@
     <string name="window_side_right">Small windows on the right</string>
     <string name="window_exit">Exit small-window mode</string>
     <string name="window_drop_background">Release to move to background</string>
-    <string name="open_settings">Open NeXtep settings</string>
+    <string name="open_settings">Open 原子工作台 settings</string>
     <string name="apps_none_available">No apps available to launch</string>
     <string name="launcher_icon_title">App icon</string>
     <string name="launcher_icon_summary">Follow the seasons or choose an icon. Dark theme or Battery Saver temporarily uses the night icon.</string>

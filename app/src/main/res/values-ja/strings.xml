@@ -8,14 +8,14 @@
     <string name="module_description">ColorOS 16 の標準ランチャーにサイドワークスペースを追加する LSPosed モジュール</string>
     <string name="tile_unavailable">ランチャー検証フックの準備ができていません</string>
     <string name="action_add">追加</string>
-    <string name="tile_add_description">クイック設定に NeXtep を追加</string>
+    <string name="tile_add_description">クイック設定に 原子工作台 を追加</string>
     <string name="tile_added">クイック設定に追加しました</string>
-    <string name="tile_already_added">NeXtep はすでにクイック設定にあります</string>
+    <string name="tile_already_added">原子工作台 はすでにクイック設定にあります</string>
     <string name="tile_not_added">追加されませんでした。後でもう一度お試しください。</string>
     <string name="tile_add_unavailable">現在追加できません。クイック設定の編集画面でお試しください。</string>
-    <string name="tile_add_manually">クイック設定の編集画面から NeXtep を追加してください。</string>
+    <string name="tile_add_manually">クイック設定の編集画面から 原子工作台 を追加してください。</string>
     <string name="tile_entry_title">クイック設定ショートカット</string>
-    <string name="tile_entry_summary">NeXtep タイルを追加</string>
+    <string name="tile_entry_summary">原子工作台 タイルを追加</string>
     <string name="gesture_title">ステータスバーのジェスチャー</string>
     <string name="gesture_summary">右側から左にスワイプして、ワークスペースを開閉します。</string>
     <string name="background_swipe_title">小ウィンドウをスワイプしてバックグラウンドへ</string>
@@ -82,7 +82,7 @@
     <string name="font_coloros_serif">ColorOS セリフ</string>
     <string name="font_system_hans">システムゴシック · 簡体字中国語</string>
     <string name="font_system_hant">システムゴシック · 繁体字中国語</string>
-    <string name="app_icon_description">NeXtep アイコン</string>
+    <string name="app_icon_description">原子工作台 アイコン</string>
     <string name="about_tagline">一歩、さらにもう一歩。</string>
     <string name="about_tribute">OneStep に敬意を表し、ColorOS 標準ランチャーでサイドマルチタスクの体験を継承します。</string>
     <string name="about_windows_title">メインウィンドウ 1 つ、小ウィンドウ 3 つ</string>
@@ -90,7 +90,7 @@
     <string name="about_compatibility">LSPosed を通じてシステム UI に組み込み、端末の元のランチャーを維持します。システム更新後は、一部の機能に調整が必要になる場合があります。</string>
     <string name="about_credits">ライセンス · Apache License 2.0\n作者 · lujinxin (Jensen Lu)</string>
     <string name="acknowledgements_title">謝辞</string>
-    <string name="acknowledgements_summary">NeXtep に提案を寄せ、テストに協力してくださった皆さまに感謝します。</string>
+    <string name="acknowledgements_summary">原子工作台 に提案を寄せ、テストに協力してくださった皆さまに感謝します。</string>
     <string name="update_current_version">現在のバージョン %1$s（%2$d）\n「更新を確認」で最新バージョンを確認できます。</string>
     <string name="update_title">アプリの更新</string>
     <string name="update_releases">リリースを見る</string>
@@ -118,7 +118,7 @@
     <string name="media_play">再生</string>
     <string name="media_next">次の曲</string>
     <string name="media_not_playing">再生していません</string>
-    <string name="media_control_title">NeXtep メディア操作</string>
+    <string name="media_control_title">原子工作台 メディア操作</string>
     <string name="media_pause">一時停止</string>
     <string name="media_empty_hint">音楽アプリを開くと操作できます。</string>
     <string name="media_open_failed">現在、再生アプリを開けません。</string>
@@ -138,7 +138,7 @@
     <string name="window_side_right">小ウィンドウを右側に配置</string>
     <string name="window_exit">小ウィンドウモードを終了</string>
     <string name="window_drop_background">指を離してバックグラウンドへ</string>
-    <string name="open_settings">NeXtep の設定を開く</string>
+    <string name="open_settings">原子工作台 の設定を開く</string>
     <string name="apps_none_available">起動できるアプリがありません</string>
     <string name="launcher_icon_title">アプリアイコン</string>
     <string name="launcher_icon_summary">季節に合わせるか、手動で選択します。ダークテーマや省電力モードでは一時的に夜用アイコンを使います。</string>
