@@ -1,0 +1,65 @@
+name: Atomic Android baseline and development
+
+on:
+  push:
+    branches: ['atomic-workbench/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 358bcddf8fbca5853c1524d6f667999e4e81a036
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install original SDK requirements
+        run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and test unmodified upstream source
+        run: bash gradlew :app:assembleDebug :app:testDebugUnitTest --console=plain --stacktrace
+      - name: Record APK digest
+        run: sha256sum app/build/outputs/apk/debug/*.apk > baseline-apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeXtep-upstream-baseline
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            baseline-apk.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-test-results
+          path: app/build/test-results/
+
+  development:
+    needs: upstream-baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: bash gradlew :app:assembleDebug :app:testDebugUnitTest --console=plain --stacktrace
+      - run: sha256sum app/build/outputs/apk/debug/*.apk > development-apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atomic-development-debug
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            development-apk.sha256
