@@ -55,3 +55,6 @@
 详见 [STAGE_MANAGER_AUDIT.md](STAGE_MANAGER_AUDIT.md)：四侧窗纵深重叠与 Z 顺序命中、弧线/透视交换预览、实际前台任务标识、工作组新建/保存/切换及真实任务最终核验。所有新增行为尚未真机验收。
 
 签名 Secret 缺失时继续执行原生编译和单元测试，只上传明确标为 unsigned 的 APK 供构建验证，不能安装且不发布 Release；Secret 配置后才验证固定证书并发布可安装 APK。不会生成临时替代签名。
+
+
+未配置 Secret 的构建会附带来自已安装 Android SDK Build Tools 36.0.0 的 apksigner.jar，供本工作会话下载后以固定私钥在本地签名、校验并单独交付。私钥不会进入公开仓库或 Actions 产物。这样当前交付可以不要求用户手工添加 Secret；自动在 GitHub 发布签名 APK 仍需 Secret。首次从 0.1.0 更新仍有签名变化，需要一次重装。

@@ -99,6 +99,12 @@ jobs:
             echo '::notice::APK is UNSIGNED, for build verification only; it cannot be installed.'
           fi
       - run: sha256sum app/build/outputs/apk/debug/*.apk > development-apk.sha256
+      - name: Bundle official SDK signer for private offline signing
+        if: env.ATOMIC_SIGNING_READY != 'true'
+        shell: bash
+        run: |
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" app/build/outputs/apk/debug/apksigner.jar
+          sha256sum app/build/outputs/apk/debug/apksigner.jar > offline-signer.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: atomic-workbench-0.2.0-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
@@ -106,6 +112,8 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             development-apk.sha256
+            app/build/outputs/apk/debug/apksigner.jar
+            offline-signer.sha256
       - uses: actions/upload-artifact@v4
         if: always()
         with:
