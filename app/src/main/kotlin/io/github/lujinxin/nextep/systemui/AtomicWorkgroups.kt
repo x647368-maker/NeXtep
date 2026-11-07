@@ -8,7 +8,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.os.UserHandle
 import android.view.View
-import android.widget.PopupMenu
 import android.widget.Toast
 import io.github.x647368maker.atomicworkbench.display.SlotState
 import io.github.x647368maker.atomicworkbench.display.SlotTaskCoordinator
@@ -86,10 +85,10 @@ internal class AtomicWorkgroups(
         val all = groups()
         if (all.length() == 0) return message("请先保存一个工作组")
         runCatching {
-            PopupMenu(context, anchor).apply {
-                for (index in 0 until all.length()) menu.add(0, index, index, all.getJSONObject(index).getString("name"))
-                setOnMenuItemClickListener { item -> restore(all.getJSONObject(item.itemId)); true }
-            }.show()
+            AtomicPopupMenu.show(context, anchor, (0 until all.length()).map { index ->
+                val group = all.getJSONObject(index)
+                group.getString("name") to { restore(group) }
+            })
         }.onFailure { message("无法打开工作组列表：${it.message}") }
     }
 

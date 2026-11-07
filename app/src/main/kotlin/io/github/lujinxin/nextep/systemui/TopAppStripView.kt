@@ -188,19 +188,11 @@ class TopAppStripView(
     fun setWorkgroupActions(onSave: () -> Unit, onRestore: (View) -> Unit, onSidebar: () -> Unit) {
         val openMenu = android.view.View.OnClickListener { anchor ->
             runCatching {
-                android.widget.PopupMenu(context, anchor).apply {
-                    menu.add(0, 1, 0, "保存工作组")
-                    menu.add(0, 2, 1, "恢复工作组")
-                    menu.add(0, 3, 2, "收起/展开侧栏")
-                    setOnMenuItemClickListener { item ->
-                        when (item.itemId) {
-                            1 -> onSave()
-                            2 -> onRestore(anchor)
-                            3 -> onSidebar()
-                        }
-                        true
-                    }
-                }.show()
+                AtomicPopupMenu.show(context, anchor, listOf(
+                    "保存工作组" to { onSave() },
+                    "恢复工作组" to { onRestore(anchor) },
+                    "收起/展开侧栏" to { onSidebar() },
+                ))
             }.onFailure {
                 android.widget.Toast.makeText(context, "工作组菜单不可用：${it.message}", android.widget.Toast.LENGTH_LONG).show()
             }
