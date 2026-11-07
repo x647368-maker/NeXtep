@@ -52,3 +52,6 @@ scripts/
 *.pem
 keystore.properties
 .repo_memory/
+
+# Private fixed APK signing material (injected only by Actions Secret)
+/.atomic-signing/

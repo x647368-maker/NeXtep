@@ -68,10 +68,19 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
-      - uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: atomic-workbench-development-signing-v1
+      - name: Restore fixed development signing key
+        env:
+          ATOMIC_KEYSTORE_BASE64: ${{ secrets.ATOMIC_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          if [ -z "$ATOMIC_KEYSTORE_BASE64" ]; then
+            echo '::error::Add repository Actions secret ATOMIC_KEYSTORE_BASE64 before building. No temporary signing key will be generated.'
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/.atomic-signing"
+          printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          chmod 600 "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          test -s "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
       - run: bash gradlew :app:assembleDebug :app:testDebugUnitTest --console=plain --stacktrace
       - name: Check independent APK identity and module entry
         shell: bash
@@ -82,7 +91,7 @@ jobs:
           test "$("$analyzer" manifest application-id "$apk")" = 'io.github.x647368maker.atomicworkbench'
           unzip -p "$apk" META-INF/xposed/java_init.list | grep -Fx 'io.github.x647368maker.atomicworkbench.xposed.NeXtepHookEntry'
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | tee /tmp/atomic-apk-signature.txt
-          grep -F 'Signer #1 certificate SHA-256 digest: deeca54e8874e02f50e9bde99be205224f4e3354756572e1061d51d8a132216c' /tmp/atomic-apk-signature.txt
+          grep -F 'Signer #1 certificate SHA-256 digest: b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd' /tmp/atomic-apk-signature.txt
       - run: sha256sum app/build/outputs/apk/debug/*.apk > development-apk.sha256
       - uses: actions/upload-artifact@v4
         with:

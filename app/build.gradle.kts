@@ -19,6 +19,16 @@ android {
 
     }
 
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file(".atomic-signing/atomic-development.p12")
+            storeType = "PKCS12"
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             optimization {
