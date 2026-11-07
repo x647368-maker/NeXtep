@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   upstream-baseline:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -50,6 +51,9 @@ jobs:
 
   development:
     needs: upstream-baseline
+    if: ${{ always() && !cancelled() && (needs.upstream-baseline.result == 'success' || needs.upstream-baseline.result == 'skipped') }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -86,3 +90,14 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             development-apk.sha256
+      - name: Publish verified development APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          cp app/build/outputs/apk/debug/*.apk AtomicWorkbench-0.1.0-debug.apk
+          sha256sum AtomicWorkbench-0.1.0-debug.apk > AtomicWorkbench-0.1.0-debug.apk.sha256
+          short="${GITHUB_SHA:0:8}"
+          tag="atomic-v0.1.0-dev-$short"
+          printf '%s\n' 'Experimental independent Atomic Workbench APK based on NeXtep.' 'Build, unit tests, APK package identity, Xposed entry and signature verified by this workflow.' 'One main task and four tilted side task displays; sidebar handle; saved workgroups.' 'NOT device-tested: installation, Vector injection, real task exchange, gestures, workgroup restore and rotation on OnePlus Ace 7 Pro / ColorOS 17.' 'Sidebar collapse currently retains main-window size. Disable the original NeXtep module before enabling this module.' 'See ATOMIC_README.md on atomic-workbench/dev for limitations and device acceptance steps.' > /tmp/atomic-release-notes.md
+          gh release create "$tag" AtomicWorkbench-0.1.0-debug.apk AtomicWorkbench-0.1.0-debug.apk.sha256 --target "$GITHUB_SHA" --title "原子工作台 0.1.0 开发版 ($short)" --prerelease --notes-file /tmp/atomic-release-notes.md
