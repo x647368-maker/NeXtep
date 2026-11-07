@@ -221,6 +221,43 @@ class TaskSwitcherView(
         return true
     }
 
+    /** Invert the same composed view matrices used for drawing. Front-to-back
+     * ordering is supplied by the drag host, so overlapped rear cards cannot steal drops. */
+    private fun localToScreenMatrix(): android.graphics.Matrix? {
+        val transform = android.graphics.Matrix()
+        var current: View = this
+        val root = rootView
+        while (current !== root) {
+            transform.postConcat(current.matrix)
+            val parent = current.parent as? View ?: return null
+            transform.postTranslate((current.left - parent.scrollX).toFloat(),
+                (current.top - parent.scrollY).toFloat())
+            current = parent
+        }
+        val origin = IntArray(2)
+        root.getLocationOnScreen(origin)
+        transform.postTranslate(origin[0].toFloat(), origin[1].toFloat())
+        return transform
+    }
+
+    fun screenQuad(): FloatArray? {
+        val transform = localToScreenMatrix() ?: return null
+        val points = floatArrayOf(0f, 0f, width.toFloat(), 0f, width.toFloat(), height.toFloat(), 0f, height.toFloat())
+        transform.mapPoints(points)
+        return points.takeIf { it.all(Float::isFinite) }
+    }
+
+    fun containsScreenPoint(x: Float, y: Float): Boolean {
+        val visible = Rect()
+        if (!getScreenVisibleRect(visible) || !visible.contains(x.toInt(), y.toInt())) return false
+        val transform = localToScreenMatrix() ?: return false
+        val inverse = android.graphics.Matrix()
+        if (!transform.invert(inverse)) return false
+        val point = floatArrayOf(x, y)
+        inverse.mapPoints(point)
+        return point[0] >= 0 && point[0] < width && point[1] >= 0 && point[1] < height
+    }
+
     override fun onDetachedFromWindow() {
         backgroundSwipe.cancel()
         finishDrag()

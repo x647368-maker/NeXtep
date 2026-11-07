@@ -52,7 +52,12 @@ class NeXtepWindowController(
     private var slotCoordinator: SlotTaskCoordinator? = null
     private var sidebarCollapsed = false
     private val workgroups = AtomicWorkgroups(context, taskRepository, { slotCoordinator },
-        { workspaceVisible && !suspended }, { setSidebarCollapsed(false) })
+        { workspaceVisible && !suspended }, { setSidebarCollapsed(false) }, { scheduleStageFocus() },
+        { stageOrder }, { order ->
+            stageOrder = order
+            stageMainId = null
+            applyStageStack(geometry())
+        })
     private var topAppStrip: TopAppStripView? = null
     private var controlAreaPager: ControlAreaPager? = null
     private var sidebarView: FrameLayout? = null
@@ -71,6 +76,10 @@ class NeXtepWindowController(
         Thread(runnable, "NeXtep-Backdrop")
     }
     private val backdropHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var stageOrder = List(WORKSPACE_SLOT_COUNT) { it }
+    private var stageMainId: Int? = null
+    private var stageFocusBadge: android.widget.TextView? = null
+    private val stageFocusUpdate = Runnable { updateStageFocus() }
     private var wallpaperBitmap: android.graphics.Bitmap? = null
     private var wallpaperRotation = 0
     private var homePreview: Bitmap? = null
@@ -131,6 +140,8 @@ class NeXtepWindowController(
 
     fun suspendForLock() {
         workgroups.cancel()
+        backdropHandler.removeCallbacks(stageFocusUpdate)
+        stageMainId = null
         sidebarCollapsed = false
         cancelPendingRotationDraw()
         cancelPendingResumeContent()
@@ -263,11 +274,14 @@ class NeXtepWindowController(
         if (FeatureGate.VIRTUAL_DISPLAY_SLOTS.defaultEnabled) {
             slotCoordinator?.activate()
         }
+        scheduleStageFocus()
         return geometry()
     }
 
     fun hide() {
         workgroups.cancel()
+        backdropHandler.removeCallbacks(stageFocusUpdate)
+        stageMainId = null
         sidebarCollapsed = false
         cancelPendingRotationDraw()
         cancelPendingResumeContent()
@@ -310,7 +324,10 @@ class NeXtepWindowController(
             ?: Result.failure(IllegalStateException("VirtualDisplay slot unavailable"))
     }
 
-    fun onTasksChanged() = slotCoordinator?.onTasksChanged()
+    fun onTasksChanged() {
+        slotCoordinator?.onTasksChanged()
+        scheduleStageFocus()
+    }
 
     internal fun energySnapshot() = android.os.Bundle().apply {
         putInt("slot_count", slotWindows.count { it.displayId() != null })
@@ -474,7 +491,7 @@ class NeXtepWindowController(
                 onAppDragTouch = internalDrag::touch,
             ).also {
                 topAppStrip = it
-                it.setWorkgroupActions(workgroups::save, workgroups::choose,
+                it.setWorkgroupActions(workgroups::save, workgroups::saveNew, workgroups::choose,
                     { setSidebarCollapsed(!sidebarCollapsed) })
             }.let { strip ->
                 ControlAreaPager(context, strip).also { controlAreaPager = it }
@@ -504,6 +521,20 @@ class NeXtepWindowController(
             view = FrameLayout(context).apply {
                 setBackgroundColor(Color.TRANSPARENT)
                 addView(View(context).also { contentHighlightView = it })
+                addView(android.widget.TextView(context).apply {
+                    setTextColor(Color.WHITE)
+                    textSize = 12f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(9).toInt(), 0, dp(9).toInt(), 0)
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        setColor(Color.argb(200, 25, 33, 44))
+                        cornerRadius = dp(10)
+                    }
+                    visibility = View.GONE
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }.also { stageFocusBadge = it })
             },
             width = geometry.contentWidth,
             height = geometry.contentHeight,
@@ -630,6 +661,13 @@ class NeXtepWindowController(
                 leftMargin = geometry.contentLeft
                 topMargin = geometry.contentTop
             }
+            stageFocusBadge?.layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, dp(28).toInt(), Gravity.TOP or Gravity.LEFT,
+            ).apply {
+                leftMargin = geometry.contentLeft + dp(8).toInt()
+                topMargin = geometry.contentTop + dp(8).toInt()
+            }
+            stageFocusBadge?.maxWidth = (geometry.contentWidth - dp(16).toInt()).coerceAtLeast(1)
         }
         // WM chooses these bounds during its rotation layout, before the
         // configuration callback can reach SystemUI's main looper. Without them
@@ -920,6 +958,8 @@ class NeXtepWindowController(
                 stationaryBackground = stationaryBackground,
                 durationMs = SystemUiRuntime.swapAnimationDurationMs(),
                 returningHome = parkingMain,
+                sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),
+                targetQuad = if (parkingMain) sourceSlot.view.screenQuad() else targetSlot?.view?.screenQuad(),
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.
@@ -947,6 +987,7 @@ class NeXtepWindowController(
                 onFinished = {
                     previewSlots.forEach { it.view.endExchangePreview() }
                     onFinished()
+                    scheduleStageFocus()
                     if (parkingMain) backdropHandler.postDelayed({
                         if (!suspended && workspaceVisible) captureHomePreview(currentGeometry())
                     }, HOME_PREVIEW_SETTLE_DELAY_MS)
@@ -1028,11 +1069,6 @@ class NeXtepWindowController(
         slotWindows.forEachIndexed { index, slot ->
             slot.setLayoutProfile(profile)
             slot.view.setBackgroundSwipeSide(logicalSidebarSide(geometry))
-            // View transforms keep drawing, hit tests and drag coordinates in one subtree.
-            slot.view.cameraDistance = dp(900)
-            slot.view.rotationY = if (logicalSidebarSide(geometry) == SidebarSide.RIGHT) -12f else 12f
-            slot.view.scaleX = 0.96f
-            slot.view.scaleY = 0.96f
             slot.view.layoutParams = FrameLayout.LayoutParams(
                 bounds[index].width,
                 bounds[index].height,
@@ -1043,6 +1079,77 @@ class NeXtepWindowController(
                 topMargin = bounds[index].top
             }
         }
+        applyStageStack(geometry)
+    }
+
+    private fun applyStageStack(geometry: WorkspaceGeometry) {
+        if (slotWindows.isEmpty()) return
+        val bounds = viewport.layout().slots
+        val right = logicalSidebarSide(geometry) == SidebarSide.RIGHT
+        val poses = StageStackPolicy.poses(bounds.map { it.height }, bounds.map { it.top },
+            context.resources.displayMetrics.density, right, stageOrder)
+        slotWindows.forEachIndexed { index, slot ->
+            val pose = poses[index]
+            slot.view.apply {
+                pivotX = if (right) 0f else bounds[index].width.toFloat()
+                pivotY = bounds[index].height / 2f
+                cameraDistance = dp(900)
+                rotationY = pose.tilt
+                scaleX = pose.scale
+                scaleY = pose.scale
+                translationX = pose.x
+                translationY = pose.y
+                elevation = pose.z
+                alpha = pose.alpha
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.rgb(20, 25, 34))
+                    cornerRadius = dp(8)
+                    setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(100, 190, 210, 230))
+                }
+                clipToOutline = true
+            }
+        }
+    }
+
+    private fun scheduleStageFocus() {
+        if (!workspaceVisible || suspended) return
+        backdropHandler.removeCallbacks(stageFocusUpdate)
+        backdropHandler.postDelayed(stageFocusUpdate, 48)
+    }
+
+    private fun updateStageFocus() {
+        if (!workspaceVisible || suspended) return
+        runCatching {
+            val main = taskRepository.foregroundTask()
+            if (main == null) {
+                stageFocusBadge?.visibility = View.GONE
+                contentHighlightView?.foreground = null
+                return@runCatching
+            }
+            if (main.taskId != stageMainId) {
+                val oldMain = stageMainId
+                val returnedSlot = slotCoordinator?.slotStates()?.indexOfFirst {
+                    it is SlotState.Occupied && it.taskId == oldMain
+                } ?: -1
+                if (returnedSlot >= 0) {
+                    stageOrder = StageStackPolicy.touch(stageOrder, returnedSlot)
+                    applyStageStack(geometry())
+                }
+                stageMainId = main.taskId
+            }
+            val label = runCatching {
+                val info = context.packageManager.getApplicationInfo(main.component.packageName, 0)
+                context.packageManager.getApplicationLabel(info).toString()
+            }.getOrDefault(main.component.packageName)
+            stageFocusBadge?.apply {
+                text = "${workgroups.statusLabel()} · $label"
+                visibility = View.VISIBLE
+            }
+            contentHighlightView?.foreground = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(190, 95, 216, 228))
+            }
+        }.onFailure { NeXtepLog.warn("stage_focus", "Foreground decoration unavailable", it) }
     }
 
     private fun refreshWallpaperBackdrop(attempt: Int = 0) {

@@ -137,8 +137,8 @@ internal class WorkspaceInternalDragController(
 
     private fun targetAt(point: PointF, payload: Payload): Target? {
         val bounds = Rect()
-        slots().forEachIndexed { index, slot ->
-            if (slot.getScreenVisibleRect(bounds) && bounds.contains(point.x.toInt(), point.y.toInt()) &&
+        slots().withIndex().sortedByDescending { it.value.z }.forEach { (index, slot) ->
+            if (slot.containsScreenPoint(point.x, point.y) &&
                 (payload is Payload.Slot || slot.acceptsAppDrop())) return Target.Slot(index)
         }
         if (payload !is Payload.Slot) return null

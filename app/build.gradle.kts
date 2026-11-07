@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1-dev"
+        versionCode = 3
+        versionName = "0.2.0-dev"
 
     }
 
@@ -30,6 +30,10 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Missing private key permits compile/test validation, never a temporary signature.
+            signingConfig = if (System.getenv("ATOMIC_SIGNING_READY") == "true") signingConfigs.getByName("debug") else null
+        }
         release {
             optimization {
                 enable = false

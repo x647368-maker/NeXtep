@@ -74,13 +74,15 @@ jobs:
         shell: bash
         run: |
           if [ -z "$ATOMIC_KEYSTORE_BASE64" ]; then
-            echo '::error::Add repository Actions secret ATOMIC_KEYSTORE_BASE64 before building. No temporary signing key will be generated.'
-            exit 1
+            echo '::notice::Signing secret not configured: compiling an UNSIGNED APK for verification only. No installable release will be published.'
+            echo 'ATOMIC_SIGNING_READY=false' >> "$GITHUB_ENV"
+            exit 0
           fi
           mkdir -p "$GITHUB_WORKSPACE/.atomic-signing"
           printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
           chmod 600 "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
           test -s "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
       - run: bash gradlew :app:assembleDebug :app:testDebugUnitTest --console=plain --stacktrace
       - name: Check independent APK identity and module entry
         shell: bash
@@ -90,24 +92,34 @@ jobs:
           analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
           test "$("$analyzer" manifest application-id "$apk")" = 'io.github.x647368maker.atomicworkbench'
           unzip -p "$apk" META-INF/xposed/java_init.list | grep -Fx 'io.github.x647368maker.atomicworkbench.xposed.NeXtepHookEntry'
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | tee /tmp/atomic-apk-signature.txt
-          grep -F 'Signer #1 certificate SHA-256 digest: b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd' /tmp/atomic-apk-signature.txt
+          if [ "$ATOMIC_SIGNING_READY" = 'true' ]; then
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | tee /tmp/atomic-apk-signature.txt
+            grep -F 'Signer #1 certificate SHA-256 digest: b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd' /tmp/atomic-apk-signature.txt
+          else
+            echo '::notice::APK is UNSIGNED, for build verification only; it cannot be installed.'
+          fi
       - run: sha256sum app/build/outputs/apk/debug/*.apk > development-apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: atomic-workbench-0.1.1-debug
+          name: atomic-workbench-0.2.0-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
           if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk
             development-apk.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-unit-test-results
+          path: app/build/test-results/testDebugUnitTest/
       - name: Publish verified development APK
+        if: env.ATOMIC_SIGNING_READY == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          cp app/build/outputs/apk/debug/*.apk AtomicWorkbench-0.1.1-debug.apk
-          sha256sum AtomicWorkbench-0.1.1-debug.apk > AtomicWorkbench-0.1.1-debug.apk.sha256
+          cp app/build/outputs/apk/debug/*.apk AtomicWorkbench-0.2.0-debug.apk
+          sha256sum AtomicWorkbench-0.2.0-debug.apk > AtomicWorkbench-0.2.0-debug.apk.sha256
           short="${GITHUB_SHA:0:8}"
-          tag="atomic-v0.1.1-dev-$short"
-          printf '%s\n' 'Experimental independent Atomic Workbench APK based on NeXtep.' 'Build, unit tests, APK package identity, Xposed entry and signature verified by this workflow.' 'One main task and four tilted side task displays; sidebar handle; saved workgroups.' 'NOT device-tested: installation, Vector injection, real task exchange, gestures, workgroup restore and rotation on OnePlus Ace 7 Pro / ColorOS 17.' 'Sidebar collapse currently retains main-window size. Disable the original NeXtep module before enabling this module.' 'See ATOMIC_README.md on atomic-workbench/dev for limitations and device acceptance steps.' > /tmp/atomic-release-notes.md
-          gh release create "$tag" AtomicWorkbench-0.1.1-debug.apk AtomicWorkbench-0.1.1-debug.apk.sha256 --target "$GITHUB_SHA" --title "原子工作台 0.1.1 开发版 ($short)" --prerelease --notes-file /tmp/atomic-release-notes.md
+          tag="atomic-v0.2.0-dev-$short"
+          printf '%s\n' 'Experimental independent Atomic Workbench APK based on NeXtep.' 'Build, unit tests, APK package identity, Xposed entry and signature verified by this workflow.' 'Stage-inspired stacked task previews, transformed hit testing, projective exchange, actual foreground indicator, active workgroup switching and verification.' '0.1.0 task display and a task swap were user-confirmed. All new 0.2.0 stack, animation, focus and group behavior remains device-unverified.' 'Sidebar collapse currently retains main-window size. Disable the original NeXtep module before enabling this module.' 'See ATOMIC_README.md on atomic-workbench/dev for limitations and device acceptance steps.' > /tmp/atomic-release-notes.md
+          gh release create "$tag" AtomicWorkbench-0.2.0-debug.apk AtomicWorkbench-0.2.0-debug.apk.sha256 --target "$GITHUB_SHA" --title "原子工作台 0.2.0 开发版 ($short)" --prerelease --notes-file /tmp/atomic-release-notes.md

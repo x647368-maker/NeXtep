@@ -185,12 +185,13 @@ class TopAppStripView(
         updateSideButtons()
     }
 
-    fun setWorkgroupActions(onSave: () -> Unit, onRestore: (View) -> Unit, onSidebar: () -> Unit) {
+    fun setWorkgroupActions(onSave: () -> Unit, onNew: () -> Unit, onRestore: (View) -> Unit, onSidebar: () -> Unit) {
         val openMenu = android.view.View.OnClickListener { anchor ->
             runCatching {
                 AtomicPopupMenu.show(context, anchor, listOf(
-                    "保存工作组" to { onSave() },
-                    "恢复工作组" to { onRestore(anchor) },
+                    "保存当前工作组" to { onSave() },
+                    "新建工作组" to { onNew() },
+                    "切换/恢复工作组" to { onRestore(anchor) },
                     "收起/展开侧栏" to { onSidebar() },
                 ))
             }.onFailure {

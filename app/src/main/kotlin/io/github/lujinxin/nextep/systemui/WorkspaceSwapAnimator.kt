@@ -38,6 +38,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         stationaryBackground: Bitmap?,
         durationMs: Int,
         returningHome: Boolean,
+        sourceQuad: FloatArray?, targetQuad: FloatArray?,
         move: () -> Boolean,
         isLiveReady: () -> Boolean,
         onFinished: () -> Unit,
@@ -53,7 +54,8 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
             return
         }
         val token = ++generation
-        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground)
+        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
+            sourceQuad, targetQuad)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -84,21 +86,23 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                     preview.progress = 1f
                     // Wait for the final preview to reach the render swap chain
                     // before a synchronous Binder move can block task relayout.
-                    preview.viewTreeObserver.registerFrameCommitCallback {
-                        preview.post {
-                            if (generation != token) return@post
-                            val moved = runCatching(move).onFailure {
-                                NeXtepLog.warn("workspace_swap", "Exchange callback failed", it)
-                            }.getOrDefault(false)
-                            if (generation != token) return@post
-                            if (!moved) {
-                                cancel()
-                                return@post
-                            }
-                            val handoffDelay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
-                            awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), handoffDelay, isLiveReady)
-                        }
+                    var moveRequested = false
+                    fun commitMove() {
+                        if (generation != token || moveRequested) return
+                        moveRequested = true
+                        val moved = runCatching(move).onFailure {
+                            NeXtepLog.warn("workspace_swap", "Exchange callback failed", it)
+                        }.getOrDefault(false)
+                        if (generation != token) return
+                        if (!moved) { cancel(); return }
+                        val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
+                        awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), delay, isLiveReady)
                     }
+                    preview.viewTreeObserver.registerFrameCommitCallback {
+                        preview.post { commitMove() }
+                    }
+                    // A cancelled/missing render commit must not lock task exchange forever.
+                    preview.postDelayed({ commitMove() }, 160)
                     preview.invalidate()
                 }
             })
@@ -160,6 +164,8 @@ private class SwapPreviewView(
     private val targetBounds: RectF,
     private val backdrop: Drawable?,
     private val stationaryBackground: Bitmap?,
+    private val sourceQuad: FloatArray?,
+    private val targetQuad: FloatArray?,
 ) : View(context) {
     var progress = 0f
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -167,6 +173,8 @@ private class SwapPreviewView(
     private val destination = RectF()
     private val fitted = RectF()
     private val sourceRect = Rect()
+    private val projection = android.graphics.Matrix()
+    private val outline = Path()
     private val backdropClip = Path().apply {
         addRect(sourceBounds, Path.Direction.CW)
         if (target != null) addRect(targetBounds, Path.Direction.CW)
@@ -189,27 +197,47 @@ private class SwapPreviewView(
         canvas.restoreToCount(save)
 
         stationaryBackground?.let { canvas.drawBitmap(it, null, sourceBounds, bitmapPaint) }
-        if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds)
-        drawFrame(canvas, source, start, targetBounds)
+        if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)
+        drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)
     }
 
-    private fun drawFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {
-        fun interpolate(a: Float, b: Float) = a + (b - a) * progress
-        destination.set(interpolate(from.left, to.left), interpolate(from.top, to.top),
-            interpolate(from.right, to.right), interpolate(from.bottom, to.bottom))
+    private fun drawFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF,
+        fromQuad: FloatArray?, toQuad: FloatArray?) {
+        val frame = StageExchangeMotion.frame(
+            StageExchangeMotion.Box(from.left, from.top, from.right, from.bottom),
+            StageExchangeMotion.Box(to.left, to.top, to.right, to.bottom), progress)
+        val box = frame.box
+        fun normalized(quad: FloatArray?, bounds: RectF, axis: Int, corner: Int): Float {
+            if (quad == null || quad.size != 8 || quad.any { !it.isFinite() }) {
+                return if (axis == 0) (if (corner in 1..2) 1f else 0f)
+                    else (if (corner >= 2) 1f else 0f)
+            }
+            return if (axis == 0) (quad[corner * 2] - bounds.left) / bounds.width()
+                else (quad[corner * 2 + 1] - bounds.top) / bounds.height()
+        }
+        val quad = FloatArray(8)
+        for (corner in 0..3) {
+            for (axis in 0..1) {
+                // start may be a drag rectangle; source geometry remains tied to its live card.
+                val sourceBase = if (fromQuad === sourceQuad) sourceBounds else targetBounds
+                val targetBase = if (toQuad === targetQuad) targetBounds else sourceBounds
+                val a = normalized(fromQuad, sourceBase, axis, corner)
+                val b = normalized(toQuad, targetBase, axis, corner)
+                val unit = a + (b - a) * progress
+                quad[corner * 2 + axis] = if (axis == 0) box.left + box.width * unit else box.top + box.height * unit
+            }
+        }
+        val bitmapCorners = floatArrayOf(0f, 0f, bitmap.width.toFloat(), 0f,
+            bitmap.width.toFloat(), bitmap.height.toFloat(), 0f, bitmap.height.toFloat())
+        if (!projection.setPolyToPoly(bitmapCorners, 0, quad, 0, 4)) return
+        outline.reset()
+        outline.moveTo(quad[0], quad[1])
+        for (corner in 1..3) outline.lineTo(quad[corner * 2], quad[corner * 2 + 1])
+        outline.close()
         val save = canvas.save()
-        // Match the live task and TextureView edges at both ends of the handoff.
-        canvas.clipRect(destination)
-        canvas.drawRect(destination, backgroundPaint)
-        // Preserve the app's proportions when navigation insets or rotated
-        // panel bounds introduce small differences between the two rectangles.
-        val scale = minOf(destination.width() / bitmap.width, destination.height() / bitmap.height)
-        val halfWidth = bitmap.width * scale / 2f
-        val halfHeight = bitmap.height * scale / 2f
-        fitted.set(destination.centerX() - halfWidth, destination.centerY() - halfHeight,
-            destination.centerX() + halfWidth, destination.centerY() + halfHeight)
-        sourceRect.set(0, 0, bitmap.width, bitmap.height)
-        canvas.drawBitmap(bitmap, sourceRect, fitted, bitmapPaint)
+        canvas.clipPath(outline)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(bitmap, projection, bitmapPaint)
         canvas.restoreToCount(save)
     }
 
