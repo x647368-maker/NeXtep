@@ -30,7 +30,10 @@ internal class AtomicWorkgroups(
     private val expandSidebar: () -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
-    private val preferences = context.getSharedPreferences("atomic_workgroups_v1", Context.MODE_PRIVATE)
+    private val preferences by lazy {
+        context.createDeviceProtectedStorageContext()
+            .getSharedPreferences("atomic_workgroups_v1", Context.MODE_PRIVATE)
+    }
     private var restoring = false
     private var generation = 0
 
