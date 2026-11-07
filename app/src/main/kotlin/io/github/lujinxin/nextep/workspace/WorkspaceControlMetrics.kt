@@ -18,6 +18,9 @@ internal object WorkspaceControlMetrics {
         val fixedHeight = dp(STATUS_HEIGHT_DP) + dp(ACTION_HEIGHT_DP) + dp(APP_ICON_SIZE_DP) +
             dp(APP_BOTTOM_PADDING_DP) + dp(CONTENT_BOTTOM_PADDING_DP)
         // Keep status/actions/icons intact when the recorded control area is shorter.
-        return minOf(dp(MEDIA_HEIGHT_DP), (controlHeight - fixedHeight).coerceAtLeast(1))
+        val available = controlHeight - fixedHeight
+        // Four previews require a shorter strip. Hide optional media before
+        // clipping task shortcuts or action controls into an unusable sliver.
+        return if (available < dp(48)) 0 else minOf(dp(MEDIA_HEIGHT_DP), available)
     }
 }

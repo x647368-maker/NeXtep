@@ -472,11 +472,12 @@ class NeXtepWindowController(
                     )
                 },
                 onAppDragTouch = internalDrag::touch,
-            ).also { topAppStrip = it }.let { strip ->
-                ControlAreaPager(context, strip).also { controlAreaPager = it }.let { pager ->
-                    AtomicControlContainer(context, pager, workgroups::save, workgroups::choose,
-                        { setSidebarCollapsed(!sidebarCollapsed) })
-                }
+            ).also {
+                topAppStrip = it
+                it.setWorkgroupActions(workgroups::save, workgroups::choose,
+                    { setSidebarCollapsed(!sidebarCollapsed) })
+            }.let { strip ->
+                ControlAreaPager(context, strip).also { controlAreaPager = it }
             },
             width = geometry.screenWidth,
             height = geometry.topHeight,

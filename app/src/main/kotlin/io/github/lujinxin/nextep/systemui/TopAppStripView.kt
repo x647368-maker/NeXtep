@@ -185,12 +185,38 @@ class TopAppStripView(
         updateSideButtons()
     }
 
+    fun setWorkgroupActions(onSave: () -> Unit, onRestore: (View) -> Unit, onSidebar: () -> Unit) {
+        val openMenu = android.view.View.OnClickListener { anchor ->
+            runCatching {
+                android.widget.PopupMenu(context, anchor).apply {
+                    menu.add(0, 1, 0, "保存工作组")
+                    menu.add(0, 2, 1, "恢复工作组")
+                    menu.add(0, 3, 2, "收起/展开侧栏")
+                    setOnMenuItemClickListener { item ->
+                        when (item.itemId) {
+                            1 -> onSave()
+                            2 -> onRestore(anchor)
+                            3 -> onSidebar()
+                        }
+                        true
+                    }
+                }.show()
+            }.onFailure {
+                android.widget.Toast.makeText(context, "工作组菜单不可用：${it.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+        titleIcon.contentDescription = "原子工作台工作组菜单"
+        titleIcon.setOnClickListener(openMenu)
+        titleView.setOnClickListener(openMenu)
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
             val mediaHeight = WorkspaceControlMetrics.mediaHeightPixels(
                 MeasureSpec.getSize(heightMeasureSpec), resources.displayMetrics.density,
             )
             mediaControl.layoutParams.height = mediaHeight
+            mediaControl.visibility = if (mediaHeight == 0) View.GONE else View.VISIBLE
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }

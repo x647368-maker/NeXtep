@@ -13,9 +13,10 @@ class WorkspaceControlMetricsTest {
             val mediaHeight = WorkspaceControlMetrics.mediaHeightPixels(controlHeight, 3f)
             val rowHeight = controlHeight - (WorkspaceControlMetrics.STATUS_HEIGHT_DP +
                 WorkspaceControlMetrics.ACTION_HEIGHT_DP + WorkspaceControlMetrics.CONTENT_BOTTOM_PADDING_DP) * 3 - mediaHeight
-            assertEquals((WorkspaceControlMetrics.APP_ICON_SIZE_DP +
-                WorkspaceControlMetrics.APP_BOTTOM_PADDING_DP) * 3, rowHeight)
-            assertTrue("Artwork and two text rows must fit in the smaller card", mediaHeight >= 48 * 3)
+            assertTrue("Task icons must retain their full hit area", rowHeight >=
+                (WorkspaceControlMetrics.APP_ICON_SIZE_DP + WorkspaceControlMetrics.APP_BOTTOM_PADDING_DP) * 3)
+            assertTrue("Optional media must be hidden or have room for artwork and text",
+                mediaHeight == 0 || mediaHeight >= 48 * 3)
         }
     }
 

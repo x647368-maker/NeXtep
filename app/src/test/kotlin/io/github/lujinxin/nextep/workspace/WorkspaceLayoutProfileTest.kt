@@ -23,7 +23,10 @@ class WorkspaceLayoutProfileTest {
                         val message = "$width x $height navigation=$insets side=$side slot=$index"
                         // Whole-buffer fitting may leave at most integer-pixel rounding.
                         assertEquals(message, slot.width.toFloat(), drawnWidth, 1.5f)
-                        assertEquals(message, slot.height.toFloat(), drawnHeight, 1.5f)
+                        // Rounding the rail width by one pixel maps to up to one
+                        // portrait aspect ratio of height pixels in a fitted app.
+                        val heightTolerance = maxOf(1.5f, positioned.canvas.height.toFloat() / positioned.canvas.width)
+                        assertEquals(message, slot.height.toFloat(), drawnHeight, heightTolerance)
                         assertEquals(message, slot.width / positioned.canvas.width.toFloat() * transform.scaleX,
                             slot.height / positioned.canvas.height.toFloat() * transform.scaleY, .000001f)
                     }
