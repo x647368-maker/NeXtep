@@ -244,7 +244,9 @@ class TaskSwitcherView(
         val transform = localToScreenMatrix() ?: return null
         val points = floatArrayOf(0f, 0f, width.toFloat(), 0f, width.toFloat(), height.toFloat(), 0f, height.toFloat())
         transform.mapPoints(points)
-        return points.takeIf { it.all(Float::isFinite) }
+        if (points.any { !it.isFinite() }) return null
+        return io.github.x647368maker.atomicworkbench.systemui.StageExchangeMotion.orientQuad(
+            points, (parent as? View)?.rotation ?: 0f)
     }
 
     fun containsScreenPoint(x: Float, y: Float): Boolean {

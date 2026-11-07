@@ -61,4 +61,13 @@ class StageInteractionPolicyTest {
         assertFalse(StageGroupSwitchPolicy.isComplete(listOf(true, true, true, true), false))
         assertFalse(StageGroupSwitchPolicy.isComplete(emptyList(), true))
     }
+    @Test fun previewCornersFollowTheAlreadyRotatedBitmapInBothLandscapeDirections() {
+        val corners = floatArrayOf(0f, 0f, 10f, 0f, 10f, 20f, 0f, 20f)
+        assertArrayEquals(floatArrayOf(0f, 20f, 0f, 0f, 10f, 0f, 10f, 20f),
+            StageExchangeMotion.orientQuad(corners, 90f), 0f)
+        assertArrayEquals(floatArrayOf(10f, 0f, 10f, 20f, 0f, 20f, 0f, 0f),
+            StageExchangeMotion.orientQuad(corners, -90f), 0f)
+        assertArrayEquals(corners, StageExchangeMotion.orientQuad(
+            StageExchangeMotion.orientQuad(corners, 90f), -90f), 0f)
+    }
 }

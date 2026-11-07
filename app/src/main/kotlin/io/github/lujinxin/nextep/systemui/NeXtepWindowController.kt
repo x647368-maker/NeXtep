@@ -783,10 +783,6 @@ class NeXtepWindowController(
             val thickness = resources.displayMetrics.density
             val edge = if (logicalSidebarSide(this@NeXtepWindowController.geometry()) == SidebarSide.LEFT) width - thickness else 0f
             canvas.drawRect(edge, 0f, edge + thickness, height.toFloat(), dividerPaint)
-            slotWindows.drop(1).forEach { slot ->
-                val y = slot.view.top.toFloat()
-                canvas.drawRect(0f, y - thickness, width.toFloat(), y, dividerPaint)
-            }
         }
     }.apply {
         sidebarView = this
@@ -874,7 +870,7 @@ class NeXtepWindowController(
         onFinished: () -> Unit,
     ) {
         fun withoutPreview() {
-            try { move() } finally { onFinished() }
+            try { move() } finally { onFinished(); scheduleStageFocus() }
         }
         if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             withoutPreview()

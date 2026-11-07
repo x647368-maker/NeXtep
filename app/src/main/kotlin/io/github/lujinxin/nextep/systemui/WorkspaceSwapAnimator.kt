@@ -98,9 +98,11 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                         val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
                         awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), delay, isLiveReady)
                     }
-                    preview.viewTreeObserver.registerFrameCommitCallback {
-                        preview.post { commitMove() }
-                    }
+                    runCatching {
+                        preview.viewTreeObserver.registerFrameCommitCallback {
+                            preview.post { commitMove() }
+                        }
+                    }.onFailure { NeXtepLog.warn("workspace_swap", "Frame commit callback unavailable", it) }
                     // A cancelled/missing render commit must not lock task exchange forever.
                     preview.postDelayed({ commitMove() }, 160)
                     preview.invalidate()

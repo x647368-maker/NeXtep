@@ -2,6 +2,7 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 import kotlin.math.abs
 import kotlin.math.sin
+import kotlin.math.roundToInt
 
 /** Task identities and slot indexes remain unchanged by presentation or recent-use depth. */
 internal object StageStackPolicy {
@@ -36,6 +37,14 @@ internal object StageExchangeMotion {
         val height get() = bottom - top
     }
     data class Frame(val box: Box)
+
+    /** TextureView previews are already rotated by the rail. Reorder the rendered
+     * corners into that bitmap's orientation, avoiding a second landscape turn. */
+    fun orientQuad(points: FloatArray, rotation: Float): FloatArray {
+        require(points.size == 8 && points.all { it.isFinite() } && rotation.isFinite())
+        val turns = ((rotation / 90f).roundToInt() % 4 + 4) % 4
+        return FloatArray(8) { i -> points[((i / 2 - turns + 4) % 4) * 2 + i % 2] }
+    }
 
     fun frame(from: Box, to: Box, progress: Float): Frame {
         require(progress.isFinite() && from.width > 0 && from.height > 0 && to.width > 0 && to.height > 0)
