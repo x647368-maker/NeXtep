@@ -483,10 +483,7 @@ class SlotTaskCoordinator(
         val normalized = normalizeLaunchIntent(sourceIntent)
             ?: return Result.failure(IllegalArgumentException("App does not resolve to a launcher Activity"))
         val component = checkNotNull(normalized.component)
-        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
-            it.component.packageName == component.packageName &&
-                it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
-        } ?: findLaunchTask(component, normalized.targetUser())
+        val existing = findLaunchTask(component, normalized.targetUser())
         val sourceSlot = existing?.let { task ->
             slotRecords.indexOfFirst { record ->
                 (record.state as? SlotState.Occupied)?.taskId == task.taskId
