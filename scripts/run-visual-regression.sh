@@ -4,7 +4,10 @@ set -euo pipefail
 mkdir -p /tmp/atomic-visual
 keytool -genkeypair -keystore /tmp/atomic-visual/test.p12 -storetype PKCS12 -storepass android -keypass android -alias visual -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Emulator Test Only'
 signer="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-for pair in 'app/build/outputs/apk/debug/app-debug.apk:target' 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk:tests'; do
+target_apk=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+test_apk=$(find app/build/outputs/apk/androidTest/debug -name '*.apk' -print -quit)
+test -s "$target_apk" && test -s "$test_apk"
+for pair in "$target_apk:target" "$test_apk:tests"; do
   original="${pair%:*}"; name="${pair##*:}"
   "$signer" sign --ks /tmp/atomic-visual/test.p12 --ks-pass pass:android --out "/tmp/atomic-visual/$name.apk" "$original"
   adb install -r -t "/tmp/atomic-visual/$name.apk"

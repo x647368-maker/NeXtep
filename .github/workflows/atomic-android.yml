@@ -141,8 +141,8 @@ jobs:
         with:
           name: atomic-visual-test-inputs
           path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/androidTest/debug/*.apk
       # Publishing is deliberately manual. Build success never creates a public Release.
 
   visual-regression:
