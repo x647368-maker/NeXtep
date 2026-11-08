@@ -444,6 +444,11 @@ class NeXtepWindowController(
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
+            "open" -> {
+                check(workspaceVisible && !suspended && !workgroups.isSwitching()) { "请先开启台前调度，等待任务就绪" }
+                val launch = checkNotNull(intent.getParcelableExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, Intent::class.java))
+                checkNotNull(slotCoordinator).openInMain(launch).getOrThrow()
+            }
             "save", "new" -> check(workgroups.saveForSettings(command == "new")) { "未保存：请先打开台前调度并等待任务就绪" }
             "restore" -> workgroups.restoreForSettings(checkNotNull(intent.getStringExtra("group_id")))
             "rename", "delete" -> workgroups.editForSettings(checkNotNull(intent.getStringExtra("group_id")),

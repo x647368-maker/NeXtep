@@ -58,7 +58,7 @@ internal object StageSettingsScreen {
         var latest = JSONArray()
         var active: String? = null
         lateinit var renderGroups: () -> Unit
-        fun command(name: String, id: String? = null, title: String? = null, done: ((Bundle) -> Unit)? = null) {
+        fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, done: ((Bundle) -> Unit)? = null) {
             val handler = Handler(Looper.getMainLooper())
             var completed = false
             val timeout = Runnable {
@@ -70,6 +70,7 @@ internal object StageSettingsScreen {
             val request = Intent(StageControlContract.ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
                 .putExtra(StageControlContract.COMMAND, name)
                 .putExtra(StageControlContract.ID, id).putExtra(StageControlContract.NAME, title)
+                .putExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, launch)
             runCatching {
                 activity.sendOrderedBroadcast(request, null, object : BroadcastReceiver() {
                     override fun onReceive(context: Context?, intent: Intent?) {
@@ -147,6 +148,28 @@ internal object StageSettingsScreen {
             text = "四指捏合进入／张开退出"; isChecked = gestures.fourFingerGestureEnabled
             setOnCheckedChangeListener { _, checked -> repository.setFourFingerGestureEnabled(checked) }
         })
+        val apps = section("应用")
+        button(apps, "选择应用进入主窗口") { source ->
+            source.isEnabled = false
+            Thread({
+                val loaded = runCatching {
+                    io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository(activity.applicationContext)
+                        .load().filter { it.component.packageName != activity.packageName }.sortedBy { it.label }
+                }
+                activity.runOnUiThread {
+                    if (!activity.isDestroyed) {
+                        source.isEnabled = true
+                        loaded.onSuccess { entries ->
+                            MaterialAlertDialogBuilder(activity).setTitle("选择主应用")
+                                .setItems(entries.map { it.label }.toTypedArray()) { _, index ->
+                                    command("open", launch = entries[index].launchIntent())
+                                }.setNegativeButton("取消", null).show()
+                        }.onFailure { toast("无法读取应用列表：${it.message}") }
+                    }
+                }
+            }, "Stage-Settings-Apps").start()
+        }
+        apps.addView(text("先开启台前调度，再从这里选择主应用；也可照常从系统桌面打开应用。"))
         val groups = section("工作组")
         groups.addView(text("保存时记录工作应用和四个侧窗，不把本设置页当作主应用。切换会恢复真实任务；已结束的应用可能重新启动。"))
         button(groups, "保存当前工作组") { command("save") }
