@@ -146,6 +146,7 @@ jobs:
       # Publishing is deliberately manual. Build success never creates a public Release.
 
   visual-regression:
+    if: ${{ always() && !cancelled() && needs.development.result == 'success' }}
     needs: development
     runs-on: ubuntu-latest
     timeout-minutes: 20
