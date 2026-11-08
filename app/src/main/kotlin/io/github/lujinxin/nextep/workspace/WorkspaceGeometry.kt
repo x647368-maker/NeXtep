@@ -78,7 +78,8 @@ data class WorkspaceGeometry(
     val contentBottom: Int get() = contentTop + contentHeight
     val contentLeft: Int get() = availableLeft + (if (isLandscape) {
         if (isControlOnLeft) topHeight else 0
-    } else if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0) + (regionWidth - contentWidth) / 2
+    } else if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0) +
+        (regionWidth - contentWidth + if (isLandscape && !isControlOnLeft) 1 else 0) / 2
 
     val contentRight: Int
         get() = contentLeft + contentWidth

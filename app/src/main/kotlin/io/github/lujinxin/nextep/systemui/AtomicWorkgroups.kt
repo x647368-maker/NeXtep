@@ -199,7 +199,7 @@ internal class AtomicWorkgroups(
                 setHintTextColor(android.graphics.Color.LTGRAY); hint = "例如：查资料、购物、娱乐"
                 isSingleLine = true; filters = arrayOf(android.text.InputFilter.LengthFilter(32))
                 setPadding(board.dp(14), board.dp(8), board.dp(14), board.dp(8))
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(121, 218, 223))
+                background = board.surface()
             }
             rows.addView(input, android.widget.LinearLayout.LayoutParams(-1, board.dp(56)))
             rows.addView(board.label("保存名称").apply { setOnClickListener {

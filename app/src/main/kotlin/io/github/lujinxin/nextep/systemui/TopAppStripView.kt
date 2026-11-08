@@ -163,7 +163,7 @@ class TopAppStripView(
     private var toggleRail: (() -> Unit)? = null
     private val workspaceTitle = TextView(context).apply {
         text = "原子工作台  ▾"
-        textSize = 15f; maxLines = 1
+        textSize = 12f; maxLines = 2
         ellipsize = android.text.TextUtils.TruncateAt.END
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER_VERTICAL
@@ -218,7 +218,7 @@ class TopAppStripView(
     }
 
     fun setStageStatus(group: String, app: String, collapsed: Boolean) {
-        workspaceTitle.text = "$group  ▾"
+        workspaceTitle.text = "$group  ▾\n$app"
         workspaceTitle.contentDescription = "当前工作组：$group，活动应用：$app；点击切换工作组"
     }
 
@@ -318,7 +318,7 @@ class TopAppStripView(
         if (!visible) { removeCallbacks(refreshRetry); sheet.dismiss() }
         else if (appRow.childCount == 0) refresh(force = true)
         updateTitle()
-        mediaControl.setWorkspaceVisible(visible)
+        mediaControl.setWorkspaceVisible(false)
     }
 
     fun setMediaWallpaperLight(light: Boolean) {
@@ -361,16 +361,12 @@ class TopAppStripView(
 
     fun isInternalAppDragActive(): Boolean = internalAppDragActive
 
-    fun canScrollHorizontallyAt(x: Float, y: Float, direction: Int): Boolean {
-        val bounds = Rect(appScroll.scrollX, appScroll.scrollY,
-            appScroll.scrollX + appScroll.width, appScroll.scrollY + appScroll.height)
-        offsetDescendantRectToMyCoords(appScroll, bounds)
-        return bounds.contains(x.toInt(), y.toInt()) && appScroll.canScrollHorizontally(direction)
-    }
+    // The app drawer owns its own native window. It is no longer a descendant
+    // of the control pager; never map a detached/popup View through this tree.
+    fun canScrollHorizontallyAt(x: Float, y: Float, direction: Int): Boolean = false
 
     fun refresh(force: Boolean = false) {
         removeCallbacks(refreshRetry)
-        mediaControl.refresh()
         val now = System.currentTimeMillis()
         if (loading) {
             refreshPending = refreshPending || force
@@ -489,6 +485,11 @@ class TopAppStripView(
             },
             LinearLayout.LayoutParams(dp(WorkspaceControlMetrics.APP_ICON_SIZE_DP), dp(WorkspaceControlMetrics.APP_ICON_SIZE_DP)),
         )
+        addView(TextView(context).apply {
+            text = entry.label; textSize = 10f; maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(Color.WHITE); gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(-1, dp(18)))
         layoutParams = LinearLayout.LayoutParams(dp(APP_TILE_WIDTH_DP), LayoutParams.MATCH_PARENT)
         setOnClickListener { sheet.dismiss(); onAppClicked(Intent(entry.launchIntent)) }
         isLongClickable = false

@@ -671,7 +671,8 @@ class NeXtepWindowController(
                 FrameLayout.LayoutParams.WRAP_CONTENT, dp(28).toInt(), Gravity.TOP or Gravity.LEFT,
             ).apply {
                 leftMargin = geometry.contentLeft + dp(8).toInt()
-                topMargin = (geometry.contentTop - dp(32).toInt()).coerceAtLeast(geometry.controlTop + geometry.controlHeight)
+                topMargin = if (geometry.isLandscape) geometry.contentTop + dp(8).toInt() else
+                    (geometry.contentTop - dp(32).toInt()).coerceAtLeast(geometry.controlTop + geometry.controlHeight)
             }
             stageFocusBadge?.maxWidth = (geometry.contentWidth - dp(16).toInt()).coerceAtLeast(1)
         }
