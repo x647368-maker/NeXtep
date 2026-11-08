@@ -310,6 +310,45 @@ class SlotTaskCoordinator(
         }
     }
 
+    /** Reuse the same live tasks directly. No global parking or HOME detour is needed
+     * when the requested group is just a permutation of the current five positions. */
+    internal fun reorderGroupIfPossible(target: List<io.github.x647368maker.atomicworkbench.systemui.StageTaskIdentity?>): Result<Boolean> {
+        ensureMainThread()
+        if (!isGroupRestoreReady() || activeDrag != null) return Result.failure(IllegalStateException("工作区忙碌"))
+        val tasks = taskRepository.runningTasks()
+        val byId = tasks.associateBy { it.taskId }
+        val main = tasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }
+        if (main == null || !isExchangeableMainTask(main)) return Result.success(false)
+        fun identity(task: TaskRepository.TaskSnapshot?) = task?.let {
+            it.userId?.let { user -> io.github.x647368maker.atomicworkbench.systemui.StageTaskIdentity(it.taskId, it.component.packageName, user) }
+        }
+        val current = mutableListOf(identity(main))
+        for (record in slotRecords) {
+            when (val state = record.state) {
+                is SlotState.Occupied -> {
+                    val task = byId[state.taskId]
+                    if (task == null || task.displayId != state.displayId) return Result.success(false)
+                    current.add(identity(task) ?: return Result.success(false))
+                }
+                is SlotState.Ready -> {
+                    if (tasks.any { it.displayId == state.displayId }) return Result.success(false)
+                    current.add(null)
+                }
+                else -> return Result.success(false)
+            }
+        }
+        val moves = io.github.x647368maker.atomicworkbench.systemui.StageGroupSwitchPolicy.planReorder(current, target)
+            ?: return Result.success(false)
+        return runTransition("reorder live workgroup tasks") {
+            moves.forEach { move ->
+                if (move.to == 0) {
+                    val source = move.from - 1
+                    swapWithMain(source, slotRecords[source].state as SlotState.Occupied)
+                } else swapSlots(move.from - 1, move.to - 1)
+            }
+        }.map { true }
+    }
+
     fun restoreInSlot(intent: Intent, index: Int, preferredTaskId: Int): Result<Unit> {
         ensureMainThread()
         return assignIntent(index, intent, preferredTaskId)

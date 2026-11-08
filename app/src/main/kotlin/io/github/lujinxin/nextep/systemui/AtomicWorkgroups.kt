@@ -32,6 +32,8 @@ internal class AtomicWorkgroups(
     private val onStateChanged: () -> Unit,
     private val depthOrder: () -> List<Int>,
     private val onGroupActivated: (List<Int>) -> Unit,
+    private val onTransitionStarted: (() -> Unit) -> Unit,
+    private val onTransitionFinished: (Boolean) -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val preferences by lazy {
@@ -50,8 +52,11 @@ internal class AtomicWorkgroups(
         restoring = false
         restoringName = null
         handler.removeCallbacksAndMessages(null)
+        onTransitionFinished(false)
         onStateChanged()
     }
+
+    fun isSwitching(): Boolean = restoring
 
     fun statusLabel(): String = restoringName?.let { "切换中：$it" } ?: runCatching {
         preferences.getString("active_name", null) ?: "未分组"
@@ -181,18 +186,28 @@ internal class AtomicWorkgroups(
             restoringName = name
             val token = ++generation
             onStateChanged()
-            engine.prepareGroupRestore().getOrThrow()
             val deadline = SystemClock.uptimeMillis() + 30000L
             var index = 0
             var requested = false
             var mainRequested = false
+            var prepared = false
             lateinit var step: () -> Unit
             fun advance() {
                 if (token != generation) return
                 if (!interactive() || SystemClock.uptimeMillis() > deadline) {
                     cancel(); message("工作组切换已中止，已移动的任务保留；请检查窗口"); return
                 }
-                if (!engine.isGroupRestoreReady()) { handler.postDelayed({ step() }, 200); return }
+                if (!engine.isGroupRestoreReady()) { handler.postDelayed({ step() }, 48); return }
+                if (!prepared) {
+                    val reordered = engine.reorderGroupIfPossible(listOf(main?.identity) + launches.map { it?.identity }).getOrThrow()
+                    if (reordered) {
+                        index = launches.size
+                        mainRequested = true
+                    } else engine.prepareGroupRestore().getOrThrow()
+                    prepared = true
+                    handler.postDelayed({ step() }, 48)
+                    return
+                }
                 while (index < launches.size && launches[index] == null) index++
                 if (index < launches.size) {
                     val target = checkNotNull(launches[index])
@@ -222,12 +237,13 @@ internal class AtomicWorkgroups(
                         check(preferences.edit().putString("active_id", id).putString("active_name", name).commit())
                         restoring = false
                         restoringName = null
+                        onTransitionFinished(true)
                         onStateChanged()
                         message("已切换工作组 $name")
                         return
                     }
                 }
-                handler.postDelayed({ step() }, 200)
+                handler.postDelayed({ step() }, 48)
             }
             // A function value permits safe asynchronous recursion and catches stale-data/native failures.
             step = {
@@ -235,7 +251,7 @@ internal class AtomicWorkgroups(
                     cancel(); message("工作组部分恢复：${it.message}")
                 }
             }
-            step()
+            onTransitionStarted { step() }
         }.onFailure {
             if (restoring) cancel()
             message("工作组切换未完成：${it.message}")

@@ -57,7 +57,7 @@ class NeXtepWindowController(
             stageOrder = order
             stageMainId = null
             applyStageStack(geometry())
-        })
+        }, { ready -> startWorkgroupCover(ready) }, { success -> finishWorkgroupCover(success) })
     private var topAppStrip: TopAppStripView? = null
     private var controlAreaPager: ControlAreaPager? = null
     private var sidebarView: FrameLayout? = null
@@ -80,6 +80,11 @@ class NeXtepWindowController(
     private var stageMainId: Int? = null
     private var stageFocusBadge: android.widget.TextView? = null
     private val stageFocusUpdate = Runnable { updateStageFocus() }
+    private var groupInputBlocked = false
+    private var groupInitialOwners: List<Int?> = emptyList()
+    private var groupInitialFrames: List<Long> = emptyList()
+    private val groupCover = WorkgroupTransitionCover(context,
+        { contentHighlightView?.parent as? FrameLayout }, { blocked -> setGroupInputBlocked(blocked) })
     private var wallpaperBitmap: android.graphics.Bitmap? = null
     private var wallpaperRotation = 0
     private var homePreview: Bitmap? = null
@@ -634,7 +639,8 @@ class NeXtepWindowController(
         params: WindowManager.LayoutParams,
         geometry: WorkspaceGeometry,
     ) {
-        val touchable = !suspended && (record.title == "NeXtepTopBar" || record.title == "AtomicSidebarHandle" ||
+        val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
+            record.title == "NeXtepTopBar" || record.title == "AtomicSidebarHandle" ||
             (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -731,6 +737,67 @@ class NeXtepWindowController(
         }
     }
 
+    private fun setGroupInputBlocked(blocked: Boolean) {
+        if (groupInputBlocked == blocked) return
+        groupInputBlocked = blocked
+        records.firstOrNull { it.title == "NeXtepContentPanel" }?.let { record ->
+            val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@let
+            configureWindow(record, params, geometry())
+            runCatching { windowManager.updateViewLayout(record.view, params) }.onFailure {
+                NeXtepLog.warn("workgroup_cover", "Unable to update transition input protection", it)
+            }
+        }
+    }
+
+    private fun startWorkgroupCover(onReady: () -> Unit) {
+        cancelDragVisuals()
+        val geometry = geometry()
+        groupInitialOwners = slotCoordinator?.slotStates().orEmpty().map { (it as? SlotState.Occupied)?.taskId }
+        groupInitialFrames = slotWindows.map { it.contentFrameSequence }
+        val frames = mutableListOf<WorkgroupTransitionCover.Frame>()
+        try {
+            val main = taskRepository.foregroundTask()
+            val bitmap = if (WorkspaceWallpaperBackdrop.canCapture(context) && main != null) runCatching {
+                TaskSurfaceCompat.capturePreview(main.taskId, Rect(geometry.availableLeft, geometry.availableTop,
+                    geometry.availableRight, geometry.availableBottom))
+            }.getOrNull() else null
+            frames.add(WorkgroupTransitionCover.Frame(bitmap, floatArrayOf(
+                geometry.contentLeft.toFloat(), geometry.contentTop.toFloat(),
+                geometry.contentRight.toFloat(), geometry.contentTop.toFloat(),
+                geometry.contentRight.toFloat(), geometry.contentBottom.toFloat(),
+                geometry.contentLeft.toFloat(), geometry.contentBottom.toFloat())))
+            slotWindows.sortedBy { it.view.z }.forEach { slot ->
+                val corners = slot.view.screenQuad() ?: return@forEach
+                // Display-size captures suffice for a stationary cover; avoid allocating
+                // four full-resolution phone bitmaps inside the SystemUI heap.
+                val captured = runCatching { slot.view.capturePreview() }.getOrNull()
+                frames.add(WorkgroupTransitionCover.Frame(captured, corners, slot.view.alpha))
+            }
+            groupCover.start(geometry, frames, onReady)
+        } catch (failure: Throwable) {
+            frames.mapNotNull { it.bitmap }.distinct().forEach { if (!it.isRecycled) it.recycle() }
+            throw failure
+        }
+    }
+
+    private fun finishWorkgroupCover(success: Boolean) {
+        groupCover.finish(success) {
+            val states = slotCoordinator?.slotStates().orEmpty()
+            states.size == WORKSPACE_SLOT_COUNT && states.indices.all { index ->
+                when (val state = states[index]) {
+                    is SlotState.Ready -> true
+                    is SlotState.Occupied -> {
+                        val slot = slotWindows[index]
+                        slot.view.textureView.isAvailable &&
+                            (state.taskId == groupInitialOwners.getOrNull(index) ||
+                                slot.contentFrameSequence > (groupInitialFrames.getOrNull(index) ?: -1L))
+                    }
+                    else -> false
+                }
+            }
+        }
+    }
+
     private fun sidebarHandle(): View = android.widget.TextView(context).apply {
         text = "⋮"
         gravity = Gravity.CENTER
@@ -760,7 +827,7 @@ class NeXtepWindowController(
     }
 
     private fun setSidebarCollapsed(value: Boolean) {
-        if (!workspaceVisible || suspended || sidebarCollapsed == value) return
+        if (!workspaceVisible || suspended || groupInputBlocked || sidebarCollapsed == value) return
         cancelDragVisuals()
         sidebarCollapsed = value
         records.firstOrNull { it.title == "NeXtepSidebar" }?.let { record ->

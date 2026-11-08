@@ -69,6 +69,40 @@ internal object StageGroupVerification {
 }
 
 internal object StageGroupSwitchPolicy {
+    fun canReorder(current: List<StageTaskIdentity?>, target: List<StageTaskIdentity?>): Boolean {
+        if (current.size != 5 || target.size != 5 || current[0] == null || target[0] == null) return false
+        val existing = current.filterNotNull()
+        val requested = target.filterNotNull()
+        return existing.distinct().size == existing.size && requested.distinct().size == requested.size &&
+            existing.toSet() == requested.toSet()
+    }
+    data class GroupSwap(val from: Int, val to: Int)
+
+    fun planReorder(current: List<StageTaskIdentity?>, target: List<StageTaskIdentity?>): List<GroupSwap>? {
+        if (!canReorder(current, target)) return null
+        val state = current.toMutableList()
+        val moves = mutableListOf<GroupSwap>()
+        fun swap(from: Int, to: Int) {
+            check(state[from] != null)
+            val value = state[from]; state[from] = state[to]; state[to] = value
+            moves.add(GroupSwap(from, to))
+        }
+        if (state[0] != target[0]) swap(state.indexOf(target[0]), 0)
+        for (i in 1 until state.size) {
+            if (state[i] == target[i]) continue
+            if (target[i] != null) {
+                val source = state.indexOf(target[i])
+                check(source > i)
+                swap(source, i)
+            } else {
+                val empty = ((i + 1) until state.size).first { state[it] == null }
+                swap(i, empty)
+            }
+        }
+        check(state == target)
+        return moves
+    }
+
     fun shouldSaveCurrent(activeId: String?, targetId: String): Boolean = activeId != null && activeId != targetId
     fun isComplete(slots: List<Boolean>, main: Boolean): Boolean = slots.size == 4 && slots.all { it } && main
 }
