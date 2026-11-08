@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
         }
         fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
         val pages = listOf(
-            R.id.settings_scroll to SettingsScreen.create(this, SettingsRepository(this)),
+            R.id.settings_scroll to StageSettingsScreen.create(this, SettingsRepository(this)),
             R.id.advanced_scroll to AdvancedScreen.create(this),
             R.id.about_scroll to AboutScreen.create(this),
         )

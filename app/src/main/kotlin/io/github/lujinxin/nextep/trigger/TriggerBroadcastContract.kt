@@ -32,7 +32,7 @@ object TriggerBroadcastContract {
     const val EXTRA_TARGET_USER_ID = "io.github.x647368maker.atomicworkbench.extra.TARGET_USER_ID"
     const val EXTRA_BYPASS_MULTI_APP_CHOOSER =
         "io.github.x647368maker.atomicworkbench.extra.BYPASS_MULTI_APP_CHOOSER"
-    const val RUNTIME_PROTOCOL_VERSION = 39
+    const val RUNTIME_PROTOCOL_VERSION = 40
     const val RESULT_HANDLED = 0x4E58
     const val RESULT_NOT_READY = 0
 

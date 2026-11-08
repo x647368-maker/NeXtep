@@ -440,6 +440,36 @@ class NeXtepWindowController(
         geometry
     }
 
+    fun stageSettingsCommand(intent: Intent): android.os.Bundle = runCatching {
+        val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
+        when (command) {
+            "query" -> Unit
+            "save", "new" -> check(workgroups.saveForSettings(command == "new")) { "未保存：请先打开台前调度并等待任务就绪" }
+            "restore" -> workgroups.restoreForSettings(checkNotNull(intent.getStringExtra("group_id")))
+            "rename", "delete" -> workgroups.editForSettings(checkNotNull(intent.getStringExtra("group_id")),
+                if (command == "rename") checkNotNull(intent.getStringExtra("group_name")) else null)
+            "collapse", "expand" -> {
+                check(workspaceVisible && !suspended && !workgroups.isSwitching() && !groupInputBlocked) { "请先打开台前调度，等待工作组切换完成" }
+                setSidebarCollapsed(command == "collapse")
+            }
+            "left", "right" -> {
+                val side = if (command == "left") SidebarSide.LEFT else SidebarSide.RIGHT
+                // Route through the workspace owner so native geometry and input
+                // mapping change together. Persist side even while inactive.
+                if (workspaceVisible && !suspended) onSidebarSideRequested(side)
+                else { sidebarSide = side; SystemServerWorkspaceBridge.publish(context, false, geometry()) }
+            }
+            else -> error("未知设置操作")
+        }
+        android.os.Bundle().apply {
+            putBoolean("ok", true)
+            putString("groups", workgroups.settingsSnapshot())
+            putString("message", if (command == "restore") "已请求切换，最终结果以窗口与提示为准" else "已处理")
+        }
+    }.getOrElse { android.os.Bundle().apply {
+        putBoolean("ok", false); putString("message", it.message ?: "操作失败")
+    } }
+
     fun slotStatesDescription(): String = slotCoordinator
         ?.slotStates()
         ?.mapIndexed { index, state -> "${index + 1}:$state" }
@@ -462,45 +492,9 @@ class NeXtepWindowController(
 
         addWindow(
             title = "NeXtepTopBar",
-            view = TopAppStripView(
-                context = context,
-                initialSidebarSide = sidebarSide,
-                onAppClicked = { intent ->
-                    slotCoordinator?.openInMain(
-                        intent,
-                        autoMinimizeCurrent = SystemUiRuntime.shouldAutoMinimizeMainOnTopAppSwitch(),
-                    )?.onFailure { error ->
-                        NeXtepLog.warn("top_apps", "Unable to open ${intent.component} in main", error)
-                    }
-                },
-                onMediaClicked = { session ->
-                    slotCoordinator?.openMediaInMain(session)?.onFailure { error ->
-                        NeXtepLog.warn("media_control", "Unable to open media app in main", error)
-                        android.widget.Toast.makeText(context, AppLanguage.string(context, R.string.media_open_failed), android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onSidebarSideRequested = onSidebarSideRequested,
-                onSettingsRequested = onSettingsRequested,
-                onExitRequested = onExitRequested,
-                onFrostStrengthChanged = { strength ->
-                    if (frostStrength != strength) {
-                        frostStrength = strength
-                        refreshWallpaperBackdrop()
-                    }
-                },
-                onAppDragStarting = { source, intent ->
-                    workspaceVisible && !suspended && internalDrag.start(
-                        source, WorkspaceInternalDragController.Payload.App(intent),
-                    )
-                },
-                onAppDragTouch = internalDrag::touch,
-            ).also {
-                topAppStrip = it
-                it.setWorkgroupActions(workgroups::save, workgroups::saveNew, workgroups::choose,
-                    { setSidebarCollapsed(!sidebarCollapsed) })
-            }.let { strip ->
-                ControlAreaPager(context, strip).also { controlAreaPager = it }
-            },
+            // Retain only a transparent status-safe wallpaper host. No controls,
+            // application strip, branding or touch interception above the stage.
+            view = FrameLayout(context),
             width = geometry.screenWidth,
             height = geometry.topHeight,
             gravity = Gravity.TOP,
@@ -640,7 +634,7 @@ class NeXtepWindowController(
         geometry: WorkspaceGeometry,
     ) {
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
-            record.title == "NeXtepTopBar" || record.title == "AtomicSidebarHandle" ||
+            record.title == "AtomicSidebarHandle" ||
             (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -1213,7 +1207,7 @@ class NeXtepWindowController(
             stageFocusBadge?.apply {
                 text = label
                 val g = geometry()
-                visibility = if (g.isLandscape || g.contentTop - g.controlHeight - g.controlTop >= dp(32)) View.VISIBLE else View.GONE
+                visibility = View.GONE
             }
             contentHighlightView?.foreground = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.TRANSPARENT)

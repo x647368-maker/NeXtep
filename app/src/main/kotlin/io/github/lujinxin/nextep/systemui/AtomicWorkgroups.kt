@@ -88,18 +88,40 @@ internal class AtomicWorkgroups(
             else { check(state is SlotState.Ready) { "四个侧窗尚未全部就绪" }; slots.put(JSONObject.NULL) }
         }
         return JSONObject().put("version", 1).put("id", id).put("name", name)
-            .put("main", repository.foregroundTask()?.let(::entry) ?: JSONObject.NULL).put("slots", slots)
+            .put("main", repository.runningTasks().firstOrNull {
+                it.displayId == 0 && it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE &&
+                    it.component.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE
+            }?.let(::entry) ?: JSONObject.NULL).put("slots", slots)
             .put("depth_order", JSONArray(depthOrder()))
     }
 
-    fun save() = saveInternal(forceNew = false)
-    fun saveNew() = saveInternal(forceNew = true)
+    fun save() { saveInternal(forceNew = false) }
+    fun saveNew() { saveInternal(forceNew = true) }
 
-    private fun saveInternal(forceNew: Boolean) {
-        if (!interactive() || restoring) return message("工作区正在切换，请稍后保存")
-        val engine = coordinator() ?: return message("任务服务未就绪")
-        if (!engine.isGroupRestoreReady()) return message("任务正在切换，请稍后保存")
-        runCatching {
+    fun saveForSettings(forceNew: Boolean): Boolean = saveInternal(forceNew)
+
+    fun settingsSnapshot(): String = JSONObject().put("active", preferences.getString("active_id", null))
+        .put("switching", restoring).put("groups", groups()).toString()
+
+    fun restoreForSettings(id: String) {
+        check(interactive() && !restoring && coordinator()?.isGroupRestoreReady() == true) { "请先打开台前调度，等待任务就绪" }
+        val all = groups()
+        val group = (0 until all.length()).map { all.getJSONObject(it) }.firstOrNull { it.getString("id") == id }
+            ?: error("工作组已不存在")
+        restore(group)
+    }
+
+    fun editForSettings(id: String, name: String?) {
+        check(!restoring) { "正在切换工作组" }
+        require(name == null || name.trim().length in 1..32) { "名称应为 1–32 个字符" }
+        check(mutateGroup(id, name?.trim())) { "工作组修改失败" }
+    }
+
+    private fun saveInternal(forceNew: Boolean): Boolean {
+        if (!interactive() || restoring) { message("工作区正在切换，请稍后保存"); return false }
+        val engine = coordinator() ?: run { message("任务服务未就绪"); return false }
+        if (!engine.isGroupRestoreReady()) { message("任务正在切换，请稍后保存"); return false }
+        return runCatching {
             val all = groups()
             val active = if (forceNew) null else preferences.getString("active_id", null)
             val previous = (0 until all.length()).map { all.getJSONObject(it) }.firstOrNull { it.getString("id") == active }
@@ -115,7 +137,7 @@ internal class AtomicWorkgroups(
                 .putString("active_name", name).commit()) { "工作组保存失败" }
             onStateChanged()
             message("已保存工作组 $name")
-        }.onFailure { message(it.message ?: "工作组保存失败") }
+        }.onFailure { message(it.message ?: "工作组保存失败") }.isSuccess
     }
 
     private fun appLabel(entry: JSONObject): String = runCatching {
@@ -213,9 +235,9 @@ internal class AtomicWorkgroups(
         }.onFailure { message("无法重命名：${it.message}") }
     }
 
-    private fun mutateGroup(id: String, name: String?) {
-        if (restoring) return
-        runCatching {
+    private fun mutateGroup(id: String, name: String?): Boolean {
+        if (restoring) return false
+        return runCatching {
             val all = groups(); val updated = JSONArray()
             for (i in 0 until all.length()) {
                 val group = all.getJSONObject(i)
@@ -227,7 +249,7 @@ internal class AtomicWorkgroups(
                 if (name == null) edit.remove("active_id").remove("active_name") else edit.putString("active_name", name)
             }
             check(edit.commit()); onStateChanged()
-        }.onFailure { message("修改工作组失败：${it.message}") }
+        }.onFailure { message("修改工作组失败：${it.message}") }.isSuccess
     }
 
     private fun launch(entry: JSONObject): Launch {

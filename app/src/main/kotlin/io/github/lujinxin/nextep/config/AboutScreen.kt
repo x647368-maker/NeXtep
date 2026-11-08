@@ -41,13 +41,13 @@ internal object AboutScreen {
                 clipToOutline = true
             }, LinearLayout.LayoutParams(dp(88), dp(88)))
             addView(TextView(activity).apply {
-                text = activity.getString(R.string.about_tagline)
+                text = "台前调度"
                 textSize = 24f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(SettingsPalette.text(activity))
                 setPadding(0, dp(12), 0, 0)
             })
-            addView(paragraph("基于 NeXtep 的独立安装衍生版。原作者：lujinxin / JensenLu。保留 Apache-2.0 许可证、版权与第三方声明。真实 Android 任务引擎来自原作；本分支增加四侧窗、工作组与新的工作区交互。"))
+            addView(paragraph("基于 NeXtep 的 Android 个人使用衍生版，非 Apple 官方应用。原作者：lujinxin / JensenLu。保留 Apache-2.0 许可证、版权与第三方声明。真实 Android 任务引擎来自原作；本分支增加四侧窗、工作组与新的工作区交互。"))
             addView(TextView(activity).apply {
                 text = activity.getString(R.string.about_windows_title)
                 textSize = 18f

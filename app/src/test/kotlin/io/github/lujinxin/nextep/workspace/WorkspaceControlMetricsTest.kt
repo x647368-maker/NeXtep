@@ -6,11 +6,11 @@ import org.junit.Test
 
 class WorkspaceControlMetricsTest {
     @Test
-    fun toolbarFitsStatusAndTouchTargetsWithoutPermanentAppRow() {
+    fun stageReservesOnlyStatusSpaceWithoutAControlStrip() {
         for (insets in listOf(WorkspaceNavigationInsets(), WorkspaceNavigationInsets(bottom = 132))) {
             val profile = WorkspaceLayoutProfile.create(1080, 2354, 480, insets)
-            assertEquals(96 * 3, profile.geometry.topHeight)
-            assertTrue(profile.geometry.topHeight >= (40 + 52) * 3)
+            assertEquals(40 * 3, profile.geometry.topHeight)
+            assertTrue(profile.geometry.topHeight < (40 + 48) * 3)
             assertTrue(profile.geometry.topHeight < 2354 / 6)
         }
     }

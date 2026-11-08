@@ -27,7 +27,7 @@ class StageWorkspaceLayoutTest {
 
     @Test fun compactToolbarDoesNotRecomputeVirtualCanvasWhenFocusingMain() {
         val profile = WorkspaceLayoutProfile.create(1264, 2780, 512, WorkspaceNavigationInsets())
-        assertEquals((96 * 3.2f).toInt(), profile.geometry.topHeight)
+        assertEquals((40 * 3.2f).toInt(), profile.geometry.topHeight)
         assertEquals(4, profile.slots.size)
         assertTrue(profile.slots.all { it.width > 0 && it.height > 0 })
         assertTrue(profile.slots.first().top > 0)
@@ -35,6 +35,6 @@ class StageWorkspaceLayoutTest {
         assertEquals(2780, profile.canvas.height)
         assertTrue(profile.geometry.copy(sidebarWidth = 1).contentScale > profile.geometry.contentScale)
         assertEquals(profile, WorkspaceLayoutProfile.decode(profile.encode()))
-        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("7,", "6,")))
+        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("8,", "7,")))
     }
 }

@@ -211,6 +211,7 @@ object SystemUiRuntime {
                 addAction(TriggerBroadcastContract.ACTION_TOGGLE_WORKSPACE)
                 addAction(TriggerBroadcastContract.ACTION_SET_WORKSPACE)
                 addAction(TriggerBroadcastContract.ACTION_QUERY_WORKSPACE)
+                addAction(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.ACTION)
                 addAction(TriggerBroadcastContract.ACTION_LAUNCH_SLOT_TEST)
                 addAction(TriggerBroadcastContract.ACTION_FOUR_FINGER_WORKSPACE)
             }
@@ -445,6 +446,12 @@ object SystemUiRuntime {
     private val controlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (!isOrderedBroadcast || !::workspaceController.isInitialized) return
+            if (intent.action == io.github.x647368maker.atomicworkbench.trigger.StageControlContract.ACTION) {
+                if (isKeyguardLocked(context)) return
+                resultCode = TriggerBroadcastContract.RESULT_HANDLED
+                setResultExtras(responseBundle(windowController.stageSettingsCommand(intent)))
+                return
+            }
             val shouldCollapseFirst = intent.getStringExtra(
                 TriggerBroadcastContract.EXTRA_SOURCE,
             ) == io.github.x647368maker.atomicworkbench.trigger.TriggerSource.QUICK_SETTINGS_TILE.name &&

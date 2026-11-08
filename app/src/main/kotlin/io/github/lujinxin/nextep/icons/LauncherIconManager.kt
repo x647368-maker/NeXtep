@@ -67,15 +67,9 @@ internal object LauncherIconManager {
 
     private fun update(context: Context) {
         if (!preferences(context).getBoolean(KEY_STARTED, false)) return
-        val manual = LauncherIconStyle.fromKey(selection(context))
-        if (manual != null) {
-            cancelAlarm(context)
-            applyIcon(context, manual)
-            return
-        }
-        val schedule = SolarTermIconCalendar.resolve(Instant.now())
-        applyIcon(context, schedule.style)
-        scheduleAlarm(context, schedule.nextChange)
+        // All aliases use the same stage identity. Stop obsolete seasonal alarms.
+        cancelAlarm(context)
+        applyIcon(context, LauncherIconStyle.DEFAULT)
     }
 
     private fun applyIcon(context: Context, selected: LauncherIconStyle) {

@@ -52,7 +52,7 @@ internal class WorkspaceViewport(
     // lets a restarted SystemUI retain the selected mode before the first unlock.
     private val preferences = runCatching {
         context.createDeviceProtectedStorageContext()
-            .getSharedPreferences("atomic_viewport_profiles_v2", Context.MODE_PRIVATE)
+            .getSharedPreferences("atomic_viewport_profiles_v3", Context.MODE_PRIVATE)
     }.onFailure { NeXtepLog.warn("workspace_viewport", "Viewport storage unavailable", it) }.getOrNull()
     private val handler = Handler(Looper.getMainLooper())
     private var navigationButtonsEnabled = preferences?.getBoolean(MODE_KEY, false) ?: false

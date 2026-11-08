@@ -26,6 +26,7 @@ class NeXtepTileService : TileService() {
     private fun updateFrom(result: TriggerCoordinator.RequestResult) {
         qsTile?.apply {
             label = getString(R.string.app_name)
+            icon = android.graphics.drawable.Icon.createWithResource(this@NeXtepTileService, R.drawable.ic_nextep_tile)
             state = when (result) {
                 is TriggerCoordinator.RequestResult.Ready -> {
                     if (result.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE

@@ -139,7 +139,7 @@ data class WorkspaceGeometry(
             val shortSide = if (landscape) availableHeight else availableWidth
             val gap = density.toInt().coerceAtLeast(1)
             // One compact toolbar, independent of the four task-preview heights.
-            val controlThickness = (96 * density).roundToInt().coerceIn(1, longSide - 1)
+            val controlThickness = (40 * density).roundToInt().coerceIn(1, longSide - 1)
             val railThickness = (shortSide * 0.22f).roundToInt().coerceIn(gap + 1, shortSide - 1)
             return WorkspaceGeometry(
                 screenWidth = screenWidth,

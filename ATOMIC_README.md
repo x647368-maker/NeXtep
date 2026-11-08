@@ -1,4 +1,6 @@
-# 原子工作台 0.3.0 开发版
+# 台前调度 0.3.1 开发版
+
+本版以 [STAGE_CLEAN_SETTINGS.md](STAGE_CLEAN_SETTINGS.md) 为准：工作区无顶部控制条，选项移至应用设置，包含明确退出按钮与说明。新行为待真机验证。
 
 当前版本以 [WORKSPACE_REDESIGN.md](WORKSPACE_REDESIGN.md) 为准。以下保留历史实现与构建记录；0.3.0 新行为尚未真机验证。
 
