@@ -1,6 +1,8 @@
 <resources>
     <style name="Theme.NeXtep" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_splash_round</item>
+        <!-- Use the same icon as the installed Atomic Workbench launcher, not the upstream NeXtep icon. -->
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_atomic_workbench</item>
+        <item name="android:windowSplashScreenBackground">#F7F7F9</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="colorPrimary">#1F5CDE</item>
         <item name="colorOnPrimary">#FFFFFF</item>
