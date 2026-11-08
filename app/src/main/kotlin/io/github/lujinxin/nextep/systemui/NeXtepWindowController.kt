@@ -458,6 +458,9 @@ class NeXtepWindowController(
         clearHomePreview()
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
+        if (cinemaSlot != null && viewport.geometry(sidebarSide).isLandscape) {
+            cinemaPolicy.leave(); cinemaSlot = null; viewport.cinema = false
+        }
         val geometry = geometry()
         SystemServerWorkspaceBridge.publishLayout(context, viewport.layout())
         applyWindowGeometry(geometry, refreshControls = !rotationOnly)
@@ -608,7 +611,9 @@ class NeXtepWindowController(
             title = "NeXtepTopBar",
             // Retain only a transparent status-safe wallpaper host. No controls,
             // application strip, branding or touch interception above the stage.
-            view = FrameLayout(context).apply {
+            view = StageQuickBarHost(context) {
+                backdropHandler.post { setQuickExpanded(false); showStageMessage("快捷栏触摸区域不可用，已安全收起") }
+            }.apply {
                 quickBar = StageQuickBarView(context, ::quickSelected,
                     { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })
                 addView(quickBar, FrameLayout.LayoutParams(-1, dp(52).toInt(), Gravity.BOTTOM).apply {

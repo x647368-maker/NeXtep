@@ -41,3 +41,49 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
         }, LayoutParams(dp(44), dp(48)))
     }
 }
+
+/** Only the visible toolbar receives touches; status/cutout space passes through. */
+internal class StageQuickBarHost(context: Context, private val unavailable: () -> Unit) : FrameLayout(context) {
+    private var listener: Any? = null
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        runCatching {
+            val cls = Class.forName("android.view.ViewTreeObserver\$OnComputeInternalInsetsListener")
+            val callback = java.lang.reflect.Proxy.newProxyInstance(cls.classLoader, arrayOf(cls)) { proxy, method, args ->
+                when (method.name) {
+                    "hashCode" -> System.identityHashCode(proxy)
+                    "equals" -> proxy === args?.firstOrNull()
+                    "toString" -> "StageQuickBarTouchRegion"
+                    "onComputeInternalInsets" -> {
+                        val info = args?.firstOrNull()
+                        if (info != null) {
+                            info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType).invoke(info, 3)
+                            val region = info.javaClass.getField("touchableRegion").get(info) as android.graphics.Region
+                            region.setEmpty()
+                            val origin = IntArray(2); rootView.getLocationOnScreen(origin)
+                            val rect = android.graphics.Rect()
+                            for (index in 0 until childCount) {
+                                val child = getChildAt(index)
+                                if (child.visibility == View.VISIBLE && child.getGlobalVisibleRect(rect)) {
+                                    rect.offset(-origin[0], -origin[1]); region.op(rect, android.graphics.Region.Op.UNION)
+                                }
+                            }
+                        }
+                        null
+                    }
+                    else -> null
+                }
+            }
+            viewTreeObserver.javaClass.getMethod("addOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, callback)
+            listener = callback
+        }.onFailure { unavailable() }
+    }
+    override fun onDetachedFromWindow() {
+        listener?.let { callback -> runCatching {
+            val cls = Class.forName("android.view.ViewTreeObserver\$OnComputeInternalInsetsListener")
+            if (viewTreeObserver.isAlive) viewTreeObserver.javaClass.getMethod("removeOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, callback)
+        } }
+        listener = null
+        super.onDetachedFromWindow()
+    }
+}
