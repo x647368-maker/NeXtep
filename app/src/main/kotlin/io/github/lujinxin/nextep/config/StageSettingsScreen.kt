@@ -41,7 +41,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var settingSwitch = false
     var page = "home"
         private set
-    val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor) }
+    val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor); isFocusableInTouchMode = true }
     private fun dp(n: Int) = (n * activity.resources.displayMetrics.density).toInt()
     private fun label(s: String, size: Float = 16f, color: Int = ink) = TextView(activity).apply {
         text = s; textSize = size; setTextColor(color); includeFontPadding = false
@@ -91,8 +91,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     fun open(target: String) {
         page = target; body = null; stateText = null; master = null
         view.removeAllViews()
+        view.requestFocus()
         val column = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 46 else 8), dp(16), dp(28))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 84 else 8), dp(16), dp(28))
         }
         val scroll = ScrollView(activity).apply {
             isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
@@ -100,10 +101,12 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (target == "home") {
-            column.addView(label("设置", 38f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(10), 0, 0, dp(20)) })
+            column.addView(label("设置", 40f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(10), 0, 0, dp(20)) })
             val search = EditText(activity).apply {
                 textSize = 16f; setTextColor(ink); setHintTextColor(secondary)
                 hint = "搜索设置项"; isSingleLine = true
+                setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_stage_search, 0, 0, 0)
+                compoundDrawablePadding = dp(10)
                 inputType = android.text.InputType.TYPE_CLASS_TEXT
                 setPadding(dp(20), 0, dp(20), 0); background = surface()
                 setText(query); setSelection(text.length)
