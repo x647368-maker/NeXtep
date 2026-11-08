@@ -165,12 +165,14 @@ jobs:
           name: atomic-visual-test-inputs
           path: app/build/outputs/apk
       - name: Start isolated Android 15 hardware-rendered emulator
+        timeout-minutes: 6
         run: |
+          trap 'cat /tmp/emulator.log 2>/dev/null || true' EXIT
           sudo chmod 666 /dev/kvm
           sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64' 'build-tools;36.0.0'
           echo no | avdmanager create avd --name atomic-visual --package 'system-images;android-35;google_apis;x86_64' --device pixel_7
-          "$ANDROID_HOME/emulator/emulator" -avd atomic-visual -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect > /tmp/emulator.log 2>&1 &
-          adb wait-for-device
+          "$ANDROID_HOME/emulator/emulator" -avd atomic-visual -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 2048 -cores 2 -gpu swiftshader_indirect > /tmp/emulator.log 2>&1 &
+          timeout 120 adb wait-for-device
           timeout 180 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
       - name: Test real TextureView live-buffer clipping through HWUI
         run: bash scripts/run-visual-regression.sh
