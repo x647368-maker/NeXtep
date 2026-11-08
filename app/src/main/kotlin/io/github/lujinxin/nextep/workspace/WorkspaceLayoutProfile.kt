@@ -36,9 +36,9 @@ data class WorkspaceLayoutProfile(
             val gutter = (8 * density).toInt()
             val header = 0
             val footer = (48 * density).toInt()
-            val maxWidth = ((geometry.sidebarPhysicalWidth - gutter * (count + 1)) / count).coerceAtLeast(1)
+            val maxWidth = StageTopLayoutMetrics.cardWidth(geometry, count, density)
             val bodyHeight = minOf((maxWidth.toDouble() * canvas.height / canvas.width).toInt(),
-                geometry.sidebarPhysicalHeight - header - footer - gutter * 2).coerceAtLeast(1)
+                geometry.sidebarPhysicalHeight - header - footer - gutter).coerceAtLeast(1)
             val width = minOf(maxWidth, (bodyHeight.toDouble() * canvas.width / canvas.height).toInt()).coerceAtLeast(1)
             return@run List(4) { i -> Slot(width, bodyHeight + header, gutter, gutter + i * (width + gutter)) }
 
@@ -68,7 +68,7 @@ data class WorkspaceLayoutProfile(
             (height - source.height * scale) / 2f - source.top * scale)
     }
 
-    fun encode(): String = listOf("13", geometry.screenWidth, geometry.screenHeight,
+    fun encode(): String = listOf("14", geometry.screenWidth, geometry.screenHeight,
         geometry.topHeight, geometry.sidebarWidth, densityDpi, gapPixels,
         geometry.navigationInsets.left, geometry.navigationInsets.top,
         geometry.navigationInsets.right, geometry.navigationInsets.bottom,
@@ -87,7 +87,7 @@ data class WorkspaceLayoutProfile(
 
         fun decode(encoded: String?): WorkspaceLayoutProfile? = runCatching {
             val p = encoded?.split(',') ?: return@runCatching null
-            if (p.firstOrNull() != "13" || p.size != 23 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
+            if (p.firstOrNull() != "14" || p.size != 23 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
             val profile = WorkspaceLayoutProfile(WorkspaceGeometry(p[1].toInt(), p[2].toInt(),
                 p[3].toInt(), p[4].toInt(), SidebarSide.RIGHT,
                 WorkspaceNavigationInsets(p[7].toInt(), p[8].toInt(), p[9].toInt(), p[10].toInt()),

@@ -83,7 +83,7 @@ internal class WorkspaceViewport(
             cinema && !g.isLandscape -> selected.copy(geometry = g.copy(railAtTop = true,
                 sidebarWidth = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.cinemaDepth(g, density)), activeCount = activeCount)
             else -> {
-                val normal = if (adaptive) selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount) else selected
+                val normal = if (adaptive) selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount) else selected.copy(activeCount = activeCount)
                 if (mainPriority) io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.mainPriority(normal, activeCount) else normal
             }
         }
@@ -91,7 +91,7 @@ internal class WorkspaceViewport(
     private fun selectedRail(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {
         if (!topRail) return profile
         val g = profile.geometry
-        val depth = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.depth(g, profile.densityDpi / 160f)
+        val depth = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.depth(g, profile.densityDpi / 160f, activeCount)
 
         return profile.copy(geometry = g.copy(railAtTop = true, sidebarWidth = depth))
     }

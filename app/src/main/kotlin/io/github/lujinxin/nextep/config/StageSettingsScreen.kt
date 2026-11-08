@@ -129,7 +129,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与常用应用", "windows" to "窗口与侧栏", "groups" to "工作组", "gestures" to "手势", "tile" to "控制中心", "help" to "使用与退出", "diagnostics" to "运行与诊断", "about" to "关于台前调度")
+            val titles = mapOf("core" to "影音与常用应用", "windows" to "窗口与侧栏", "groups" to "工作组", "gestures" to "手势", "tile" to "控制中心", "help" to "使用与退出", "diagnostics" to "运行与诊断", "about" to "关于台前调度", "feedback" to "建议与反馈")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回设置"; setOnClickListener { open("home") }
@@ -145,6 +145,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "help" -> help(column)
                 "diagnostics" -> diagnostics(column)
                 "about" -> about(column)
+                "feedback" -> feedback(column)
             }
         }
     }
@@ -163,6 +164,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val sections = listOf(
             listOf(Item("影音与常用应用", "core", "apps", blue), Item("窗口与侧栏", "windows", "windows", blue), Item("工作组", "groups", "groups", Color.rgb(142, 88, 224)), Item("手势", "gestures", "gesture", Color.rgb(246, 162, 34))),
             listOf(Item("控制中心", "tile", "tile", blue), Item("使用与退出", "help", "help", Color.rgb(46, 183, 87)), Item("运行与诊断", "diagnostics", "diagnostics", blue), Item("关于台前调度", "about", "info", secondary)),
+            listOf(Item("建议与反馈", "feedback", "help", blue)),
         )
         var count = 0
         for (section in sections) {
@@ -170,7 +172,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             if (items.isEmpty()) continue
             val card = group(root)
             for (item in items) {
-                row(card, item.name, icon = item.icon, color = item.tint) {
+                row(card, item.name, detail = if (item.key == "feedback") "前往 ZMW小武 的酷安主页，交流使用体验与功能建议" else null, icon = item.icon, color = item.tint) {
                     if (item.key == "apps") chooseApp() else { open(item.key); if (item.key == "groups" || item.key == "windows" || item.key == "core") refresh() }
                 }; count++
             }
@@ -195,7 +197,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         val layout = group(root)
         row(layout, "主窗口显示策略", if (mainPriority) "主窗口优先（推荐）" else "完整显示 · 原 macOS 风格", "windows") {
-            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：压缩顶部卡片，等比扩大主窗", "完整显示：保留原卡片尺寸")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
+            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：可读卡片，紧凑间距", "完整显示：可读卡片，宽松间距")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
         }
         row(layout, "顶部横排", "小窗横向排列在主窗上方", "windows") { command("layout_top") }
         row(layout, "侧边纵排", "小窗纵向排列在主窗旁", "windows") { command("layout_side") }
@@ -252,16 +254,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.9.2 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.9.3 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.9.2\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.9.3\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度 · Atomic Workbench", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.9.2", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.9.3", 13f, secondary)); root.addView(hero)
         val credits = group(root)
         row(credits, "ZMW小武 × GPT", "二次开发", "apps")
         row(credits, "需求策划、交互设计与真机测试", "ZMW小武")
@@ -277,8 +279,40 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 .setMessage("原作者：lujinxin / JensenLu。保留 NeXtep 的 Apache-2.0 许可证与第三方声明。Android 任务引擎来自原作，本分支增加四侧窗、工作组和新的交互。\n\n交互参考 macOS Stage Manager，非 Apple 官方应用。")
                 .setPositiveButton("知道了", null).show()
         }
+        row(group(root), "建议与反馈 · 酷安", "ZMW专用 · UID 43881308", "help") { open("feedback") }
         root.addView(UpdateSection.create(activity))
         root.addView(hint("真实任务迁移、点击交换、侧栏收起和工作组切换。新版本的实际安装、注入与交互效果仍需真机验收。"))
+    }
+    private fun feedback(root: LinearLayout) {
+        val intro = group(root)
+        row(intro, "台前调度 · 建议与反馈")
+        intro.addView(label("使用过程中遇到问题，或者希望增加新功能？欢迎前往我的酷安主页交流反馈。感谢大家一起完善台前调度！", 15f).apply {
+            setLineSpacing(dp(5).toFloat(), 1f); setPadding(dp(18), dp(8), dp(18), dp(18))
+        })
+        val info = group(root)
+        row(info, "二次开发", "ZMW小武 × GPT")
+        row(info, "酷安账号", "${CoolapkFeedback.ACCOUNT} · UID ${CoolapkFeedback.UID}")
+        val actions = group(root)
+        row(actions, "前往我的酷安主页", "优先通过酷安打开", "help") {
+            val destination = CoolapkFeedback.open { url, packageName ->
+                activity.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                    if (packageName != null) setPackage(packageName)
+                })
+                true
+            }
+            if (destination == CoolapkFeedback.Destination.UNAVAILABLE)
+                toast("无法打开酷安或浏览器，请在酷安搜索 UID 43881308（ZMW专用）")
+            else if (destination == CoolapkFeedback.Destination.WEB)
+                toast("已使用网页打开；若页面不可用，请在酷安搜索 UID 43881308")
+        }
+        row(actions, "复制反馈模板", "仅复制空白模板，不采集或上传信息", "info") {
+            runCatching {
+                val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("台前调度反馈", CoolapkFeedback.template))
+            }.onSuccess { toast("反馈模板已复制") }.onFailure { toast("复制失败，请稍后重试") }
+        }
+        root.addView(hint("请自行填写反馈内容。截图和日志请先隐藏个人隐私；不会自动读取或上传设备信息。"))
     }
     private fun groupPage(root: LinearLayout) {
         val actions = group(root)

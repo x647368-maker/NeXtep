@@ -10,12 +10,24 @@ internal object StageTopLayoutMetrics {
         fun overlaps(other: Box) = left < other.right && right > other.left && top < other.bottom && bottom > other.top
     }
     data class Actions(val collapse: Box, val main: Box, val add: Box)
-    fun depth(g: WorkspaceGeometry, density: Float): Int {
-        val width = (g.availableWidth - 5 * 8 * density) / 4f
-        val desired = (width * 1120f / 720f + (48 + 16) * density).roundToInt()
-        val minimumMain = (if (g.isLandscape) 160 else 260) * density
-        return minOf(desired, g.availableHeight - g.topHeight - minimumMain.roundToInt())
-            .coerceIn(2, minOf(g.availableWidth, g.availableHeight) - 1)
+    /** Width first: four previews occupy ~96% of a 395dp safe viewport.
+     * Fewer previews grow moderately; absent slots never contribute to the row. */
+    fun cardWidth(g: WorkspaceGeometry, count: Int, density: Float): Int {
+        require(count in 1..4 && density > 0)
+        val columns = (g.availableWidth - (count + 1) * 8 * density) / count
+        val cap = when (count) { 1 -> .38f; 2 -> .34f; 3 -> .30f; else -> 1f }
+        return minOf(columns, g.availableWidth * cap).toInt().coerceAtLeast(1)
+    }
+    fun depth(g: WorkspaceGeometry, density: Float, count: Int = 4, mainPriority: Boolean = false): Int {
+        require(count in 0..4 && density > 0)
+        if (count == 0) return (56 * density).roundToInt().coerceAtLeast(2)
+        val width = cardWidth(g, count, density)
+        // Only optional padding changes between policies, never the readable card size.
+        val desired = (width * 1120f / 720f + (if (mainPriority) 56 else 64) * density).roundToInt()
+        val minimumMain = (if (g.isLandscape) 160 else 220) * density
+        val limit = minOf(g.availableWidth - 1, g.availableHeight - g.topHeight - minimumMain.roundToInt())
+            .coerceAtLeast(2)
+        return desired.coerceIn(2, limit)
     }
     fun actions(width: Int, height: Int, density: Float): Actions {
         fun dp(value: Int) = (value * density).toInt()

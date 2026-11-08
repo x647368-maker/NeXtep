@@ -39,3 +39,19 @@ assert 'UpdatePolicy.digest(file)==m.sha256' in installer and 'UpdatePolicy.requ
 assert 'FileProvider.getUriForFile' in installer and 'canRequestPackageInstalls' in installer
 assert 'gh release create' not in (root/'.github/workflows/atomic-android.yml').read_text()
 print('Update install identity/hash boundaries, manual-only publication, and state-preserving visual reorder checked')
+
+# v0.9.3 changes presentation and feedback only. Preserve all task/VD/media engines.
+assert '144 * density' not in (k/'workspace/StageAdaptiveLayout.kt').read_text()
+viewport=(k/'systemui/WorkspaceViewport.kt').read_text()
+assert 'atomic_viewport_profiles_v5' in viewport and '"rail_top"' in viewport
+assert '.clear()' not in viewport
+assert 'StageTopLayoutMetrics.depth(g, profile.densityDpi / 160f, activeCount)' in viewport
+assert '"feedback" -> feedback(column)' in settings and 'Item("建议与反馈"' in settings
+assert 'CoolapkFeedback.template' in settings and 'setPrimaryClip' in settings
+assert 'CoolapkFeedback.open' in settings and 'setPackage(packageName)' in settings
+for credit in ['ZMW小武 × GPT', 'OpenAI GPT', 'lujinxin（Jensen Lu）', 'Apache License 2.0', 'https://github.com/lujinxin/NeXtep', 'https://github.com/x647368-maker/NeXtep']:
+ assert credit in settings,credit
+feedback=(k/'config/CoolapkFeedback.kt').read_text()
+assert 'https://www.coolapk.com/u/43881308?from=qr' in feedback
+assert not re.search(r'Build\.|Settings\.Secure|HttpURLConnection|https?://.*(?:api|upload)',feedback)
+print('Readable top cards, geometry-only cache migration, blank feedback template and preserved attribution checked')
