@@ -34,6 +34,15 @@ class VirtualDisplaySlot(
     private var outputConnected = false
     private var activeGeometry: SlotGeometry? = null
     private var layoutProfile: WorkspaceLayoutProfile? = null
+    private var cinema = false
+    fun setCinema(enabled: Boolean): Boolean {
+        if (cinema == enabled) return true
+        cinema = enabled
+        view.textureView.surfaceTexture?.let { onSurfaceTextureSizeChanged(it, view.textureView.width, view.textureView.height) }
+        return cinema == enabled
+    }
+    private fun canvas() = if (cinema) SlotGeometry(1280, 720, 240) else checkNotNull(layoutProfile).canvas
+
     private var pendingLaunch: Intent? = null
     private var freshSurfaceRequired = false
     private var surfaceGeneration = 1
@@ -71,7 +80,7 @@ class VirtualDisplaySlot(
         if (texture != null) onSurfaceTextureSizeChanged(texture, view.textureView.width, view.textureView.height)
     }
 
-    fun sourceBounds(): WorkspaceLayoutProfile.Source = checkNotNull(layoutProfile).source
+    fun sourceBounds(): WorkspaceLayoutProfile.Source = canvas().let { WorkspaceLayoutProfile.Source(0, 0, it.width, it.height) }
 
     fun isSuspended(): Boolean = suspended
 
@@ -171,11 +180,15 @@ class VirtualDisplaySlot(
         if (!active || suspended) return
         if (width <= 0 || height <= 0) return
         val profile = checkNotNull(layoutProfile) { "Recorded layout must precede slot activation" }
-        val geometry = profile.canvas
+        val geometry = canvas()
         // TextureView resets the producer buffer to its view size during layout.
         // Restore the recorded canvas even when the VirtualDisplay did not resize.
         texture.setDefaultBufferSize(geometry.width, geometry.height)
-        val transform = profile.previewTransform(width, height)
+        val transform = if (!cinema) profile.previewTransform(width, height) else {
+            val scale = minOf(width.toFloat() / geometry.width, height.toFloat() / geometry.height)
+            WorkspaceLayoutProfile.PreviewTransform(geometry.width * scale / width, geometry.height * scale / height,
+                (width - geometry.width * scale) / 2f, (height - geometry.height * scale) / 2f)
+        }
         view.textureView.setTransform(Matrix().apply {
             setScale(transform.scaleX, transform.scaleY)
             postTranslate(transform.x, transform.y)
@@ -201,8 +214,17 @@ class VirtualDisplaySlot(
                 "Resize/rebind failed slot=$index generation=$surfaceGeneration",
                 error,
             )
-            releaseDisplay("resize/rebind failed")
-            createDisplay(texture, width, height)
+            if (cinema) {
+                // A rejected cinema resize must retain the display and its task.
+                cinema = false
+                activeGeometry = profile.canvas
+                texture.setDefaultBufferSize(profile.canvas.width, profile.canvas.height)
+                runCatching { display.resize(profile.canvas.width, profile.canvas.height, profile.canvas.densityDpi) }
+                view.post { if (active && !suspended) onSurfaceTextureSizeChanged(texture, width, height) }
+            } else {
+                releaseDisplay("resize/rebind failed")
+                createDisplay(texture, width, height)
+            }
         }
     }
 
@@ -217,7 +239,7 @@ class VirtualDisplaySlot(
 
     private fun createDisplay(texture: SurfaceTexture, width: Int, height: Int) {
         if (!active || suspended || virtualDisplay != null || width <= 0 || height <= 0) return
-        val geometry = checkNotNull(layoutProfile).canvas
+        val geometry = canvas()
         activeGeometry = geometry
         texture.setDefaultBufferSize(geometry.width, geometry.height)
         onSurfaceTextureSizeChanged(texture, width, height)

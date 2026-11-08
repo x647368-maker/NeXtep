@@ -63,7 +63,24 @@ internal class WorkspaceViewport(
         preferences?.edit()?.putBoolean("rail_top", value)?.apply()
         SystemServerWorkspaceBridge.publishLayout(context, layout())
     }
+    var activeCount = 4
+    var adaptive = true
+    var quickExpanded = false
+    var cinema = false
     private fun selected(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {
+        val density = profile.densityDpi / 160f
+        val base = if (quickExpanded && !profile.geometry.isLandscape) profile.copy(geometry = profile.geometry.copy(
+            topHeight = (100 * density).toInt().coerceAtMost(profile.geometry.availableHeight / 4))) else profile
+        val selected = selectedRail(base)
+        val g = selected.geometry
+        return when {
+            cinema && !g.isLandscape -> selected.copy(geometry = g.copy(railAtTop = true,
+                sidebarWidth = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.cinemaDepth(g, density)), activeCount = activeCount)
+            adaptive -> selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount)
+            else -> selected
+        }
+    }
+    private fun selectedRail(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {
         if (!topRail) return profile
         val g = profile.geometry
         val depth = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.depth(g, profile.densityDpi / 160f)

@@ -64,6 +64,7 @@ class TaskSwitcherView(
     private var inputAction: ((MotionEvent) -> Result<Unit>)? = null
     fun setInputAction(action: (MotionEvent) -> Result<Unit>) { inputAction = action }
     fun setDirectInteraction(value: Boolean) {
+        if (directInteraction == value) return
         cancelInputGesture()
         directInteraction = value
         windowMenu.setTextColor(if (value) Color.rgb(110, 220, 170) else Color.rgb(115, 115, 120))

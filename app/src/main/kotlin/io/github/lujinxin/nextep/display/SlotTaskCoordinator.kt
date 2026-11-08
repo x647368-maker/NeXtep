@@ -356,6 +356,22 @@ class SlotTaskCoordinator(
     }
 
     /** Close only the workspace window: park its real task in the background. */
+    fun moveForegroundWechatToSlot(expectedTask: Int): Result<Unit> = runCatching {
+        ensureMainThread()
+        val task = checkNotNull(taskRepository.foregroundTask()) { "请先在主窗打开微信小程序" }
+        check(io.github.x647368maker.atomicworkbench.systemui.StageTaskMigrationPolicy.eligible(
+            task.component.packageName, task.userId, task.userId, task.taskId, expectedTask,
+            task.displayId == Display.DEFAULT_DISPLAY && isExchangeableMainTask(task), isGroupRestoreReady())) {
+            "微信任务已变化，未移动任何窗口"
+        }
+        val index = slotRecords.indexOfFirst { it.state is SlotState.Ready }
+        check(index >= 0) { "请先空出一个小窗" }
+        val ready = slotRecords[index].state as SlotState.Ready
+        runTransition("move exact WeChat task=${task.taskId}") {
+            parkMainTaskInSlot(index, ready, task, leaveOverview = false)
+        }.getOrThrow()
+    }
+
     fun closeWindow(index: Int): Result<Unit> = runCatching {
         ensureMainThread()
         check(isGroupRestoreReady()) { "工作区正在切换" }
@@ -1162,27 +1178,22 @@ class SlotTaskCoordinator(
                 "main task parked in empty slot",
             )
         } catch (error: Throwable) {
-            val rollbackErrors = mutableListOf<Throwable>()
             record.retainedTaskId = null
             record.originalLayout = null
             record.migrationRecoveryComponent = null
             record.migrationRecoveryDeadline = 0L
             record.migrationRecoveryAttempts = 0
-            if (preparedForMove) {
-                runCatching {
-                    if (movedToSlot) {
-                        moveTaskToDisplayAndWait(
-                            mainTask.taskId,
-                            Display.DEFAULT_DISPLAY,
-                        )
+            val rollbackErrors = io.github.x647368maker.atomicworkbench.systemui.StageTaskMigrationPolicy.rollback({
+                if (preparedForMove) {
+                    // Query actual ownership even when a Binder call moved then threw.
+                    if (movedToSlot || taskRepository.findTask(mainTask.taskId)?.displayId == targetDisplayId) {
+                        moveTaskToDisplayAndWait(mainTask.taskId, Display.DEFAULT_DISPLAY)
                     }
                     restoreTaskLayout(restoredMainTask, mainOriginalLayout)
-                }.onFailure(rollbackErrors::add)
-            }
-            if (wasPresented) {
-                mainTaskPresenter.presentTask(mainTask.taskId, geometryProvider())
-                    .onFailure(rollbackErrors::add)
-            }
+                }
+            }, {
+                if (wasPresented) mainTaskPresenter.presentTask(mainTask.taskId, geometryProvider()).getOrThrow()
+            })
             if (rollbackErrors.isEmpty()) {
                 setState(slotIndex, ready, "empty slot parking rolled back")
             } else {

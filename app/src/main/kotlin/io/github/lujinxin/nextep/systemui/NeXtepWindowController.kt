@@ -56,6 +56,14 @@ class NeXtepWindowController(
     private val windowPicker = AtomicPanel(context)
     private val appCatalog = StageAppCatalog(context)
     private val frequentApps = StageFrequentApps(context)
+    private val core = StageQuickStore(context)
+    private val cinemaPolicy = StageCinemaPolicy().apply { mode = core.cinemaMode }
+    private val mediaSignals = StageMediaSignals(context) { scheduleCinemaCheck() }
+    private var cinemaSlot: Int? = null
+    private var quickBar: StageQuickBarView? = null
+    private var quickGeneration = 0
+    private var cinemaApplying = false
+    private val cinemaCheck = Runnable { evaluateCinema() }
     private var windowPickerGeneration = 0
     private var windowRefreshQueued = false
     private fun scheduleWindowRefresh() {
@@ -65,6 +73,7 @@ class NeXtepWindowController(
             windowRefreshQueued = false
             if (workspaceVisible && !suspended) {
                 applyStageStack(geometry())
+                scheduleCinemaCheck()
                 scheduleStageFocus()
             }
         }
@@ -176,6 +185,7 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         contentDrag.cancel()
         windowPickerGeneration++
         windowPicker.dismiss()
@@ -208,6 +218,7 @@ class NeXtepWindowController(
         cancelPendingResumeContent()
         workspaceVisible = true
         suspended = false
+        mediaSignals.start(); refreshQuickBar()
         // Wake reuses attached windows and the recorded layout. Re-running show()
         // starts a fresh alpha=0 entry animation and repeats all display setup.
         val geometry = geometry()
@@ -289,6 +300,8 @@ class NeXtepWindowController(
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
         workspaceVisible = true
+        syncCoreViewport()
+        mediaSignals.start(); refreshQuickBar()
         reconfigure().getOrThrow()
         records.forEach { record ->
             val view = record.view
@@ -323,6 +336,9 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
+        cinemaPolicy.reset(); cinemaSlot = null; viewport.cinema = false
+        slotWindows.forEach { it.setCinema(false) }
         contentDrag.cancel()
         windowPickerGeneration++
         windowPicker.dismiss()
@@ -373,6 +389,7 @@ class NeXtepWindowController(
 
     fun onTasksChanged() {
         slotCoordinator?.onTasksChanged()
+        scheduleCinemaCheck()
         scheduleStageFocus()
     }
 
@@ -385,11 +402,13 @@ class NeXtepWindowController(
         ?.openFromLauncher(intent)
         ?: Result.failure(IllegalStateException("Slot coordinator unavailable"))
 
-    fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry =
-        viewport.geometry(sidebarSide, refreshViewport).let {
+    fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry {
+        syncCoreViewport()
+        return viewport.geometry(sidebarSide, refreshViewport).let {
             if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
-            else if (shownWindowCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
+            else if (viewport.activeCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
         }
+    }
 
     fun projectDisplayRotation(rotation: Int) {
         viewport.projectRotation(rotation)
@@ -440,6 +459,7 @@ class NeXtepWindowController(
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
         val geometry = geometry()
+        SystemServerWorkspaceBridge.publishLayout(context, viewport.layout())
         applyWindowGeometry(geometry, refreshControls = !rotationOnly)
         if (rotationOnly && !geometry.railAtTop) {
             // Only project the existing windows into the new display coordinates.
@@ -495,6 +515,16 @@ class NeXtepWindowController(
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
+            "cinema_auto", "cinema_manual", "cinema_off" -> {
+                leaveCinema(); core.cinemaMode = when(command) { "cinema_auto" -> StageCinemaPolicy.Mode.AUTO; "cinema_manual" -> StageCinemaPolicy.Mode.MANUAL; else -> StageCinemaPolicy.Mode.OFF }
+                cinemaPolicy.mode = core.cinemaMode; scheduleCinemaCheck()
+            }
+            "cinema_enter" -> { check(workspaceVisible && !suspended) { "请先开启台前调度" }; showCinemaMenu(records.first { it.title == "StageMainHandle" }.view) }
+            "cinema_leave" -> leaveCinema()
+            "quick_expand", "quick_collapse", "quick_off" -> { if (command == "quick_off") core.enabled = false; setQuickExpanded(command == "quick_expand") }
+            "quick_auto", "quick_fixed" -> { core.fixed = command == "quick_fixed"; refreshQuickBar() }
+            "adaptive_on", "adaptive_off" -> { core.adaptive = command == "adaptive_on"; syncCoreViewport(); if(workspaceVisible && !suspended) onViewportChanged() }
+            "wechat_move" -> moveWechat()
             "layout_top", "layout_side" -> changeStageLayout(command == "layout_top")
             "close_main" -> closeMainWindow()
             "fullscreen" -> onExitRequested()
@@ -538,6 +568,9 @@ class NeXtepWindowController(
         android.os.Bundle().apply {
             putBoolean("ok", true)
             putBoolean("layout_top", viewport.isTopRail())
+            putString("cinema_mode", core.cinemaMode.name)
+            putBoolean("quick_fixed", core.fixed); putBoolean("quick_expanded", core.enabled && core.expanded)
+            putBoolean("adaptive", core.adaptive)
             putString("groups", workgroups.settingsSnapshot())
             putString("windows", org.json.JSONArray().also { array ->
                 slotCoordinator?.slotStates()?.forEachIndexed { index, state ->
@@ -575,7 +608,14 @@ class NeXtepWindowController(
             title = "NeXtepTopBar",
             // Retain only a transparent status-safe wallpaper host. No controls,
             // application strip, branding or touch interception above the stage.
-            view = FrameLayout(context),
+            view = FrameLayout(context).apply {
+                quickBar = StageQuickBarView(context, ::quickSelected,
+                    { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })
+                addView(quickBar, FrameLayout.LayoutParams(-1, dp(52).toInt(), Gravity.BOTTOM).apply {
+                    leftMargin = dp(8).toInt(); rightMargin = dp(8).toInt(); bottomMargin = dp(4).toInt()
+                })
+                quickBar?.visibility = if (core.enabled && core.expanded) View.VISIBLE else View.GONE
+            },
             width = geometry.screenWidth,
             height = geometry.topHeight,
             gravity = Gravity.TOP,
@@ -721,6 +761,7 @@ class NeXtepWindowController(
     ) {
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
             record.title == "AtomicSidebarHandle" || record.title == "StageMainHandle" ||
+            (record.title == "NeXtepTopBar" && core.enabled && core.expanded && !geometry.isLandscape) ||
             (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -740,6 +781,7 @@ class NeXtepWindowController(
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         params.gravity = Gravity.TOP or Gravity.LEFT
         setWindowBounds(record.title, params, geometry)
+        if (record.title == "NeXtepTopBar") quickBar?.visibility = if (core.enabled && core.expanded && !geometry.isLandscape) View.VISIBLE else View.GONE
         if (record.title == "AtomicSidebarHandle") (record.view as? android.widget.TextView)?.apply {
             text = if (!sidebarCollapsed) "‹›" else if (geometry.railAtTop || geometry.isLandscape)
                 (if (geometry.railAtTop || geometry.isSidebarAtTop) "⌄ 展开小窗" else "⌃ 展开小窗")
@@ -795,896 +837,777 @@ class NeXtepWindowController(
                 params.height = dp(24).toInt()
                 params.x = geometry.contentLeft + (geometry.contentWidth - params.width) / 2
                 params.y = if (geometry.railAtTop && !sidebarCollapsed) {
-                    val actions = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
-                        requested.sidebarPhysicalWidth, requested.sidebarPhysicalHeight, context.resources.displayMetrics.density)
-                    params.x = requested.sidebarLeft + actions.main.left
-                    requested.sidebarTop + actions.main.top
-                } else (geometry.contentTop - params.height).coerceAtLeast(geometry.availableTop +
-                    if (!geometry.isLandscape) geometry.topHeight - params.height else 0)
+                    val actions …49061 tokens truncated…ot exchanged",
+                )
+            } else {
+                // Promotion intentionally emptied the slot. An old migration
+                // recovery would otherwise relaunch this live task back into it,
+                // leaving the visible '+' blocked by pendingComponent.
+                clearSlotAssignment(slotIndex)
+                setState(slotIndex, SlotState.Ready(occupied.displayId), "slot promoted to main")
             }
-            "AtomicSidebarHandle" -> {
-                if (sidebarCollapsed) {
-                    val base = viewport.geometry(sidebarSide).rotatedTo(requested.displayRotation)
-                    val box = io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.handle(base, requested, context.resources.displayMetrics.density)
-                    params.width = box.width; params.height = box.height
-                    params.x = box.left; params.y = box.top
-                } else if (geometry.railAtTop) {
-                    val box = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
-                        geometry.sidebarPhysicalWidth, geometry.sidebarPhysicalHeight, context.resources.displayMetrics.density).collapse
-                    params.width = box.width; params.height = box.height
-                    params.x = geometry.sidebarLeft + box.left; params.y = geometry.sidebarTop + box.top
-                } else if (!geometry.isLandscape) {
-                    params.width = dp(16).toInt()
-                    params.height = dp(32).toInt()
-                    params.x = if (geometry.sidebarSide == SidebarSide.LEFT)
-                        geometry.sidebarLeft + geometry.sidebarPhysicalWidth - params.width else geometry.sidebarLeft
-                    params.x = params.x.coerceIn(geometry.availableLeft, geometry.availableRight - params.width)
-                    params.y = geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height - dp(12).toInt()
-                } else {
-                    params.width = dp(80).toInt()
-                    params.height = dp(20).toInt()
-                    params.x = geometry.sidebarLeft + (geometry.sidebarPhysicalWidth - params.width) / 2
-                    params.y = if (geometry.isSidebarAtTop)
-                        geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height else geometry.sidebarTop
-                    params.y = params.y.coerceIn(geometry.availableTop, geometry.availableBottom - params.height)
-                }
+            val presentation = mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider())
+            if (presentation.isFailure && taskRepository.findTask(slotTask.taskId) != null) {
+                presentation.getOrThrow()
             }
-            "NeXtepTopBar" -> {
-                params.width = geometry.controlWidth
-                params.height = geometry.controlHeight
-                params.x = geometry.controlLeft
-                params.y = geometry.controlTop
-            }
-            "NeXtepSidebar" -> {
-                params.width = geometry.sidebarPhysicalWidth
-                params.height = geometry.sidebarPhysicalHeight
-                params.x = geometry.sidebarLeft
-                params.y = geometry.sidebarTop
-            }
-            "NeXtepContentPanel" -> {
-                // The transparent, non-touchable root observes full-display insets.
-                // Its drag highlight child and visible tasks use the safe bounds.
-                params.width = geometry.screenWidth
-                params.height = geometry.screenHeight
-                params.x = 0
-                params.y = 0
-            }
-        }
-    }
-
-    private fun setGroupInputBlocked(blocked: Boolean) {
-        if (groupInputBlocked == blocked) return
-        groupInputBlocked = blocked
-        records.firstOrNull { it.title == "NeXtepContentPanel" }?.let { record ->
-            val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@let
-            configureWindow(record, params, geometry())
-            runCatching { windowManager.updateViewLayout(record.view, params) }.onFailure {
-                NeXtepLog.warn("workgroup_cover", "Unable to update transition input protection", it)
-            }
-        }
-    }
-
-    private fun startWorkgroupCover(onReady: () -> Unit) {
-        cancelDragVisuals()
-        windowPickerGeneration++; windowPicker.dismiss()
-        val geometry = geometry()
-        groupInitialOwners = slotCoordinator?.slotStates().orEmpty().map { (it as? SlotState.Occupied)?.taskId }
-        groupInitialFrames = slotWindows.map { it.contentFrameSequence }
-        val frames = mutableListOf<WorkgroupTransitionCover.Frame>()
-        try {
-            val main = taskRepository.foregroundTask()
-            val bitmap = if (WorkspaceWallpaperBackdrop.canCapture(context) && main != null) runCatching {
-                TaskSurfaceCompat.capturePreview(main.taskId, Rect(geometry.availableLeft, geometry.availableTop,
-                    geometry.availableRight, geometry.availableBottom))
-            }.getOrNull() else null
-            frames.add(WorkgroupTransitionCover.Frame(bitmap, floatArrayOf(
-                geometry.contentLeft.toFloat(), geometry.contentTop.toFloat(),
-                geometry.contentRight.toFloat(), geometry.contentTop.toFloat(),
-                geometry.contentRight.toFloat(), geometry.contentBottom.toFloat(),
-                geometry.contentLeft.toFloat(), geometry.contentBottom.toFloat())))
-            slotWindows.sortedBy { it.view.z }.forEach { slot ->
-                if (!slot.view.isWorkspaceCardVisible()) return@forEach
-                val corners = slot.view.screenQuad() ?: return@forEach
-                // Display-size captures suffice for a stationary cover; avoid allocating
-                // four full-resolution phone bitmaps inside the SystemUI heap.
-                val captured = runCatching { slot.view.capturePreview() }.getOrNull()
-                frames.add(WorkgroupTransitionCover.Frame(captured, corners, slot.view.alpha))
-            }
-            groupCover.start(geometry, frames, onReady)
-        } catch (failure: Throwable) {
-            frames.mapNotNull { it.bitmap }.distinct().forEach { if (!it.isRecycled) it.recycle() }
-            throw failure
-        }
-    }
-
-    private fun finishWorkgroupCover(success: Boolean) {
-        groupCover.finish(success) {
-            val states = slotCoordinator?.slotStates().orEmpty()
-            states.size == WORKSPACE_SLOT_COUNT && states.indices.all { index ->
-                when (val state = states[index]) {
-                    is SlotState.Ready -> true
-                    is SlotState.Occupied -> {
-                        val slot = slotWindows[index]
-                        slot.view.textureView.isAvailable &&
-                            (state.taskId == groupInitialOwners.getOrNull(index) ||
-                                slot.contentFrameSequence > (groupInitialFrames.getOrNull(index) ?: -1L))
-                    }
-                    else -> false
-                }
-            }
-        }
-    }
-
-    private fun showStageMessage(value: String) = android.widget.Toast.makeText(context, value, android.widget.Toast.LENGTH_LONG).show()
-
-    private fun changeStageLayout(top: Boolean) {
-        check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
-        if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
-        cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
-        val previous = viewport.isTopRail()
-        runCatching {
-            viewport.setTopRail(top)
-            if (workspaceVisible && !suspended) onViewportChanged()
-        }.onFailure {
-            viewport.setTopRail(previous)
-            if (workspaceVisible && !suspended) onViewportChanged()
-            throw it
-        }
-    }
-
-    private fun showMainMenu() {
-        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
-        val anchor = records.firstOrNull { it.title == "StageMainHandle" }?.view ?: return
-        AtomicPopupMenu.show(context, anchor, listOf(
-            "切换全屏（保留工作区）" to { onExitRequested() },
-            (if (viewport.isTopRail()) "切换为侧边纵排" else "切换为顶部横排") to {
-                runCatching { changeStageLayout(!viewport.isTopRail()) }.onFailure { showStageMessage(it.message ?: "布局未切换") }
-            },
-            "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
-            "关闭主窗（移回后台）" to { closeMainWindow() },
-            "退出台前调度" to { onExitRequested() },
-        ))
-    }
-
-    private fun closeMainWindow() {
-        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
-        runCatching {
-            val engine = checkNotNull(slotCoordinator)
-            check(engine.isGroupRestoreReady()) { "窗口正在切换" }
-            val task = checkNotNull(taskRepository.foregroundTask())
-            check(task.component.packageName != TriggerBroadcastContract.resolveHomePackage(context) &&
-                task.component.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE && task.windowingMode == 1 && !task.vendorWindowed) { "当前主窗不能关闭" }
-            io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat.parkInDefaultDisplay(
-                checkNotNull(task.token), Rect(), task.densityDpi, task.windowingMode).getOrThrow()
-            mainTaskPresenter.restoreForMove(task.taskId).getOrThrow()
-            engine.onTasksChanged(); scheduleStageFocus()
-        }.onFailure { showStageMessage(it.message ?: "主窗未关闭") }
-    }
-
-    private fun showWindowMenu(index: Int, anchor: View) {
-        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
-        val state = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied ?: return
-        AtomicPopupMenu.show(context, anchor, listOf(
-            "在小窗中操作" to { slotWindows[index].view.setDirectInteraction(true) },
-            "切换为主窗口" to { slotCoordinator?.onSlotClicked(index) },
-            "替换应用" to { chooseWindowApp(anchor, index, state.taskId) },
-            "关闭小窗（移回后台）" to {
-                val current = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied
-                if (current?.taskId == state.taskId) slotCoordinator?.closeWindow(index)?.onFailure {
-                    android.widget.Toast.makeText(context, it.message ?: "关闭失败", android.widget.Toast.LENGTH_LONG).show()
-                }
-            },
-        ))
-    }
-
-    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null, main: Boolean = false) {
-        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
-        val generation = ++windowPickerGeneration
-        val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
-        rows.addView(android.widget.ProgressBar(context), android.widget.LinearLayout.LayoutParams(-1, dp(48).toInt()))
-        rows.addView(windowPicker.label("正在读取应用…"))
-        windowPicker.onVisibilityChanged = { shown ->
-            records.filter { it.title == "AtomicSidebarHandle" || it.title == "StageMainHandle" }.forEach {
-                it.view.visibility = if (!shown && workspaceVisible && !suspended) View.VISIBLE else View.GONE
-            }
-        }
-        windowPicker.show(anchor, if (main) "替换主应用" else if (target == null) "添加小窗" else "替换应用", rows, fillContent = true)
-        appCatalog.request { result ->
-            if (generation != windowPickerGeneration || !windowPicker.isShowing || !workspaceVisible || suspended) return@request
-            result.onSuccess { entries ->
-                rows.removeAllViews()
-                val query = android.widget.EditText(context).apply {
-                    hint = "搜索应用"; textSize = 15f; setSingleLine(true)
-                    setTextColor(windowPicker.textColor); setHintTextColor(Color.GRAY)
-                    setPadding(dp(12).toInt(), 0, dp(12).toInt(), 0)
-                }
-                rows.addView(query, android.widget.LinearLayout.LayoutParams(-1, dp(48).toInt()))
-                val grid = android.widget.GridView(context).apply {
-                    numColumns = 4; stretchMode = android.widget.GridView.STRETCH_COLUMN_WIDTH
-                    verticalSpacing = dp(6).toInt(); horizontalSpacing = dp(4).toInt()
-                    clipToPadding = false; setPadding(0, dp(8).toInt(), 0, dp(16).toInt())
-                }
-                rows.addView(grid, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
-                var filtered = entries
-                val adapter = object : android.widget.BaseAdapter() {
-                    override fun getCount() = filtered.size
-                    override fun getItem(position: Int) = filtered[position]
-                    override fun getItemId(position: Int) = position.toLong()
-                    override fun getView(position: Int, convert: View?, parent: android.view.ViewGroup?): View {
-                        val cell = (convert as? android.widget.LinearLayout) ?: android.widget.LinearLayout(context).apply {
-                            orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER
-                            setPadding(dp(4).toInt(), dp(8).toInt(), dp(4).toInt(), dp(4).toInt())
-                            addView(android.widget.ImageView(context).apply {
-                                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                            }, android.widget.LinearLayout.LayoutParams(dp(44).toInt(), dp(44).toInt()))
-                            addView(windowPicker.label("", 12f).apply {
-                                gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
-                                setPadding(0, dp(6).toInt(), 0, 0)
-                            }, android.widget.LinearLayout.LayoutParams(-1, dp(38).toInt()))
-                        }
-                        val entry = getItem(position)
-                        (cell.getChildAt(0) as android.widget.ImageView).setImageDrawable(entry.icon)
-                        (cell.getChildAt(1) as android.widget.TextView).text = entry.label
-                        cell.contentDescription = entry.label
-                        return cell
-                    }
-                }
-                grid.adapter = adapter
-                fun chooseEntry(entry: io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository.AppEntry) {
-                    windowPicker.dismiss()
-                    val engine = slotCoordinator ?: return
-                    if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return
-                    if (main) {
-                        engine.openInMain(entry.launchIntent()).onFailure { showStageMessage(it.message ?: "主应用未打开") }
-                    } else {
-                        val current = target?.let { engine.slotStates().getOrNull(it) as? SlotState.Occupied }
-                        if (target != null && current?.taskId != expectedTask) return
-                        val index = target ?: engine.slotStates().indexOfFirst { it is SlotState.Ready }
-                        if (index < 0) showStageMessage("最多四个小窗")
-                        else engine.replaceWindow(index, entry.launchIntent()).onFailure { showStageMessage(it.message ?: "应用未打开") }
-                    }
-                }
-                grid.setOnItemClickListener { _, _, position, _ ->
-                    filtered.getOrNull(position)?.let(::chooseEntry)
-                }
-                val frequentTitle = windowPicker.label("最近常用", 13f).apply {
-                    setPadding(dp(12).toInt(), dp(2).toInt(), dp(12).toInt(), 0)
-                }
-                val frequentRow = android.widget.LinearLayout(context).apply {
-                    gravity = Gravity.CENTER
-                    addView(android.widget.ProgressBar(context), android.widget.LinearLayout.LayoutParams(dp(22).toInt(), dp(22).toInt()))
-                }
-                // Fixed quick row before the recycled, alphabetic full catalogue.
-                rows.addView(frequentTitle, 1, android.widget.LinearLayout.LayoutParams(-1, dp(28).toInt()))
-                rows.addView(frequentRow, 2, android.widget.LinearLayout.LayoutParams(-1, dp(88).toInt()))
-                var hasFrequent = false
-                frequentApps.request(entries) quickRow@ { apps ->
-                    if (generation != windowPickerGeneration || !windowPicker.isShowing) return@quickRow
-                    frequentRow.removeAllViews()
-                    apps.take(5).forEach { entry ->
-                        val cell = android.widget.LinearLayout(context).apply {
-                            orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER
-                            contentDescription = entry.label; isClickable = true
-                            setOnClickListener { chooseEntry(entry) }
-                        }
-                        cell.addView(android.widget.ImageView(context).apply {
-                            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                            setImageDrawable(entry.icon.constantState?.newDrawable(context.resources)?.mutate() ?: entry.icon)
-                        }, android.widget.LinearLayout.LayoutParams(dp(38).toInt(), dp(38).toInt()))
-                        cell.addView(windowPicker.label(entry.label, 11f).apply {
-                            gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
-                            setPadding(dp(2).toInt(), dp(5).toInt(), dp(2).toInt(), 0)
-                        }, android.widget.LinearLayout.LayoutParams(-1, dp(34).toInt()))
-                        frequentRow.addView(cell, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
-                    }
-                    hasFrequent = apps.isNotEmpty()
-                    val show = hasFrequent && query.text.isNullOrBlank()
-                    frequentTitle.visibility = if (show) View.VISIBLE else View.GONE
-                    frequentRow.visibility = if (show) View.VISIBLE else View.GONE
-                }
-                query.addTextChangedListener(object : android.text.TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                        val filter = s?.toString().orEmpty().trim()
-                        filtered = entries.filter { it.label.contains(filter, true) || it.component.packageName.contains(filter, true) }
-                        adapter.notifyDataSetChanged()
-                        val show = hasFrequent && filter.isEmpty()
-                        frequentTitle.visibility = if (show) View.VISIBLE else View.GONE
-                        frequentRow.visibility = if (show) View.VISIBLE else View.GONE
-                    }
-                    override fun afterTextChanged(s: android.text.Editable?) {}
-                })
-            }.onFailure {
-                rows.removeAllViews(); rows.addView(windowPicker.label("应用列表读取失败，请关闭后重试"))
-            }
-        }
-    }
-
-    private fun sidebarHandle(): View = android.widget.TextView(context).apply {
-        text = "‹›"
-        gravity = Gravity.CENTER
-        textSize = 14f
-        setTextColor(Color.WHITE)
-        background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.argb(210, 28, 43, 53)); cornerRadius = dp(12)
-        }
-        contentDescription = "滑动收起或展开侧栏"
-        isClickable = true
-        setOnClickListener { setSidebarCollapsed(!sidebarCollapsed) }
-        var downX = 0f
-        var downY = 0f
-        setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; true }
-                android.view.MotionEvent.ACTION_UP -> {
-                    val g = geometry()
-                    val delta = if (g.railAtTop || g.isLandscape) event.rawY - downY else event.rawX - downX
-                    val outward = if (g.railAtTop) false else if (g.isLandscape) !g.isSidebarAtTop else g.sidebarSide == SidebarSide.RIGHT
-                    if (kotlin.math.abs(delta) > dp(24)) setSidebarCollapsed((delta > 0) == outward)
-                    else view.performClick()
-                    true
-                }
-                android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_CANCEL -> true
-                else -> false
-            }
-        }
-    }
-
-    private fun setSidebarCollapsed(value: Boolean) {
-        if (!workspaceVisible || suspended || groupInputBlocked || sidebarCollapsed == value) return
-        cancelDragVisuals()
-        sidebarCollapsed = value
-        onViewportChanged()
-        topAppStrip?.setStageStatus(workgroups.statusLabel(), "", value)
-        records.firstOrNull { it.title == "NeXtepSidebar" }?.let { record ->
-            val params = record.view.layoutParams as WindowManager.LayoutParams
-            configureWindow(record, params, geometry())
-            windowManager.updateViewLayout(record.view, params)
-            // Retain TextureViews and tasks; a GONE sidebar would destroy their displays.
-            record.view.animate().cancel()
-            val base = viewport.geometry(sidebarSide)
-            val distance = if (base.railAtTop || base.isLandscape) base.sidebarPhysicalHeight.toFloat() else base.sidebarPhysicalWidth.toFloat()
-            val outward = if (base.railAtTop) false else if (base.isLandscape) !base.isSidebarAtTop else base.sidebarSide == SidebarSide.RIGHT
-            val offset = if (value) distance * (if (outward) 1 else -1) else 0f
-            record.view.animate().alpha(if (value) 0f else 1f)
-                .translationX(if (base.railAtTop || base.isLandscape) 0f else offset)
-                .translationY(if (base.railAtTop || base.isLandscape) offset else 0f)
-                .setDuration(220).setInterpolator(transitionInterpolator).start()
-        }
-    }
-
-    private var sidebarTouchRegionReady = false
-    private fun sidebarPanel(geometry: WorkspaceGeometry): View = object : FrameLayout(context) {
-        private var insetsListener: Any? = null
-        override fun onAttachedToWindow() {
-            super.onAttachedToWindow()
-            runCatching {
-                val cls = Class.forName("android.view.ViewTreeObserver\$OnComputeInternalInsetsListener")
-                val listener = java.lang.reflect.Proxy.newProxyInstance(cls.classLoader, arrayOf(cls)) { proxy, method, arguments ->
-                    when (method.name) {
-                        "hashCode" -> return@newProxyInstance System.identityHashCode(proxy)
-                        "equals" -> return@newProxyInstance proxy === arguments?.firstOrNull()
-                        "toString" -> return@newProxyInstance "StageSidebarTouchRegion"
-                    }
-                    if (method.name == "onComputeInternalInsets") {
-                        val info = arguments?.firstOrNull() ?: return@newProxyInstance null
-                        info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType).invoke(info, 3)
-                        val region = info.javaClass.getField("touchableRegion").get(info) as android.graphics.Region
-                        region.setEmpty()
-                        val origin = IntArray(2); rootView.getLocationOnScreen(origin)
-                        val rect = Rect()
-                        slotWindows.forEach { slot ->
-                            if (slot.view.isWorkspaceCardVisible() && slot.view.getScreenVisibleRect(rect)) {
-                                rect.offset(-origin[0], -origin[1]); region.op(rect, android.graphics.Region.Op.UNION)
-                            }
-                        }
-                        sidebarAddButton?.takeIf { it.visibility == View.VISIBLE }?.let { button ->
-                            if (button.getGlobalVisibleRect(rect)) region.op(rect, android.graphics.Region.Op.UNION)
-                        }
-                    }; null
-                }
-                viewTreeObserver.javaClass.getMethod("addOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, listener)
-                insetsListener = listener
-                sidebarTouchRegionReady = true
-                backdropHandler.post { if (workspaceVisible && !suspended) onViewportChanged() }
-                scheduleWindowRefresh()
-            }.onFailure { NeXtepLog.warn("stage_sidebar", "Narrow input region unavailable; keep safe main margin", it) }
-        }
-        override fun onDetachedFromWindow() {
-            insetsListener?.let { listener -> runCatching {
-                val cls = Class.forName("android.view.ViewTreeObserver\$OnComputeInternalInsetsListener")
-                if (viewTreeObserver.isAlive) viewTreeObserver.javaClass.getMethod("removeOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, listener)
-            } }
-            insetsListener = null; sidebarTouchRegionReady = false
-            super.onDetachedFromWindow()
-        }
-    }.apply {
-        sidebarView = this
-        setOnDragListener(contentDrag)
-        setBackgroundColor(Color.TRANSPARENT)
-        if (FeatureGate.VIRTUAL_DISPLAY_SLOTS.defaultEnabled) {
-            slotWindows = List(WORKSPACE_SLOT_COUNT) { index -> VirtualDisplaySlot(context, index) }
-            slotWindows.forEachIndexed { index, slot ->
-                slot.view.setWindowMenuAction(::showWindowMenu)
-                slot.view.setBackgroundSwipeEnabled(slotBackgroundSwipeEnabled)
-                addView(slot.view)
-            }
-            sidebarAddButton = android.widget.TextView(context).apply {
-                text = "+"; textSize = 26f; gravity = Gravity.CENTER
-                setTextColor(Color.WHITE); contentDescription = "添加小窗，最多四个"
-                background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.argb(210, 30, 30, 30)); cornerRadius = dp(22) }
-                elevation = dp(30)
-                setOnClickListener { chooseWindowApp(this, null) }
-            }.also { addView(it, FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(), Gravity.CENTER)) }
-            applySlotLayout(this, geometry)
-            slotCoordinator = SlotTaskCoordinator(
-                context = context,
-                slots = slotWindows,
-                mainTaskPresenter = mainTaskPresenter,
-                geometryProvider = ::geometry,
-                onSwapAnimation = ::animateDragSwap,
-                onMainSlotAnimation = ::animateMainSlotSwap,
-                onInternalSlotDrag = { source, drag ->
-                    internalDrag.start(source, WorkspaceInternalDragController.Payload.Slot(drag))
-                },
-                onInternalDragTouch = internalDrag::touch,
-                onSlotStatesChanged = ::scheduleWindowRefresh,
-            )
-        }
-    }
-
-    private fun cancelDragVisuals() {
-        internalDrag.cancel()
-        slotWindows.forEach { it.view.cancelBackgroundSwipe() }
-        slotCoordinator?.onSlotDragEnded()
-        slotCoordinator?.cancelPendingExchange()
-        swapAnimator.cancel()
-    }
-
-    private fun highlightInternalDragTarget(target: WorkspaceInternalDragController.Target?) {
-        slotWindows.forEachIndexed { index, slot ->
-            slot.view.setDropHighlighted(target == WorkspaceInternalDragController.Target.Slot(index))
-        }
-        topAppStrip?.setDismissTargetHighlighted(target == WorkspaceInternalDragController.Target.Background)
-        contentHighlightView?.background =
-            if (target == WorkspaceInternalDragController.Target.Main) {
-                android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.argb(25, 62, 190, 198))
-                    setStroke(dp(2).toInt(), Color.rgb(80, 216, 224))
-                    cornerRadius = dp(8)
-                }
-            } else android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
-    }
-
-    private fun dropInternalPayload(
-        payload: WorkspaceInternalDragController.Payload,
-        target: WorkspaceInternalDragController.Target,
-    ): Boolean {
-        val coordinator = slotCoordinator ?: return false
-        return when (target) {
-            is WorkspaceInternalDragController.Target.Slot -> when (payload) {
-                is WorkspaceInternalDragController.Payload.Slot -> coordinator.onSlotDropped(target.index, payload.drag)
-                is WorkspaceInternalDragController.Payload.App -> coordinator.onIntentDropped(target.index, payload.intent)
-            }
-            WorkspaceInternalDragController.Target.Main ->
-                payload is WorkspaceInternalDragController.Payload.Slot && coordinator.dropSlotIntoMain(payload.drag)
-            WorkspaceInternalDragController.Target.Background ->
-                payload is WorkspaceInternalDragController.Payload.Slot && coordinator.dismissDraggedSlot(payload.drag)
-        }
-    }
-
-    private fun animateMainSlotSwap(slotIndex: Int, move: () -> Boolean, onFinished: () -> Unit) {
-        animateSwap(slotIndex, null, null, move, onFinished)
-    }
-
-    private fun animateDragSwap(
-        drag: SlotTaskDrag,
-        targetIndex: Int?,
-        move: () -> Boolean,
-        onFinished: () -> Unit,
-    ) {
-        animateSwap(drag.slotIndex, targetIndex, drag, move, onFinished)
-    }
-
-    private fun animateSwap(
-        sourceIndex: Int,
-        targetIndex: Int?,
-        drag: SlotTaskDrag?,
-        move: () -> Boolean,
-        onFinished: () -> Unit,
-    ) {
-        fun withoutPreview() {
-            try { move() } finally { onFinished(); scheduleStageFocus() }
-        }
-        if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-            withoutPreview()
-            return
-        }
-        val geometry = geometry()
-        val previewHost = contentHighlightView?.parent as? FrameLayout
-        val sourceSlot = slotWindows.getOrNull(sourceIndex)
-        val sourceRect = Rect()
-        if (previewHost == null || sourceSlot == null || !sourceSlot.view.getScreenVisibleRect(sourceRect)) {
-            withoutPreview()
-            return
-        }
-        val states = slotCoordinator?.slotStates().orEmpty()
-        val sourceState = states.getOrNull(sourceIndex)
-        val parkingMain = drag == null && targetIndex == null && sourceState is SlotState.Ready
-        if (!parkingMain && sourceState !is SlotState.Occupied) {
-            withoutPreview()
-            return
-        }
-        val mainRect = Rect(geometry.contentLeft, geometry.contentTop, geometry.contentRight, geometry.contentBottom)
-        if (homePreviewBounds != mainRect) clearHomePreview()
-        // Use only a settled HOME frame. Never wait for a display capture on the
-        // UI thread or accept an in-flight capture containing this swap overlay.
-        homePreviewGeneration.incrementAndGet()
-        val targetSlot = targetIndex?.let { slotWindows.getOrNull(it) }
-        val targetRect = Rect(mainRect)
-        if (targetIndex != null) {
-            if (targetSlot == null || !targetSlot.view.getScreenVisibleRect(targetRect)) {
-                withoutPreview()
-                return
-            }
-        }
-        val backdrop = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, 0, 0, frostStrength)
-        val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null
-        val mainPreview = mainTaskId?.let {
-            TaskSurfaceCompat.capturePreview(it, Rect(geometry.availableLeft, geometry.availableTop,
-                geometry.availableRight, geometry.availableBottom))
-        }
-        fun slotPreview(slot: VirtualDisplaySlot): android.graphics.Bitmap? {
-            val source = slot.sourceBounds()
-            return slot.view.capturePreview(source.width, source.height)
-        }
-        val sourcePreview = if (parkingMain) mainPreview else slotPreview(sourceSlot)
-        val targetOccupied = targetIndex != null && states.getOrNull(targetIndex) is SlotState.Occupied
-        val targetPreview = when {
-            parkingMain -> null
-            targetSlot != null && targetOccupied -> slotPreview(targetSlot)
-            targetIndex == null -> mainPreview
-            else -> null
-        }
-        val needsTargetPreview = !parkingMain && (targetOccupied || mainTaskId != null)
-        if (sourcePreview == null || (needsTargetPreview && targetPreview == null)) {
-            sourcePreview?.recycle()
-            if (targetPreview !== sourcePreview) targetPreview?.recycle()
-            withoutPreview()
-            return
-        }
-        val from = RectF(if (parkingMain) mainRect else sourceRect)
-        val to = RectF(if (parkingMain) sourceRect else targetRect)
-        val start = if (drag != null) {
-            val point = drag.dropPoint ?: android.graphics.PointF(to.centerX(), to.centerY())
-            val halfWidth = sourceRect.width() * 0.45f
-            val halfHeight = sourceRect.height() * 0.45f
-            RectF(point.x - halfWidth, point.y - halfHeight, point.x + halfWidth, point.y + halfHeight)
-        } else RectF(from)
-        val incomingTaskId = (sourceState as? SlotState.Occupied)?.taskId
-        val returningHomePackage = if (parkingMain) TriggerBroadcastContract.resolveHomePackage(context) else null
-        val stationaryBackground = if (parkingMain) {
-            homePreview?.copy(Bitmap.Config.ARGB_8888, false)
-        } else null
-        val previewSlots = listOfNotNull(sourceSlot, targetSlot)
-        var sourceFrame = sourceSlot.contentFrameSequence
-        var targetFrame = targetSlot?.contentFrameSequence ?: 0L
-        previewSlots.forEach { it.view.beginExchangePreview() }
-        try {
-            swapAnimator.animate(
-                sourcePreview, targetPreview, start, from, to,
-                host = previewHost,
-                backdrop = backdrop,
-                stationaryBackground = stationaryBackground,
-                durationMs = SystemUiRuntime.swapAnimationDurationMs(),
-                returningHome = parkingMain,
-                sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),
-                targetQuad = if (parkingMain) sourceSlot.view.screenQuad() else targetSlot?.view?.screenQuad(),
-                move = {
-                    // Ignore frames produced while the old tasks were still in
-                    // place. Handoff needs a buffer after the logical exchange.
-                    sourceFrame = sourceSlot.contentFrameSequence
-                    targetFrame = targetSlot?.contentFrameSequence ?: 0L
-                    move()
-                },
-                isLiveReady = {
-                    val currentStates = slotCoordinator?.slotStates().orEmpty()
-                    fun slotReady(index: Int, slot: VirtualDisplaySlot, frame: Long): Boolean =
-                        when (currentStates.getOrNull(index)) {
-                            is SlotState.Ready -> true
-                            is SlotState.Occupied -> slot.view.textureView.isAvailable && slot.contentFrameSequence > frame
-                            else -> false
-                        }
-                    val sourceReady = slotReady(sourceIndex, sourceSlot, sourceFrame)
-                    val targetReady = if (targetIndex != null && targetSlot != null) {
-                        slotReady(targetIndex, targetSlot, targetFrame)
-                    } else if (parkingMain) {
-                        returningHomePackage != null &&
-                            taskRepository.foregroundTask()?.component?.packageName == returningHomePackage
-                    } else mainTaskPresenter.currentTaskId() == incomingTaskId
-                    sourceReady && targetReady
-                },
-                onFinished = {
-                    previewSlots.forEach { it.view.endExchangePreview() }
-                    onFinished()
-                    scheduleStageFocus()
-                    if (parkingMain) backdropHandler.postDelayed({
-                        if (!suspended && workspaceVisible) captureHomePreview(currentGeometry())
-                    }, HOME_PREVIEW_SETTLE_DELAY_MS)
-                },
-            )
+            schedulePromotedTaskRecovery()
         } catch (error: Throwable) {
-            swapAnimator.cancel()
-            previewSlots.forEach { it.view.endExchangePreview() }
-            if (!sourcePreview.isRecycled) sourcePreview.recycle()
-            if (targetPreview != null && !targetPreview.isRecycled) targetPreview.recycle()
-            if (stationaryBackground != null && !stationaryBackground.isRecycled) stationaryBackground.recycle()
+            clearPromotedTaskRecovery()
+            val rollbackErrors = mutableListOf<Throwable>()
+            if (slotMovedToMain) {
+                mainTaskPresenter.restoreForMove(slotTask.taskId)
+                    .onFailure(rollbackErrors::add)
+                runCatching {
+                    moveTaskToDisplayAndWait(slotTask.taskId, occupied.displayId)
+                    record.originalLayout = slotOriginalLayout
+                    ensureSlotLayout(slotIndex, slotTask, slotOriginalLayout)
+                }.onFailure(rollbackErrors::add)
+            }
+            val rollbackMainTask = restoredMainTask
+            if (mainMovedToSlot && mainTask != null && rollbackMainTask != null) {
+                runCatching {
+                    moveTaskToDisplayAndWait(
+                        mainTask.taskId,
+                        Display.DEFAULT_DISPLAY,
+                    )
+                    restoreTaskLayout(
+                        rollbackMainTask,
+                        checkNotNull(mainOriginalLayout),
+                    )
+                }.onFailure(rollbackErrors::add)
+            }
+            if (mainTask != null && rollbackMainTask != null) {
+                mainTaskPresenter.presentTask(mainTask.taskId, geometryProvider())
+                    .onFailure(rollbackErrors::add)
+            }
+            record.retainedTaskId = occupied.taskId
+            record.originalLayout = slotOriginalLayout
+            record.migrationRecoveryComponent = null
+            record.migrationRecoveryDeadline = 0L
+            record.migrationRecoveryAttempts = 0
+            if (rollbackErrors.isEmpty()) {
+                setState(slotIndex, occupied, "swap rolled back")
+            } else {
+                slotRecords[slotIndex].retainedTaskId = null
+                slotRecords[slotIndex].originalLayout = null
+                setState(slotIndex, SlotState.Failed("rollback failed"), "swap rollback incomplete")
+                rollbackErrors.forEach(error::addSuppressed)
+            }
             throw error
         }
     }
 
-    private fun captureHomePreview(geometry: WorkspaceGeometry) {
-        if (homePreviewCapturePending || suspended || !workspaceVisible || swapAnimator.isRunning) return
-        val bounds = Rect(geometry.contentLeft, geometry.contentTop, geometry.contentRight, geometry.contentBottom)
-        val token = homePreviewGeneration.incrementAndGet()
-        homePreviewCapturePending = true
-        homePreviewWorker.execute {
+    private fun runTransition(
+        label: String,
+        animation: Pair<SlotTaskDrag, Int?>? = null,
+        mainSlotIndex: Int? = null,
+        operation: () -> Unit,
+    ): Result<Unit> {
+        if (transitionInProgress || recentSelectionPending) {
+            NeXtepLog.warn("slot_coordinator", "Ignored concurrent transition $label")
+            return Result.failure(IllegalStateException("Another slot transition is settling"))
+        }
+        val animated = animation != null || mainSlotIndex != null
+        val expectedSlotState = mainSlotIndex?.let { slotRecords[it].state }
+        val expectedMainTaskId = if (mainSlotIndex != null) taskRepository.foregroundTask()?.taskId else null
+        val token = ++transitionGeneration
+        var movePerformed = false
+        var moveResult: Result<Unit>? = null
+        transitionInProgress = true
+        refreshPolicy.onTaskChanged(SystemClock.uptimeMillis())
+        pendingSelection = null
+        mainSelectionGeneration += 1
+        clearPromotedTaskRecovery()
+        slots.forEach { it.view.setBusy(true) }
+        NeXtepLog.info("slot_coordinator", "Transition started $label")
+        fun performMove(): Result<Unit> {
+            if (token != transitionGeneration) {
+                return Result.failure(IllegalStateException("Workspace transition was cancelled"))
+            }
+            if (movePerformed) {
+                return moveResult ?: Result.failure(IllegalStateException("Workspace move is already running"))
+            }
+            movePerformed = true
             val result = runCatching {
-                if (token != homePreviewGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-                    return@runCatching null
+                check(active && !suspended) { "Workspace is no longer interactive" }
+                if (mainSlotIndex != null) {
+                    check(slotRecords[mainSlotIndex].state == expectedSlotState &&
+                        taskRepository.foregroundTask()?.taskId == expectedMainTaskId
+                    ) { "Main task or slot changed during the exchange preview" }
                 }
-                val foreground = taskRepository.foregroundTask() ?: return@runCatching null
-                if (foreground.component.packageName != TriggerBroadcastContract.resolveHomePackage(context)) {
-                    return@runCatching null
-                }
-                // The synchronous platform listener may wait seconds while the
-                // display wakes. Its buffer wait must never block SystemUI drawing.
-                val snapshot = TaskSurfaceCompat.captureDisplayPreview(bounds) ?: return@runCatching null
-                val stillHome = runCatching { taskRepository.foregroundTask()?.taskId == foreground.taskId }
-                    .getOrDefault(false)
-                if (snapshot.width != bounds.width() || snapshot.height != bounds.height() || !stillHome) {
-                    snapshot.recycle()
-                    null
-                } else snapshot
+                operation()
+            }.onFailure { error ->
+                NeXtepLog.error("slot_coordinator", "Transition failed $label", error)
+                if (animated) showMessage(AppLanguage.string(applicationContext, R.string.window_swap_incomplete))
             }
-            backdropHandler.post {
-                homePreviewCapturePending = false
-                val snapshot = result.getOrNull()
-                val current = currentGeometry()
-                val currentBounds = Rect(current.contentLeft, current.contentTop, current.contentRight, current.contentBottom)
-                if (token != homePreviewGeneration.get() || suspended || !workspaceVisible ||
-                    swapAnimator.isRunning || bounds != currentBounds || !WorkspaceWallpaperBackdrop.canCapture(context)
-                ) {
-                    snapshot?.recycle()
-                    // A lock/configuration change can supersede a slow capture.
-                    // Warm the new lifecycle once that old request has drained.
-                    if (!suspended && workspaceVisible && !swapAnimator.isRunning) {
-                        backdropHandler.postDelayed({
-                            if (!suspended && workspaceVisible) captureHomePreview(currentGeometry())
-                        }, HOME_PREVIEW_SETTLE_DELAY_MS)
+            moveResult = result
+            NeXtepLog.info("slot_coordinator", "Transition move completed $label")
+            return result
+        }
+        fun finishTransition() {
+            if (token != transitionGeneration || !transitionInProgress) return
+            visualTransitionPending = false
+            transitionInProgress = false
+            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
+            // Taps keep their task identity while the preview is visible. Start
+            // the last selection only after the previous overlay has gone away.
+            dispatchPendingSelection()
+            if (movePerformed) {
+                handler.postDelayed({
+                    if (active && token == transitionGeneration) {
+                        reconcile("settled $label")
+                        NeXtepLog.info("slot_coordinator", "Transition settled $label")
                     }
-                    return@post
+                }, SETTLE_DELAY_MS)
+            }
+        }
+        if (!animated) {
+            val result = performMove()
+            finishTransition()
+            return result
+        }
+        visualTransitionPending = true
+        val move = {
+            if (visualTransitionPending && token == transitionGeneration) performMove().isSuccess else false
+        }
+        return runCatching {
+            if (animation != null) {
+                onSwapAnimation(animation.first, animation.second, move, ::finishTransition)
+            } else {
+                onMainSlotAnimation(checkNotNull(mainSlotIndex), move, ::finishTransition)
+            }
+        }.fold(
+            onSuccess = { moveResult ?: Result.success(Unit) },
+            onFailure = { error ->
+                NeXtepLog.error("slot_coordinator", "Unable to start exchange preview $label", error)
+                finishTransition()
+                Result.failure(error)
+            },
+        )
+    }
+
+    private fun dispatchPendingSelection() {
+        handler.post {
+            if (!active || suspended || transitionInProgress || recentSelectionPending) return@post
+            val selected = pendingSelection ?: return@post
+            pendingSelection = null
+            selected()
+        }
+    }
+
+    private fun reconcile(reason: String) {
+        ensureMainThread()
+        if (!active || suspended || transitionInProgress) return
+        val tasks = taskRepository.runningTasks()
+        val assignedTaskIds = mutableSetOf<Int>()
+        var mainReconciled = false
+
+        slots.forEachIndexed { index, slot ->
+            if (slot.isSuspended()) {
+                runCatching { slot.setSuspended(false) }.onFailure {
+                    NeXtepLog.warn("virtual_display", "Output reattachment pending slot=$index", it)
                 }
-                result.exceptionOrNull()?.let {
-                    NeXtepLog.warn("workspace_swap", "HOME preview unavailable", it)
+            }
+            val displayId = slot.displayId() ?: run {
+                setState(index, SlotState.Empty, "$reason: no display")
+                return@forEachIndexed
+            }
+            val displayTasks = tasks.filter { it.displayId == displayId }
+            val displayTask = displayTasks.firstOrNull()
+            if (displayTasks.size > 1) {
+                NeXtepLog.warn(
+                    "slot_state",
+                    "slot=$index displayId=$displayId stackedTasks=${displayTasks.map { it.taskId }}",
+                )
+            }
+            val retainedTask = slotRecords[index].retainedTaskId
+                ?.let { taskId -> tasks.firstOrNull { it.taskId == taskId } }
+            val record = slotRecords[index]
+            val recoveringSameComponent = record.migrationRecoveryComponent
+                ?.packageName == displayTask?.component?.packageName &&
+                SystemClock.uptimeMillis() <= record.migrationRecoveryDeadline
+
+            when {
+                displayTask != null && assignedTaskIds.add(displayTask.taskId) -> {
+                    slotRecords[index].mismatchSince = 0L
+                    if (record.retainedTaskId != null &&
+                        record.retainedTaskId != displayTask.taskId &&
+                        !recoveringSameComponent
+                    ) {
+                        record.originalLayout = null
+                    }
+                    try {
+                        ensureSlotLayout(index, displayTask)
+                    } catch (error: Throwable) {
+                        setState(
+                            index,
+                            SlotState.Failed("layout rejected"),
+                            "$reason: ${error.message}",
+                        )
+                        return@forEachIndexed
+                    }
+                    record.retainedTaskId = displayTask.taskId
+                    record.pendingComponent = null
+                    record.pendingAttempts = 0
+                    setState(
+                        index,
+                        SlotState.Occupied(displayId, displayTask.taskId, displayTask.component),
+                        "$reason: adopted display task",
+                    )
                 }
-                clearHomePreview()
-                homePreview = snapshot
-                if (snapshot != null) homePreviewBounds.set(bounds)
-            }
-        }
-    }
-
-    private fun clearHomePreview() {
-        homePreviewGeneration.incrementAndGet()
-        homePreview?.recycle()
-        homePreview = null
-        homePreviewBounds.setEmpty()
-    }
-
-    private fun applySlotLayout(panel: FrameLayout, geometry: WorkspaceGeometry) {
-        panel.invalidate()
-        val profile = viewport.layout()
-        val bounds = profile.slots
-        slotWindows.forEachIndexed { index, slot ->
-            slot.setLayoutProfile(profile)
-            slot.view.setBackgroundSwipeSide(if (geometry.railAtTop) SidebarSide.LEFT else logicalSidebarSide(geometry))
-            slot.view.layoutParams = FrameLayout.LayoutParams(
-                bounds[index].width,
-                bounds[index].height,
-                Gravity.TOP,
-            ).apply {
-                marginStart = if (geometry.railAtTop) bounds[index].left else (profile.geometry.sidebarWidth - bounds[index].width) / 2
-                marginEnd = 0
-                topMargin = bounds[index].top
-            }
-        }
-        applyStageStack(geometry)
-    }
-
-    private fun applyStageStack(geometry: WorkspaceGeometry) {
-        if (slotWindows.isEmpty()) return
-        val bounds = viewport.layout().slots
-        val right = logicalSidebarSide(geometry) == SidebarSide.RIGHT
-        val states = slotCoordinator?.slotStates().orEmpty()
-        val occupied = List(WORKSPACE_SLOT_COUNT) { states.getOrNull(it) is SlotState.Occupied }
-        val profile = viewport.layout()
-        val poses = if (geometry.railAtTop) StageTopRowPolicy.positions(occupied, bounds.map { it.width }, bounds.map { it.height },
-            bounds.map { it.left }, bounds.map { it.top }, profile.geometry.sidebarPhysicalWidth, profile.geometry.sidebarPhysicalHeight,
-            context.resources.displayMetrics.density)
-        else StageActiveWindowPolicy.positions(occupied, bounds.map { it.height }, bounds.map { it.top },
-            profile.geometry.sidebarLogicalHeight, stageOrder, context.resources.displayMetrics.density, right)
-        val countChanged = shownWindowCount != poses.size
-        shownWindowCount = poses.size
-        sidebarAddButton?.apply {
-            visibility = if (shownWindowCount < WORKSPACE_SLOT_COUNT) View.VISIBLE else View.GONE
-            layoutParams = FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(),
-                if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0 }
-        }
-        slotWindows.forEachIndexed { index, slot ->
-            val pose = poses[index]
-            slot.view.setWorkspaceCardVisible(pose != null)
-            if (pose == null) return@forEachIndexed
-            slot.view.apply {
-                pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()
-                pivotY = bounds[index].height / 2f
-                cameraDistance = dp(900)
-                rotationY = pose.tilt
-                scaleX = pose.scale
-                scaleY = pose.scale
-                translationX = pose.x
-                translationY = pose.y
-                elevation = pose.z
-                alpha = pose.alpha
-                // The live app fills the card. Its outline owns all four rounded corners.
-                setBackgroundColor(Color.TRANSPARENT)
-                invalidateOutline()
-                clipToOutline = true
-            }
-        }
-        sidebarView?.requestLayout()
-        if (countChanged && workspaceVisible && !suspended) onViewportChanged()
-    }
-
-    private fun scheduleStageFocus() {
-        if (!workspaceVisible || suspended) return
-        backdropHandler.removeCallbacks(stageFocusUpdate)
-        backdropHandler.postDelayed(stageFocusUpdate, 48)
-    }
-
-    private fun updateStageFocus() {
-        if (!workspaceVisible || suspended) return
-        runCatching {
-            val main = taskRepository.foregroundTask()
-            if (main == null) {
-                stageFocusBadge?.visibility = View.GONE
-                contentHighlightView?.foreground = null
-                return@runCatching
-            }
-            if (main.taskId != stageMainId) {
-                main.userId?.let { frequentApps.observe(main.component.packageName, it) }
-                val oldMain = stageMainId
-                val returnedSlot = slotCoordinator?.slotStates()?.indexOfFirst {
-                    it is SlotState.Occupied && it.taskId == oldMain
-                } ?: -1
-                if (returnedSlot >= 0) {
-                    stageOrder = StageStackPolicy.touch(stageOrder, returnedSlot)
-                    applyStageStack(geometry())
+                displayTask != null -> {
+                    slotRecords[index].retainedTaskId = null
+                    slotRecords[index].originalLayout = null
+                    setState(index, SlotState.Failed("duplicate task"), "$reason: duplicate record")
                 }
-                stageMainId = main.taskId
+                retainedTask != null && !assignedTaskIds.add(retainedTask.taskId) -> {
+                    slotRecords[index].retainedTaskId = null
+                    slotRecords[index].originalLayout = null
+                    setState(index, SlotState.Failed("duplicate task"), "$reason: retained duplicate")
+                }
+                retainedTask != null -> {
+                    val foregroundTaskId = tasks.firstOrNull {
+                        it.displayId == Display.DEFAULT_DISPLAY
+                    }?.taskId
+                    if (retainedTask.displayId == Display.DEFAULT_DISPLAY &&
+                        retainedTask.taskId == foregroundTaskId
+                    ) {
+                        val originalLayout = slotRecords[index].originalLayout
+                            ?: defaultMainLayout(retainedTask.resizeMode)
+                        runCatching {
+                            restoreExternalFullscreenLayout(retainedTask, originalLayout)
+                            clearSlotAssignment(index)
+                            setState(
+                                index,
+                                SlotState.Ready(displayId),
+                                "$reason: task externally promoted to main",
+                            )
+                            mainTaskPresenter.reconcileForeground(geometryProvider()).getOrThrow()
+                            mainReconciled = true
+                        }.onFailure { error ->
+                            setState(
+                                index,
+                                SlotState.Failed("main promotion failed"),
+                                "$reason: ${error.message}",
+                            )
+                        }
+                        return@forEachIndexed
+                    }
+                    val now = SystemClock.uptimeMillis()
+                    if (record.mismatchSince == 0L) record.mismatchSince = now
+                    if (now - record.mismatchSince >= SLOT_MISMATCH_GRACE_MS) {
+                        assignedTaskIds -= retainedTask.taskId
+                        clearSlotAssignment(index)
+                        setState(
+                            index,
+                            SlotState.Ready(displayId),
+                            "$reason: stale slot ownership cleared",
+                        )
+                    }
+                }
+                shouldRecoverMigratedTask(record) -> {
+                    recoverMigratedTask(index, record)
+                }
+                slotRecords[index].pendingComponent != null &&
+                    slotRecords[index].pendingAttempts < MAX_PENDING_POLLS -> {
+                    slotRecords[index].pendingAttempts += 1
+                    slot.view.showWaiting()
+                }
+                else -> {
+                    slotRecords[index].retainedTaskId = null
+                    slotRecords[index].originalLayout = null
+                    val launchTimedOut = slotRecords[index].pendingComponent != null
+                    slotRecords[index].pendingComponent = null
+                    slotRecords[index].pendingAttempts = 0
+                    setState(
+                        index,
+                        if (launchTimedOut) SlotState.Failed("launch timed out")
+                        else SlotState.Ready(displayId),
+                        "$reason: empty",
+                    )
+                }
             }
-            val label = runCatching {
-                val info = context.packageManager.getApplicationInfo(main.component.packageName, 0)
-                context.packageManager.getApplicationLabel(info).toString()
-            }.getOrDefault(main.component.packageName)
-            topAppStrip?.setStageStatus(workgroups.statusLabel(), label, sidebarCollapsed)
-            stageFocusBadge?.apply {
-                text = label
-                val g = geometry()
-                visibility = View.GONE
+        }
+        // The steady pass already owns a complete snapshot. Only the branch
+        // above that changes a main task's native layout needs a fresh query.
+        if (!mainReconciled) mainTaskPresenter.reconcileForeground(geometryProvider(), tasks)
+            .onFailure { error ->
+                NeXtepLog.warn(
+                    "main_task_presenter",
+                    "Foreground reconciliation failed reason=$reason",
+                    error,
+                )
             }
-            // Focus is the centered real task. Avoid a debug-looking cyan frame.
-            contentHighlightView?.foreground = null
-        }.onFailure { NeXtepLog.warn("stage_focus", "Foreground decoration unavailable", it) }
     }
 
-    private fun refreshWallpaperBackdrop(attempt: Int = 0) {
-        val geometry = geometry()
-        // Use the last frame immediately; surface capture runs off the UI thread.
-        applyWallpaperBackdrop(geometry)
-        val previous = wallpaperBitmap
-        val generation = backdropGeneration.incrementAndGet()
-        backdropWorker.execute {
-            if (generation != backdropGeneration.get()) return@execute
-            val identity = WorkspaceWallpaperBackdrop.identity(context)
-            val captured = WorkspaceWallpaperBackdrop.capture(
-                context, geometry.screenWidth, geometry.screenHeight,
+    private fun shouldRecoverMigratedTask(record: SlotRecord): Boolean =
+        record.migrationRecoveryComponent != null &&
+            record.migrationRecoveryAttempts < MAX_MIGRATION_RECOVERY_ATTEMPTS &&
+            SystemClock.uptimeMillis() <= record.migrationRecoveryDeadline
+
+    private fun schedulePromotedTaskRecovery() {
+        postPromotedRecovery(PROMOTED_RECOVERY_DELAY_MS)
+    }
+
+    private fun postPromotedRecovery(delayMillis: Long) {
+        val generation = promotedRecoveryGeneration
+        handler.postDelayed({
+            if (generation == promotedRecoveryGeneration) recoverPromotedTaskIfNeeded()
+        }, delayMillis)
+    }
+
+    private fun recoverPromotedTaskIfNeeded() {
+        val component = promotedRecoveryComponent ?: return
+        if (!active || SystemClock.uptimeMillis() > promotedRecoveryDeadline) {
+            clearPromotedTaskRecovery()
+            return
+        }
+        val promotedTask = findLaunchTask(component)
+            ?.takeIf { task -> task.displayId == Display.DEFAULT_DISPLAY }
+        if (promotedTask != null) {
+            if (taskRepository.foregroundTask()?.taskId != promotedTask.taskId) {
+                clearPromotedTaskRecovery()
+                return
+            }
+            mainTaskPresenter.presentTask(promotedTask.taskId, geometryProvider())
+                .onSuccess {
+                    NeXtepLog.info(
+                        "slot_coordinator",
+                        "Promoted task settled taskId=${promotedTask.taskId} component=$component",
+                    )
+                    clearPromotedTaskRecovery()
+                }
+                .onFailure { error ->
+                    NeXtepLog.warn(
+                        "slot_coordinator",
+                        "Promoted task presentation still settling taskId=${promotedTask.taskId}",
+                        error,
+                    )
+                    postPromotedRecovery(PROMOTED_RECOVERY_POLL_MS)
+                }
+            return
+        }
+        if (promotedRecoveryAttempts >= MAX_MIGRATION_RECOVERY_ATTEMPTS) {
+            NeXtepLog.warn(
+                "slot_coordinator",
+                "Promoted task recovery exhausted component=$component",
             )
-            val currentIdentity = WorkspaceWallpaperBackdrop.identity(context)
-            // Do not associate a frame taken during a wallpaper change with the
-            // new wallpaper. The next retry will capture the settled surface.
-            val bitmap = captured?.takeUnless {
-                identity != null && currentIdentity != null && identity != currentIdentity
+            clearPromotedTaskRecovery()
+            return
+        }
+        val intent = normalizeLaunchIntent(Intent().setComponent(component))
+        if (intent == null) {
+            NeXtepLog.warn(
+                "slot_coordinator",
+                "Promoted task recovery has no launcher Activity component=$component",
+            )
+            clearPromotedTaskRecovery()
+            return
+        }
+        promotedRecoveryAttempts += 1
+        runCatching { applicationContext.startActivity(intent) }
+            .onSuccess {
+                NeXtepLog.warn(
+                    "slot_coordinator",
+                    "Relaunched promoted task after process death component=$component",
+                )
+                postPromotedRecovery(PROMOTED_RECOVERY_POLL_MS)
             }
-            if (bitmap !== captured) captured?.recycle()
-            val fitted = if (bitmap == null && previous != null &&
-                (previous.width != geometry.screenWidth || previous.height != geometry.screenHeight)
-            ) WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)
-            else null
-            backdropHandler.post {
-                if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-                    bitmap?.recycle()
-                    fitted?.recycle()
-                    return@post
-                }
-                if (bitmap != null) {
-                    wallpaperBitmap = bitmap
-                    wallpaperRotation = geometry.displayRotation
-                } else if (fitted != null) {
-                    wallpaperBitmap = fitted
-                    wallpaperRotation = geometry.displayRotation
-                }
-                // A capture may finish after a window closes/collapses. Crop for the
-                // current layout, not the geometry that started this asynchronous job.
-                applyWallpaperBackdrop(this@NeXtepWindowController.geometry())
-                // A waking live engine can briefly expose its initial frame even
-                // when capture succeeds. Refresh again after it has started drawing.
-                if (attempt < BACKDROP_SETTLE_REFRESHES ||
-                    (bitmap == null && attempt < BACKDROP_MAX_RETRIES)
-                ) {
-                    backdropHandler.postDelayed({
-                        if (generation == backdropGeneration.get() && !suspended &&
-                            workspaceVisible
-                        ) refreshWallpaperBackdrop(attempt + 1)
-                    }, minOf(1_000L, 200L * (attempt + 1)))
-                }
+            .onFailure { error ->
+                NeXtepLog.error(
+                    "slot_coordinator",
+                    "Promoted task recovery launch failed component=$component",
+                    error,
+                )
+                clearPromotedTaskRecovery()
             }
+    }
+
+    private fun clearPromotedTaskRecovery() {
+        promotedRecoveryGeneration += 1
+        promotedRecoveryComponent = null
+        promotedRecoveryDeadline = 0L
+        promotedRecoveryAttempts = 0
+    }
+
+    private fun recoverMigratedTask(slotIndex: Int, record: SlotRecord) {
+        val component = checkNotNull(record.migrationRecoveryComponent)
+        val intent = normalizeLaunchIntent(Intent().setComponent(component))
+        if (intent == null) {
+            record.migrationRecoveryComponent = null
+            record.migrationRecoveryDeadline = 0L
+            setState(
+                slotIndex,
+                SlotState.Failed("migration recovery unavailable"),
+                "No launcher Activity for $component",
+            )
+            return
+        }
+        record.migrationRecoveryAttempts += 1
+        record.retainedTaskId = null
+        record.pendingComponent = component
+        record.pendingAttempts = 0
+        slots[slotIndex].view.showWaiting()
+        slots[slotIndex].launch(intent)
+            .onSuccess {
+                NeXtepLog.warn(
+                    "slot_coordinator",
+                    "Relaunched migrated task after process death slot=$slotIndex " +
+                        "component=$component attempt=${record.migrationRecoveryAttempts}",
+                )
+            }
+            .onFailure { error ->
+                record.pendingComponent = null
+                NeXtepLog.error(
+                    "slot_coordinator",
+                    "Migration recovery launch failed slot=$slotIndex component=$component",
+                    error,
+                )
+            }
+    }
+
+    private fun reconcileForeground(reason: String) {
+        val tasks = taskRepository.runningTasks()
+        val foreground = tasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY } ?: return
+        val promotedSlot = slotRecords.indexOfFirst { record ->
+            record.retainedTaskId == foreground.taskId &&
+                foreground.displayId == Display.DEFAULT_DISPLAY
+        }
+        if (promotedSlot >= 0) {
+            val record = slotRecords[promotedSlot]
+            val originalLayout = record.originalLayout
+                ?: defaultMainLayout(foreground.resizeMode)
+            runCatching {
+                restoreExternalFullscreenLayout(foreground, originalLayout)
+                clearSlotAssignment(promotedSlot)
+                val displayId = slots[promotedSlot].displayId()
+                setState(
+                    promotedSlot,
+                    displayId?.let(SlotState::Ready) ?: SlotState.Empty,
+                    "$reason: foreground task left slot",
+                )
+            }.onFailure { error ->
+                NeXtepLog.warn(
+                    "slot_state",
+                    "Unable to adopt externally promoted taskId=${foreground.taskId}",
+                    error,
+                )
+                return
+            }
+        }
+        // Reuse this pass's snapshot. A fullscreen promotion restores layout, so that path
+        // needs a fresh query before the presenter reads windowing mode/bounds.
+        val presentationTasks = if (promotedSlot >= 0) taskRepository.runningTasks() else tasks
+        mainTaskPresenter.reconcileForeground(geometryProvider(), presentationTasks)
+            .onFailure { error ->
+                NeXtepLog.warn(
+                    "main_task_presenter",
+                    "Fast foreground reconciliation failed reason=$reason",
+                    error,
+                )
+            }
+    }
+
+    private fun findLaunchTask(
+        component: ComponentName,
+        targetUser: android.os.UserHandle? = null,
+    ): TaskRepository.TaskSnapshot? = taskRepository.findTaskForComponent(
+        component,
+        targetUser,
+        // The icon entry is a separate, no-display task; never promote it as settings.
+        allowPackageFallback = component != settingsComponent,
+    )
+
+    private fun normalizeLaunchIntent(source: Intent): Intent? {
+        val requestedComponent = source.component ?: packageManager.resolveActivity(source, 0)
+            ?.activityInfo
+            ?.let { ComponentName(it.packageName, it.name) }
+            ?: return null
+        // Seasonal launcher aliases lead through a no-display entry activity. Workspace
+        // task reuse and presentation must target the real settings activity instead.
+        val component = if (requestedComponent.packageName == TriggerBroadcastContract.MODULE_PACKAGE) {
+            settingsComponent
+        } else requestedComponent
+        val info = runCatching { packageManager.getActivityInfo(component, 0) }.getOrNull()
+            ?: return null
+        if (!info.exported || !info.enabled) return null
+        return Intent(source)
+            .setComponent(component)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    private fun restoreExternalFullscreenLayout(task: TaskRepository.TaskSnapshot, layout: TaskLayout) {
+        // A notification or native window gesture may promote a slot task into
+        // freeform/PiP. Shell already chose its bounds, density and windowing mode.
+        // Relinquish the slot without restoring the former fullscreen layout.
+        if (task.vendorWindowed || task.windowingMode != fullscreenWindowingMode()) return
+        restoreTaskLayout(task, layout, restoreResizeMode = false)
+    }
+
+    private fun normalizeExternalIntent(source: Intent): Intent? {
+        val component = source.component ?: packageManager.resolveActivity(source, 0)
+            ?.activityInfo
+            ?.let { ComponentName(it.packageName, it.name) }
+            ?: return null
+        val info = runCatching { packageManager.getActivityInfo(component, 0) }.getOrNull()
+            ?: return null
+        if (!info.exported || !info.enabled) return null
+        return Intent(source)
+            .setComponent(component)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    private fun Intent.targetUser() = getParcelableExtra(
+        TriggerBroadcastContract.EXTRA_TARGET_USER,
+        android.os.UserHandle::class.java,
+    )
+
+    private fun ensureSlotLayout(
+        slotIndex: Int,
+        task: TaskRepository.TaskSnapshot,
+        originalLayout: TaskLayout? = null,
+    ) {
+        val slotGeometry = slots[slotIndex].geometry()
+            ?: error("Slot $slotIndex geometry is unavailable")
+        val fullscreenMode = fullscreenWindowingMode()
+        val targetBounds = Rect(0, 0, slotGeometry.width, slotGeometry.height)
+        val record = slotRecords[slotIndex]
+        if (record.originalLayout == null) {
+            record.originalLayout = originalLayout ?: if (task.displayId == Display.DEFAULT_DISPLAY) {
+                task.toLayout()
+            } else {
+                defaultMainLayout(task.resizeMode)
+            }
+        }
+        // Callers may hold the snapshot from before reparenting. Compare against
+        // the destination task, otherwise every exchange forces another relayout.
+        val current = if (task.displayId != slots[slotIndex].displayId()) {
+            taskRepository.findTask(task.taskId) ?: error("Task ${task.taskId} exited")
+        } else task
+        val resizeModeMismatch = current.resizeMode != TASK_RESIZE_MODE_RESIZEABLE
+        val layoutMismatch = current.bounds != targetBounds ||
+            current.densityDpi != slotGeometry.densityDpi ||
+            current.windowingMode != fullscreenMode
+        if (resizeModeMismatch) {
+            ActivityTaskManagerCompat.setTaskResizeable(
+                task.taskId,
+                TASK_RESIZE_MODE_RESIZEABLE,
+            ).getOrThrow()
+        }
+        if (layoutMismatch) {
+            val token = current.token ?: error("Task ${task.taskId} has no slot layout token")
+            WindowContainerTransactionCompat.applyTaskLayout(
+                token = token,
+                // Fullscreen inherits this virtual display's canvas. An explicit
+                // slot-sized override survives promotion and forces a second resize.
+                bounds = Rect(),
+                densityDpi = slotGeometry.densityDpi,
+                windowingMode = fullscreenMode,
+            ).getOrThrow()
+            waitForTaskLayout(
+                taskId = task.taskId,
+                bounds = targetBounds,
+                densityDpi = slotGeometry.densityDpi,
+                windowingMode = fullscreenMode,
+            )
+            NeXtepLog.info(
+                "slot_layout",
+                "Applied slot=$slotIndex taskId=${task.taskId} bounds=$targetBounds " +
+                    "density=${slotGeometry.densityDpi}",
+            )
+        }
+        slots[slotIndex].displayId()?.let { displayId ->
+            val source = slots[slotIndex].sourceBounds()
+            TaskSurfaceCompat.fitSlotSurface(task.taskId, displayId,
+                Rect(source.left, source.top, source.right, source.bottom)).getOrThrow()
         }
     }
 
-    private fun applyWallpaperBackdrop(geometry: WorkspaceGeometry, refreshContrast: Boolean = true) {
-        val panel = geometry.rotatedTo(0)
-        (records.firstOrNull { it.title == "NeXtepTopBar" }?.view as? WorkspacePanelHost)?.setPanelBackground(
-            WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.controlLeft, panel.controlTop,
-                frostStrength, wallpaperRotation, panel.displayRotation),
-        )
-        if (refreshContrast) {
-            topAppStrip?.setMediaWallpaperLight(WorkspaceWallpaperBackdrop.isLight(
-                wallpaperBitmap, panel.controlLeft, panel.controlTop, panel.controlWidth, panel.controlHeight,
-            ))
+    private fun restoreTaskLayout(
+        task: TaskRepository.TaskSnapshot,
+        layout: TaskLayout,
+        restoreResizeMode: Boolean = true,
+    ) {
+        val token = task.token ?: error("Task ${task.taskId} has no restore token")
+        val current = taskRepository.findTask(task.taskId)
+        val mainFullscreen = current?.displayId == Display.DEFAULT_DISPLAY &&
+            layout.windowingMode == fullscreenWindowingMode()
+        val expectedBounds = if (mainFullscreen) geometryProvider().let {
+            Rect(0, 0, it.screenWidth, it.screenHeight)
+        } else layout.bounds
+        if (mainFullscreen &&
+            current?.bounds == expectedBounds && current.densityDpi == layout.densityDpi &&
+            current.windowingMode == layout.windowingMode) {
+            if (restoreResizeMode) layout.resizeMode?.let {
+                ActivityTaskManagerCompat.setTaskResizeable(task.taskId, it).getOrThrow()
+            }
+            return
         }
-        applySidebarBackdrop(geometry)
-    }
-
-    private fun applySidebarBackdrop(geometry: WorkspaceGeometry) {
-        val panel = geometry.rotatedTo(0)
-        (records.firstOrNull { it.title == "NeXtepSidebar" }?.view as? WorkspacePanelHost)?.setPanelBackground(
-            WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.sidebarLeft, panel.sidebarTop,
-                frostStrength, wallpaperRotation, panel.displayRotation),
+        // Fullscreen tasks inherit display bounds. Clear the slot override once;
+        // restoring a saved resolved Rect and clearing it again adds another layout.
+        WindowContainerTransactionCompat.applyTaskLayout(
+            token = token,
+            bounds = if (mainFullscreen) Rect() else layout.bounds,
+            densityDpi = layout.densityDpi,
+            windowingMode = layout.windowingMode,
+        ).getOrThrow()
+        waitForTaskLayout(
+            taskId = task.taskId,
+            bounds = expectedBounds,
+            densityDpi = layout.densityDpi,
+            windowingMode = layout.windowingMode,
+        )
+        if (restoreResizeMode) {
+            layout.resizeMode?.let { resizeMode ->
+                ActivityTaskManagerCompat.setTaskResizeable(task.taskId, resizeMode).getOrThrow()
+            }
+        }
+        NeXtepLog.info(
+            "slot_layout",
+            "Restored taskId=${task.taskId} bounds=${layout.bounds} density=${layout.densityDpi} " +
+                "restoreResizeMode=$restoreResizeMode",
         )
     }
 
-    private fun logicalSidebarSide(geometry: WorkspaceGeometry): SidebarSide =
-        geometry.panelSidebarSide
+    private fun TaskRepository.TaskSnapshot.toLayout() = TaskLayout(
+        bounds = Rect(bounds),
+        densityDpi = densityDpi,
+        windowingMode = windowingMode,
+        resizeMode = resizeMode,
+        vendorWindowed = vendorWindowed,
+    )
 
-    private fun dp(value: Int): Float = value * context.resources.displayMetrics.density
+    private fun TaskLayout.defaultDisplayBounds(): Rect {
+        // Match foreground restoration in the same reparent transaction: fullscreen
+        // inherits the destination's current rotation/size, not a saved landscape Rect.
+        // ColorOS floating tasks can report fullscreen; retain their native bounds.
+        return if (!vendorWindowed && windowingMode == fullscreenWindowingMode()) Rect() else Rect(bounds)
+    }
 
-    private fun geometry(): WorkspaceGeometry = currentGeometry()
+    private fun defaultMainLayout(resizeMode: Int?): TaskLayout {
+        val geometry = geometryProvider()
+        return TaskLayout(
+            bounds = Rect(0, 0, geometry.screenWidth, geometry.screenHeight),
+            densityDpi = applicationContext.resources.displayMetrics.densityDpi,
+            windowingMode = fullscreenWindowingMode(),
+            resizeMode = resizeMode,
+        )
+    }
 
+    private fun fullscreenWindowingMode(): Int = ActivityTaskManagerCompat
+        .resolveWindowingMode("WINDOWING_MODE_FULLSCREEN")
+        ?: WINDOWING_MODE_FULLSCREEN_FALLBACK
 
-    private val transitionInterpolator = WorkspaceTransitionSpec.interpolator
+    private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
+        TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
+        if (displayId == Display.DEFAULT_DISPLAY) {
+            TaskSurfaceCompat.preparePromotion(taskId, geometryProvider()).onFailure {
+                NeXtepLog.warn("task_surface", "Early promotion fitting unavailable taskId=$taskId", it)
+            }
+        } else {
+            TaskSurfaceCompat.cancelPreparedPromotion(taskId)
+        }
+        try {
+            ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
+        } catch (error: Throwable) {
+            TaskSurfaceCompat.cancelDisplayExchange(taskId)
+            throw error
+        }
+        val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
+        var observedDisplayId = taskRepository.findTask(taskId)?.displayId
+        while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
+            observedDisplayId = taskRepository.findTask(taskId)?.displayId
+        }
+        check(observedDisplayId == displayId) {
+            "Task $taskId display move did not settle: expected=$displayId " +
+                "actual=$observedDisplayId"
+        }
+    }
+
+    private fun waitForTaskLayout(
+        taskId: Int,
+        bounds: Rect,
+        densityDpi: Int,
+        windowingMode: Int,
+    ) {
+        val deadline = SystemClock.uptimeMillis() + TASK_LAYOUT_TIMEOUT_MS
+        var snapshot = taskRepository.findTask(taskId)
+        while (snapshot != null &&
+            (snapshot.bounds != bounds ||
+                snapshot.densityDpi != densityDpi ||
+                snapshot.windowingMode != windowingMode) &&
+            SystemClock.uptimeMillis() < deadline
+        ) {
+            SystemClock.sleep(TASK_LAYOUT_POLL_MS)
+            snapshot = taskRepository.findTask(taskId)
+        }
+        check(snapshot != null &&
+            snapshot.bounds == bounds &&
+            snapshot.densityDpi == densityDpi &&
+            snapshot.windowingMode == windowingMode
+        ) {
+            "Task $taskId layout did not settle: expected=$bounds/$densityDpi/$windowingMode " +
+                "actual=${snapshot?.bounds}/${snapshot?.densityDpi}/${snapshot?.windowingMode}"
+        }
+    }
+
+    private fun clearSlotAssignment(index: Int) {
+        val record = slotRecords[index]
+        record.retainedTaskId = null
+        record.originalLayout = null
+        record.pendingComponent = null
+        record.pendingAttempts = 0
+        record.migrationRecoveryComponent = null
+        record.migrationRecoveryDeadline = 0L
+        record.migrationRecoveryAttempts = 0
+        record.mismatchSince = 0L
+    }
+
+    private fun setState(index: Int, state: SlotState, reason: String) {
+        val previous = slotRecords[index].state
+        slotRecords[index].state = state
+        if (state !is SlotState.Occupied) slotRecords[index].mismatchSince = 0L
+        slots[index].view.showState(state)
+        if (previous != state) onSlotStatesChanged()
+        if (previous != state) {
+            NeXtepLog.info(
+                "slot_state",
+                "slot=$index previous=$previous current=$state reason=$reason",
+            )
+        }
+    }
+
+    private fun validActiveSlot(index: Int): Boolean =
+        active && !suspended && index in slots.indices && !transitionInProgress
+
+    private fun retainedTaskDescription(): String =
+        slotRecords.map { it.retainedTaskId }.toString()
+
+    private fun ensureMainThread() {
+        check(Looper.myLooper() == Looper.getMainLooper()) {
+            "Slot state changes must run on the main thread"
+        }
+    }
 
     private companion object {
-        const val EXPECTED_WINDOW_COUNT = 5
-        const val BACKDROP_SETTLE_REFRESHES = 2
-        const val BACKDROP_MAX_RETRIES = 8
-        const val HOME_PREVIEW_SETTLE_DELAY_MS = 100L
-        const val RESUME_FRAME_FALLBACK_DELAY_MS = 250L
-        const val WORKSPACE_ENTER_DURATION_MS = WorkspaceTransitionSpec.DURATION_MS
-        const val WORKSPACE_EXIT_DURATION_MS = WorkspaceTransitionSpec.DURATION_MS
-        const val SIDEBAR_SWITCH_DURATION_MS = 220L
-        const val ENTER_OFFSET_DP = 12
-        const val EXIT_OFFSET_DP = 8
-        const val SIDEBAR_ENTER_OFFSET_DP = 28
+        const val SETTLE_DELAY_MS = 700L
+        const val MAIN_LAUNCH_POLL_MS = 200L
+        const val MAX_MAIN_LAUNCH_POLLS = 3
+        const val FULL_RECONCILE_INTERVAL_MS = 1_000L
+        const val TASK_CHANGE_COALESCE_MS = 80L
+        const val MAX_PENDING_POLLS = 4
+        const val TASK_RESIZE_MODE_RESIZEABLE = 2
+        const val WINDOWING_MODE_FULLSCREEN_FALLBACK = 1
+        const val DISPLAY_MOVE_TIMEOUT_MS = 700L
+        const val DISPLAY_MOVE_POLL_MS = 30L
+        const val TASK_LAYOUT_TIMEOUT_MS = 900L
+        const val TASK_LAYOUT_POLL_MS = 30L
+        const val SLOT_MISMATCH_GRACE_MS = 2_400L
+        const val MIGRATION_RECOVERY_WINDOW_MS = 5_000L
+        const val MAX_MIGRATION_RECOVERY_ATTEMPTS = 1
+        const val PROMOTED_RECOVERY_DELAY_MS = 900L
+        const val PROMOTED_RECOVERY_POLL_MS = 350L
     }
 }

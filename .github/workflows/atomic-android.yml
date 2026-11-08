@@ -112,7 +112,7 @@ jobs:
           sha256sum app/build/outputs/apk/debug/apksigner.jar > offline-signer.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: atomic-workbench-0.8.1-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
+          name: atomic-workbench-0.9.0-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
           if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk
@@ -130,9 +130,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          cp app/build/outputs/apk/debug/*.apk AtomicWorkbench-0.8.1-debug.apk
-          sha256sum AtomicWorkbench-0.8.1-debug.apk > AtomicWorkbench-0.8.1-debug.apk.sha256
+          cp app/build/outputs/apk/debug/*.apk AtomicWorkbench-0.9.0-debug.apk
+          sha256sum AtomicWorkbench-0.9.0-debug.apk > AtomicWorkbench-0.9.0-debug.apk.sha256
           short="${GITHUB_SHA:0:8}"
-          tag="atomic-v0.8.1-dev-$short"
-          printf '%s\n' 'Experimental independent Atomic Workbench APK based on NeXtep.' 'Build, unit tests, APK package identity, Xposed entry and signature verified by this workflow.' 'Redesigned native workspace: no top controls, in-app settings and workgroup management, explicit exit controls, focus expansion, retained native task exchange.' '0.1.0 task display and a task swap were user-confirmed. All new 0.8.1 stack, animation, focus and group behavior remains device-unverified.' 'Sidebar collapse now refits the real main task; the retained virtual displays are not destroyed. Disable the original NeXtep module before enabling this module.' 'See ATOMIC_README.md on atomic-workbench/dev for limitations and device acceptance steps.' > /tmp/atomic-release-notes.md
-          gh release create "$tag" AtomicWorkbench-0.8.1-debug.apk AtomicWorkbench-0.8.1-debug.apk.sha256 --target "$GITHUB_SHA" --title "原子工作台 0.8.1 开发版 ($short)" --prerelease --notes-file /tmp/atomic-release-notes.md
+          tag="atomic-v0.9.0-dev-$short"
+          printf '%s\n' 'Experimental independent Atomic Workbench APK based on NeXtep.' 'Build, unit tests, APK package identity, Xposed entry and signature verified by this workflow.' 'Redesigned native workspace: no top controls, in-app settings and workgroup management, explicit exit controls, focus expansion, retained native task exchange.' '0.1.0 task display and a task swap were user-confirmed. All new 0.9.0 stack, animation, focus and group behavior remains device-unverified.' 'Sidebar collapse now refits the real main task; the retained virtual displays are not destroyed. Disable the original NeXtep module before enabling this module.' 'See ATOMIC_README.md on atomic-workbench/dev for limitations and device acceptance steps.' > /tmp/atomic-release-notes.md
+          gh release create "$tag" AtomicWorkbench-0.9.0-debug.apk AtomicWorkbench-0.9.0-debug.apk.sha256 --target "$GITHUB_SHA" --title "原子工作台 0.9.0 开发版 ($short)" --prerelease --notes-file /tmp/atomic-release-notes.md
