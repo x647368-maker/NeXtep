@@ -21,6 +21,7 @@ object SystemServerHook {
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
         if (!installed.compareAndSet(false, true)) return
+        HookGuard.run("stage_native_drag") { StageDragCoordinateHook.install(module, classLoader) }
         HookGuard.run("workspace_ime_target") { WorkspaceImeTargetHook.install(module, classLoader) }
         HookGuard.run("workspace_navigation") { WorkspaceNavigationBarHook.install(module, classLoader) }
         HookGuard.run("slot_native_layout") { WorkspaceSlotNativeLayoutHook.install(module, classLoader) }

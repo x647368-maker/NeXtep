@@ -9,7 +9,7 @@ class WorkspaceControlMetricsTest {
     fun stageReservesOnlyStatusSpaceWithoutAControlStrip() {
         for (insets in listOf(WorkspaceNavigationInsets(), WorkspaceNavigationInsets(bottom = 132))) {
             val profile = WorkspaceLayoutProfile.create(1080, 2354, 480, insets)
-            assertEquals(40 * 3, profile.geometry.topHeight)
+            assertEquals(64 * 3, profile.geometry.topHeight)
             assertTrue(profile.geometry.topHeight < (40 + 48) * 3)
             assertTrue(profile.geometry.topHeight < 2354 / 6)
         }

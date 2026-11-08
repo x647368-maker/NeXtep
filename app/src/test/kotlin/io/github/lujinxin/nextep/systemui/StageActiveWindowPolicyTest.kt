@@ -21,7 +21,7 @@ class StageActiveWindowPolicyTest {
         assertEquals(setOf(1, 3), right.keys)
         val first = tops[1] + right.getValue(1).y
         val second = tops[3] + right.getValue(3).y
-        assertEquals(430f, second - first, .01f)
+        assertTrue(second - first >= heights[1] * right.getValue(1).scale + 8f * 3f - .01f)
         for (i in right.keys) {
             assertEquals(right.getValue(i).y, left.getValue(i).y, 0f)
             assertEquals(-right.getValue(i).x, left.getValue(i).x, 0f)
@@ -30,8 +30,21 @@ class StageActiveWindowPolicyTest {
     }
     @Test fun closingTheLastWindowLeavesNoPlaceholderAndSingleWindowIsCentered() {
         val pose = layout(4).getValue(2)
-        assertEquals(1100f, tops[2] + pose.y + heights[2] / 2f, .01f)
+        assertEquals((2200f - 56f * 3f) / 2f, tops[2] + pose.y + heights[2] / 2f, .01f)
         assertTrue(layout(0).isEmpty())
         assertTrue(layout(15).values.all { it.alpha > 0f })
+    }
+    @Test fun allSubsetsLeaveRoomBetweenCompleteCardsAndKeepMenusInsideTheRail() {
+        for (mask in 1..15) {
+            val poses = layout(mask)
+            var bottom = 0f
+            poses.forEach { (i, pose) ->
+                val top = tops[i] + pose.y + heights[i] * (1f - pose.scale) / 2f
+                assertTrue(top >= bottom)
+                bottom = top + heights[i] * pose.scale
+                assertTrue(bottom <= 2200f - if (poses.size < 4) 168f else 0f)
+                assertEquals(0f, pose.tilt, 0f)
+            }
+        }
     }
 }

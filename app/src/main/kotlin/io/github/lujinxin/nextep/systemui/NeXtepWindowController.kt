@@ -54,6 +54,8 @@ class NeXtepWindowController(
     private var shownWindowCount = 0
     private var sidebarAddButton: android.widget.TextView? = null
     private val windowPicker = AtomicPanel(context)
+    private val appCatalog = StageAppCatalog(context)
+    private val frequentApps = StageFrequentApps(context)
     private var windowPickerGeneration = 0
     private var windowRefreshQueued = false
     private fun scheduleWindowRefresh() {
@@ -87,6 +89,20 @@ class NeXtepWindowController(
         ::highlightInternalDragTarget, ::dropInternalPayload,
         { topAppStrip?.finishInternalAppDrag() },
     )
+    private val contentDrag = StageContentDragBridge(context,
+        { x, y ->
+            slotWindows.withIndex().sortedByDescending { it.value.view.z }.firstOrNull {
+                it.value.view.isWorkspaceCardVisible() && it.value.view.containsScreenPoint(x, y)
+            }?.let { entry -> (slotCoordinator?.slotStates()?.getOrNull(entry.index) as? SlotState.Occupied)?.let {
+                entry.index to it.taskId
+            } }
+        }, { index, task ->
+            val engine = slotCoordinator
+            if (workspaceVisible && !suspended && !groupInputBlocked && !workgroups.isSwitching() &&
+                engine?.isGroupRestoreReady() == true && (engine.slotStates().getOrNull(index) as? SlotState.Occupied)?.taskId == task) {
+                engine.onSlotClicked(index); true
+            } else false
+        })
     private val backdropGeneration = java.util.concurrent.atomic.AtomicInteger()
     private val backdropWorker = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "NeXtep-Backdrop")
@@ -160,6 +176,7 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        contentDrag.cancel()
         windowPickerGeneration++
         windowPicker.dismiss()
         workgroups.cancel()
@@ -306,6 +323,7 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        contentDrag.cancel()
         windowPickerGeneration++
         windowPicker.dismiss()
         workgroups.cancel()
@@ -369,7 +387,8 @@ class NeXtepWindowController(
 
     fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry =
         viewport.geometry(sidebarSide, refreshViewport).let {
-            if (sidebarCollapsed || shownWindowCount == 0 && sidebarTouchRegionReady) it.copy(sidebarWidth = 1) else it
+            if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
+            else if (shownWindowCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
         }
 
     fun projectDisplayRotation(rotation: Int) {
@@ -422,13 +441,14 @@ class NeXtepWindowController(
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
         val geometry = geometry()
         applyWindowGeometry(geometry, refreshControls = !rotationOnly)
-        if (rotationOnly) {
+        if (rotationOnly && !geometry.railAtTop) {
             // Only project the existing windows into the new display coordinates.
             // Their logical content, slot buffers and wallpaper frame stay intact.
             backdropGeneration.incrementAndGet()
             controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft, refreshHost = false)
         } else {
             sidebarView?.let { applySlotLayout(it, geometry) }
+            slotCoordinator?.onTasksChanged()
             refreshWallpaperBackdrop()
         }
         NeXtepLog.info("workspace_configuration", "Reconfigured geometry=$geometry")
@@ -470,6 +490,9 @@ class NeXtepWindowController(
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
+            "layout_top", "layout_side" -> changeStageLayout(command == "layout_top")
+            "close_main" -> closeMainWindow()
+            "fullscreen" -> onExitRequested()
             "add_window", "replace_window", "close_window" -> {
                 check(workspaceVisible && !suspended && !workgroups.isSwitching() && !groupInputBlocked) { "请先开启台前调度" }
                 val engine = checkNotNull(slotCoordinator)
@@ -509,6 +532,7 @@ class NeXtepWindowController(
         }
         android.os.Bundle().apply {
             putBoolean("ok", true)
+            putBoolean("layout_top", viewport.isTopRail())
             putString("groups", workgroups.settingsSnapshot())
             putString("windows", org.json.JSONArray().also { array ->
                 slotCoordinator?.slotStates()?.forEachIndexed { index, state ->
@@ -602,6 +626,11 @@ class NeXtepWindowController(
             width = dp(20).toInt(), height = dp(80).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
             touchable = true, windowType = windowType,
         )
+        addWindow(
+            title = "StageMainHandle", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow),
+            width = dp(64).toInt(), height = dp(24).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
+            touchable = true, windowType = windowType,
+        )
         if (records.size != EXPECTED_WINDOW_COUNT) {
             records.forEach { record ->
                 try {
@@ -653,7 +682,7 @@ class NeXtepWindowController(
                 privateFlags.setInt(this, privateFlags.getInt(this) or 0x40) // PRIVATE_FLAG_NO_MOVE_ANIMATION
             }.onFailure { NeXtepLog.warn("systemui_window", "Unable to disable panel move animation", it) }
         }
-        val hostedView = if (title == "NeXtepContentPanel" || title == "AtomicSidebarHandle") view else WorkspacePanelHost(context, view)
+        val hostedView = if (title == "NeXtepContentPanel" || title == "AtomicSidebarHandle" || title == "StageMainHandle") view else WorkspacePanelHost(context, view)
         val record = WindowRecord(hostedView, title)
         configureWindow(record, params, geometry())
         hostedView.visibility = View.GONE
@@ -686,7 +715,7 @@ class NeXtepWindowController(
         geometry: WorkspaceGeometry,
     ) {
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
-            record.title == "AtomicSidebarHandle" ||
+            record.title == "AtomicSidebarHandle" || record.title == "StageMainHandle" ||
             (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -706,6 +735,13 @@ class NeXtepWindowController(
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         params.gravity = Gravity.TOP or Gravity.LEFT
         setWindowBounds(record.title, params, geometry)
+        if (record.title == "AtomicSidebarHandle") (record.view as? android.widget.TextView)?.apply {
+            text = if (!sidebarCollapsed) "‹›" else if (geometry.railAtTop || geometry.isLandscape)
+                (if (geometry.railAtTop || geometry.isSidebarAtTop) "⌄ 展开小窗" else "⌃ 展开小窗")
+                else if (geometry.sidebarSide == SidebarSide.LEFT) "›\n展开" else "‹\n展开"
+            textSize = if (sidebarCollapsed) 13f else 14f
+            contentDescription = if (sidebarCollapsed) "展开小窗" else "收起小窗"
+        }
         if (record.title == "NeXtepContentPanel") {
             contentHighlightView?.layoutParams = FrameLayout.LayoutParams(
                 geometry.contentWidth, geometry.contentHeight, Gravity.TOP or Gravity.LEFT,
@@ -745,17 +781,40 @@ class NeXtepWindowController(
     }
 
     private fun setWindowBounds(title: String, params: WindowManager.LayoutParams, requested: WorkspaceGeometry) {
-        val geometry = if (title == "NeXtepSidebar" || (title == "AtomicSidebarHandle" && !sidebarCollapsed))
+        val geometry = if ((title == "NeXtepSidebar" && (sidebarCollapsed || shownWindowCount > 0)) ||
+            (title == "AtomicSidebarHandle" && !sidebarCollapsed && shownWindowCount > 0))
             viewport.geometry(sidebarSide).rotatedTo(requested.displayRotation) else requested
         when (title) {
+            "StageMainHandle" -> {
+                params.width = minOf(dp(64).toInt(), geometry.contentWidth)
+                params.height = dp(24).toInt()
+                params.x = geometry.contentLeft + (geometry.contentWidth - params.width) / 2
+                params.y = if (geometry.railAtTop && !sidebarCollapsed) {
+                    val actions = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
+                        requested.sidebarPhysicalWidth, requested.sidebarPhysicalHeight, context.resources.displayMetrics.density)
+                    params.x = requested.sidebarLeft + actions.main.left
+                    requested.sidebarTop + actions.main.top
+                } else (geometry.contentTop - params.height).coerceAtLeast(geometry.availableTop +
+                    if (!geometry.isLandscape) geometry.topHeight - params.height else 0)
+            }
             "AtomicSidebarHandle" -> {
-                if (!geometry.isLandscape) {
-                    params.width = dp(20).toInt()
-                    params.height = dp(80).toInt()
+                if (sidebarCollapsed) {
+                    val base = viewport.geometry(sidebarSide).rotatedTo(requested.displayRotation)
+                    val box = io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.handle(base, requested, context.resources.displayMetrics.density)
+                    params.width = box.width; params.height = box.height
+                    params.x = box.left; params.y = box.top
+                } else if (geometry.railAtTop) {
+                    val box = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
+                        geometry.sidebarPhysicalWidth, geometry.sidebarPhysicalHeight, context.resources.displayMetrics.density).collapse
+                    params.width = box.width; params.height = box.height
+                    params.x = geometry.sidebarLeft + box.left; params.y = geometry.sidebarTop + box.top
+                } else if (!geometry.isLandscape) {
+                    params.width = dp(16).toInt()
+                    params.height = dp(32).toInt()
                     params.x = if (geometry.sidebarSide == SidebarSide.LEFT)
                         geometry.sidebarLeft + geometry.sidebarPhysicalWidth - params.width else geometry.sidebarLeft
                     params.x = params.x.coerceIn(geometry.availableLeft, geometry.availableRight - params.width)
-                    params.y = geometry.sidebarTop + (geometry.sidebarPhysicalHeight - params.height) / 2
+                    params.y = geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height - dp(12).toInt()
                 } else {
                     params.width = dp(80).toInt()
                     params.height = dp(20).toInt()
@@ -851,10 +910,58 @@ class NeXtepWindowController(
         }
     }
 
+    private fun showStageMessage(value: String) = android.widget.Toast.makeText(context, value, android.widget.Toast.LENGTH_LONG).show()
+
+    private fun changeStageLayout(top: Boolean) {
+        check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
+        if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
+        cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
+        val previous = viewport.isTopRail()
+        runCatching {
+            viewport.setTopRail(top)
+            if (workspaceVisible && !suspended) onViewportChanged()
+        }.onFailure {
+            viewport.setTopRail(previous)
+            if (workspaceVisible && !suspended) onViewportChanged()
+            throw it
+        }
+    }
+
+    private fun showMainMenu() {
+        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
+        val anchor = records.firstOrNull { it.title == "StageMainHandle" }?.view ?: return
+        AtomicPopupMenu.show(context, anchor, listOf(
+            "切换全屏（保留工作区）" to { onExitRequested() },
+            (if (viewport.isTopRail()) "切换为侧边纵排" else "切换为顶部横排") to {
+                runCatching { changeStageLayout(!viewport.isTopRail()) }.onFailure { showStageMessage(it.message ?: "布局未切换") }
+            },
+            "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
+            "关闭主窗（移回后台）" to { closeMainWindow() },
+            "退出台前调度" to { onExitRequested() },
+        ))
+    }
+
+    private fun closeMainWindow() {
+        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
+        runCatching {
+            val engine = checkNotNull(slotCoordinator)
+            check(engine.isGroupRestoreReady()) { "窗口正在切换" }
+            val task = checkNotNull(taskRepository.foregroundTask())
+            check(task.component.packageName != TriggerBroadcastContract.resolveHomePackage(context) &&
+                task.component.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE && task.windowingMode == 1 && !task.vendorWindowed) { "当前主窗不能关闭" }
+            io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat.parkInDefaultDisplay(
+                checkNotNull(task.token), Rect(), task.densityDpi, task.windowingMode).getOrThrow()
+            mainTaskPresenter.restoreForMove(task.taskId).getOrThrow()
+            engine.onTasksChanged(); scheduleStageFocus()
+        }.onFailure { showStageMessage(it.message ?: "主窗未关闭") }
+    }
+
     private fun showWindowMenu(index: Int, anchor: View) {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val state = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied ?: return
         AtomicPopupMenu.show(context, anchor, listOf(
+            "在小窗中操作" to { slotWindows[index].view.setDirectInteraction(true) },
+            "切换为主窗口" to { slotCoordinator?.onSlotClicked(index) },
             "替换应用" to { chooseWindowApp(anchor, index, state.taskId) },
             "关闭小窗（移回后台）" to {
                 val current = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied
@@ -865,36 +972,127 @@ class NeXtepWindowController(
         ))
     }
 
-    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null) {
+    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null, main: Boolean = false) {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val generation = ++windowPickerGeneration
-        Thread({
-            val loaded = runCatching { io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository(context).load().filter {
-                it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE
-            }.sortedBy { it.label } }
-            backdropHandler.post {
-                if (generation == windowPickerGeneration && workspaceVisible && !suspended && anchor.isAttachedToWindow) {
-                    loaded.onSuccess { entries ->
-                        val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
-                        entries.forEach { entry -> rows.addView(windowPicker.label(entry.label).apply {
-                            setOnClickListener {
-                                windowPicker.dismiss()
-                                val engine = slotCoordinator ?: return@setOnClickListener
-                                if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return@setOnClickListener
-                                val current = target?.let { engine.slotStates().getOrNull(it) as? SlotState.Occupied }
-                                if (target != null && current?.taskId != expectedTask) return@setOnClickListener
-                                val index = target ?: engine.slotStates().indexOfFirst { it is SlotState.Ready }
-                                if (index < 0) android.widget.Toast.makeText(context, "最多四个小窗", android.widget.Toast.LENGTH_SHORT).show()
-                                else engine.replaceWindow(index, entry.launchIntent()).onFailure {
-                                    android.widget.Toast.makeText(context, it.message ?: "应用未打开", android.widget.Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        }) }
-                        windowPicker.show(anchor, if (target == null) "添加小窗" else "替换应用", rows)
-                    }.onFailure { android.widget.Toast.makeText(context, "无法读取应用列表", android.widget.Toast.LENGTH_SHORT).show() }
-                }
+        val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        rows.addView(android.widget.ProgressBar(context), android.widget.LinearLayout.LayoutParams(-1, dp(48).toInt()))
+        rows.addView(windowPicker.label("正在读取应用…"))
+        windowPicker.onVisibilityChanged = { shown ->
+            records.filter { it.title == "AtomicSidebarHandle" || it.title == "StageMainHandle" }.forEach {
+                it.view.visibility = if (!shown && workspaceVisible && !suspended) View.VISIBLE else View.GONE
             }
-        }, "Stage-Window-Picker").start()
+        }
+        windowPicker.show(anchor, if (main) "替换主应用" else if (target == null) "添加小窗" else "替换应用", rows, fillContent = true)
+        appCatalog.request { result ->
+            if (generation != windowPickerGeneration || !windowPicker.isShowing || !workspaceVisible || suspended) return@request
+            result.onSuccess { entries ->
+                rows.removeAllViews()
+                val query = android.widget.EditText(context).apply {
+                    hint = "搜索应用"; textSize = 15f; setSingleLine(true)
+                    setTextColor(windowPicker.textColor); setHintTextColor(Color.GRAY)
+                    setPadding(dp(12).toInt(), 0, dp(12).toInt(), 0)
+                }
+                rows.addView(query, android.widget.LinearLayout.LayoutParams(-1, dp(48).toInt()))
+                val grid = android.widget.GridView(context).apply {
+                    numColumns = 4; stretchMode = android.widget.GridView.STRETCH_COLUMN_WIDTH
+                    verticalSpacing = dp(6).toInt(); horizontalSpacing = dp(4).toInt()
+                    clipToPadding = false; setPadding(0, dp(8).toInt(), 0, dp(16).toInt())
+                }
+                rows.addView(grid, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+                var filtered = entries
+                val adapter = object : android.widget.BaseAdapter() {
+                    override fun getCount() = filtered.size
+                    override fun getItem(position: Int) = filtered[position]
+                    override fun getItemId(position: Int) = position.toLong()
+                    override fun getView(position: Int, convert: View?, parent: android.view.ViewGroup?): View {
+                        val cell = (convert as? android.widget.LinearLayout) ?: android.widget.LinearLayout(context).apply {
+                            orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                            setPadding(dp(4).toInt(), dp(8).toInt(), dp(4).toInt(), dp(4).toInt())
+                            addView(android.widget.ImageView(context).apply {
+                                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                            }, android.widget.LinearLayout.LayoutParams(dp(44).toInt(), dp(44).toInt()))
+                            addView(windowPicker.label("", 12f).apply {
+                                gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                                setPadding(0, dp(6).toInt(), 0, 0)
+                            }, android.widget.LinearLayout.LayoutParams(-1, dp(38).toInt()))
+                        }
+                        val entry = getItem(position)
+                        (cell.getChildAt(0) as android.widget.ImageView).setImageDrawable(entry.icon)
+                        (cell.getChildAt(1) as android.widget.TextView).text = entry.label
+                        cell.contentDescription = entry.label
+                        return cell
+                    }
+                }
+                grid.adapter = adapter
+                fun chooseEntry(entry: io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository.AppEntry) {
+                    windowPicker.dismiss()
+                    val engine = slotCoordinator ?: return
+                    if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return
+                    if (main) {
+                        engine.openInMain(entry.launchIntent()).onFailure { showStageMessage(it.message ?: "主应用未打开") }
+                    } else {
+                        val current = target?.let { engine.slotStates().getOrNull(it) as? SlotState.Occupied }
+                        if (target != null && current?.taskId != expectedTask) return
+                        val index = target ?: engine.slotStates().indexOfFirst { it is SlotState.Ready }
+                        if (index < 0) showStageMessage("最多四个小窗")
+                        else engine.replaceWindow(index, entry.launchIntent()).onFailure { showStageMessage(it.message ?: "应用未打开") }
+                    }
+                }
+                grid.setOnItemClickListener { _, _, position, _ ->
+                    filtered.getOrNull(position)?.let(::chooseEntry)
+                }
+                val frequentTitle = windowPicker.label("最近常用", 13f).apply {
+                    setPadding(dp(12).toInt(), dp(2).toInt(), dp(12).toInt(), 0)
+                }
+                val frequentRow = android.widget.LinearLayout(context).apply {
+                    gravity = Gravity.CENTER
+                    addView(android.widget.ProgressBar(context), android.widget.LinearLayout.LayoutParams(dp(22).toInt(), dp(22).toInt()))
+                }
+                // Fixed quick row before the recycled, alphabetic full catalogue.
+                rows.addView(frequentTitle, 1, android.widget.LinearLayout.LayoutParams(-1, dp(28).toInt()))
+                rows.addView(frequentRow, 2, android.widget.LinearLayout.LayoutParams(-1, dp(88).toInt()))
+                var hasFrequent = false
+                frequentApps.request(entries) quickRow@ { apps ->
+                    if (generation != windowPickerGeneration || !windowPicker.isShowing) return@quickRow
+                    frequentRow.removeAllViews()
+                    apps.take(5).forEach { entry ->
+                        val cell = android.widget.LinearLayout(context).apply {
+                            orientation = android.widget.LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                            contentDescription = entry.label; isClickable = true
+                            setOnClickListener { chooseEntry(entry) }
+                        }
+                        cell.addView(android.widget.ImageView(context).apply {
+                            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                            setImageDrawable(entry.icon.constantState?.newDrawable(context.resources)?.mutate() ?: entry.icon)
+                        }, android.widget.LinearLayout.LayoutParams(dp(38).toInt(), dp(38).toInt()))
+                        cell.addView(windowPicker.label(entry.label, 11f).apply {
+                            gravity = Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                            setPadding(dp(2).toInt(), dp(5).toInt(), dp(2).toInt(), 0)
+                        }, android.widget.LinearLayout.LayoutParams(-1, dp(34).toInt()))
+                        frequentRow.addView(cell, android.widget.LinearLayout.LayoutParams(0, -1, 1f))
+                    }
+                    hasFrequent = apps.isNotEmpty()
+                    val show = hasFrequent && query.text.isNullOrBlank()
+                    frequentTitle.visibility = if (show) View.VISIBLE else View.GONE
+                    frequentRow.visibility = if (show) View.VISIBLE else View.GONE
+                }
+                query.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                        val filter = s?.toString().orEmpty().trim()
+                        filtered = entries.filter { it.label.contains(filter, true) || it.component.packageName.contains(filter, true) }
+                        adapter.notifyDataSetChanged()
+                        val show = hasFrequent && filter.isEmpty()
+                        frequentTitle.visibility = if (show) View.VISIBLE else View.GONE
+                        frequentRow.visibility = if (show) View.VISIBLE else View.GONE
+                    }
+                    override fun afterTextChanged(s: android.text.Editable?) {}
+                })
+            }.onFailure {
+                rows.removeAllViews(); rows.addView(windowPicker.label("应用列表读取失败，请关闭后重试"))
+            }
+        }
     }
 
     private fun sidebarHandle(): View = android.widget.TextView(context).apply {
@@ -915,8 +1113,8 @@ class NeXtepWindowController(
                 android.view.MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; true }
                 android.view.MotionEvent.ACTION_UP -> {
                     val g = geometry()
-                    val delta = if (g.isLandscape) event.rawY - downY else event.rawX - downX
-                    val outward = if (g.isLandscape) !g.isSidebarAtTop else g.sidebarSide == SidebarSide.RIGHT
+                    val delta = if (g.railAtTop || g.isLandscape) event.rawY - downY else event.rawX - downX
+                    val outward = if (g.railAtTop) false else if (g.isLandscape) !g.isSidebarAtTop else g.sidebarSide == SidebarSide.RIGHT
                     if (kotlin.math.abs(delta) > dp(24)) setSidebarCollapsed((delta > 0) == outward)
                     else view.performClick()
                     true
@@ -940,12 +1138,12 @@ class NeXtepWindowController(
             // Retain TextureViews and tasks; a GONE sidebar would destroy their displays.
             record.view.animate().cancel()
             val base = viewport.geometry(sidebarSide)
-            val distance = if (base.isLandscape) base.sidebarPhysicalHeight.toFloat() else base.sidebarPhysicalWidth.toFloat()
-            val outward = if (base.isLandscape) !base.isSidebarAtTop else base.sidebarSide == SidebarSide.RIGHT
+            val distance = if (base.railAtTop || base.isLandscape) base.sidebarPhysicalHeight.toFloat() else base.sidebarPhysicalWidth.toFloat()
+            val outward = if (base.railAtTop) false else if (base.isLandscape) !base.isSidebarAtTop else base.sidebarSide == SidebarSide.RIGHT
             val offset = if (value) distance * (if (outward) 1 else -1) else 0f
             record.view.animate().alpha(if (value) 0f else 1f)
-                .translationX(if (base.isLandscape) 0f else offset)
-                .translationY(if (base.isLandscape) offset else 0f)
+                .translationX(if (base.railAtTop || base.isLandscape) 0f else offset)
+                .translationY(if (base.railAtTop || base.isLandscape) offset else 0f)
                 .setDuration(220).setInterpolator(transitionInterpolator).start()
         }
     }
@@ -997,6 +1195,7 @@ class NeXtepWindowController(
         }
     }.apply {
         sidebarView = this
+        setOnDragListener(contentDrag)
         setBackgroundColor(Color.TRANSPARENT)
         if (FeatureGate.VIRTUAL_DISPLAY_SLOTS.defaultEnabled) {
             slotWindows = List(WORKSPACE_SLOT_COUNT) { index -> VirtualDisplaySlot(context, index) }
@@ -1284,13 +1483,13 @@ class NeXtepWindowController(
         val bounds = profile.slots
         slotWindows.forEachIndexed { index, slot ->
             slot.setLayoutProfile(profile)
-            slot.view.setBackgroundSwipeSide(logicalSidebarSide(geometry))
+            slot.view.setBackgroundSwipeSide(if (geometry.railAtTop) SidebarSide.LEFT else logicalSidebarSide(geometry))
             slot.view.layoutParams = FrameLayout.LayoutParams(
                 bounds[index].width,
                 bounds[index].height,
                 Gravity.TOP,
             ).apply {
-                marginStart = (profile.geometry.sidebarWidth - bounds[index].width) / 2
+                marginStart = if (geometry.railAtTop) bounds[index].left else (profile.geometry.sidebarWidth - bounds[index].width) / 2
                 marginEnd = 0
                 topMargin = bounds[index].top
             }
@@ -1305,21 +1504,24 @@ class NeXtepWindowController(
         val states = slotCoordinator?.slotStates().orEmpty()
         val occupied = List(WORKSPACE_SLOT_COUNT) { states.getOrNull(it) is SlotState.Occupied }
         val profile = viewport.layout()
-        val poses = StageActiveWindowPolicy.positions(occupied, bounds.map { it.height }, bounds.map { it.top },
+        val poses = if (geometry.railAtTop) StageTopRowPolicy.positions(occupied, bounds.map { it.width }, bounds.map { it.height },
+            bounds.map { it.left }, bounds.map { it.top }, profile.geometry.sidebarPhysicalWidth, profile.geometry.sidebarPhysicalHeight,
+            context.resources.displayMetrics.density)
+        else StageActiveWindowPolicy.positions(occupied, bounds.map { it.height }, bounds.map { it.top },
             profile.geometry.sidebarLogicalHeight, stageOrder, context.resources.displayMetrics.density, right)
         val countChanged = shownWindowCount != poses.size
         shownWindowCount = poses.size
         sidebarAddButton?.apply {
             visibility = if (shownWindowCount < WORKSPACE_SLOT_COUNT) View.VISIBLE else View.GONE
             layoutParams = FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(),
-                if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(12).toInt() }
+                if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0 }
         }
         slotWindows.forEachIndexed { index, slot ->
             val pose = poses[index]
             slot.view.setWorkspaceCardVisible(pose != null)
             if (pose == null) return@forEachIndexed
             slot.view.apply {
-                pivotX = if (right) 0f else bounds[index].width.toFloat()
+                pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()
                 pivotY = bounds[index].height / 2f
                 cameraDistance = dp(900)
                 rotationY = pose.tilt
@@ -1329,11 +1531,9 @@ class NeXtepWindowController(
                 translationY = pose.y
                 elevation = pose.z
                 alpha = pose.alpha
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(22, 22, 22))
-                    cornerRadius = dp(8)
-                    setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(100, 190, 210, 230))
-                }
+                // The live app fills the card. Its outline owns all four rounded corners.
+                setBackgroundColor(Color.TRANSPARENT)
+                invalidateOutline()
                 clipToOutline = true
             }
         }
@@ -1357,6 +1557,7 @@ class NeXtepWindowController(
                 return@runCatching
             }
             if (main.taskId != stageMainId) {
+                main.userId?.let { frequentApps.observe(main.component.packageName, it) }
                 val oldMain = stageMainId
                 val returnedSlot = slotCoordinator?.slotStates()?.indexOfFirst {
                     it is SlotState.Occupied && it.taskId == oldMain
@@ -1377,10 +1578,8 @@ class NeXtepWindowController(
                 val g = geometry()
                 visibility = View.GONE
             }
-            contentHighlightView?.foreground = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(100, 138, 218, 220))
-            }
+            // Focus is the centered real task. Avoid a debug-looking cyan frame.
+            contentHighlightView?.foreground = null
         }.onFailure { NeXtepLog.warn("stage_focus", "Foreground decoration unavailable", it) }
     }
 
@@ -1470,7 +1669,7 @@ class NeXtepWindowController(
     private val transitionInterpolator = WorkspaceTransitionSpec.interpolator
 
     private companion object {
-        const val EXPECTED_WINDOW_COUNT = 4
+        const val EXPECTED_WINDOW_COUNT = 5
         const val BACKDROP_SETTLE_REFRESHES = 2
         const val BACKDROP_MAX_RETRIES = 8
         const val HOME_PREVIEW_SETTLE_DELAY_MS = 100L

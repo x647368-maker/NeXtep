@@ -20,6 +20,11 @@ internal object WorkspaceTaskSurfaceHook {
             Float::class.javaPrimitiveType, Float::class.javaPrimitiveType).apply { isAccessible = true }
     }
 
+    private val setCornerRadius by lazy {
+        SurfaceControl.Transaction::class.java.getDeclaredMethod("setCornerRadius", SurfaceControl::class.java,
+            Float::class.javaPrimitiveType).apply { isAccessible = true }
+    }
+
     fun install(module: XposedModule, loader: ClassLoader) {
         val taskClass = loader.loadClass("com.android.server.wm.Task")
         val displayClass = loader.loadClass("com.android.server.wm.DisplayContent")
@@ -94,6 +99,7 @@ internal object WorkspaceTaskSurfaceHook {
             // the main transform here scales twice and exposes wallpaper at top/left.
             setMatrix.invoke(transaction, leash, 1f, 0f, 0f, 1f)
             transaction.setCrop(leash, null as Rect?)
+            setCornerRadius.invoke(transaction, leash, 0f)
             transaction.setPosition(leash, 0f, 0f)
             return
         }
@@ -105,6 +111,9 @@ internal object WorkspaceTaskSurfaceHook {
         transaction.setCrop(leash, Rect(geometry.availableLeft, geometry.availableTop,
             geometry.availableRight, geometry.availableBottom))
         transaction.setPosition(leash, geometry.contentTranslationX, geometry.contentTranslationY)
+        setCornerRadius.invoke(transaction, leash, io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.sourceRadius(
+            geometry.contentScale, geometry.contentScale, geometry.availableWidth, geometry.availableHeight,
+            context.resources.displayMetrics.density, true))
     }
 
     private fun isSlotDisplay(display: Any): Boolean {

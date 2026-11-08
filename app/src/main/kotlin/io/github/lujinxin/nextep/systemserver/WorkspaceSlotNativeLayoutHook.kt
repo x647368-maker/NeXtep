@@ -103,8 +103,20 @@ internal object WorkspaceSlotNativeLayoutHook {
         return Reference(now, policy, nativeInfo, state).also { references[key] = it }
     }
 
-    private fun isSlot(display: Any): Boolean =
-        (call(display, "getDisplayInfo")?.let { field(it, "name") } as? String)?.startsWith("NeXtep-slot-") == true
+    private fun isSlot(display: Any): Boolean {
+        val info = call(display, "getDisplayInfo") ?: return false
+        if (!(field(info, "name") as? String).orEmpty().startsWith("NeXtep-slot-")) return false
+        val service = field(display, "mWmService") ?: return false
+        val physical = call(checkNotNull(field(service, "mRoot")), "getDefaultDisplay") ?: return false
+        val reference = call(physical, "getDisplayInfo") ?: return false
+        // A compact top window has its own dimensions/density and its own real insets.
+        val w = field(info, "logicalWidth") as? Int ?: return false
+        val h = field(info, "logicalHeight") as? Int ?: return false
+        val pw = field(reference, "logicalWidth") as? Int ?: return false
+        val ph = field(reference, "logicalHeight") as? Int ?: return false
+        return minOf(w, h) == minOf(pw, ph) && maxOf(w, h) == maxOf(pw, ph) &&
+            field(info, "logicalDensityDpi") == field(reference, "logicalDensityDpi")
+    }
 
     private fun failure(operation: String, error: Throwable) {
         if (warned.compareAndSet(false, true)) NeXtepLog.warn("slot_native_layout", "$operation failed open", error)

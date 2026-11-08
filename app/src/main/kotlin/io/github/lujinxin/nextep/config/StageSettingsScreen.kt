@@ -186,13 +186,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 }.setNegativeButton("取消", null).show()
             }
         }
+        val layout = group(root)
+        row(layout, "顶部横排", "小窗横向排列在主窗上方", "windows") { command("layout_top") }
+        row(layout, "侧边纵排", "小窗纵向排列在主窗旁", "windows") { command("layout_side") }
         val side = group(root)
         row(side, "侧栏放左边", icon = "windows") { command("left") }
         row(side, "侧栏放右边", icon = "windows") { command("right") }
         val visibility = group(root)
         row(visibility, "收起侧栏", "扩大当前主应用", "windows") { command("collapse") }
-        row(visibility, "展开侧栏", "恢复四个侧窗", "windows") { command("expand") }
-        root.addView(hint("点击侧窗交换应用，通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
+        row(visibility, "展开侧栏", "显示已有侧窗", "windows") { command("expand") }
+        root.addView(hint("主窗上方“⋯”可切换全屏、切换布局、替换和关闭主窗。\n顶部小窗按紧凑尺寸重新排版；点击小窗切换为主窗，在小窗菜单选择“在小窗中操作”后可尝试直接触摸和滑动。应用与系统支持情况可能不同。\n通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
     }
     private fun gestures(root: LinearLayout) {
         val settings = repository.topBarSettings(); val card = group(root)
@@ -208,20 +211,25 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val card = group(root)
         row(card, "退出台前调度", "恢复普通应用显示", "exit") { setStage(false) }
         row(card, "添加控制中心开关", icon = "tile") { addTile() }
-        root.addView(hint("退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
+        row(group(root), "跨窗口内容拖放", "兼容应用 · 待真机验证", "apps") {
+            MaterialAlertDialogBuilder(activity).setTitle("跨窗口内容拖放")
+                .setMessage("长按应用支持的文字、图片或文件，拖到目标小窗悬停片刻，待其切换到主窗后，移入主窗再松手。\n\n源应用需要支持 Android 全局拖放；目标应用需要支持接收内容。此适配尚未经过真机验证，不保证所有 App 可用。")
+                .setPositiveButton("知道了", null).show()
+        }
+        root.addView(hint("主窗把手：点击打开菜单，向左滑动关闭主窗。小窗沿侧栏外侧方向滑动关闭；顶部横排时向左滑动。\n\n退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.4.0 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.8.0 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.4.0\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.8.0\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.4.0", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.8.0", 13f, secondary)); root.addView(hero)
         val card = group(root)
         row(card, "窗口", "一个主窗口，按需显示 0–4 个小窗", "windows")
         row(card, "来源与许可", "基于 NeXtep · Apache-2.0", "info") {

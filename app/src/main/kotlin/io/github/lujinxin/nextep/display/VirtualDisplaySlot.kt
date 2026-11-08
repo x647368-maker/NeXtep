@@ -25,6 +25,7 @@ class VirtualDisplaySlot(
     val view = TaskSwitcherView(context, index)
 
     private val applicationContext = context.applicationContext ?: context
+    private val inputBridge = SlotInputBridge(applicationContext)
     private val factory = VirtualDisplayFactory(applicationContext)
     private var active = false
     private var suspended = false
@@ -43,6 +44,16 @@ class VirtualDisplaySlot(
 
     init {
         view.textureView.surfaceTextureListener = this
+        view.setInputAction { event ->
+            runCatching {
+                check(active && !suspended) { "小窗未激活" }
+                val g = checkNotNull(activeGeometry)
+                val projection = SlotTouchProjection(view.textureView.width, view.textureView.height, g.width, g.height)
+                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) check(projection.contains(
+                    event.x - view.textureView.left, event.y - view.textureView.top)) { "触摸在窗口留白中" }
+                inputBridge.send(event, checkNotNull(displayId()), projection, view.textureView.left, view.textureView.top).getOrThrow()
+            }
+        }
     }
 
     fun setListener(listener: Listener) {

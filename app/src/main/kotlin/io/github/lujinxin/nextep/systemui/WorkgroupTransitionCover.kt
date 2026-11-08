@@ -111,19 +111,24 @@ internal class WorkgroupTransitionCover(
             frames.forEach { frame ->
                 val q = frame.corners
                 if (q.size != 8 || q.any { !it.isFinite() }) return@forEach
-                outline.reset(); outline.moveTo(q[0], q[1])
-                for (i in 1..3) outline.lineTo(q[i * 2], q[i * 2 + 1])
-                outline.close()
-                paint.color = Color.rgb(17, 23, 32)
-                paint.alpha = 255
-                canvas.drawPath(outline, paint)
                 val bitmap = frame.bitmap ?: return@forEach
                 val from = floatArrayOf(0f, 0f, bitmap.width.toFloat(), 0f,
                     bitmap.width.toFloat(), bitmap.height.toFloat(), 0f, bitmap.height.toFloat())
                 if (projection.setPolyToPoly(from, 0, q, 0, 4)) {
+                    val w = kotlin.math.hypot(q[2] - q[0], q[3] - q[1])
+                    val h = kotlin.math.hypot(q[6] - q[0], q[7] - q[1])
+                    val scale = minOf(w / bitmap.width, h / bitmap.height).coerceAtLeast(.001f)
+                    val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(w, h,
+                        resources.displayMetrics.density) / scale
+                    outline.reset()
+                    outline.addRoundRect(RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat()), radius, radius, Path.Direction.CW)
+                    outline.transform(projection)
+                    val saved = canvas.save(); canvas.clipPath(outline)
                     paint.alpha = (frame.alpha.coerceIn(0f, 1f) * 255).toInt()
                     canvas.drawBitmap(bitmap, projection, paint)
+                    canvas.restoreToCount(saved)
                 }
+
             }
             paint.alpha = 255
             paint.textSize = 14 * resources.displayMetrics.scaledDensity

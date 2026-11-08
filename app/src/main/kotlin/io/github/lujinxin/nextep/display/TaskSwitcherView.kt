@@ -44,10 +44,11 @@ class TaskSwitcherView(
     private var menuAction: ((Int, View) -> Unit)? = null
     private var workspaceCardVisible = true
     private val windowMenu = TextView(context).apply {
-        text = "⋯"; textSize = 20f; gravity = Gravity.CENTER
-        setTextColor(Color.WHITE)
+        text = "⋯"; textSize = 14f; gravity = Gravity.CENTER
+        setTextColor(Color.rgb(115, 115, 120))
+        setShadowLayer(dp(1).toFloat(), 0f, 0f, Color.argb(120, 255, 255, 255))
         contentDescription = "小窗菜单：替换或关闭"
-        background = GradientDrawable().apply { setColor(Color.argb(205, 28, 28, 28)); cornerRadius = dp(12).toFloat() }
+        setBackgroundColor(Color.TRANSPARENT)
         visibility = View.GONE
         setOnClickListener { if (!busy && !waiting && currentState is SlotState.Occupied) menuAction?.invoke(slotIndex, this) }
     }
@@ -57,7 +58,45 @@ class TaskSwitcherView(
         workspaceCardVisible = value
         if (!value) { animate().cancel(); alpha = 0f }
     }
-    override fun dispatchTouchEvent(event: MotionEvent): Boolean = workspaceCardVisible && super.dispatchTouchEvent(event)
+    private var directInteraction = false
+    private var inputGesture = false
+    private var lastInput: MotionEvent? = null
+    private var inputAction: ((MotionEvent) -> Result<Unit>)? = null
+    fun setInputAction(action: (MotionEvent) -> Result<Unit>) { inputAction = action }
+    fun setDirectInteraction(value: Boolean) {
+        cancelInputGesture()
+        directInteraction = value
+        windowMenu.setTextColor(if (value) Color.rgb(110, 220, 170) else Color.rgb(115, 115, 120))
+        if (value) android.widget.Toast.makeText(context, "小窗内操作：触摸或滑动应用；通过顶部三点菜单切回主窗", android.widget.Toast.LENGTH_LONG).show()
+    }
+    private fun cancelInputGesture() {
+        if (inputGesture) lastInput?.let { old ->
+            val cancel = MotionEvent.obtain(old); cancel.action = MotionEvent.ACTION_CANCEL
+            inputAction?.invoke(cancel); cancel.recycle()
+        }
+        inputGesture = false; lastInput?.recycle(); lastInput = null
+    }
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (!workspaceCardVisible) return false
+        if (directInteraction && !busy && !waiting && currentState is SlotState.Occupied) {
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) inputGesture = !(
+                windowMenu.visibility == View.VISIBLE && event.x >= windowMenu.left && event.x < windowMenu.right &&
+                    event.y >= windowMenu.top && event.y < windowMenu.bottom)
+            if (inputGesture) {
+                lastInput?.recycle(); lastInput = MotionEvent.obtain(event)
+                val result = inputAction?.invoke(event) ?: Result.failure(IllegalStateException("触摸通道未连接"))
+                if (result.isFailure) {
+                    cancelInputGesture(); directInteraction = false; windowMenu.setTextColor(Color.rgb(115, 115, 120))
+                    android.widget.Toast.makeText(context, "系统未开放小窗触摸，请通过顶部三点菜单切回主窗操作", android.widget.Toast.LENGTH_LONG).show()
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    inputGesture = false; lastInput?.recycle(); lastInput = null
+                }
+                return true
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
 
     private var listener: Listener? = null
     private var busy = false
@@ -78,17 +117,21 @@ class TaskSwitcherView(
     )
 
     init {
-        clipToOutline = false
+        clipToOutline = true
+        outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height,
+                    io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(view.width.toFloat(), view.height.toFloat(), resources.displayMetrics.density))
+            }
+        }
         isClickable = true
         setBackgroundColor(Color.TRANSPARENT)
-        addView(textureView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(textureView, previewParams())
         addView(
             statusView,
             LayoutParams(dp(30), dp(30), Gravity.CENTER),
         )
-        addView(windowMenu, LayoutParams(dp(30), dp(30), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(4); marginEnd = dp(4)
-        })
+        addView(windowMenu, LayoutParams(dp(36), dp(18), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(2) })
         showState(SlotState.Empty)
         setOnDragListener { _, event -> handleDrag(event) }
         setOnClickListener {
@@ -143,7 +186,9 @@ class TaskSwitcherView(
         if (state != currentState || waiting) backgroundSwipe.cancel()
         waiting = false
         val previousState = currentState
+        if (state != currentState) { cancelInputGesture(); directInteraction = false; windowMenu.setTextColor(Color.rgb(115, 115, 120)) }
         currentState = state
+        if (state is SlotState.Occupied) contentDescription = "${state.component.packageName}，点击切换主窗，顶部三点打开窗口菜单"
         windowMenu.visibility = if (state is SlotState.Occupied) View.VISIBLE else View.GONE
         when (state) {
             SlotState.Empty -> showReady(animated = !exchangePreviewActive && previousState is SlotState.Occupied)
@@ -190,7 +235,7 @@ class TaskSwitcherView(
 
     fun setBusy(isBusy: Boolean) {
         busy = isBusy
-        if (isBusy) backgroundSwipe.cancel()
+        if (isBusy) { cancelInputGesture(); backgroundSwipe.cancel() }
         if (!isBusy) {
             showState(currentState)
         }
@@ -210,7 +255,7 @@ class TaskSwitcherView(
             addView(
                 replacement,
                 0,
-                LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+                previewParams(),
             )
         }
     }
@@ -290,6 +335,7 @@ class TaskSwitcherView(
     }
 
     override fun onDetachedFromWindow() {
+        cancelInputGesture()
         backgroundSwipe.cancel()
         finishDrag()
         super.onDetachedFromWindow()
@@ -427,6 +473,8 @@ class TaskSwitcherView(
             shape = GradientDrawable.OVAL
             setColor(color)
         }
+
+    private fun previewParams() = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 
     private fun createTextureView(): TextureView = TextureView(context)
 

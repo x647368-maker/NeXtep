@@ -52,9 +52,24 @@ internal class WorkspaceViewport(
     // lets a restarted SystemUI retain the selected mode before the first unlock.
     private val preferences = runCatching {
         context.createDeviceProtectedStorageContext()
-            .getSharedPreferences("atomic_viewport_profiles_v4", Context.MODE_PRIVATE)
+            .getSharedPreferences("atomic_viewport_profiles_v5", Context.MODE_PRIVATE)
     }.onFailure { NeXtepLog.warn("workspace_viewport", "Viewport storage unavailable", it) }.getOrNull()
     private val handler = Handler(Looper.getMainLooper())
+    private var topRail = preferences?.getBoolean("rail_top", false) ?: false
+    fun isTopRail(): Boolean = topRail
+    fun setTopRail(value: Boolean) {
+        if (topRail == value) return
+        topRail = value
+        preferences?.edit()?.putBoolean("rail_top", value)?.apply()
+        SystemServerWorkspaceBridge.publishLayout(context, layout())
+    }
+    private fun selected(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {
+        if (!topRail) return profile
+        val g = profile.geometry
+        val depth = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.depth(g, profile.densityDpi / 160f)
+
+        return profile.copy(geometry = g.copy(railAtTop = true, sidebarWidth = depth))
+    }
     private var navigationButtonsEnabled = preferences?.getBoolean(MODE_KEY, false) ?: false
     private var cached: Snapshot? = null
     private var cachedKey: String? = null
@@ -90,11 +105,12 @@ internal class WorkspaceViewport(
 
     fun layout(refreshMetrics: Boolean = false): WorkspaceLayoutProfile {
         if (refreshMetrics || cached == null) refresh()
-        return checkNotNull(profile)
+        return selected(checkNotNull(profile))
     }
 
     fun projectRotation(rotation: Int) {
-        val projected = layout().rotatedTo(rotation)
+        layout()
+        val projected = checkNotNull(profile).rotatedTo(rotation)
         pendingRotation = rotation
         pendingRotationUntil = SystemClock.uptimeMillis() + 1_000L
         val g = projected.geometry
@@ -203,7 +219,7 @@ internal class WorkspaceViewport(
         if (cached != snapshot || profile == null) {
             profile = saved ?: WorkspaceLayoutProfile.create(snapshot.width, snapshot.height,
                 (snapshot.density * 160).roundToInt(), snapshot.navigationInsets, snapshot.displayRotation)
-            SystemServerWorkspaceBridge.publishLayout(context, checkNotNull(profile))
+            SystemServerWorkspaceBridge.publishLayout(context, selected(checkNotNull(profile)))
         }
         cached = snapshot
         cachedKey = key

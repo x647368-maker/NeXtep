@@ -233,9 +233,12 @@ private class SwapPreviewView(
             bitmap.width.toFloat(), bitmap.height.toFloat(), 0f, bitmap.height.toFloat())
         if (!projection.setPolyToPoly(bitmapCorners, 0, quad, 0, 4)) return
         outline.reset()
-        outline.moveTo(quad[0], quad[1])
-        for (corner in 1..3) outline.lineTo(quad[corner * 2], quad[corner * 2 + 1])
-        outline.close()
+        fitted.set(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
+        val scale = minOf(box.width / bitmap.width, box.height / bitmap.height).coerceAtLeast(.001f)
+        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(box.width, box.height,
+            resources.displayMetrics.density) / scale
+        outline.addRoundRect(fitted, radius, radius, Path.Direction.CW)
+        outline.transform(projection)
         val save = canvas.save()
         canvas.clipPath(outline)
         canvas.drawColor(Color.BLACK)

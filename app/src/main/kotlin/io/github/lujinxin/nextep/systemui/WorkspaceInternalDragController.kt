@@ -156,11 +156,16 @@ internal class WorkspaceInternalDragController(
         private val previewHeight = sourceHeight * 0.88f
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         private val destination = RectF()
+        private val roundClip = android.graphics.Path()
         override fun onDraw(canvas: Canvas) {
             destination.set(point.x - previewWidth / 2, point.y - previewHeight / 2,
                 point.x + previewWidth / 2, point.y + previewHeight / 2)
+            val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(destination.width(), destination.height(), resources.displayMetrics.density)
+            roundClip.reset(); roundClip.addRoundRect(destination, radius, radius, android.graphics.Path.Direction.CW)
+            val saved = canvas.save(); canvas.clipPath(roundClip)
             if (bitmap != null && !bitmap.isRecycled) canvas.drawBitmap(bitmap, null, destination, paint)
-            else { paint.color = Color.argb(150, 40, 94, 114); canvas.drawRoundRect(destination, 16f, 16f, paint) }
+            else { paint.color = Color.argb(150, 40, 94, 114); canvas.drawRoundRect(destination, radius, radius, paint) }
+            canvas.restoreToCount(saved)
         }
     }
 }

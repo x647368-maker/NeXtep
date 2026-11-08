@@ -34,6 +34,8 @@ object LauncherTransformController {
         val clipBounds: Rect?,
         val screenX: Int,
         val screenY: Int,
+        val outlineProvider: android.view.ViewOutlineProvider?,
+        val clipToOutline: Boolean,
     )
 
     private var decorReference = WeakReference<View>(null)
@@ -371,6 +373,17 @@ object LauncherTransformController {
             view.context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == false
     }.getOrDefault(false)
 
+    private val roundedOutline = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: android.graphics.Outline) {
+            val bounds = view.clipBounds ?: Rect(0, 0, view.width, view.height)
+            val transform = assistantTransforms[view]
+            val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.sourceRadius(
+                transform?.scaleX ?: view.scaleX, transform?.scaleY ?: view.scaleY,
+                bounds.width(), bounds.height(), view.resources.displayMetrics.density, true)
+            outline.setRoundRect(bounds, radius)
+        }
+    }
+
     private fun writeTransform(
         decor: View,
         transform: TouchCoordinateMapper.Transform,
@@ -395,6 +408,9 @@ object LauncherTransformController {
             decor.translationX = transform.translationX
             decor.translationY = transform.translationY
         }
+        decor.outlineProvider = roundedOutline
+        decor.clipToOutline = true
+        decor.invalidateOutline()
         if (!isAssistant) appliedTransform = transform
     }
 
@@ -464,6 +480,8 @@ object LauncherTransformController {
             clipBounds = view.clipBounds?.let(::Rect),
             screenX = location[0],
             screenY = location[1],
+            outlineProvider = view.outlineProvider,
+            clipToOutline = view.clipToOutline,
         )
     }
 
@@ -476,6 +494,9 @@ object LauncherTransformController {
         view.translationY = saved.translationY
         view.animationMatrix = saved.animationMatrix
         view.clipBounds = saved.clipBounds
+        view.outlineProvider = saved.outlineProvider
+        view.clipToOutline = saved.clipToOutline
+        view.invalidateOutline()
     }
 
     private fun ensureMainThread() {

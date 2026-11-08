@@ -74,6 +74,7 @@ object TaskSurfaceCompat {
     private val observedLeashes = ConcurrentHashMap<Int, Any>()
     private data class MethodKey(val type: Class<*>, val name: String, val arguments: List<Class<*>?>)
     private val methodCache = ConcurrentHashMap<MethodKey, Method>()
+    @Volatile private var displayDensity = 1f
     private val cropMethods = ConcurrentHashMap<Class<*>, Method>()
     private val presentationAnimators = ConcurrentHashMap<Int, ValueAnimator>()
     private val rotationHandoff = DisplayRotationHandoff()
@@ -93,6 +94,7 @@ object TaskSurfaceCompat {
 
     fun initializeTaskAccess(context: Context) {
         activityManager = context.getSystemService(ActivityManager::class.java)
+        displayDensity = context.resources.displayMetrics.density
     }
 
     fun observeTaskInfo(info: ActivityManager.RunningTaskInfo, leash: Any? = null) {
@@ -687,6 +689,10 @@ object TaskSurfaceCompat {
 
     private fun writeFrame(transaction: Any, leash: Any, frame: SurfaceFrame) {
         setCrop(transaction, leash, frame.crop)
+        val crop = frame.crop
+        val corner = WindowCornerPolicy.sourceRadius(frame.scaleX, frame.scaleY,
+            crop?.width() ?: 0, crop?.height() ?: 0, displayDensity, crop != null)
+        invokeOptional(transaction, "setCornerRadius", leash, corner)
         // Keep native visibility, fade, layer order and parenting intact.
         if (!invokeOptional(transaction, "setMatrix", leash, frame.scaleX, 0f, 0f, frame.scaleY)) {
             invokeRequired(transaction, "setScale", leash, frame.scaleX, frame.scaleY)
