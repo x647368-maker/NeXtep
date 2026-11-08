@@ -297,6 +297,10 @@ class NeXtepWindowController(
         if (FeatureGate.VIRTUAL_DISPLAY_SLOTS.defaultEnabled) {
             slotCoordinator?.activate()
         }
+        // Activation can restore some retained tasks, or leave zero occupied
+        // windows. Commit the actual final rail/main geometry before returning.
+        applyStageStack(geometry())
+        applyWindowGeometry(geometry(), refreshControls = false)
         scheduleStageFocus()
         return geometry()
     }
