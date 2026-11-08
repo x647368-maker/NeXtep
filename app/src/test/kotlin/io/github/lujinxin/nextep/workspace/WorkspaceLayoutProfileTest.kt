@@ -110,7 +110,7 @@ class WorkspaceLayoutProfileTest {
         repeat(3) { legacy.removeAt(29) }
         legacy[0] = "5"
         assertNull(WorkspaceLayoutProfile.decode(legacy.joinToString(",")))
-        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("13,", "12,")))
+        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("14,", "13,")))
     }
 
     @Test
