@@ -1624,8 +1624,9 @@ class NeXtepWindowController(
                     wallpaperBitmap = fitted
                     wallpaperRotation = geometry.displayRotation
                 }
-                // A failed capture or identity query must not erase a valid frame.
-                applyWallpaperBackdrop(geometry)
+                // A capture may finish after a window closes/collapses. Crop for the
+                // current layout, not the geometry that started this asynchronous job.
+                applyWallpaperBackdrop(this@NeXtepWindowController.geometry())
                 // A waking live engine can briefly expose its initial frame even
                 // when capture succeeds. Refresh again after it has started drawing.
                 if (attempt < BACKDROP_SETTLE_REFRESHES ||
