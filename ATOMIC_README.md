@@ -1,4 +1,6 @@
-# 台前调度 0.3.1 开发版
+# 台前调度 0.3.2 开发版
+
+当前版本以 [COLOROS_SETTINGS_REDESIGN.md](COLOROS_SETTINGS_REDESIGN.md) 为准：原生分组设置页、无顶部操作条、放大四侧窗。以下为历史记录。
 
 本版以 [STAGE_CLEAN_SETTINGS.md](STAGE_CLEAN_SETTINGS.md) 为准：工作区无顶部控制条，选项移至应用设置，包含明确退出按钮与说明。新行为待真机验证。
 

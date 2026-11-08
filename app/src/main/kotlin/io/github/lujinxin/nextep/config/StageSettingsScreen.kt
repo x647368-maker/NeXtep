@@ -1,224 +1,340 @@
 package io.github.x647368maker.atomicworkbench.config
 
 import android.app.StatusBarManager
-import android.content.BroadcastReceiver
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.graphics.Typeface
+import android.content.*
+import android.content.res.Configuration
+import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.View
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
+import android.os.*
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.*
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.switchmaterial.SwitchMaterial
 import io.github.x647368maker.atomicworkbench.R
 import io.github.x647368maker.atomicworkbench.trigger.*
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** All persistent stage controls live in the ordinary app, not over real tasks. */
-internal object StageSettingsScreen {
-    fun create(activity: AppCompatActivity, repository: SettingsRepository): View {
-        fun dp(n: Int) = (n * activity.resources.displayMetrics.density).toInt()
-        fun text(value: String, size: Float = 14f) = TextView(activity).apply {
-            text = value; textSize = size; setTextColor(SettingsPalette.text(activity))
-            setPadding(0, dp(8), 0, dp(8)); setLineSpacing(dp(3).toFloat(), 1f)
-        }
-        val root = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(24), dp(22), dp(24))
-        }
-        root.addView(text("台前调度", 30f).apply { typeface = Typeface.DEFAULT_BOLD })
-        root.addView(text("0.3.1 · Android 个人使用版\n工作区只显示真实主应用和侧窗。所有控制选项集中在这里。"))
-        val state = text("正在读取系统组件状态…")
-        root.addView(state)
-        fun toast(s: String) { if (!activity.isDestroyed) Toast.makeText(activity, s, Toast.LENGTH_LONG).show() }
-        fun section(title: String): LinearLayout = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(10), dp(16), dp(14))
-            background = GradientDrawable().apply {
-                setColor(SettingsPalette.surface(activity)); cornerRadius = dp(20).toFloat()
+/** Ordinary native settings: grouped rows and separate pages, no glass or overlays. */
+internal class StageSettingsScreen(private val activity: AppCompatActivity, private val repository: SettingsRepository) {
+    val dark = activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+    private val backgroundColor = Color.parseColor(if (dark) "#111214" else "#F0F1F3")
+    private val cardColor = Color.parseColor(if (dark) "#202124" else "#FFFFFF")
+    private val ink = Color.parseColor(if (dark) "#F1F2F4" else "#121315")
+    private val secondary = Color.parseColor(if (dark) "#A0A2A6" else "#818387")
+    private val dividerColor = Color.parseColor(if (dark) "#303136" else "#F2F2F4")
+    private val blue = Color.rgb(29, 125, 239)
+    private val handler = Handler(Looper.getMainLooper())
+    private var active = false
+    private var connected = false
+    private var busy = false
+    private var groups = JSONArray()
+    private var activeId: String? = null
+    private var status = "正在连接系统组件"
+    private var query = ""
+    private var body: LinearLayout? = null
+    private var stateText: TextView? = null
+    private var master: Switch? = null
+    private var settingSwitch = false
+    var page = "home"
+        private set
+    val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor) }
+    private fun dp(n: Int) = (n * activity.resources.displayMetrics.density).toInt()
+    private fun label(s: String, size: Float = 16f, color: Int = ink) = TextView(activity).apply {
+        text = s; textSize = size; setTextColor(color); includeFontPadding = false
+    }
+    private fun surface() = GradientDrawable().apply { setColor(cardColor); cornerRadius = dp(24).toFloat() }
+    private fun toast(s: String) { if (!activity.isDestroyed) Toast.makeText(activity, s, Toast.LENGTH_LONG).show() }
+    private fun hint(s: String) = label(s, 12f, secondary).apply {
+        setLineSpacing(dp(3).toFloat(), 1f); setPadding(dp(16), dp(12), dp(16), dp(4))
+    }
+    private fun group(parent: LinearLayout): LinearLayout = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL; background = surface(); clipToOutline = true
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(18) })
+    }
+    private fun row(parent: LinearLayout, title: String, detail: String? = null, icon: String? = null,
+        color: Int = blue, end: View? = null, action: (() -> Unit)? = null): View {
+        if (parent.childCount > 0) parent.addView(View(activity).apply { setBackgroundColor(dividerColor) },
+            LinearLayout.LayoutParams(-1, dp(1).coerceAtLeast(1)).apply { marginStart = dp(if (icon != null) 56 else 18); marginEnd = dp(18) })
+        return LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(62); setPadding(dp(18), dp(12), dp(18), dp(12))
+            if (icon != null) addView(StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(28)).apply { marginEnd = dp(16) })
+            val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            words.addView(label(title, 16f, if (icon == "exit") Color.rgb(220, 65, 60) else ink))
+            if (!detail.isNullOrBlank()) words.addView(label(detail, 12f, secondary).apply {
+                setLineSpacing(dp(2).toFloat(), 1f); setPadding(0, dp(5), 0, 0)
+            })
+            addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+            if (end != null) addView(end, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(12) })
+            else if (action != null) addView(label("›", 26f, Color.rgb(181, 183, 187)).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(18), dp(32)))
+            if (action != null) {
+                isClickable = true; isFocusable = true
+                val a = activity.obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackground))
+                foreground = a.getDrawable(0); a.recycle()
+                setOnClickListener { action() }
             }
-            addView(text(title, 19f).apply { typeface = Typeface.DEFAULT_BOLD })
-            root.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+            parent.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
-        fun button(parent: LinearLayout, title: String, action: (MaterialButton) -> Unit) = MaterialButton(activity).apply {
-            text = title; isAllCaps = false
-            parent.addView(this, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(6) })
-            setOnClickListener { action(this) }
+    }
+    private fun toggle(checked: Boolean, action: (Boolean) -> Unit) = Switch(activity).apply {
+        isChecked = checked; showText = false; minWidth = dp(48)
+        thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        trackTintList = android.content.res.ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+            intArrayOf(blue, if (dark) Color.rgb(75, 77, 81) else Color.rgb(204, 206, 210)))
+        setOnCheckedChangeListener { _, value -> if (!settingSwitch) action(value) }
+    }
+    fun back(): Boolean { if (page == "home") return false; open("home"); return true }
+    fun open(target: String) {
+        page = target; body = null; stateText = null; master = null
+        view.removeAllViews()
+        val column = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 46 else 8), dp(16), dp(28))
         }
-        val groupList = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        var latest = JSONArray()
-        var active: String? = null
-        lateinit var renderGroups: () -> Unit
-        fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, done: ((Bundle) -> Unit)? = null) {
-            val handler = Handler(Looper.getMainLooper())
-            var completed = false
-            val timeout = Runnable {
-                if (!completed && !activity.isDestroyed) {
-                    completed = true; state.text = "系统组件没有响应。若刚更新 APK，请正常重启手机一次。"
-                }
+        val scroll = ScrollView(activity).apply {
+            isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
+            addView(column, ViewGroup.LayoutParams(-1, -2))
+        }
+        view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        if (target == "home") {
+            column.addView(label("设置", 38f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(10), 0, 0, dp(20)) })
+            val search = EditText(activity).apply {
+                textSize = 16f; setTextColor(ink); setHintTextColor(secondary)
+                hint = "搜索设置项"; isSingleLine = true
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                setPadding(dp(20), 0, dp(20), 0); background = surface()
+                setText(query); setSelection(text.length)
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { query = s?.toString().orEmpty(); renderHome() }
+                    override fun afterTextChanged(s: Editable?) = Unit
+                })
+                contentDescription = "搜索台前调度设置"
             }
-            handler.postDelayed(timeout, 6000)
-            val request = Intent(StageControlContract.ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
-                .putExtra(StageControlContract.COMMAND, name)
-                .putExtra(StageControlContract.ID, id).putExtra(StageControlContract.NAME, title)
-                .putExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, launch)
-            runCatching {
-                activity.sendOrderedBroadcast(request, null, object : BroadcastReceiver() {
-                    override fun onReceive(context: Context?, intent: Intent?) {
-                        if (completed || activity.isDestroyed) return
-                        completed = true; handler.removeCallbacks(timeout)
-                        val reply = getResultExtras(false)
-                        if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null ||
-                            reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) {
-                            state.text = "尚未连接本版系统组件。安装后请正常重启手机，Vector 中只启用台前调度。"
-                            return
-                        }
-                        if (!reply.getBoolean(StageControlContract.OK)) {
-                            toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return
-                        }
-                        state.text = if (reply.getBoolean(TriggerBroadcastContract.EXTRA_ACTIVE)) "台前调度：已开启 · 系统组件 0.3.1 已连接" else "台前调度：已关闭 · 系统组件 0.3.1 已连接"
-                        reply.getString(StageControlContract.GROUPS)?.let { value ->
-                            runCatching {
-                                val snapshot = JSONObject(value)
-                                latest = snapshot.getJSONArray("groups")
-                                active = snapshot.optString("active").takeIf { it.isNotBlank() && it != "null" }
-                                renderGroups()
-                            }.onFailure { toast("工作组数据读取失败") }
-                        }
-                        done?.invoke(reply)
+            column.addView(search, LinearLayout.LayoutParams(-1, dp(44)))
+            body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            column.addView(body); renderHome()
+        } else {
+            val titles = mapOf("windows" to "窗口与侧栏", "groups" to "工作组", "gestures" to "手势", "tile" to "控制中心", "help" to "使用与退出", "diagnostics" to "运行与诊断", "about" to "关于台前调度")
+            val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
+            header.addView(label("‹", 34f).apply {
+                gravity = Gravity.CENTER; contentDescription = "返回设置"; setOnClickListener { open("home") }
+            }, LinearLayout.LayoutParams(dp(40), dp(52)))
+            header.addView(label(titles[target] ?: "设置", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
+            column.addView(header)
+            when (target) {
+                "windows" -> windows(column)
+                "groups" -> groupPage(column)
+                "gestures" -> gestures(column)
+                "tile" -> tile(column)
+                "help" -> help(column)
+                "diagnostics" -> diagnostics(column)
+                "about" -> about(column)
+            }
+        }
+    }
+    private fun renderHome() {
+        val root = body ?: return; root.removeAllViews()
+        if (query.isBlank()) {
+            val statusCard = group(root)
+            val switch = toggle(active) { setStage(it) }.also { master = it }
+            val stateRow = row(statusCard, "台前调度", null, "stage", Color.rgb(35, 159, 162), switch) { open("diagnostics") }
+            val words = (stateRow as LinearLayout).getChildAt(1) as LinearLayout
+            stateText = label(status, 12f, secondary).apply { setPadding(0, dp(6), 0, 0) }
+            words.addView(stateText)
+        }
+        data class Item(val name: String, val key: String, val icon: String, val tint: Int)
+        val sections = listOf(
+            listOf(Item("窗口与侧栏", "windows", "windows", blue), Item("工作组", "groups", "groups", Color.rgb(142, 88, 224)), Item("选择主应用", "apps", "apps", Color.rgb(46, 183, 87)), Item("手势", "gestures", "gesture", Color.rgb(246, 162, 34))),
+            listOf(Item("控制中心", "tile", "tile", blue), Item("使用与退出", "help", "help", Color.rgb(46, 183, 87)), Item("运行与诊断", "diagnostics", "diagnostics", blue), Item("关于台前调度", "about", "info", secondary)),
+        )
+        var count = 0
+        for (section in sections) {
+            val items = section.filter { query.isBlank() || it.name.contains(query, true) }
+            if (items.isEmpty()) continue
+            val card = group(root)
+            for (item in items) {
+                row(card, item.name, icon = item.icon, color = item.tint) {
+                    if (item.key == "apps") chooseApp() else { open(item.key); if (item.key == "groups") refresh() }
+                }; count++
+            }
+        }
+        if (query.isBlank() || "退出台前调度".contains(query)) {
+            row(group(root), "退出台前调度", icon = "exit") { setStage(false) }; count++
+        }
+        if (count == 0 && query.isNotBlank()) root.addView(hint("没有匹配的设置项"))
+    }
+    private fun windows(root: LinearLayout) {
+        val side = group(root)
+        row(side, "侧栏放左边", icon = "windows") { command("left") }
+        row(side, "侧栏放右边", icon = "windows") { command("right") }
+        val visibility = group(root)
+        row(visibility, "收起侧栏", "扩大当前主应用", "windows") { command("collapse") }
+        row(visibility, "展开侧栏", "恢复四个侧窗", "windows") { command("expand") }
+        root.addView(hint("点击侧窗交换应用，点击空侧窗添加应用。边缘把手只收起或展开侧栏，不会退出台前调度。"))
+    }
+    private fun gestures(root: LinearLayout) {
+        val settings = repository.topBarSettings(); val card = group(root)
+        row(card, "状态栏滑动", "从状态栏右侧滑动开关", "gesture", end = toggle(settings.statusBarGestureEnabled, repository::setStatusBarGestureEnabled))
+        row(card, "四指手势", "捏合进入，张开退出", "gesture", end = toggle(settings.fourFingerGestureEnabled, repository::setFourFingerGestureEnabled))
+        root.addView(hint("关闭手势后，仍可通过控制中心开关或本应用退出。"))
+    }
+    private fun tile(root: LinearLayout) {
+        row(group(root), "添加快捷开关", "开启、退出台前调度", "tile") { addTile() }
+        root.addView(hint("下拉控制中心，在编辑开关中添加“台前调度”。点亮为开启，再次点击即可退出。"))
+    }
+    private fun help(root: LinearLayout) {
+        val card = group(root)
+        row(card, "退出台前调度", "恢复普通应用显示", "exit") { setStage(false) }
+        row(card, "添加控制中心开关", icon = "tile") { addTile() }
+        root.addView(hint("退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
+    }
+    private fun diagnostics(root: LinearLayout) {
+        val card = group(root)
+        row(card, "系统组件", if (connected) "0.3.2 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
+        row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
+        root.addView(hint("安装包：0.3.2\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+    }
+    private fun about(root: LinearLayout) {
+        val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
+        hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
+        hero.addView(label("台前调度", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
+        hero.addView(label("0.3.2", 13f, secondary)); root.addView(hero)
+        val card = group(root)
+        row(card, "窗口", "一个主窗口，四个真实侧窗", "windows")
+        row(card, "来源与许可", "基于 NeXtep · Apache-2.0", "info") {
+            MaterialAlertDialogBuilder(activity).setTitle("来源与许可")
+                .setMessage("原作者：lujinxin / JensenLu。保留 NeXtep 的 Apache-2.0 许可证与第三方声明。Android 任务引擎来自原作，本分支增加四侧窗、工作组和新的交互。\n\n交互参考 macOS Stage Manager，非 Apple 官方应用。")
+                .setPositiveButton("知道了", null).show()
+        }
+        root.addView(hint("真实任务迁移、点击交换、侧栏收起和工作组切换。新版本的实际安装、注入与交互效果仍需真机验收。"))
+    }
+    private fun groupPage(root: LinearLayout) {
+        val actions = group(root)
+        row(actions, "保存当前工作组", icon = "groups") { command("save") }
+        row(actions, "另存为新工作组", icon = "groups") { command("new") }
+        val saved = group(root)
+        if (groups.length() == 0) row(saved, "暂无工作组", "先安排好窗口，再保存")
+        for (i in 0 until groups.length()) {
+            val item = groups.getJSONObject(i); val id = item.getString("id"); val name = item.getString("name")
+            row(saved, name, if (id == activeId) "当前工作组" else "点击切换或管理", "groups", Color.rgb(142, 88, 224)) {
+                MaterialAlertDialogBuilder(activity).setTitle(name).setItems(arrayOf("切换", "重命名", "删除")) { _, which ->
+                    when (which) {
+                        0 -> command("restore", id)
+                        1 -> rename(id, name)
+                        2 -> MaterialAlertDialogBuilder(activity).setTitle("删除工作组？").setMessage("只删除保存记录，不关闭应用。")
+                            .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> command("delete", id) }.show()
                     }
-                }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())
-            }.onFailure {
-                completed = true; handler.removeCallbacks(timeout); toast("无法连接系统组件：${it.message}")
+                }.setNegativeButton("取消", null).show()
             }
         }
-        fun setStage(enabled: Boolean, source: MaterialButton) {
-            source.isEnabled = false
-            TriggerCoordinator.requestSet(activity, enabled, TriggerSource.SYSTEM_RECOVERY) { result ->
-                if (activity.isDestroyed) return@requestSet
-                source.isEnabled = true
+        root.addView(hint("保存真实主应用与四侧窗。应用任务结束后，恢复时可能需要重新启动。"))
+    }
+    private fun rename(id: String, name: String) {
+        val input = EditText(activity).apply { setText(name); isSingleLine = true; filters = arrayOf(android.text.InputFilter.LengthFilter(32)) }
+        val dialog = MaterialAlertDialogBuilder(activity).setTitle("重命名").setView(input).setNegativeButton("取消", null).setPositiveButton("保存", null).create()
+        dialog.setOnShowListener { dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+            val value = input.text.toString().trim()
+            if (value.isEmpty()) input.error = "请输入名称" else { dialog.dismiss(); command("rename", id, value) }
+        } }; dialog.show()
+    }
+    private fun chooseApp() {
+        if (!connected || !active) { toast("请先开启台前调度"); return }
+        Thread({
+            val loaded = runCatching { io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository(activity.applicationContext).load().filter { it.component.packageName != activity.packageName }.sortedBy { it.label } }
+            activity.runOnUiThread {
+                if (!activity.isDestroyed) loaded.onSuccess { entries ->
+                    MaterialAlertDialogBuilder(activity).setTitle("选择主应用").setItems(entries.map { it.label }.toTypedArray()) { _, i -> command("open", launch = entries[i].launchIntent()) }
+                        .setNegativeButton("取消", null).show()
+                }.onFailure { toast("无法读取应用列表") }
+            }
+        }, "Stage-Settings-Apps").start()
+    }
+    private fun addTile() {
+        runCatching {
+            activity.getSystemService(StatusBarManager::class.java).requestAddTileService(ComponentName(activity, NeXtepTileService::class.java), "台前调度", Icon.createWithResource(activity, R.drawable.ic_nextep_tile), activity.mainExecutor) { result ->
+                toast(if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED || result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) "快捷开关已添加" else "请在控制中心编辑开关，添加台前调度")
+            }
+        }.onFailure { toast("请在控制中心编辑开关，添加台前调度") }
+    }
+    private fun syncSwitch() { settingSwitch = true; master?.isChecked = active; settingSwitch = false }
+    private fun setStage(value: Boolean) {
+        if (busy) { syncSwitch(); return }
+        if (value && !connected) {
+            syncSwitch(); open("diagnostics")
+            toast("本版系统组件尚未连接，先退出旧工作区并正常重启一次"); return
+        }
+        busy = true
+        TriggerCoordinator.requestSet(activity, value, TriggerSource.SYSTEM_RECOVERY) { result ->
+            busy = false
+            if (!activity.isDestroyed) {
                 when (result) {
                     is TriggerCoordinator.RequestResult.Ready -> {
-                        if (result.active != enabled) toast("状态尚未同步，请检查控制中心开关")
-                        else toast(if (enabled) "已开启台前调度，返回应用即可使用" else "已退出台前调度，应用恢复普通显示")
-                        command("query")
+                        active = result.active; syncSwitch()
+                        toast(if (!value && !result.active) "已退出台前调度" else if (value && result.active) "已开启台前调度" else "系统状态未同步")
                     }
-                    is TriggerCoordinator.RequestResult.NotReady -> toast("系统组件未就绪；若刚更新，请正常重启手机。${result.reason}")
-                }
+                    is TriggerCoordinator.RequestResult.NotReady -> { syncSwitch(); toast("系统组件未就绪，请查看运行与诊断") }
+                }; refresh()
             }
         }
-        val controls = section("开启与退出")
-        button(controls, "开启台前调度") { setStage(true, it) }
-        button(controls, "退出台前调度 · 恢复普通显示") { setStage(false, it) }
-        controls.addView(text("退出方法：下拉控制中心，关闭“台前调度”快捷开关；或打开本应用，点击上方退出按钮。\n返回键和 Home 键不会退出。收起侧栏也不会退出，只会扩大主应用。退出沿用原生任务恢复流程，已保存的工作组记录会保留。"))
-        button(controls, "添加控制中心快捷开关") { source ->
-            runCatching {
-                source.isEnabled = false
-                activity.getSystemService(StatusBarManager::class.java).requestAddTileService(
-                    ComponentName(activity, NeXtepTileService::class.java), "台前调度",
-                    Icon.createWithResource(activity, R.drawable.ic_nextep_tile), activity.mainExecutor,
-                ) { result ->
-                    if (!activity.isDestroyed) source.isEnabled = true
-                    toast(if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED || result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED)
-                        "开关已添加，可用它随时开启或退出" else "请在控制中心编辑开关，添加“台前调度”")
-                }
-            }.onFailure { source.isEnabled = true; toast("请在控制中心编辑开关，添加“台前调度”") }
+    }
+    fun refresh() = command("query")
+    private var queryPending = false
+    private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null) {
+        if (activity.isDestroyed || name == "query" && queryPending) return
+        if (name == "query") queryPending = true
+        var completed = false
+        fun unavailable() {
+            connected = false; status = "系统组件未连接"; stateText?.text = status
+            if (page == "diagnostics") open("diagnostics")
         }
-        val layout = section("窗口与侧栏")
-        button(layout, "侧栏放左边") { command("left") }
-        button(layout, "侧栏放右边") { command("right") }
-        button(layout, "收起侧栏 · 扩大主应用") { command("collapse") }
-        button(layout, "展开四个侧窗") { command("expand") }
-        layout.addView(text("也可滑动屏幕边缘的窄把手收起或展开侧栏。点击侧窗交换真实应用任务；点击空侧窗添加应用。"))
-        val gestures = repository.topBarSettings()
-        layout.addView(SwitchMaterial(activity).apply {
-            text = "状态栏右侧滑动开关"; isChecked = gestures.statusBarGestureEnabled
-            setOnCheckedChangeListener { _, checked -> repository.setStatusBarGestureEnabled(checked) }
-        })
-        layout.addView(SwitchMaterial(activity).apply {
-            text = "四指捏合进入／张开退出"; isChecked = gestures.fourFingerGestureEnabled
-            setOnCheckedChangeListener { _, checked -> repository.setFourFingerGestureEnabled(checked) }
-        })
-        val apps = section("应用")
-        button(apps, "选择应用进入主窗口") { source ->
-            source.isEnabled = false
-            Thread({
-                val loaded = runCatching {
-                    io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository(activity.applicationContext)
-                        .load().filter { it.component.packageName != activity.packageName }.sortedBy { it.label }
+        val timeout = Runnable { if (!completed && !activity.isDestroyed) { completed = true; queryPending = false; unavailable() } }
+        handler.postDelayed(timeout, 6000)
+        val intent = Intent(StageControlContract.ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
+            .putExtra(StageControlContract.COMMAND, name).putExtra(StageControlContract.ID, id).putExtra(StageControlContract.NAME, title)
+            .putExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, launch)
+        runCatching {
+            activity.sendOrderedBroadcast(intent, null, object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, request: Intent?) {
+                    if (completed || activity.isDestroyed) return
+                    completed = true; handler.removeCallbacks(timeout); queryPending = false
+                    val reply = getResultExtras(false)
+                    if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null || reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) { unavailable(); return }
+                    connected = true; active = reply.getBoolean(TriggerBroadcastContract.EXTRA_ACTIVE)
+                    status = if (active) "已开启" else "已关闭"
+                    stateText?.text = status; syncSwitch()
+                    if (!reply.getBoolean(StageControlContract.OK)) { toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return }
+                    reply.getString(StageControlContract.GROUPS)?.let { raw -> runCatching {
+                        val snapshot = JSONObject(raw); groups = snapshot.getJSONArray("groups")
+                        activeId = snapshot.optString("active").takeIf { it.isNotBlank() && it != "null" }
+                    } }
+                    if (page == "groups" || page == "diagnostics") open(page)
                 }
-                activity.runOnUiThread {
-                    if (!activity.isDestroyed) {
-                        source.isEnabled = true
-                        loaded.onSuccess { entries ->
-                            MaterialAlertDialogBuilder(activity).setTitle("选择主应用")
-                                .setItems(entries.map { it.label }.toTypedArray()) { _, index ->
-                                    command("open", launch = entries[index].launchIntent())
-                                }.setNegativeButton("取消", null).show()
-                        }.onFailure { toast("无法读取应用列表：${it.message}") }
-                    }
-                }
-            }, "Stage-Settings-Apps").start()
-        }
-        apps.addView(text("先开启台前调度，再从这里选择主应用；也可照常从系统桌面打开应用。"))
-        val groups = section("工作组")
-        groups.addView(text("保存时记录工作应用和四个侧窗，不把本设置页当作主应用。切换会恢复真实任务；已结束的应用可能重新启动。"))
-        button(groups, "保存当前工作组") { command("save") }
-        button(groups, "另存为新工作组") { command("new") }
-        button(groups, "刷新工作组与系统状态") { command("query") }
-        groups.addView(groupList)
-        renderGroups = {
-            groupList.removeAllViews()
-            if (latest.length() == 0) groupList.addView(text("尚无工作组。先安排好窗口，再保存。"))
-            for (i in 0 until latest.length()) {
-                val item = latest.getJSONObject(i); val id = item.getString("id"); val name = item.getString("name")
-                val main = item.optJSONObject("main")?.optString("component")?.let { flat ->
-                    runCatching {
-                        val component = android.content.ComponentName.unflattenFromString(flat)!!
-                        activity.packageManager.getApplicationLabel(activity.packageManager.getApplicationInfo(component.packageName, 0)).toString()
-                    }.getOrDefault(flat)
-                } ?: "未记录主应用"
-                button(groupList, (if (id == active) "● " else "") + name + " · " + main) {
-                    MaterialAlertDialogBuilder(activity).setTitle(name)
-                        .setItems(arrayOf("切换到此工作组", "重命名", "删除保存记录")) { _, which ->
-                            when (which) {
-                                0 -> command("restore", id)
-                                1 -> {
-                                    val input = EditText(activity).apply {
-                                        setText(name); isSingleLine = true
-                                        filters = arrayOf(android.text.InputFilter.LengthFilter(32))
-                                    }
-                                    val dialog = MaterialAlertDialogBuilder(activity).setTitle("重命名工作组").setView(input)
-                                        .setNegativeButton("取消", null).setPositiveButton("保存", null).create()
-                                    dialog.setOnShowListener {
-                                        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                                            val value = input.text.toString().trim()
-                                            if (value.isEmpty()) input.error = "请输入名称" else { dialog.dismiss(); command("rename", id, value) }
-                                        }
-                                    }; dialog.show()
-                                }
-                                2 -> MaterialAlertDialogBuilder(activity).setTitle("删除“$name”？")
-                                    .setMessage("只删除保存记录，不关闭或卸载应用。")
-                                    .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> command("delete", id) }.show()
-                            }
-                        }.setNegativeButton("取消", null).show()
-                }
-            }
-        }
-        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(v: View) { command("query") }
-            override fun onViewDetachedFromWindow(v: View) = Unit
-        })
-        root.addView(text("基于 NeXtep · 原作者 lujinxin / JensenLu\n交互参考 macOS Stage Manager；此 Android 衍生版不是 Apple 官方应用。", 12f))
-        return root
+            }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())
+        }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); unavailable() }
+    }
+}
+
+/** Small colored setting glyphs, drawn natively and aligned like system list icons. */
+private class StageSettingsIcon(context: Context, private val kind: String, color: Int) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 2.1f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    override fun onDraw(canvas: Canvas) {
+        val save = canvas.save(); val scale = minOf(width, height) / 24f
+        canvas.translate((width - 24 * scale) / 2, (height - 24 * scale) / 2); canvas.scale(scale, scale)
+        fun rect(l: Float, t: Float, r: Float, b: Float) = canvas.drawRoundRect(l, t, r, b, 1.5f, 1.5f, paint)
+        when (kind) {
+            "stage", "windows" -> { rect(9f, 3f, 22f, 21f); for (y in listOf(4f, 10f, 16f)) rect(2f, y, 5f, y + 3) }
+            "groups" -> { rect(3f, 3f, 17f, 17f); canvas.drawLine(8f, 21f, 21f, 21f, paint); canvas.drawLine(21f, 8f, 21f, 21f, paint) }
+            "apps" -> { for (x in listOf(3f, 14f)) for (y in listOf(3f, 14f)) rect(x, y, x + 7, y + 7) }
+            "tile" -> { rect(2f, 4f, 22f, 10f); rect(2f, 14f, 22f, 20f); canvas.drawCircle(7f, 7f, 1f, paint); canvas.drawCircle(17f, 17f, 1f, paint) }
+            "exit" -> { canvas.drawArc(3f, 4f, 21f, 22f, -48f, 276f, false, paint); canvas.drawLine(12f, 2f, 12f, 12f, paint) }
+            "gesture" -> { canvas.drawLine(4f, 13f, 10f, 19f, paint); canvas.drawLine(10f, 19f, 21f, 5f, paint); canvas.drawCircle(5f, 5f, 2f, paint) }
+            "diagnostics" -> { canvas.drawLine(2f, 13f, 6f, 13f, paint); canvas.drawLine(6f, 13f, 10f, 5f, paint); canvas.drawLine(10f, 5f, 14f, 20f, paint); canvas.drawLine(14f, 20f, 18f, 10f, paint); canvas.drawLine(18f, 10f, 22f, 10f, paint) }
+            else -> { canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawLine(12f, 11f, 12f, 17f, paint); canvas.drawPoint(12f, 7f, paint) }
+        }; canvas.restoreToCount(save)
     }
 }

@@ -35,6 +35,6 @@ class StageWorkspaceLayoutTest {
         assertEquals(2780, profile.canvas.height)
         assertTrue(profile.geometry.copy(sidebarWidth = 1).contentScale > profile.geometry.contentScale)
         assertEquals(profile, WorkspaceLayoutProfile.decode(profile.encode()))
-        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("8,", "7,")))
+        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("9,", "8,")))
     }
 }

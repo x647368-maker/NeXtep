@@ -53,7 +53,7 @@ data class WorkspaceLayoutProfile(
             (height - source.height * scale) / 2f - source.top * scale)
     }
 
-    fun encode(): String = listOf("8", geometry.screenWidth, geometry.screenHeight,
+    fun encode(): String = listOf("9", geometry.screenWidth, geometry.screenHeight,
         geometry.topHeight, geometry.sidebarWidth, densityDpi, gapPixels,
         geometry.navigationInsets.left, geometry.navigationInsets.top,
         geometry.navigationInsets.right, geometry.navigationInsets.bottom,
@@ -72,7 +72,7 @@ data class WorkspaceLayoutProfile(
 
         fun decode(encoded: String?): WorkspaceLayoutProfile? = runCatching {
             val p = encoded?.split(',') ?: return@runCatching null
-            if (p.firstOrNull() != "8" || p.size != 21 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
+            if (p.firstOrNull() != "9" || p.size != 21 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
             val profile = WorkspaceLayoutProfile(WorkspaceGeometry(p[1].toInt(), p[2].toInt(),
                 p[3].toInt(), p[4].toInt(), SidebarSide.RIGHT,
                 WorkspaceNavigationInsets(p[7].toInt(), p[8].toInt(), p[9].toInt(), p[10].toInt()),
