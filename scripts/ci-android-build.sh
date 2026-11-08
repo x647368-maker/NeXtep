@@ -4,8 +4,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 log_path=$(mktemp)
 trap 'rm -f "$log_path"' EXIT
 for attempt in 1 2 3; do
+  gradle_args=("$@")
+  if [ "$attempt" -gt 1 ]; then
+    # Retry failed remote resolution rather than the prior configuration result.
+    gradle_args+=(--refresh-dependencies --no-configuration-cache)
+  fi
   set +e
-  bash gradlew "$@" --console=plain --stacktrace 2>&1 | tee "$log_path"
+  bash gradlew "${gradle_args[@]}" --console=plain --stacktrace 2>&1 | tee "$log_path"
   result=${PIPESTATUS[0]}
   set -e
   if [ "$result" -eq 0 ]; then exit 0; fi
