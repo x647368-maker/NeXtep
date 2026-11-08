@@ -64,7 +64,7 @@ internal object LauncherNightIconHook {
                     }
                     return runCatching {
                         val resources = context.packageManager.getResourcesForApplication(info.applicationInfo)
-                        val icon = resources.getIdentifier("ic_launcher_night", "mipmap",
+                        val icon = resources.getIdentifier("ic_atomic_workbench", "drawable",
                             TriggerBroadcastContract.MODULE_PACKAGE)
                         val drawable = checkNotNull(resources.getDrawableForDensity(icon, chain.getArg(0) as Int, null))
                         if (name == "getBadgedIcon") context.packageManager.getUserBadgedIcon(drawable, info.user)
@@ -87,7 +87,7 @@ internal object LauncherNightIconHook {
                 }
                 return runCatching {
                     val resources = context.packageManager.getResourcesForApplication(component.packageName)
-                    val icon = resources.getIdentifier("ic_launcher_night", "mipmap", component.packageName)
+                    val icon = resources.getIdentifier("ic_atomic_workbench", "drawable", component.packageName)
                     checkNotNull(resources.getDrawable(icon, null))
                 }.onFailure { NeXtepLog.warn("launcher_night_icon", "Unable to load activity night artwork", it) }
                     .getOrElse { chain.proceed() }
