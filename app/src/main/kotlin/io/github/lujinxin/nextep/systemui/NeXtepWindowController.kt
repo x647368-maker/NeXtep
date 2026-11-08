@@ -344,7 +344,7 @@ class NeXtepWindowController(
         ?: Result.failure(IllegalStateException("Slot coordinator unavailable"))
 
     fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry =
-        viewport.geometry(sidebarSide, refreshViewport)
+        viewport.geometry(sidebarSide, refreshViewport).let { if (sidebarCollapsed) it.copy(sidebarWidth = 1) else it }
 
     fun projectDisplayRotation(rotation: Int) {
         viewport.projectRotation(rotation)
@@ -671,7 +671,7 @@ class NeXtepWindowController(
                 FrameLayout.LayoutParams.WRAP_CONTENT, dp(28).toInt(), Gravity.TOP or Gravity.LEFT,
             ).apply {
                 leftMargin = geometry.contentLeft + dp(8).toInt()
-                topMargin = geometry.contentTop + dp(8).toInt()
+                topMargin = (geometry.contentTop - dp(32).toInt()).coerceAtLeast(geometry.controlTop + geometry.controlHeight)
             }
             stageFocusBadge?.maxWidth = (geometry.contentWidth - dp(16).toInt()).coerceAtLeast(1)
         }
@@ -697,7 +697,9 @@ class NeXtepWindowController(
         )
     }
 
-    private fun setWindowBounds(title: String, params: WindowManager.LayoutParams, geometry: WorkspaceGeometry) {
+    private fun setWindowBounds(title: String, params: WindowManager.LayoutParams, requested: WorkspaceGeometry) {
+        val geometry = if (title == "NeXtepSidebar" || (title == "AtomicSidebarHandle" && !sidebarCollapsed))
+            viewport.geometry(sidebarSide).rotatedTo(requested.displayRotation) else requested
         when (title) {
             "AtomicSidebarHandle" -> {
                 if (!geometry.isLandscape) {
@@ -705,6 +707,7 @@ class NeXtepWindowController(
                     params.height = dp(80).toInt()
                     params.x = if (geometry.sidebarSide == SidebarSide.LEFT)
                         geometry.sidebarLeft + geometry.sidebarPhysicalWidth - params.width else geometry.sidebarLeft
+                    params.x = params.x.coerceIn(geometry.availableLeft, geometry.availableRight - params.width)
                     params.y = geometry.sidebarTop + (geometry.sidebarPhysicalHeight - params.height) / 2
                 } else {
                     params.width = dp(80).toInt()
@@ -712,6 +715,7 @@ class NeXtepWindowController(
                     params.x = geometry.sidebarLeft + (geometry.sidebarPhysicalWidth - params.width) / 2
                     params.y = if (geometry.isSidebarAtTop)
                         geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height else geometry.sidebarTop
+                    params.y = params.y.coerceIn(geometry.availableTop, geometry.availableBottom - params.height)
                 }
             }
             "NeXtepTopBar" -> {
@@ -799,11 +803,13 @@ class NeXtepWindowController(
     }
 
     private fun sidebarHandle(): View = android.widget.TextView(context).apply {
-        text = "⋮"
+        text = "‹›"
         gravity = Gravity.CENTER
-        textSize = 20f
+        textSize = 14f
         setTextColor(Color.WHITE)
-        setBackgroundColor(Color.argb(190, 35, 45, 60))
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Color.argb(210, 28, 43, 53)); cornerRadius = dp(12)
+        }
         contentDescription = "滑动收起或展开侧栏"
         isClickable = true
         setOnClickListener { setSidebarCollapsed(!sidebarCollapsed) }
@@ -830,28 +836,26 @@ class NeXtepWindowController(
         if (!workspaceVisible || suspended || groupInputBlocked || sidebarCollapsed == value) return
         cancelDragVisuals()
         sidebarCollapsed = value
+        onViewportChanged()
+        topAppStrip?.setStageStatus(workgroups.statusLabel(), "", value)
         records.firstOrNull { it.title == "NeXtepSidebar" }?.let { record ->
             val params = record.view.layoutParams as WindowManager.LayoutParams
             configureWindow(record, params, geometry())
             windowManager.updateViewLayout(record.view, params)
             // Retain TextureViews and tasks; a GONE sidebar would destroy their displays.
             record.view.animate().cancel()
-            record.view.animate().alpha(if (value) 0f else 1f).setDuration(180).start()
+            val base = viewport.geometry(sidebarSide)
+            val distance = if (base.isLandscape) base.sidebarPhysicalHeight.toFloat() else base.sidebarPhysicalWidth.toFloat()
+            val outward = if (base.isLandscape) !base.isSidebarAtTop else base.sidebarSide == SidebarSide.RIGHT
+            val offset = if (value) distance * (if (outward) 1 else -1) else 0f
+            record.view.animate().alpha(if (value) 0f else 1f)
+                .translationX(if (base.isLandscape) 0f else offset)
+                .translationY(if (base.isLandscape) offset else 0f)
+                .setDuration(220).setInterpolator(transitionInterpolator).start()
         }
     }
 
-    private fun sidebarPanel(geometry: WorkspaceGeometry): View = object : FrameLayout(context) {
-        private val dividerPaint = android.graphics.Paint().apply {
-            color = Color.argb(90, 255, 255, 255)
-        }
-
-        override fun dispatchDraw(canvas: android.graphics.Canvas) {
-            super.dispatchDraw(canvas)
-            val thickness = resources.displayMetrics.density
-            val edge = if (logicalSidebarSide(this@NeXtepWindowController.geometry()) == SidebarSide.LEFT) width - thickness else 0f
-            canvas.drawRect(edge, 0f, edge + thickness, height.toFloat(), dividerPaint)
-        }
-    }.apply {
+    private fun sidebarPanel(geometry: WorkspaceGeometry): View = FrameLayout(context).apply {
         sidebarView = this
         setBackgroundColor(Color.TRANSPARENT)
         if (FeatureGate.VIRTUAL_DISPLAY_SLOTS.defaultEnabled) {
@@ -1137,8 +1141,8 @@ class NeXtepWindowController(
                 bounds[index].height,
                 Gravity.TOP,
             ).apply {
-                marginStart = if (logicalSidebarSide(geometry) == SidebarSide.RIGHT) profile.gapPixels else 0
-                marginEnd = if (logicalSidebarSide(geometry) == SidebarSide.LEFT) profile.gapPixels else 0
+                marginStart = (profile.geometry.sidebarWidth - bounds[index].width) / 2
+                marginEnd = 0
                 topMargin = bounds[index].top
             }
         }
@@ -1204,13 +1208,15 @@ class NeXtepWindowController(
                 val info = context.packageManager.getApplicationInfo(main.component.packageName, 0)
                 context.packageManager.getApplicationLabel(info).toString()
             }.getOrDefault(main.component.packageName)
+            topAppStrip?.setStageStatus(workgroups.statusLabel(), label, sidebarCollapsed)
             stageFocusBadge?.apply {
-                text = "${workgroups.statusLabel()} · $label"
-                visibility = View.VISIBLE
+                text = label
+                val g = geometry()
+                visibility = if (g.isLandscape || g.contentTop - g.controlHeight - g.controlTop >= dp(32)) View.VISIBLE else View.GONE
             }
             contentHighlightView?.foreground = android.graphics.drawable.GradientDrawable().apply {
                 setColor(Color.TRANSPARENT)
-                setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(190, 95, 216, 228))
+                setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(100, 138, 218, 220))
             }
         }.onFailure { NeXtepLog.warn("stage_focus", "Foreground decoration unavailable", it) }
     }

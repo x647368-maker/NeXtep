@@ -17,15 +17,15 @@ internal object StageStackPolicy {
         require(heights.isNotEmpty() && heights.size == tops.size && heights.all { it > 0 })
         require(density.isFinite() && density > 0 && order.sorted() == heights.indices.toList())
         val pitch = heights.min() * 0.86f
-        val totalHeight = tops.last() + heights.last()
+        val totalHeight = tops.last() + heights.last() + tops.first()
         val stackHeight = pitch * (heights.size - 1) + heights.last()
         val padding = (totalHeight - stackHeight) / 2f
         val direction = if (right) 1f else -1f
         return heights.indices.map { index ->
             val depth = order.indexOf(index)
-            Pose(0.98f - depth * 0.025f, direction * depth * 2f * density,
-                padding + index * pitch - tops[index], -direction * (12f + depth * 3f),
-                (4 + (heights.size - depth) * 4) * density, 1f - depth * 0.045f)
+            Pose(0.94f - depth * 0.018f, direction * depth * 2f * density,
+                padding + index * pitch - tops[index], -direction * (8f + depth * 2f),
+                (4 + (heights.size - depth) * 4) * density, 1f - depth * 0.02f)
         }
     }
 }

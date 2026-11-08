@@ -65,7 +65,7 @@ class TopAppStripView(
         runCatching {
             val packageName = "io.github.x647368maker.atomicworkbench"
             val moduleResources = context.packageManager.getResourcesForApplication(packageName)
-            val iconId = moduleResources.getIdentifier("ic_launcher_artwork", "drawable", packageName)
+            val iconId = moduleResources.getIdentifier("ic_atomic_workbench", "drawable", packageName)
             // The circular artwork is already cropped to its visible bounds.
             setImageDrawable(moduleResources.getDrawable(iconId, null))
         }.onFailure { error ->
@@ -156,62 +156,74 @@ class TopAppStripView(
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
+    private val sheet = AtomicPanel(context)
+    private var chooseGroups: ((View) -> Unit)? = null
+    private var saveGroup: (() -> Unit)? = null
+    private var newGroup: (() -> Unit)? = null
+    private var toggleRail: (() -> Unit)? = null
+    private val workspaceTitle = TextView(context).apply {
+        text = "原子工作台  ▾"
+        textSize = 15f; maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER_VERTICAL
+        contentDescription = "打开工作组总览"
+        setOnClickListener { chooseGroups?.invoke(this) }
+    }
+
     init {
         setBackgroundColor(Color.TRANSPARENT)
-        addView(
-            LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(7), 0, dp(7), dp(WorkspaceControlMetrics.CONTENT_BOTTOM_PADDING_DP))
-                addView(
-                    mediaControl,
-                    LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(WorkspaceControlMetrics.MEDIA_HEIGHT_DP)),
-                )
-                addView(
-                    actionRow(),
-                    LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(WorkspaceControlMetrics.ACTION_HEIGHT_DP)),
-                )
-                addView(
-                    appScroll,
-                    LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
-                )
-            },
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
-                topMargin = dp(WorkspaceControlMetrics.STATUS_HEIGHT_DP)
-            },
-        )
-        addView(dismissHint, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
-            topMargin = dp(WorkspaceControlMetrics.STATUS_HEIGHT_DP)
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(8), 0)
+            background = GradientDrawable().apply {
+                setColor(Color.argb(215, 22, 29, 39)); cornerRadius = dp(18).toFloat()
+            }
+            addView(workspaceTitle, LinearLayout.LayoutParams(0, dp(48), 1f))
+            addView(tool("应用", "打开应用抽屉") { openApps(it) })
+            addView(tool("侧栏", "收起或展开侧栏，扩展当前应用") { toggleRail?.invoke() })
+            addView(tool("更多", "工作区操作与原作署名") { anchor ->
+                AtomicPopupMenu.show(context, anchor, listOf(
+                    "保存当前工作组" to { saveGroup?.invoke() },
+                    "另存为新工作组" to { newGroup?.invoke() },
+                    "侧栏放左边" to { onSidebarSideRequested(SidebarSide.LEFT) },
+                    "侧栏放右边" to { onSidebarSideRequested(SidebarSide.RIGHT) },
+                    "设置" to { onSettingsRequested() },
+                    "退出工作区" to { onExitRequested() },
+                    "基于 NeXtep · lujinxin / JensenLu" to {
+                        android.widget.Toast.makeText(context, "原子工作台是 NeXtep 的衍生项目，保留原作者与 Apache-2.0 许可证。", android.widget.Toast.LENGTH_LONG).show()
+                    },
+                ))
+            })
+        }, LayoutParams(-1, dp(52), Gravity.TOP).apply {
+            topMargin = dp(40); leftMargin = dp(8); rightMargin = dp(8)
         })
-        updateSideButtons()
+        addView(dismissHint, LayoutParams(-1, -1).apply { topMargin = dp(40) })
+    }
+
+    private fun tool(title: String, description: String, action: (View) -> Unit) = TextView(context).apply {
+        text = title; textSize = 13f; setTextColor(Color.rgb(204, 228, 232))
+        gravity = Gravity.CENTER; contentDescription = description
+        layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+        setOnClickListener { action(it) }
+    }
+
+    private fun openApps(anchor: View) {
+        val rows = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        (appScroll.parent as? android.view.ViewGroup)?.removeView(appScroll)
+        rows.addView(appScroll, LinearLayout.LayoutParams(-1, dp(72)))
+        rows.addView(sheet.label("左右滑动选择应用；点击进入主窗口。", 12f))
+        sheet.show(anchor, "应用", rows)
+    }
+
+    fun setStageStatus(group: String, app: String, collapsed: Boolean) {
+        workspaceTitle.text = "$group  ▾"
+        workspaceTitle.contentDescription = "当前工作组：$group，活动应用：$app；点击切换工作组"
     }
 
     fun setWorkgroupActions(onSave: () -> Unit, onNew: () -> Unit, onRestore: (View) -> Unit, onSidebar: () -> Unit) {
-        val openMenu = android.view.View.OnClickListener { anchor ->
-            runCatching {
-                AtomicPopupMenu.show(context, anchor, listOf(
-                    "保存当前工作组" to { onSave() },
-                    "新建工作组" to { onNew() },
-                    "切换/恢复工作组" to { onRestore(anchor) },
-                    "收起/展开侧栏" to { onSidebar() },
-                ))
-            }.onFailure {
-                android.widget.Toast.makeText(context, "工作组菜单不可用：${it.message}", android.widget.Toast.LENGTH_LONG).show()
-            }
-        }
-        titleIcon.contentDescription = "原子工作台工作组菜单"
-        titleIcon.setOnClickListener(openMenu)
-        titleView.setOnClickListener(openMenu)
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
-            val mediaHeight = WorkspaceControlMetrics.mediaHeightPixels(
-                MeasureSpec.getSize(heightMeasureSpec), resources.displayMetrics.density,
-            )
-            mediaControl.layoutParams.height = mediaHeight
-            mediaControl.visibility = if (mediaHeight == 0) View.GONE else View.VISIBLE
-        }
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        saveGroup = onSave; newGroup = onNew; chooseGroups = onRestore; toggleRail = onSidebar
     }
 
     private val configChangedReceiver = object : android.content.BroadcastReceiver() {
@@ -293,6 +305,7 @@ class TopAppStripView(
     }
 
     override fun onDetachedFromWindow() {
+        sheet.dismiss()
         removeCallbacks(titleTick)
         removeCallbacks(refreshRetry)
         context.unregisterReceiver(configChangedReceiver)
@@ -302,7 +315,7 @@ class TopAppStripView(
     fun setWorkspaceVisible(visible: Boolean) {
         if (visible && !workspaceVisible) refreshRetryCount = 0
         workspaceVisible = visible
-        if (!visible) removeCallbacks(refreshRetry)
+        if (!visible) { removeCallbacks(refreshRetry); sheet.dismiss() }
         else if (appRow.childCount == 0) refresh(force = true)
         updateTitle()
         mediaControl.setWorkspaceVisible(visible)
@@ -477,18 +490,9 @@ class TopAppStripView(
             LinearLayout.LayoutParams(dp(WorkspaceControlMetrics.APP_ICON_SIZE_DP), dp(WorkspaceControlMetrics.APP_ICON_SIZE_DP)),
         )
         layoutParams = LinearLayout.LayoutParams(dp(APP_TILE_WIDTH_DP), LayoutParams.MATCH_PARENT)
-        setOnClickListener { onAppClicked(Intent(entry.launchIntent)) }
-        setOnLongClickListener { tile ->
-            val started = onAppDragStarting(tile, Intent(entry.launchIntent))
-            internalAppDragActive = started
-            if (started) parent?.requestDisallowInterceptTouchEvent(true)
-            NeXtepLog.info(
-                "top_apps",
-                "Internal drag started=$started component=${entry.launchIntent.component}",
-            )
-            started
-        }
-        setOnTouchListener { tile, event -> onAppDragTouch(tile, event) }
+        setOnClickListener { sheet.dismiss(); onAppClicked(Intent(entry.launchIntent)) }
+        isLongClickable = false
+
     }
 
     private fun updateSideButtons() {

@@ -58,33 +58,30 @@ data class WorkspaceGeometry(
     val controlHeight: Int get() = if (isLandscape) availableHeight else topHeight
     val controlLeft: Int get() = if (isLandscape && !isControlOnLeft) availableRight - topHeight else availableLeft
     val controlTop: Int get() = availableTop
-    val sidebarLeft: Int get() = if (isLandscape) contentLeft else if (sidebarSide == SidebarSide.LEFT) availableLeft else contentRight
+    // The rail and toolbar reserve space; the real main task fits uniformly in
+    // the remainder. Extra height becomes wallpaper breathing room, not a tall toolbar.
+    val sidebarLeft: Int get() = if (isLandscape) availableLeft + (if (isControlOnLeft) topHeight else 0)
+        else if (sidebarSide == SidebarSide.LEFT) availableLeft else availableRight - sidebarWidth
     val sidebarTop: Int get() = if (!isLandscape) availableTop + topHeight else
         if (isSidebarAtTop) availableTop else availableBottom - sidebarWidth
-    val sidebarPhysicalWidth: Int get() = if (isLandscape) contentWidth else sidebarWidth
-    val sidebarPhysicalHeight: Int get() = if (isLandscape) sidebarWidth else contentHeight
-    val sidebarLogicalHeight: Int get() = if (isLandscape) contentWidth else contentHeight
+    val sidebarPhysicalWidth: Int get() = if (isLandscape) availableWidth - topHeight else sidebarWidth
+    val sidebarPhysicalHeight: Int get() = if (isLandscape) sidebarWidth else availableHeight - topHeight
+    val sidebarLogicalHeight: Int get() = if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight
 
-    val contentTop: Int get() = availableTop + if (!isLandscape) topHeight else
-        if (isSidebarAtTop) sidebarWidth else 0
+    private val regionWidth: Int get() = availableWidth - if (isLandscape) topHeight else sidebarWidth
+    private val regionHeight: Int get() = availableHeight - if (isLandscape) sidebarWidth else topHeight
+    val contentScale: Float get() = minOf(regionWidth.toFloat() / availableWidth, regionHeight.toFloat() / availableHeight)
+    val contentWidth: Int get() = (availableWidth * contentScale).roundToInt().coerceAtLeast(1)
+    val contentHeight: Int get() = (availableHeight * contentScale).roundToInt().coerceAtLeast(1)
+    val contentTop: Int get() = availableTop + (if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +
+        (regionHeight - contentHeight) / 2
     val contentBottom: Int get() = contentTop + contentHeight
-
-    val contentWidth: Int
-        get() = availableWidth - if (isLandscape) topHeight else sidebarWidth
-
-    val contentHeight: Int
-        get() = availableHeight - if (isLandscape) sidebarWidth else topHeight
-
-    val contentLeft: Int
-        get() = availableLeft + if (isLandscape) {
-            if (isControlOnLeft) topHeight else 0
-        } else if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0
+    val contentLeft: Int get() = availableLeft + (if (isLandscape) {
+        if (isControlOnLeft) topHeight else 0
+    } else if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0) + (regionWidth - contentWidth) / 2
 
     val contentRight: Int
         get() = contentLeft + contentWidth
-
-    val contentScale: Float
-        get() = minOf(contentWidth.toFloat() / availableWidth, contentHeight.toFloat() / availableHeight)
 
     val contentTranslationX: Float
         get() = contentLeft + (contentWidth - availableWidth * contentScale) / 2f - availableLeft * contentScale
@@ -140,21 +137,14 @@ data class WorkspaceGeometry(
             val longSide = if (landscape) availableWidth else availableHeight
             val shortSide = if (landscape) availableHeight else availableWidth
             val gap = density.toInt().coerceAtLeast(1)
-            // Solve the main region and all portrait slots together. If H is the
-            // content's long side and r = shortSide/longSide, their short sides
-            // are H*r and (H-(N-1)*gap)*r/N. Including the rail divider, they
-            // must sum to shortSide. Independent strip/rail fractions leave bands.
-            val count = WORKSPACE_SLOT_COUNT
-            val contentLongSide = (count * (shortSide - gap).toDouble() * longSide / shortSide +
-                (count - 1) * gap) / (count + 1)
-            val controlThickness = (longSide - contentLongSide).roundToInt().coerceIn(1, longSide - 1)
-            val mainShortSide = (shortSide.toDouble() * (longSide - controlThickness) / longSide)
-                .roundToInt().coerceIn(1, shortSide - 1)
+            // One compact toolbar, independent of the four task-preview heights.
+            val controlThickness = (96 * density).roundToInt().coerceIn(1, longSide - 1)
+            val railThickness = (shortSide * 0.22f).roundToInt().coerceIn(gap + 1, shortSide - 1)
             return WorkspaceGeometry(
                 screenWidth = screenWidth,
                 screenHeight = screenHeight,
                 topHeight = controlThickness,
-                sidebarWidth = shortSide - mainShortSide,
+                sidebarWidth = railThickness,
                 sidebarSide = sidebarSide,
                 navigationInsets = safeInsets,
                 displayRotation = displayRotation,

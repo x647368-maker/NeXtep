@@ -28,13 +28,14 @@ data class WorkspaceLayoutProfile(
     // buffer into a slot; do not crop navigation pixels off an already laid-out app.
     val source = Source(0, 0, canvas.width, canvas.height)
     val slots: List<Slot> = run {
-        val height = (geometry.sidebarLogicalHeight - gapPixels * (WORKSPACE_SLOT_COUNT - 1))
-            .coerceAtLeast(WORKSPACE_SLOT_COUNT)
-        val base = height / WORKSPACE_SLOT_COUNT
-        val remainder = height % WORKSPACE_SLOT_COUNT
-        List(WORKSPACE_SLOT_COUNT) { index -> Slot(geometry.sidebarWidth - gapPixels,
-            base + if (index < remainder) 1 else 0,
-            index * (base + gapPixels) + minOf(index, remainder)) }
+        val maxWidth = geometry.sidebarWidth - gapPixels
+        val usable = geometry.sidebarLogicalHeight
+        val idealHeight = (maxWidth.toDouble() * canvas.height / canvas.width).toInt().coerceAtLeast(1)
+        val height = minOf(idealHeight, (usable - gapPixels * (WORKSPACE_SLOT_COUNT - 1)) / WORKSPACE_SLOT_COUNT).coerceAtLeast(1)
+        val width = minOf(maxWidth, (height.toDouble() * canvas.width / canvas.height).toInt()).coerceAtLeast(1)
+        val stackHeight = height * WORKSPACE_SLOT_COUNT + gapPixels * (WORKSPACE_SLOT_COUNT - 1)
+        val padding = ((usable - stackHeight) / 2).coerceAtLeast(0)
+        List(WORKSPACE_SLOT_COUNT) { index -> Slot(width, height, padding + index * (height + gapPixels)) }
     }
 
     fun geometry(side: SidebarSide): WorkspaceGeometry = if (side == SidebarSide.LEFT) leftGeometry else rightGeometry
@@ -52,7 +53,7 @@ data class WorkspaceLayoutProfile(
             (height - source.height * scale) / 2f - source.top * scale)
     }
 
-    fun encode(): String = listOf("6", geometry.screenWidth, geometry.screenHeight,
+    fun encode(): String = listOf("7", geometry.screenWidth, geometry.screenHeight,
         geometry.topHeight, geometry.sidebarWidth, densityDpi, gapPixels,
         geometry.navigationInsets.left, geometry.navigationInsets.top,
         geometry.navigationInsets.right, geometry.navigationInsets.bottom,
@@ -71,7 +72,7 @@ data class WorkspaceLayoutProfile(
 
         fun decode(encoded: String?): WorkspaceLayoutProfile? = runCatching {
             val p = encoded?.split(',') ?: return@runCatching null
-            if (p.firstOrNull() != "6" || p.size != 21 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
+            if (p.firstOrNull() != "7" || p.size != 21 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
             val profile = WorkspaceLayoutProfile(WorkspaceGeometry(p[1].toInt(), p[2].toInt(),
                 p[3].toInt(), p[4].toInt(), SidebarSide.RIGHT,
                 WorkspaceNavigationInsets(p[7].toInt(), p[8].toInt(), p[9].toInt(), p[10].toInt()),

@@ -39,12 +39,14 @@ internal class AtomicWorkgroups(
     private val preferences by lazy {
         context.createDeviceProtectedStorageContext().getSharedPreferences("atomic_workgroups_v1", Context.MODE_PRIVATE)
     }
+    private val board = AtomicPanel(context)
     private var restoring = false
     private var restoringName: String? = null
     private var generation = 0
     private data class Launch(val json: JSONObject, val intent: Intent, val identity: StageTaskIdentity)
 
     fun cancel() {
+        board.dismiss()
         if (restoring) runCatching {
             preferences.edit().remove("active_id").remove("active_name").commit()
         }
@@ -116,18 +118,116 @@ internal class AtomicWorkgroups(
         }.onFailure { message(it.message ?: "工作组保存失败") }
     }
 
+    private fun appLabel(entry: JSONObject): String = runCatching {
+        val component = checkNotNull(ComponentName.unflattenFromString(entry.getString("component")))
+        context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(component.packageName, 0)).toString()
+    }.getOrDefault(entry.optString("component"))
+
     fun choose(anchor: View) {
-        if (restoring) return message("正在切换工作组")
+        if (!interactive() || restoring) return message("正在切换工作组")
         runCatching {
             val all = groups()
-            if (all.length() == 0) { message("请先新建工作组"); return }
             val active = preferences.getString("active_id", null)
-            AtomicPopupMenu.show(context, anchor, (0 until all.length()).map { index ->
-                val group = all.getJSONObject(index)
-                val prefix = if (group.getString("id") == active) "✓ " else ""
-                (prefix + group.getString("name")) to { restore(group) }
+            val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
+            rows.addView(board.label("当前应用为主窗口，四个侧窗随工作组保存。", 12f))
+            rows.addView(board.label("＋ 将当前窗口另存为新工作组").apply {
+                setOnClickListener { board.dismiss(); saveNew(); anchor.post { choose(anchor) } }
             })
+            if (all.length() == 0) rows.addView(board.label("尚无工作组。先安排好窗口，再点击上方保存。"))
+            for (i in 0 until all.length()) {
+                val group = all.getJSONObject(i)
+                val id = group.getString("id")
+                val current = id == active
+                val card = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    background = board.surface(current)
+                    setPadding(board.dp(4), board.dp(4), board.dp(4), board.dp(4))
+                }
+                val title = (if (current) "● " else "") + group.getString("name")
+                card.addView(board.label(title, 17f))
+                val apps = android.widget.LinearLayout(context).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+                val entries = listOf(group.optJSONObject("main")) + (0 until WORKSPACE_SLOT_COUNT).map {
+                    group.getJSONArray("slots").optJSONObject(it)
+                }
+                entries.forEachIndexed { index, entry ->
+                    val column = android.widget.LinearLayout(context).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
+                    }
+                    val icon = android.widget.ImageView(context).apply {
+                        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                        if (entry != null) runCatching {
+                            val component = checkNotNull(ComponentName.unflattenFromString(entry.getString("component")))
+                            setImageDrawable(context.packageManager.getApplicationIcon(component.packageName))
+                        }
+                        contentDescription = entry?.let(::appLabel) ?: "空侧窗"
+                    }
+                    column.addView(icon, android.widget.LinearLayout.LayoutParams(board.dp(30), board.dp(30)))
+                    column.addView(board.label(if (index == 0) "主窗" else "侧窗$index", 10f).apply {
+                        gravity = android.view.Gravity.CENTER; setPadding(0, board.dp(6), 0, board.dp(6))
+                    })
+                    apps.addView(column, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+                }
+                card.addView(apps)
+                val mainName = group.optJSONObject("main")?.let(::appLabel) ?: "未记录主窗"
+                card.addView(board.label("主窗：$mainName · 点击切换，长按管理", 11f))
+                card.contentDescription = "$title，主窗$mainName，点击切换工作组，长按重命名或删除"
+                card.setOnClickListener { board.dismiss(); anchor.post { restore(group) } }
+                card.setOnLongClickListener {
+                    AtomicPopupMenu.show(context, it, listOf(
+                        "重命名" to { board.dismiss(); anchor.post { rename(anchor, id) } },
+                        "删除保存记录（保留应用任务）" to {
+                            board.dismiss(); mutateGroup(id, null); anchor.post { choose(anchor) }
+                        },
+                    )); true
+                }
+                rows.addView(card, android.widget.LinearLayout.LayoutParams(-1, -2).apply {
+                    setMargins(board.dp(4), board.dp(4), board.dp(4), board.dp(8))
+                })
+            }
+            rows.addView(board.label("基于 NeXtep · 原作者 lujinxin / JensenLu\n任务引擎与原作许可证保留", 11f))
+            board.show(anchor, "工作组", rows)
         }.onFailure { message("无法打开工作组：${it.message}") }
+    }
+
+    private fun rename(anchor: View, id: String) {
+        runCatching {
+            val all = groups()
+            val group = (0 until all.length()).map { all.getJSONObject(it) }.first { it.getString("id") == id }
+            val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
+            val input = android.widget.EditText(context).apply {
+                setText(group.getString("name")); setTextColor(android.graphics.Color.WHITE)
+                setHintTextColor(android.graphics.Color.LTGRAY); hint = "例如：查资料、购物、娱乐"
+                isSingleLine = true; filters = arrayOf(android.text.InputFilter.LengthFilter(32))
+                setPadding(board.dp(14), board.dp(8), board.dp(14), board.dp(8))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(121, 218, 223))
+            }
+            rows.addView(input, android.widget.LinearLayout.LayoutParams(-1, board.dp(56)))
+            rows.addView(board.label("保存名称").apply { setOnClickListener {
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) { input.error = "请输入工作组名称" } else {
+                    mutateGroup(id, name); board.dismiss(); anchor.post { choose(anchor) }
+                }
+            } })
+            board.show(anchor, "重命名工作组", rows)
+            input.requestFocus()
+        }.onFailure { message("无法重命名：${it.message}") }
+    }
+
+    private fun mutateGroup(id: String, name: String?) {
+        if (restoring) return
+        runCatching {
+            val all = groups(); val updated = JSONArray()
+            for (i in 0 until all.length()) {
+                val group = all.getJSONObject(i)
+                if (group.getString("id") != id) updated.put(group)
+                else if (name != null) updated.put(group.put("name", name))
+            }
+            val edit = preferences.edit().putString("groups", updated.toString())
+            if (preferences.getString("active_id", null) == id) {
+                if (name == null) edit.remove("active_id").remove("active_name") else edit.putString("active_name", name)
+            }
+            check(edit.commit()); onStateChanged()
+        }.onFailure { message("修改工作组失败：${it.message}") }
     }
 
     private fun launch(entry: JSONObject): Launch {

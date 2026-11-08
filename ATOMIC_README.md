@@ -1,4 +1,6 @@
-# 原子工作台 0.2.1 开发版
+# 原子工作台 0.3.0 开发版
+
+当前版本以 [WORKSPACE_REDESIGN.md](WORKSPACE_REDESIGN.md) 为准。以下保留历史实现与构建记录；0.3.0 新行为尚未真机验证。
 
 基于 lujinxin/NeXtep（Apache-2.0）。原作者、许可证及第三方声明保留。仅在 atomic-workbench/dev 分支开发，main 保留原样。
 

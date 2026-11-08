@@ -30,10 +30,10 @@ class WorkspaceLayoutProfileTest {
                         assertEquals(message, slot.width / positioned.canvas.width.toFloat() * transform.scaleX,
                             slot.height / positioned.canvas.height.toFloat() * transform.scaleY, .000001f)
                     }
-                    assertEquals(positioned.geometry.sidebarLogicalHeight,
-                        positioned.slots.last().top + positioned.slots.last().height)
-                    assertEquals(positioned.geometry.sidebarWidth,
-                        positioned.slots.first().width + positioned.gapPixels)
+                    val end = positioned.slots.last().top + positioned.slots.last().height
+                    assertTrue(end <= positioned.geometry.sidebarLogicalHeight)
+                    assertTrue(kotlin.math.abs(positioned.slots.first().top - (positioned.geometry.sidebarLogicalHeight - end)) <= 1)
+                    assertTrue(positioned.slots.first().width + positioned.gapPixels <= positioned.geometry.sidebarWidth)
                 }
             }
         }
@@ -110,7 +110,7 @@ class WorkspaceLayoutProfileTest {
         repeat(3) { legacy.removeAt(29) }
         legacy[0] = "5"
         assertNull(WorkspaceLayoutProfile.decode(legacy.joinToString(",")))
-        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("6,", "5,")))
+        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("7,", "6,")))
     }
 
     @Test

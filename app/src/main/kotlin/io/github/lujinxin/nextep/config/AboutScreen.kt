@@ -30,7 +30,7 @@ internal object AboutScreen {
                 ViewCompat.setAccessibilityHeading(this, true)
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(24) })
             addView(ImageView(activity).apply {
-                setImageResource(R.drawable.ic_launcher_artwork)
+                setImageResource(R.drawable.ic_atomic_workbench)
                 contentDescription = activity.getString(R.string.app_icon_description)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 background = android.graphics.drawable.GradientDrawable().apply {
@@ -47,7 +47,7 @@ internal object AboutScreen {
                 setTextColor(SettingsPalette.text(activity))
                 setPadding(0, dp(12), 0, 0)
             })
-            addView(paragraph(activity.getString(R.string.about_tribute)))
+            addView(paragraph("基于 NeXtep 的独立安装衍生版。原作者：lujinxin / JensenLu。保留 Apache-2.0 许可证、版权与第三方声明。真实 Android 任务引擎来自原作；本分支增加四侧窗、工作组与新的工作区交互。"))
             addView(TextView(activity).apply {
                 text = activity.getString(R.string.about_windows_title)
                 textSize = 18f

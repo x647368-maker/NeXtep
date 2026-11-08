@@ -25,11 +25,11 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_atomic_workbench"
         android:label="@string/app_name"
         android:localeConfig="@xml/locales_config"
         android:description="@string/module_description"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/ic_atomic_workbench"
         android:supportsRtl="true"
         android:theme="@style/Theme.NeXtep">
 
@@ -57,7 +57,7 @@
             android:name=".icons.DefaultLauncher"
             android:enabled="true"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
+            android:icon="@drawable/ic_atomic_workbench"
             android:label="@string/app_name"
             android:targetActivity=".icons.LauncherEntryActivity">
             <intent-filter>
@@ -70,7 +70,7 @@
             android:name=".icons.SpringLauncher"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_spring"
+            android:icon="@drawable/ic_atomic_workbench"
             android:label="@string/app_name"
             android:targetActivity=".icons.LauncherEntryActivity">
             <intent-filter>
@@ -83,7 +83,7 @@
             android:name=".icons.SummerLauncher"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_summer"
+            android:icon="@drawable/ic_atomic_workbench"
             android:label="@string/app_name"
             android:targetActivity=".icons.LauncherEntryActivity">
             <intent-filter>
@@ -96,7 +96,7 @@
             android:name=".icons.AutumnLauncher"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_autumn"
+            android:icon="@drawable/ic_atomic_workbench"
             android:label="@string/app_name"
             android:targetActivity=".icons.LauncherEntryActivity">
             <intent-filter>
@@ -109,7 +109,7 @@
             android:name=".icons.WinterLauncher"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_winter"
+            android:icon="@drawable/ic_atomic_workbench"
             android:label="@string/app_name"
             android:targetActivity=".icons.LauncherEntryActivity">
             <intent-filter>
@@ -122,7 +122,7 @@
             android:name=".icons.NightLauncher"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_night"
+            android:icon="@drawable/ic_atomic_workbench"
             android:label="@string/app_name"
             android:targetActivity=".icons.LauncherEntryActivity">
             <intent-filter>
