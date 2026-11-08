@@ -51,4 +51,25 @@ class LiveCardRegressionTest {
         assertEquals(p, WorkspaceLayoutProfile.decode(p.encode()))
         assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("16,","15,")))
     }
+    @Test fun measuredRegressionTableUsesActualKotlinPolicies() {
+        val dpi=512;val density=3.2f
+        for(top in listOf(false,true)) {
+            val base=profile(top=top)
+            val toolbar=base.geometry.copy(topHeight=(96*density).toInt())
+            val g=StageAdaptiveLayout.rail(if(top) toolbar.copy(sidebarWidth=StageTopLayoutMetrics.depth(toolbar,density,4)) else toolbar,4,density)
+            val p=StageMainWindowMetrics.enlarge(StageAdaptiveLayout.mainPriority(base.copy(geometry=g),4),true)
+            val sources=listOf(SlotGeometry(720,1120,320),SlotGeometry(1264,2684,512),SlotGeometry(720,1120,320),SlotGeometry(1264,2684,512))
+            val old=p.slots
+            val oldPoses=if(top) io.github.x647368maker.atomicworkbench.systemui.StageTopRowPolicy.positions(List(4){true},old.map{it.width},old.map{it.height},old.map{it.left},old.map{it.top},p.geometry.sidebarPhysicalWidth,p.geometry.sidebarPhysicalHeight,density)
+                else io.github.x647368maker.atomicworkbench.systemui.StageActiveWindowPolicy.positions(List(4){true},old.map{it.height},old.map{it.top},p.geometry.sidebarLogicalHeight,listOf(0,1,2,3),density,false)
+            val fixed=StageLiveCardLayout.bounds(p,sources,List(4){true},listOf(0,1,2,3))
+            for(i in 0..3) {
+                val box=old[i];val pose=oldPoses.getValue(i)
+                val fit=minOf(box.width.toFloat()/sources[i].width,box.height.toFloat()/sources[i].height)*pose.scale
+                val y=box.top+pose.y+(box.height-box.height*pose.scale)/2+(box.height*pose.scale-sources[i].height*fit)/2
+                println("REGRESSION mode=${if(top) "top" else "side"} slot=$i source=${sources[i].width}x${sources[i].height} oldView=${box.width}x${box.height} oldLive=${sources[i].width*fit}x${sources[i].height*fit} oldLiveY=$y new=${fixed[i].width}x${fixed[i].height} newY=${fixed[i].top} main=${p.geometry.contentWidth}x${p.geometry.contentHeight}")
+            }
+        }
+    }
+
 }

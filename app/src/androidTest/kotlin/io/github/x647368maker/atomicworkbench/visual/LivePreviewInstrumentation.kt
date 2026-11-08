@@ -17,6 +17,8 @@ import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.TextView
 import io.github.x647368maker.atomicworkbench.display.TaskSwitcherView
+import io.github.x647368maker.atomicworkbench.workspace.*
+import io.github.x647368maker.atomicworkbench.display.SlotGeometry
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -97,10 +99,72 @@ class LivePreviewInstrumentation : Instrumentation() {
                     next.recycle();checks.add("PASS changing producer frames preserve clipping")
                 }
             }
+            for(top in listOf(false,true)) {
+                renderFour(root,activity,out,top)
+                checks.add("PASS four ${if(top) "top" else "side"} live buffers, rounded corners and exact compact bounds")
+            }
             File(out,"render-results.txt").writeText(checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             result.putString("stream",checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             runOnMainSync { activity.finish() }
             finish(Activity.RESULT_OK,result)
         } catch(t: Throwable) { result.putString("stream",t.stackTraceToString());finish(Activity.RESULT_CANCELED,result) }
     }
+    private fun renderFour(root: FrameLayout, activity: Activity, out: File, top: Boolean) {
+        val ready=CountDownLatch(4)
+        val producers=mutableListOf<Surface>()
+        val cards=mutableListOf<TaskSwitcherView>()
+        val p0=WorkspaceLayoutProfile.create(1264,2780,512,WorkspaceNavigationInsets(bottom=96))
+        val toolbar=p0.geometry.copy(topHeight=307)
+        val g=StageAdaptiveLayout.rail(if(top) toolbar.copy(railAtTop=true,sidebarWidth=StageTopLayoutMetrics.depth(toolbar,3.2f,4))
+            else toolbar,4,3.2f)
+        val p=p0.copy(geometry=g,activeCount=4)
+        val sources=if(top) List(4) {p.canvas} else listOf(SlotGeometry(720,1120,320),p.canvas,SlotGeometry(720,1120,320),p.canvas)
+        val boxes=StageLiveCardLayout.bounds(p,sources,List(4){true},listOf(0,1,2,3))
+        runOnMainSync {
+            root.removeAllViews()
+            for(i in 0..3) {
+                val box=boxes[i];val source=sources[i]
+                val card=TaskSwitcherView(activity,i)
+                for(c in 0 until card.childCount) if(card.getChildAt(c) is TextView) card.getChildAt(c).visibility=View.GONE
+                cards.add(card)
+                root.addView(card,FrameLayout.LayoutParams(box.width,box.height).apply {
+                    leftMargin=if(top) box.left else (g.sidebarWidth-box.width)/2
+                    topMargin=g.sidebarTop+box.top
+                })
+                var first=true
+                card.textureView.surfaceTextureListener=object: TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture,w: Int,h: Int) {
+                        st.setDefaultBufferSize(source.width,source.height)
+                        val scale=minOf(w.toFloat()/source.width,h.toFloat()/source.height)
+                        val x=(w-source.width*scale)/2;val y=(h-source.height*scale)/2
+                        card.textureView.setTransform(Matrix().apply {setScale(source.width*scale/w,source.height*scale/h);postTranslate(x,y)})
+                        card.setLivePreviewBounds(x,y,w-x,h-y)
+                        val producer=Surface(st);producers.add(producer)
+                        producer.lockCanvas(null).also { canvas ->
+                            canvas.drawColor(if(i%2==0) Color.rgb(238,185,40) else Color.rgb(45,200,150))
+                            val paint=android.graphics.Paint().apply {color=Color.rgb(40,60,100);textSize=60f;isAntiAlias=true}
+                            canvas.drawText("LIVE ${i+1}",70f,140f,paint)
+                            producer.unlockCanvasAndPost(canvas)
+                        }
+                    }
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture,w: Int,h: Int) {}
+                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture)=true
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {if(first){first=false;ready.countDown()}}
+                }
+            }
+        }
+        check(ready.await(15,TimeUnit.SECONDS)){"Four live producers did not render"}
+        Thread.sleep(300)
+        val shot=uiAutomation.takeScreenshot() ?: error("No four-card HWUI screenshot")
+        val bg=Color.rgb(20,32,70)
+        cards.forEach { card ->
+            val xy=IntArray(2);runOnMainSync {card.getLocationOnScreen(xy)}
+            check(shot.getPixel(xy[0]+1,xy[1]+1)==bg){"Four-card corner not rounded"}
+            check(shot.getPixel(xy[0]+card.width/2,xy[1]+card.height/2)!=bg){"Four-card live center missing"}
+        }
+        File(out,if(top) "096-top-four-live.png" else "096-side-four-live.png").outputStream().use {shot.compress(Bitmap.CompressFormat.PNG,100,it)}
+        shot.recycle()
+        runOnMainSync {root.removeAllViews();producers.forEach {it.release()} }
+    }
+
 }
