@@ -14,8 +14,9 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.9.5-dev"
+        versionCode = 20
+        versionName = "0.9.6-dev"
+        testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
 
     }
 

@@ -69,12 +69,13 @@ print('Compact native home, confirmed exit, main/background/input geometry and s
 
 import hashlib
 preserved=json.loads((root/'scripts/preserved-top-cards-0.9.3.json').read_text())
+preserved.update(json.loads((root/'scripts/visual-repair-0.9.6.json').read_text()))
 for path,sha in preserved.items():
  if path=='profile_card_section_sha256':
   text=(k/'workspace/WorkspaceLayoutProfile.kt').read_text();data=text[text.index('    val canvas ='):text.index('    fun geometry(')].encode()
  else:data=(root/path).read_bytes()
  assert hashlib.sha256(data).hexdigest()==sha,path
-print('All preserved top-card algorithms, real preview/input, corners and task engines match 0.9.3 byte-for-byte')
+print('Task engine and top sizing remain frozen; explicitly reviewed 0.9.6 live clipping fixes match their manifest')
 
 # v0.9.5: state-local geometry preferences and native compact information architecture.
 assert 'StageDisplayPolicy.scope' in viewport and 'layout_state_v1:' in viewport

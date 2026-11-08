@@ -5,6 +5,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Canvas
+import android.graphics.Path
 import android.graphics.drawable.GradientDrawable
 import android.view.DragEvent
 import android.view.Gravity
@@ -32,6 +35,43 @@ class TaskSwitcherView(
         fun onSlotDropped(slotIndex: Int, drag: SlotTaskDrag): Boolean
     }
 
+    private val liveBounds = RectF()
+    private val liveClip = Path()
+    private val liveOutline = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: android.graphics.Outline) {
+            val b = if (liveBounds.isEmpty) RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()) else liveBounds
+            outline.setRoundRect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt(), liveRadius(b))
+        }
+    }
+    private fun liveRadius(b: RectF): Float = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(
+        b.width(), b.height(), resources.displayMetrics.density)
+
+    internal fun setLivePreviewBounds(left: Float, top: Float, right: Float, bottom: Float) {
+        liveBounds.set(left, top, right, bottom)
+        invalidateOutline()
+        textureView.invalidateOutline()
+        // Keep the sole menu on the app, never floating in a letterbox/empty slot.
+        (windowMenu.layoutParams as? LayoutParams)?.let { old ->
+            val x = left.toInt() + ((right - left).toInt() - old.width).coerceAtLeast(0) / 2
+            val y = top.toInt() + dp(2)
+            if (old.leftMargin != x || old.topMargin != y) {
+                old.gravity = Gravity.TOP or Gravity.LEFT; old.leftMargin = x; old.topMargin = y
+                windowMenu.layoutParams = old
+            }
+        }
+        invalidate()
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        if (!workspaceCardVisible) return
+        val b = if (liveBounds.isEmpty) RectF(0f, 0f, width.toFloat(), height.toFloat()) else liveBounds
+        liveClip.reset(); liveClip.addRoundRect(b, liveRadius(b), liveRadius(b), Path.Direction.CW)
+        val saved = canvas.save()
+        canvas.clipPath(liveClip)
+        super.dispatchDraw(canvas)
+        canvas.restoreToCount(saved)
+    }
+
     var textureView: TextureView = createTextureView()
         private set
 
@@ -56,7 +96,9 @@ class TaskSwitcherView(
     fun isWorkspaceCardVisible(): Boolean = workspaceCardVisible
     fun setWorkspaceCardVisible(value: Boolean) {
         workspaceCardVisible = value
-        if (!value) { animate().cancel(); alpha = 0f }
+        if (!value) { animate().cancel(); alpha = 0f; windowMenu.visibility = View.GONE }
+        else windowMenu.visibility = if (currentState is SlotState.Occupied) View.VISIBLE else View.GONE
+        invalidate()
     }
     private var directInteraction = false
     private var inputGesture = false
@@ -119,12 +161,7 @@ class TaskSwitcherView(
 
     init {
         clipToOutline = true
-        outlineProvider = object : android.view.ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: android.graphics.Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height,
-                    io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(view.width.toFloat(), view.height.toFloat(), resources.displayMetrics.density))
-            }
-        }
+        outlineProvider = liveOutline
         isClickable = true
         setBackgroundColor(Color.TRANSPARENT)
         addView(textureView, previewParams())
@@ -190,7 +227,7 @@ class TaskSwitcherView(
         if (state != currentState) { cancelInputGesture(); directInteraction = false; windowMenu.setTextColor(Color.rgb(115, 115, 120)) }
         currentState = state
         if (state is SlotState.Occupied) contentDescription = "${state.component.packageName}，点击切换主窗，顶部三点打开窗口菜单"
-        windowMenu.visibility = if (state is SlotState.Occupied) View.VISIBLE else View.GONE
+        windowMenu.visibility = if (workspaceCardVisible && state is SlotState.Occupied) View.VISIBLE else View.GONE
         when (state) {
             SlotState.Empty -> showReady(animated = !exchangePreviewActive && previousState is SlotState.Occupied)
             is SlotState.Ready -> showReady(animated = !exchangePreviewActive && previousState is SlotState.Occupied)
@@ -445,8 +482,8 @@ class TaskSwitcherView(
         textureView.animate().cancel()
         if (animated) {
             textureView.alpha = 0f
-            textureView.scaleX = CONTENT_ENTER_SCALE
-            textureView.scaleY = CONTENT_ENTER_SCALE
+            textureView.scaleX = 1f
+            textureView.scaleY = 1f
             textureView.animate()
                 .alpha(1f)
                 .scaleX(1f)
@@ -477,7 +514,12 @@ class TaskSwitcherView(
 
     private fun previewParams() = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 
-    private fun createTextureView(): TextureView = TextureView(context)
+    private fun createTextureView(): TextureView = TextureView(context).apply {
+        // Opaque TextureViews may bypass alpha/corner composition on vendor renderers.
+        isOpaque = false
+        clipToOutline = true
+        outlineProvider = liveOutline
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 

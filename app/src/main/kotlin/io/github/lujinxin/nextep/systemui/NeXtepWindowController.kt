@@ -1784,11 +1784,12 @@ class NeXtepWindowController(
         if (slotWindows.isEmpty()) return
         syncCoreViewport()
         val selectedProfile = viewport.layout()
-        val bounds = selectedProfile.slots
         val right = logicalSidebarSide(geometry) == SidebarSide.RIGHT
         val states = slotCoordinator?.slotStates().orEmpty()
         val occupied = List(WORKSPACE_SLOT_COUNT) { states.getOrNull(it) is SlotState.Occupied }
         val profile = selectedProfile
+        val bounds = io.github.x647368maker.atomicworkbench.workspace.StageLiveCardLayout.bounds(
+            profile, slotWindows.map { it.geometry() }, occupied, stageOrder)
         slotWindows.forEachIndexed { index, slot ->
             slot.setLayoutProfile(profile)
             val box = bounds[index]
@@ -1800,11 +1801,11 @@ class NeXtepWindowController(
                 }
             }
         }
-        val poses = if (geometry.railAtTop) StageTopRowPolicy.positions(occupied, bounds.map { it.width }, bounds.map { it.height },
-            bounds.map { it.left }, bounds.map { it.top }, profile.geometry.sidebarPhysicalWidth, profile.geometry.sidebarPhysicalHeight,
-            context.resources.displayMetrics.density, stageOrder)
-        else StageActiveWindowPolicy.positions(occupied, bounds.map { it.height }, bounds.map { it.top },
-            profile.geometry.sidebarLogicalHeight, stageOrder, context.resources.displayMetrics.density, right)
+        // Bounds already include compact per-producer spacing. Do not apply a second
+        // fit/scale to the requested canvas or reserve invisible four-slot capacity.
+        val poses = stageOrder.filter { occupied[it] }.associateWith {
+            StageStackPolicy.Pose(1f, 0f, 0f, 0f, dp(if (geometry.railAtTop) 4 else 2), 1f)
+        }
         val countChanged = shownWindowCount != poses.size
         shownWindowCount = poses.size
         sidebarAddButton?.apply {

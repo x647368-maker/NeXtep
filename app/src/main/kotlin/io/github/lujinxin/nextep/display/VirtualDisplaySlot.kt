@@ -197,6 +197,8 @@ class VirtualDisplaySlot(
             setScale(transform.scaleX, transform.scaleY)
             postTranslate(transform.x, transform.y)
         })
+        view.setLivePreviewBounds(transform.x, transform.y,
+            width - transform.x, height - transform.y)
         // Presentation changes cannot resize/recreate the producer display, even after a failed request.
         // A task moving between the physical and virtual displays can still receive Android lifecycle events.
         if (activeGeometry == null) activeGeometry = geometry
