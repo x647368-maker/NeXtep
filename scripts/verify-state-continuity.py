@@ -30,3 +30,12 @@ host=(k/'systemui/NeXtepWindowController.kt').read_text()
 assert 'contentDescription = "展开常用应用快捷栏"' in host and 'setOnClickListener { setQuickExpanded(true) }' in host
 assert 'FrameLayout.LayoutParams(dp(48).toInt(), dp(48).toInt()' in host
 print(json.dumps({'passive_paths_send_no_media_commands':True,'exchanges_do_not_launch_apps':True,'layout_does_not_resize_or_recreate_displays':True,'exact_display_move_is_idempotent':True,'home_entry_removed_controls_retained':True,'quick_bar_direct_48dp_entry':True,'device_playback_verified':False}))
+
+assert 'FullscreenBoundsPolicy()' in (k/'task/MainTaskPresentationCoordinator.kt').read_text()
+assert 'StageVisualOrder.swap' in host
+assert 'getSharedPreferences("atomic_updates_v1"' in (k/'config/UpdateCoordinator.kt').read_text()
+installer=(k/'config/UpdateInstaller.kt').read_text()
+assert 'UpdatePolicy.digest(file)==m.sha256' in installer and 'UpdatePolicy.requireArchive' in installer
+assert 'FileProvider.getUriForFile' in installer and 'canRequestPackageInstalls' in installer
+assert 'gh release create' not in (root/'.github/workflows/atomic-android.yml').read_text()
+print('Update install identity/hash boundaries, manual-only publication, and state-preserving visual reorder checked')

@@ -71,6 +71,8 @@ jobs:
       - name: Restore fixed development signing key
         env:
           ATOMIC_KEYSTORE_BASE64: ${{ secrets.ATOMIC_KEYSTORE_BASE64 }}
+          ATOMIC_KEYSTORE_PASSWORD: ${{ secrets.ATOMIC_KEYSTORE_PASSWORD }}
+          ATOMIC_KEY_PASSWORD: ${{ secrets.ATOMIC_KEY_PASSWORD }}
         shell: bash
         run: |
           if [ -z "$ATOMIC_KEYSTORE_BASE64" ]; then
@@ -82,6 +84,9 @@ jobs:
           printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
           chmod 600 "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
           test -s "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          test -n "$ATOMIC_KEYSTORE_PASSWORD" && test -n "$ATOMIC_KEY_PASSWORD"
+          echo "ATOMIC_KEYSTORE_PASSWORD=$ATOMIC_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ATOMIC_KEY_PASSWORD=$ATOMIC_KEY_PASSWORD" >> "$GITHUB_ENV"
           echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
       - name: Check download retry classification
         run: python3 scripts/test-ci-retry.py
@@ -112,29 +117,24 @@ jobs:
         run: |
           cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" app/build/outputs/apk/debug/apksigner.jar
           sha256sum app/build/outputs/apk/debug/apksigner.jar > offline-signer.sha256
+      - name: Prepare verified files for manual Release publication
+        if: env.ATOMIC_SIGNING_READY == 'true'
+        shell: bash
+        run: |
+          python3 scripts/prepare-update.py --apk "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)" --apksigner "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" --notes RELEASE_NOTES.md --out release-ready
       - uses: actions/upload-artifact@v4
         with:
-          name: atomic-workbench-0.9.1-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
+          name: atomic-workbench-0.9.2-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
           if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk
             development-apk.sha256
             app/build/outputs/apk/debug/apksigner.jar
             offline-signer.sha256
+            release-ready/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: atomic-unit-test-results
           path: app/build/test-results/testDebugUnitTest/
-      - name: Publish verified development APK
-        if: env.ATOMIC_SIGNING_READY == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          cp app/build/outputs/apk/debug/*.apk AtomicWorkbench-0.9.1-debug.apk
-          sha256sum AtomicWorkbench-0.9.1-debug.apk > AtomicWorkbench-0.9.1-debug.apk.sha256
-          short="${GITHUB_SHA:0:8}"
-          tag="atomic-v0.9.1-dev-$short"
-          printf '%s\n' 'Experimental independent Atomic Workbench APK based on NeXtep.' 'Build, unit tests, APK package identity, Xposed entry and signature verified by this workflow.' 'Redesigned native workspace: no top controls, in-app settings and workgroup management, explicit exit controls, focus expansion, retained native task exchange.' '0.1.0 task display and a task swap were user-confirmed. All new 0.9.1 stack, animation, focus and group behavior remains device-unverified.' 'Sidebar collapse now refits the real main task; the retained virtual displays are not destroyed. Disable the original NeXtep module before enabling this module.' 'See ATOMIC_README.md on atomic-workbench/dev for limitations and device acceptance steps.' > /tmp/atomic-release-notes.md
-          gh release create "$tag" AtomicWorkbench-0.9.1-debug.apk AtomicWorkbench-0.9.1-debug.apk.sha256 --target "$GITHUB_SHA" --title "原子工作台 0.9.1 开发版 ($short)" --prerelease --notes-file /tmp/atomic-release-notes.md
+      # Publishing is deliberately manual. Build success never creates a public Release.

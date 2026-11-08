@@ -471,10 +471,8 @@ class SlotTaskCoordinator(
                     ?.let { slotRecords[it].originalLayout }
                     ?: defaultMainLayout(existing.resizeMode)
                 if (existing.displayId != Display.DEFAULT_DISPLAY) {
-                    ActivityTaskManagerCompat.setTaskResizeable(
-                        existing.taskId,
-                        TASK_RESIZE_MODE_RESIZEABLE,
-                    ).getOrThrow()
+                    if (existing.resizeMode != TASK_RESIZE_MODE_RESIZEABLE) ActivityTaskManagerCompat.setTaskResizeable(
+                        existing.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
                     moveTaskToDisplayAndWait(
                         existing.taskId,
                         Display.DEFAULT_DISPLAY,
@@ -502,6 +500,7 @@ class SlotTaskCoordinator(
                 mainTaskPresenter.presentTask(existing.taskId, geometryProvider()).getOrThrow()
             } else {
                 check(TaskContinuityPolicy.canLaunch(TaskContinuityPolicy.Origin.USER_LAUNCH, existingTask = false))
+                NeXtepLog.info("task_continuity", "explicit_user_launch package=${component.packageName} user=${normalized.targetUser()} reason=no_existing_task")
                 UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()
                 minimizePreviousMain()
                 val generation = mainSelectionGeneration
@@ -1913,6 +1912,8 @@ class SlotTaskCoordinator(
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
         if (!TaskContinuityPolicy.shouldMove(taskRepository.findTask(taskId)?.displayId, displayId)) return
+        val before = taskRepository.findTask(taskId)
+        NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {
             TaskSurfaceCompat.preparePromotion(taskId, geometryProvider()).onFailure {
@@ -1933,6 +1934,8 @@ class SlotTaskCoordinator(
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
             observedDisplayId = taskRepository.findTask(taskId)?.displayId
         }
+        val after = taskRepository.findTask(taskId)
+        NeXtepLog.info("task_continuity", "move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         check(observedDisplayId == displayId) {
             "Task $taskId display move did not settle: expected=$displayId " +
                 "actual=$observedDisplayId"

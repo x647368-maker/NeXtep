@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         setContentView(root)
-        settings.open(savedInstanceState?.getString("stage_page") ?: "home")
+        settings.open(savedInstanceState?.getString("stage_page") ?: intent.getStringExtra("stage_page") ?: "home")
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (!settings.back()) { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         LauncherIconManager.onAppOpened(this)
         if (::settings.isInitialized) settings.refresh()
+        UpdateCoordinator.maybeCheck(this) { if (::settings.isInitialized) settings.open(settings.page) }
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("stage_page", settings.page)

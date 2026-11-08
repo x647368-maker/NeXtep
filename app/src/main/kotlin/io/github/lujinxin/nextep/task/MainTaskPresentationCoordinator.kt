@@ -18,6 +18,7 @@ class MainTaskPresentationCoordinator(context: Context) {
     private var activePresenter: MainTaskPresenter? = null
     var onHomePresented: (() -> Unit)? = null
     private var homePresented = false
+    private val boundsPolicy = FullscreenBoundsPolicy()
 
     fun presentForeground(geometry: WorkspaceGeometry, animateFromFullscreen: Boolean = false): Result<Unit> {
         val task = taskRepository.foregroundTask()
@@ -68,7 +69,7 @@ class MainTaskPresentationCoordinator(context: Context) {
         // Fullscreen tasks inherit display bounds. Explicit screen-sized bounds survive
         // rotation and can leave a portrait Activity confined to the old landscape area.
         homePresented = false
-        val surfaceResult = clearFullscreenBounds(task).mapCatching {
+        val surfaceResult = clearFullscreenBounds(task, geometry).mapCatching {
             if (animateFromFullscreen) surfacePresenter.presentFromFullscreen(task.taskId, geometry).getOrThrow()
             else surfacePresenter.present(task.taskId, geometry).getOrThrow()
         }
@@ -157,6 +158,7 @@ class MainTaskPresentationCoordinator(context: Context) {
 
     private fun clearFullscreenBounds(
         task: TaskRepository.TaskSnapshot,
+        geometry: WorkspaceGeometry,
     ): Result<Unit> {
         // The display-move owner already cleared the fullscreen override during
         // layout restoration. Do not request a second layout after the move.
@@ -168,6 +170,8 @@ class MainTaskPresentationCoordinator(context: Context) {
             return Result.success(Unit)
         }
 
+        val screen = Rect(0, 0, geometry.screenWidth, geometry.screenHeight)
+        if (!boundsPolicy.needsClear(task.taskId, task.token, task.bounds != screen)) return Result.success(Unit)
         NeXtepLog.info(
             "main_task_bounds",
             "Clearing fullscreen bounds override taskId=${task.taskId}",
@@ -176,7 +180,8 @@ class MainTaskPresentationCoordinator(context: Context) {
         // equal the display. Comparing resolved bounds cannot detect a stale override.
         return task.token?.let { token ->
             WindowContainerTransactionCompat.applyTaskBounds(token, Rect())
-        } ?: ActivityTaskManagerCompat.resizeTask(task.taskId, Rect())
+        }?.onSuccess { boundsPolicy.markCleared(task.taskId, task.token) }
+            ?: ActivityTaskManagerCompat.resizeTask(task.taskId, Rect())
     }
 
     private companion object {

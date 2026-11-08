@@ -16,6 +16,9 @@ internal class StageQuickStore(context: Context) {
     var fixed: Boolean
         get() = state.fixed
         set(v) { state = state.copy(fixed = v) }
+    var mainPriority: Boolean
+        get() = prefs.getBoolean("main_priority", true)
+        set(v) { prefs.edit().putBoolean("main_priority", v).apply() }
     var adaptive: Boolean
         get() = prefs.getBoolean("adaptive", true)
         set(v) { prefs.edit().putBoolean("adaptive", v).apply() }

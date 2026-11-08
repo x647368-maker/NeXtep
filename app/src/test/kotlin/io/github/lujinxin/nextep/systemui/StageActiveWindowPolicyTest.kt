@@ -11,7 +11,7 @@ class StageActiveWindowPolicyTest {
 
     @Test fun zeroTasksProducesNoWindowAndEverySubsetKeepsOnlyItsRealSlotIdentities() {
         for (mask in 0..15) {
-            val expected = (0..3).filter { mask and (1 shl it) != 0 }
+            val expected = listOf(2, 0, 3, 1).filter { mask and (1 shl it) != 0 }
             assertEquals(expected, layout(mask).keys.toList())
         }
         assertTrue(layout(0).isEmpty())
@@ -19,8 +19,8 @@ class StageActiveWindowPolicyTest {
     @Test fun gapsCompactWithoutReassigningTasksAndBothSidesKeepTheSamePositions() {
         val right = layout(10); val left = layout(10, false)
         assertEquals(setOf(1, 3), right.keys)
-        val first = tops[1] + right.getValue(1).y
-        val second = tops[3] + right.getValue(3).y
+        val first = tops[3] + right.getValue(3).y
+        val second = tops[1] + right.getValue(1).y
         assertTrue(second - first >= heights[1] * right.getValue(1).scale + 8f * 3f - .01f)
         for (i in right.keys) {
             assertEquals(right.getValue(i).y, left.getValue(i).y, 0f)

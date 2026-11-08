@@ -65,6 +65,7 @@ internal class WorkspaceViewport(
     }
     var activeCount = 4
     var adaptive = true
+    var mainPriority = true
     var quickExpanded = false
     var cinema = false
     var cinemaPortrait = false
@@ -81,8 +82,10 @@ internal class WorkspaceViewport(
                 io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.portraitCinema(g), activeCount = activeCount)
             cinema && !g.isLandscape -> selected.copy(geometry = g.copy(railAtTop = true,
                 sidebarWidth = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.cinemaDepth(g, density)), activeCount = activeCount)
-            adaptive -> selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount)
-            else -> selected
+            else -> {
+                val normal = if (adaptive) selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount) else selected
+                if (mainPriority) io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.mainPriority(normal, activeCount) else normal
+            }
         }
     }
     private fun selectedRail(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {

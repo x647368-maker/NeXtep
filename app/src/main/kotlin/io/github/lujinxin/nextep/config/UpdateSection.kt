@@ -1,117 +1,101 @@
 package io.github.x647368maker.atomicworkbench.config
 
-import android.content.ActivityNotFoundException
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.view.View
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import io.github.x647368maker.atomicworkbench.R
 import java.util.concurrent.Executors
 
 internal object UpdateSection {
     fun create(activity: AppCompatActivity): View {
-        val installed = activity.packageManager.getPackageInfo(activity.packageName, PackageManager.PackageInfoFlags.of(0))
-        val version = installed.versionName.orEmpty()
-        val endpoint = activity.getString(R.string.update_manifest_url).trim()
-        fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
-        val padding = dp(16)
-        val container = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, padding / 2, 0, padding)
+        fun dp(n:Int)=(n*activity.resources.displayMetrics.density).toInt()
+        val installed=UpdateCoordinator.installed(activity)
+        val root=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(20),dp(16),dp(12)) }
+        fun label(value:String)=TextView(activity).apply { text=value;textSize=14f;setTextColor(SettingsPalette.text(activity));setPadding(0,dp(8),0,dp(8)) }
+        root.addView(label("在线更新 · ${installed.versionName} (${installed.longVersionCode})"))
+        val channel=Spinner(activity)
+        channel.adapter=ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,listOf("开发版（含稳定版）","仅稳定版"))
+        channel.setSelection(if(UpdateCoordinator.channel(activity)==UpdatePolicy.Channel.DEV)0 else 1)
+        root.addView(channel)
+        channel.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent:AdapterView<*>?)=Unit
+            override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
+                val selected=if(position==0)UpdatePolicy.Channel.DEV else UpdatePolicy.Channel.STABLE
+                if(UpdateCoordinator.channel(activity)!=selected) UpdateCoordinator.setChannel(activity,selected)
+            }
         }
-        val status = TextView(activity).apply {
-            text = activity.getString(R.string.update_current_version, version, installed.longVersionCode)
-            textSize = 14f
-            setTextColor(SettingsPalette.secondary(activity))
-            setPadding(0, padding / 2, 0, padding / 2)
-        }
-        container.addView(TextView(activity).apply {
-            text = activity.getString(R.string.update_title)
-            textSize = 18f
-            setTextColor(SettingsPalette.text(activity))
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        })
-        container.addView(status)
-        var downloadUrl = UpdateChecker.RELEASES_URL
-        val download = MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = activity.getString(R.string.update_releases)
-            setOnClickListener { openBrowser(activity, downloadUrl) }
-        }
-        val check = MaterialButton(activity).apply { text = activity.getString(R.string.update_check) }
-        val executor = Executors.newSingleThreadExecutor()
-        var disposed = false
-        container.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(view: View) = Unit
-            override fun onViewDetachedFromWindow(view: View) {
-                disposed = true
-                executor.shutdownNow()
+        root.addView(Switch(activity).apply {
+            text="打开设置时自动检测（最多每12小时一次）";isChecked=UpdateCoordinator.auto(activity)
+            setOnCheckedChangeListener { _,enabled ->
+                UpdateCoordinator.setAuto(activity,enabled)
+                if(enabled && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+                    activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),72)
             }
         })
-        check.setOnClickListener {
-            if (disposed) return@setOnClickListener
-            check.isEnabled = false
-            check.text = activity.getString(R.string.update_checking)
-            status.text = activity.getString(if (endpoint.isBlank()) R.string.update_connecting_github else R.string.update_connecting_server)
-            executor.execute {
-                val result = runCatching { UpdateChecker.check(endpoint, installed.longVersionCode, version) }
-                activity.runOnUiThread {
-                    if (disposed || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
-                    check.isEnabled = true
-                    check.text = activity.getString(R.string.update_check)
-                    result.onSuccess { release ->
-                        if (release == null) {
-                            status.text = activity.getString(R.string.update_up_to_date, version)
-                            downloadUrl = UpdateChecker.RELEASES_URL
-                            download.text = activity.getString(R.string.update_releases)
-                        } else {
-                            downloadUrl = release.downloadUrl
-                            download.text = activity.getString(R.string.update_download_version, release.version)
-                            status.text = activity.getString(R.string.update_available_status, version, release.version)
-                            MaterialAlertDialogBuilder(activity)
-                                .setTitle(activity.getString(R.string.update_available_title, release.version))
-                                .setMessage(release.notes.ifBlank { activity.getString(R.string.update_notes_empty) } + activity.getString(R.string.update_install_hint))
-                                .setPositiveButton(activity.getString(R.string.update_download)) { _, _ -> openBrowser(activity, release.downloadUrl) }
-                                .setNegativeButton(activity.getString(R.string.update_later), null)
-                                .show()
+        val status=label("仅接收本项目带 versionCode 与校验元数据的版本。")
+        root.addView(status)
+        var release=UpdateCoordinator.available(activity)
+        var disposed=false
+        val worker=Executors.newSingleThreadExecutor()
+        root.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v:View)=Unit
+            override fun onViewDetachedFromWindow(v:View) { disposed=true;worker.shutdownNow() }
+        })
+        val check=Button(activity).apply { text="检查更新" }
+        val download=Button(activity).apply { text="查看 / 安装新版本";isEnabled=release!=null }
+        fun valid()=!disposed&&!activity.isDestroyed&&!activity.isFinishing
+        fun showRelease(r:UpdateChecker.Release) {
+            MaterialAlertDialogBuilder(activity).setTitle("台前调度 ${r.version}")
+                .setMessage("版本码：${r.metadata.versionCode}\n大小：${String.format(java.util.Locale.ROOT,"%.1f",r.metadata.size/1048576.0)} MB\n\n"+r.notes.ifBlank { "发布者未填写变更说明" }+"\n\n下载后会校验 SHA-256、包名、版本和签名，再由系统请求确认安装。升级后请正常重启设备。")
+                .setNegativeButton("稍后",null).setPositiveButton("下载并验证") { _,_ ->
+                    check.isEnabled=false;download.isEnabled=false;status.text="下载并校验中…"
+                    worker.execute {
+                        val result=runCatching { UpdateInstaller.download(activity.applicationContext,r) }
+                        activity.runOnUiThread {
+                            if(!valid())return@runOnUiThread
+                            check.isEnabled=true;download.isEnabled=true
+                            result.onSuccess { file ->
+                                status.text="校验通过，请在系统安装界面确认。"
+                                if(!activity.packageManager.canRequestPackageInstalls()) {
+                                    status.text="请允许此来源，返回后点击安装重试（已下载文件会复用）。"
+                                    MaterialAlertDialogBuilder(activity).setTitle("允许安装更新")
+                                        .setMessage("需要允许台前调度调用系统安装器。不会使用 Root 静默安装。")
+                                        .setNegativeButton("取消",null).setPositiveButton("打开设置") { _,_ ->
+                                            runCatching { activity.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.packageName))) }
+                                        }.show()
+                                } else runCatching { UpdateInstaller.install(activity,file,r) }.onFailure { status.text=it.message ?: "系统安装器不可用" }
+                            }.onFailure { status.text="更新失败，可安全重试："+(it.message ?: "网络或校验失败") }
                         }
-                    }.onFailure {
-                        status.text = activity.getString(R.string.update_failed)
                     }
+                }.show()
+        }
+        check.setOnClickListener {
+            check.isEnabled=false;status.text="正在检查本项目发布…"
+            worker.execute {
+                val result=runCatching { UpdateCoordinator.check(activity.applicationContext) }
+                activity.runOnUiThread {
+                    if(!valid()) return@runOnUiThread
+                    check.isEnabled=true
+                    result.onSuccess { found ->
+                        release=found;download.isEnabled=found!=null
+                        status.text=if(found==null)"暂无可验证的更高版本。历史无校验元数据的版本会忽略。" else "发现 ${found.version}，版本码 ${found.metadata.versionCode}"
+                        found?.let(::showRelease)
+                    }.onFailure { status.text="检查失败，不影响工作区："+(it.message ?: "请稍后重试") }
                 }
             }
         }
-        listOf(check, download, MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = activity.getString(R.string.update_source)
-            setOnClickListener { openBrowser(activity, "https://github.com/lujinxin/NeXtep") }
-        }).forEachIndexed { index, button ->
-            button.minHeight = dp(48)
-            button.insetTop = dp(4)
-            button.insetBottom = dp(4)
-            container.addView(button, LinearLayout.LayoutParams(-1, -2).apply {
-                if (index > 0) topMargin = dp(8)
-            })
-        }
-        return container
+        download.setOnClickListener { release?.takeIf { UpdatePolicy.eligible(it.metadata,installed.longVersionCode,UpdateCoordinator.channel(activity)) }?.let(::showRelease) }
+        for(button in listOf(check,download)) root.addView(button,LinearLayout.LayoutParams(-1,dp(52)))
+        root.addView(Button(activity).apply { text="查看项目发布页面";setOnClickListener { openBrowser(activity,UpdateChecker.RELEASES_URL) } },LinearLayout.LayoutParams(-1,dp(52)))
+        root.addView(label("更新后需要正常重启一次加载新版模块；不会清除工作组、固定应用或设置。"))
+        return root
     }
-
-    internal fun openBrowser(activity: AppCompatActivity, address: String) {
-        try {
-            // A browser selector avoids handing GitHub links to the GitHub app.
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.requireHttps(address))).apply {
-                addCategory(Intent.CATEGORY_BROWSABLE)
-                selector = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_BROWSER)
-            }
-            activity.startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(activity, activity.getString(R.string.browser_unavailable), Toast.LENGTH_LONG).show()
-        } catch (_: Exception) {
-            Toast.makeText(activity, activity.getString(R.string.browser_open_failed), Toast.LENGTH_LONG).show()
-        }
+    internal fun openBrowser(activity:AppCompatActivity,address:String) {
+        runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(UpdateChecker.requireHttps(address))).addCategory(Intent.CATEGORY_BROWSABLE)) }
+            .onFailure { Toast.makeText(activity,"无法打开浏览器",Toast.LENGTH_LONG).show() }
     }
 }

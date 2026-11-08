@@ -526,6 +526,10 @@ class NeXtepWindowController(
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
+            "main_priority", "main_complete" -> {
+                core.mainPriority = command == "main_priority"; syncCoreViewport()
+                if (workspaceVisible && !suspended) onViewportChanged()
+            }
             "cinema_auto", "cinema_manual", "cinema_landscape", "cinema_portrait", "cinema_off" -> {
                 leaveCinema(); core.cinemaMode = when(command) { "cinema_auto" -> StageCinemaPolicy.Mode.AUTO; "cinema_manual" -> StageCinemaPolicy.Mode.MANUAL; "cinema_landscape" -> StageCinemaPolicy.Mode.LANDSCAPE; "cinema_portrait" -> StageCinemaPolicy.Mode.PORTRAIT; else -> StageCinemaPolicy.Mode.OFF }
                 cinemaPolicy.mode = core.cinemaMode; scheduleCinemaCheck()
@@ -581,7 +585,7 @@ class NeXtepWindowController(
             putBoolean("layout_top", viewport.isTopRail())
             putString("cinema_mode", core.cinemaMode.name)
             putBoolean("quick_fixed", core.fixed); putBoolean("quick_expanded", core.enabled && core.expanded)
-            putBoolean("adaptive", core.adaptive)
+            putBoolean("adaptive", core.adaptive); putBoolean("main_priority", core.mainPriority)
             putString("groups", workgroups.settingsSnapshot())
             putString("windows", org.json.JSONArray().also { array ->
                 slotCoordinator?.slotStates()?.forEachIndexed { index, state ->
@@ -992,6 +996,7 @@ class NeXtepWindowController(
     private fun syncCoreViewport() {
         viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0
         viewport.adaptive = core.adaptive
+        viewport.mainPriority = core.mainPriority
         viewport.quickExpanded = core.enabled && core.expanded
         cinemaSlot?.let { index ->
             if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
@@ -1171,6 +1176,9 @@ class NeXtepWindowController(
                 runCatching { changeStageLayout(!viewport.isTopRail()) }.onFailure { showStageMessage(it.message ?: "布局未切换") }
             },
             (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
+            (if (core.mainPriority) "完整显示布局" else "主窗口优先布局") to {
+                core.mainPriority = !core.mainPriority; syncCoreViewport(); onViewportChanged()
+            },
             "影音布局与自动模式" to { showCinemaMenu(anchor) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
@@ -1502,7 +1510,18 @@ class NeXtepWindowController(
         val coordinator = slotCoordinator ?: return false
         return when (target) {
             is WorkspaceInternalDragController.Target.Slot -> when (payload) {
-                is WorkspaceInternalDragController.Payload.Slot -> coordinator.onSlotDropped(target.index, payload.drag)
+                is WorkspaceInternalDragController.Payload.Slot -> {
+                    val drag = payload.drag
+                    val source = coordinator.slotStates().getOrNull(drag.slotIndex) as? SlotState.Occupied
+                    val destination = coordinator.slotStates().getOrNull(target.index) as? SlotState.Occupied
+                    if (source?.taskId == drag.taskId && source.displayId == drag.displayId && destination != null &&
+                        workspaceVisible && !suspended && !groupInputBlocked && !workgroups.isSwitching() && coordinator.isGroupRestoreReady()) {
+                        stageOrder = StageVisualOrder.swap(stageOrder, drag.slotIndex, target.index)
+                        applyStageStack(geometry())
+                        NeXtepLog.info("task_continuity", "visual_reorder tasks=${source.taskId},${destination.taskId} display_migrations=0 launch_requests=0")
+                        true
+                    } else coordinator.onSlotDropped(target.index, drag)
+                }
                 is WorkspaceInternalDragController.Payload.App -> coordinator.onIntentDropped(target.index, payload.intent)
             }
             WorkspaceInternalDragController.Target.Main ->
@@ -1763,7 +1782,7 @@ class NeXtepWindowController(
         }
         val poses = if (geometry.railAtTop) StageTopRowPolicy.positions(occupied, bounds.map { it.width }, bounds.map { it.height },
             bounds.map { it.left }, bounds.map { it.top }, profile.geometry.sidebarPhysicalWidth, profile.geometry.sidebarPhysicalHeight,
-            context.resources.displayMetrics.density)
+            context.resources.displayMetrics.density, stageOrder)
         else StageActiveWindowPolicy.positions(occupied, bounds.map { it.height }, bounds.map { it.top },
             profile.geometry.sidebarLogicalHeight, stageOrder, context.resources.displayMetrics.density, right)
         val countChanged = shownWindowCount != poses.size
@@ -1838,7 +1857,7 @@ class NeXtepWindowController(
                     it is SlotState.Occupied && it.taskId == oldMain
                 } ?: -1
                 if (returnedSlot >= 0) {
-                    stageOrder = StageStackPolicy.touch(stageOrder, returnedSlot)
+                    // User visual order is stable; focus changes do not reorder tasks.
                     applyStageStack(geometry())
                 }
                 stageMainId = main.taskId

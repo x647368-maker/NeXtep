@@ -32,6 +32,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var quickFixed = false
     private var quickExpanded = false
     private var adaptive = true
+    private var mainPriority = true
     private var active = false
     private var connected = false
     private var busy = false
@@ -157,6 +158,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             stateText = label(status, 12f, secondary).apply { setPadding(0, dp(6), 0, 0) }
             words.addView(stateText)
         }
+        if (UpdateCoordinator.available(activity) != null) row(group(root), "发现台前调度新版本", "查看说明并验证安装", "info") { open("about") }
         data class Item(val name: String, val key: String, val icon: String, val tint: Int)
         val sections = listOf(
             listOf(Item("影音与常用应用", "core", "apps", blue), Item("窗口与侧栏", "windows", "windows", blue), Item("工作组", "groups", "groups", Color.rgb(142, 88, 224)), Item("手势", "gestures", "gesture", Color.rgb(246, 162, 34))),
@@ -192,6 +194,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             }
         }
         val layout = group(root)
+        row(layout, "主窗口显示策略", if (mainPriority) "主窗口优先（推荐）" else "完整显示 · 原 macOS 风格", "windows") {
+            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：压缩顶部卡片，等比扩大主窗", "完整显示：保留原卡片尺寸")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
+        }
         row(layout, "顶部横排", "小窗横向排列在主窗上方", "windows") { command("layout_top") }
         row(layout, "侧边纵排", "小窗纵向排列在主窗旁", "windows") { command("layout_side") }
         val side = group(root)
@@ -247,16 +252,24 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.9.1 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.9.2 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.9.1\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.9.2\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
-        hero.addView(label("台前调度", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.9.1", 13f, secondary)); root.addView(hero)
+        hero.addView(label("台前调度 · Atomic Workbench", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
+        hero.addView(label("0.9.2", 13f, secondary)); root.addView(hero)
+        val credits = group(root)
+        row(credits, "ZMW小武 × GPT", "二次开发", "apps")
+        row(credits, "需求策划、交互设计与真机测试", "ZMW小武")
+        row(credits, "AI 辅助代码开发", "OpenAI GPT")
+        row(credits, "原项目", "NeXtep") { UpdateSection.openBrowser(activity, "https://github.com/lujinxin/NeXtep") }
+        row(credits, "原作者", "lujinxin（Jensen Lu）")
+        row(credits, "二改仓库", "x647368-maker/NeXtep") { UpdateSection.openBrowser(activity, "https://github.com/x647368-maker/NeXtep") }
+        row(credits, "开源许可证", "Apache License 2.0 · 保留原版权与第三方声明")
         val card = group(root)
         row(card, "窗口", "一个主窗口，按需显示 0–4 个小窗", "windows")
         row(card, "来源与许可", "基于 NeXtep · Apache-2.0", "info") {
@@ -264,6 +277,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 .setMessage("原作者：lujinxin / JensenLu。保留 NeXtep 的 Apache-2.0 许可证与第三方声明。Android 任务引擎来自原作，本分支增加四侧窗、工作组和新的交互。\n\n交互参考 macOS Stage Manager，非 Apple 官方应用。")
                 .setPositiveButton("知道了", null).show()
         }
+        root.addView(UpdateSection.create(activity))
         root.addView(hint("真实任务迁移、点击交换、侧栏收起和工作组切换。新版本的实际安装、注入与交互效果仍需真机验收。"))
     }
     private fun groupPage(root: LinearLayout) {
@@ -373,6 +387,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     cinemaMode = reply.getString("cinema_mode", "AUTO")
                     quickFixed = reply.getBoolean("quick_fixed"); quickExpanded = reply.getBoolean("quick_expanded")
                     adaptive = reply.getBoolean("adaptive", true)
+                    mainPriority = reply.getBoolean("main_priority", true)
                     reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
                     if (page == "groups" || page == "diagnostics" || page == "windows" || page == "core") open(page)
                     if (name == "add_window" || name == "replace_window" || name == "close_window") {

@@ -17,6 +17,15 @@ internal object StageAdaptiveLayout {
             g.availableHeight - g.topHeight - (220 * density).toInt()).coerceAtLeast(2)
         return g.copy(sidebarWidth = depth.coerceIn(2, max))
     }
+    fun mainPriority(profile: WorkspaceLayoutProfile, count: Int): WorkspaceLayoutProfile {
+        require(count in 0..4)
+        val g = profile.geometry
+        if (!g.railAtTop || g.isLandscape || count == 0) return profile
+        val density = profile.densityDpi / 160f
+        val compact = minOf((g.availableHeight * .16f).toInt(), (144 * density).toInt())
+        val depth = minOf(g.sidebarWidth, compact.coerceAtLeast((88 * density).toInt()))
+        return profile.copy(geometry = g.copy(sidebarWidth = depth))
+    }
     fun portraitCinema(g: WorkspaceGeometry): WorkspaceGeometry = g.copy(railAtTop = false,
         sidebarWidth = (g.availableWidth * .34f).roundToInt().coerceIn(2, g.availableWidth - 1))
     fun cinemaDepth(g: WorkspaceGeometry, density: Float): Int =

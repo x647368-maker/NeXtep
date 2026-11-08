@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.9.1-dev"
+        versionCode = 16
+        versionName = "0.9.2-dev"
 
     }
 
@@ -23,9 +23,9 @@ android {
         getByName("debug") {
             storeFile = rootProject.file(".atomic-signing/atomic-development.p12")
             storeType = "PKCS12"
-            storePassword = "android"
+            storePassword = System.getenv("ATOMIC_KEYSTORE_PASSWORD")
             keyAlias = "androiddebugkey"
-            keyPassword = "android"
+            keyPassword = System.getenv("ATOMIC_KEY_PASSWORD")
         }
     }
 

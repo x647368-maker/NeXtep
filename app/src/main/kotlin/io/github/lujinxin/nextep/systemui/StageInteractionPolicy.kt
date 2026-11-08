@@ -115,7 +115,7 @@ internal object StageActiveWindowPolicy {
     }
     fun positions(occupied: List<Boolean>, heights: List<Int>, tops: List<Int>, panelHeight: Int,
         order: List<Int>, density: Float, right: Boolean): Map<Int, StageStackPolicy.Pose> {
-        val shown = visible(occupied)
+        val shown = order.filter { occupied[it] }
         require(heights.size == 4 && tops.size == 4 && heights.all { it > 0 } && panelHeight > 0)
         require(order.sorted() == (0..3).toList() && density > 0)
         if (shown.isEmpty()) return emptyMap()
@@ -138,8 +138,9 @@ internal object StageActiveWindowPolicy {
 
 internal object StageTopRowPolicy {
     fun positions(occupied: List<Boolean>, widths: List<Int>, heights: List<Int>, lefts: List<Int>, tops: List<Int>,
-        panelWidth: Int, panelHeight: Int, density: Float): Map<Int, StageStackPolicy.Pose> {
-        val shown = StageActiveWindowPolicy.visible(occupied)
+        panelWidth: Int, panelHeight: Int, density: Float, order: List<Int> = listOf(0, 1, 2, 3)): Map<Int, StageStackPolicy.Pose> {
+        require(order.sorted() == (0..3).toList())
+        val shown = order.filter { occupied[it] }
         require(widths.size == 4 && heights.size == 4 && lefts.size == 4 && tops.size == 4)
         if (shown.isEmpty()) return emptyMap()
         val gap = 8f * density
@@ -165,5 +166,13 @@ internal class StageDragHoverPolicy(private val dwellMillis: Long = 550) {
         if (consumed || time - since < dwellMillis) return null
         consumed = true
         return nextSlot
+    }
+}
+
+internal object StageVisualOrder {
+    fun swap(order: List<Int>, from: Int, to: Int): List<Int> {
+        require(order.sorted() == (0..3).toList() && from in 0..3 && to in 0..3)
+        val result = order.toMutableList(); val a = order.indexOf(from); val b = order.indexOf(to)
+        result[a] = to; result[b] = from; return result
     }
 }
