@@ -870,7 +870,11 @@ class NeXtepWindowController(
                 params.width = minOf(dp(64).toInt(), geometry.contentWidth)
                 params.height = dp(24).toInt()
                 params.x = geometry.contentLeft + (geometry.contentWidth - params.width) / 2
-                params.y = if (geometry.railAtTop && !sidebarCollapsed) {
+                params.y = if (geometry.mainTopOverlap > 0 && geometry.railAtTop && !geometry.isLandscape && !sidebarCollapsed) {
+                    val box = io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.mainHandle(geometry, context.resources.displayMetrics.density)
+                    params.x = box.left; params.width = box.width; params.height = box.height
+                    box.top
+                } else if (geometry.railAtTop && !sidebarCollapsed) {
                     val actions = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
                         requested.sidebarPhysicalWidth, requested.sidebarPhysicalHeight, context.resources.displayMetrics.density)
                     params.x = requested.sidebarLeft + actions.main.left
@@ -997,6 +1001,7 @@ class NeXtepWindowController(
         viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0
         viewport.adaptive = core.adaptive
         viewport.mainPriority = core.mainPriority
+        viewport.mainInputRegionReady = sidebarTouchRegionReady
         viewport.quickExpanded = core.enabled && core.expanded
         cinemaSlot?.let { index ->
             if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
@@ -1413,7 +1418,7 @@ class NeXtepWindowController(
                         "equals" -> return@newProxyInstance proxy === arguments?.firstOrNull()
                         "toString" -> return@newProxyInstance "StageSidebarTouchRegion"
                     }
-                    if (method.name == "onComputeInternalInsets") {
+                    if (method.name == "onComputeInternalInsets") runCatching {
                         val info = arguments?.firstOrNull() ?: return@newProxyInstance null
                         info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType).invoke(info, 3)
                         val region = info.javaClass.getField("touchableRegion").get(info) as android.graphics.Region
@@ -1428,11 +1433,21 @@ class NeXtepWindowController(
                         sidebarAddButton?.takeIf { it.visibility == View.VISIBLE }?.let { button ->
                             if (button.getGlobalVisibleRect(rect)) region.op(rect, android.graphics.Region.Op.UNION)
                         }
+                        if (!sidebarTouchRegionReady) {
+                            sidebarTouchRegionReady = true
+                            backdropHandler.post { if (workspaceVisible && !suspended) onViewportChanged() }
+                        }
+                    }.onFailure {
+                        if (sidebarTouchRegionReady) {
+                            sidebarTouchRegionReady = false
+                            backdropHandler.post { if (workspaceVisible && !suspended) onViewportChanged() }
+                        }
+                        NeXtepLog.warn("stage_sidebar", "Narrow input region failed; retaining original main fit", it)
                     }; null
                 }
                 viewTreeObserver.javaClass.getMethod("addOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, listener)
                 insetsListener = listener
-                sidebarTouchRegionReady = true
+                sidebarTouchRegionReady = false
                 backdropHandler.post { if (workspaceVisible && !suspended) onViewportChanged() }
                 scheduleWindowRefresh()
             }.onFailure { NeXtepLog.warn("stage_sidebar", "Narrow input region unavailable; keep safe main margin", it) }
@@ -1947,10 +1962,13 @@ class NeXtepWindowController(
 
     private fun applySidebarBackdrop(geometry: WorkspaceGeometry) {
         val panel = geometry.rotatedTo(0)
-        (records.firstOrNull { it.title == "NeXtepSidebar" }?.view as? WorkspacePanelHost)?.setPanelBackground(
-            WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.sidebarLeft, panel.sidebarTop,
-                frostStrength, wallpaperRotation, panel.displayRotation),
-        )
+        val background = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.sidebarLeft, panel.sidebarTop,
+            frostStrength, wallpaperRotation, panel.displayRotation)
+        val visibleBackground = if (geometry.mainTopOverlap > 0 && geometry.railAtTop && !geometry.isLandscape)
+            MainFooterBackdrop(background, Rect(geometry.contentLeft - geometry.sidebarLeft,
+                geometry.contentTop - geometry.sidebarTop, geometry.contentRight - geometry.sidebarLeft,
+                geometry.sidebarPhysicalHeight)) else background
+        (records.firstOrNull { it.title == "NeXtepSidebar" }?.view as? WorkspacePanelHost)?.setPanelBackground(visibleBackground)
     }
 
     private fun logicalSidebarSide(geometry: WorkspaceGeometry): SidebarSide =

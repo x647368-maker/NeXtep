@@ -68,7 +68,7 @@ data class WorkspaceLayoutProfile(
             (height - source.height * scale) / 2f - source.top * scale)
     }
 
-    fun encode(): String = listOf("14", geometry.screenWidth, geometry.screenHeight,
+    fun encode(): String = listOf("15", geometry.screenWidth, geometry.screenHeight,
         geometry.topHeight, geometry.sidebarWidth, densityDpi, gapPixels,
         geometry.navigationInsets.left, geometry.navigationInsets.top,
         geometry.navigationInsets.right, geometry.navigationInsets.bottom,
@@ -76,7 +76,7 @@ data class WorkspaceLayoutProfile(
         canvas.width, canvas.height,
         source.left, source.top, source.right, source.bottom,
         *slots.flatMap { listOf(it.width, it.height, it.top) }.toTypedArray(),
-        geometry.railAtTop, geometry.displayRotation, activeCount).joinToString(",")
+        geometry.railAtTop, geometry.displayRotation, activeCount, geometry.mainTopOverlap).joinToString(",")
 
     companion object {
         fun create(width: Int, height: Int, densityDpi: Int, insets: WorkspaceNavigationInsets,
@@ -87,11 +87,12 @@ data class WorkspaceLayoutProfile(
 
         fun decode(encoded: String?): WorkspaceLayoutProfile? = runCatching {
             val p = encoded?.split(',') ?: return@runCatching null
-            if (p.firstOrNull() != "14" || p.size != 23 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
+            if (p.firstOrNull() != "15" || p.size != 24 + WORKSPACE_SLOT_COUNT * 3) return@runCatching null
             val profile = WorkspaceLayoutProfile(WorkspaceGeometry(p[1].toInt(), p[2].toInt(),
                 p[3].toInt(), p[4].toInt(), SidebarSide.RIGHT,
                 WorkspaceNavigationInsets(p[7].toInt(), p[8].toInt(), p[9].toInt(), p[10].toInt()),
-                displayRotation = p[p.size - 2].toInt(), railAtTop = p[p.size - 3].toBooleanStrict()), p[5].toInt(), p[6].toInt(), p.last().toInt())
+                displayRotation = p[p.size - 3].toInt(), railAtTop = p[p.size - 4].toBooleanStrict(),
+                mainTopOverlap = p.last().toInt()), p[5].toInt(), p[6].toInt(), p[p.size - 2].toInt())
             // This independent application never consumes NeXtep's three-slot records.
             if (profile.encode() != encoded) return@runCatching null
             profile

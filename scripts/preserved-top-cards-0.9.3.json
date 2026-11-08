@@ -1,0 +1,12 @@
+{
+  "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt": "b54ad22a11146f34a8661a0dfcb1fb1c85de59804da0277913007cbf532c708f",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageAdaptiveLayout.kt": "f7a6ca10120c42e00746d1aab2df5760aa0ce8f0a955369894caa9ca9a2c21dc",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageInteractionPolicy.kt": "df3509150bc8dc687e051c5483fdea3ad6ed1b0e4c3ca801bacdbad2ad145d5b",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt": "20311ba2a950de27e91ca687cfb5cacb6c756069ce2dce5611655e6b6847d115",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/TaskSwitcherView.kt": "3d4103beb131e5cedffe7ed957d211a1e4fb85059abf21b11b8cbe575508391b",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt": "8b8d219938355b51d70f026a39ecc8e63d350a50dae72136b98bfc6f716845ff",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": "2241d53853a48ef14888d752e0b38f55fde76f6ab6c7b356bc3939d91c39a5ca",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/task/MainTaskPresentationCoordinator.kt": "b0e4a45a4c698b69fa4568dc05139a731eeffa26612003f36a5ea4b2bd5e4f63",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/framework/WindowCornerPolicy.kt": "75b68fc7de0b24e45b08bbb33fbf9967cbdafba059c733a4ad554e1ed3d883e9",
+  "profile_card_section_sha256": "1b3b0bb2907cb9436ff3937bf9b30559bf90b25645fdaa1a24c58db729855c1b"
+}

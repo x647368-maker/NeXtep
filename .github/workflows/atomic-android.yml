@@ -124,7 +124,7 @@ jobs:
           python3 scripts/prepare-update.py --apk "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)" --apksigner "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" --notes RELEASE_NOTES.md --out release-ready
       - uses: actions/upload-artifact@v4
         with:
-          name: atomic-workbench-0.9.3-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
+          name: atomic-workbench-0.9.4-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
           if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk

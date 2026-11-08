@@ -4,8 +4,8 @@ package io.github.x647368maker.atomicworkbench.workspace
 internal object StageCollapsedRailPolicy {
     fun geometry(base: WorkspaceGeometry, density: Float): WorkspaceGeometry {
         fun dp(value: Int) = (value * density).toInt()
-        return if (base.railAtTop) base.copy(sidebarWidth = 1, topHeight = base.topHeight + dp(48))
-        else base.copy(sidebarWidth = minOf(base.sidebarWidth, dp(44).coerceAtLeast(1)))
+        return if (base.railAtTop) base.copy(mainTopOverlap = 0, sidebarWidth = 1, topHeight = base.topHeight + dp(48))
+        else base.copy(mainTopOverlap = 0, sidebarWidth = minOf(base.sidebarWidth, dp(44).coerceAtLeast(1)))
     }
     fun handle(base: WorkspaceGeometry, current: WorkspaceGeometry, density: Float): StageTopLayoutMetrics.Box {
         fun dp(value: Int) = (value * density).toInt()

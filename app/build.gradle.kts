@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.9.3-dev"
+        versionCode = 18
+        versionName = "0.9.4-dev"
 
     }
 

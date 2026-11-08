@@ -46,7 +46,7 @@ viewport=(k/'systemui/WorkspaceViewport.kt').read_text()
 assert 'atomic_viewport_profiles_v5' in viewport and '"rail_top"' in viewport
 assert '.clear()' not in viewport
 assert 'StageTopLayoutMetrics.depth(g, profile.densityDpi / 160f, activeCount)' in viewport
-assert '"feedback" -> feedback(column)' in settings and 'Item("建议与反馈"' in settings
+assert '"feedback" -> feedback(column)' in settings and 'Item("建议与反馈"' in (k/'config/StageHomeLayout.kt').read_text()
 assert 'CoolapkFeedback.template' in settings and 'setPrimaryClip' in settings
 assert 'CoolapkFeedback.open' in settings and 'setPackage(packageName)' in settings
 for credit in ['ZMW小武 × GPT', 'OpenAI GPT', 'lujinxin（Jensen Lu）', 'Apache License 2.0', 'https://github.com/lujinxin/NeXtep', 'https://github.com/x647368-maker/NeXtep']:
@@ -55,3 +55,23 @@ feedback=(k/'config/CoolapkFeedback.kt').read_text()
 assert 'https://www.coolapk.com/u/43881308?from=qr' in feedback
 assert not re.search(r'Build\.|Settings\.Secure|HttpURLConnection|https?://.*(?:api|upload)',feedback)
 print('Readable top cards, geometry-only cache migration, blank feedback template and preserved attribution checked')
+
+# Home search and duplicate direct exit are removed, not merely hidden.
+home=(k/'config/StageHomeLayout.kt').read_text()
+assert '搜索设置项' not in settings and 'TextWatcher' not in settings and 'private var query =' not in settings
+assert 'StageHomeLayout.sections' in settings and '发现台前调度新版本' in settings
+assert 'setPositiveButton("退出")' in settings and 'performSetStage(false)' in settings
+assert 'MainFooterBackdrop' in host and 'mainInputRegionReady = sidebarTouchRegionReady' in host
+assert 'StageMainWindowMetrics.enlarge' in viewport
+assert 'clipOutRect(main)' in (k/'systemui/MainFooterBackdrop.kt').read_text()
+assert 'it.mainTopOverlap' in (k/'workspace/SystemServerWorkspaceBridge.kt').read_text()
+print('Compact native home, confirmed exit, main/background/input geometry and safe input-gated fallback checked')
+
+import hashlib
+preserved=json.loads((root/'scripts/preserved-top-cards-0.9.3.json').read_text())
+for path,sha in preserved.items():
+ if path=='profile_card_section_sha256':
+  text=(k/'workspace/WorkspaceLayoutProfile.kt').read_text();data=text[text.index('    val canvas ='):text.index('    fun geometry(')].encode()
+ else:data=(root/path).read_bytes()
+ assert hashlib.sha256(data).hexdigest()==sha,path
+print('All preserved top-card algorithms, real preview/input, corners and task engines match 0.9.3 byte-for-byte')

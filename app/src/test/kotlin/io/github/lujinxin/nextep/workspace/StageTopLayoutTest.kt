@@ -40,7 +40,7 @@ class StageTopLayoutTest {
             val p = profile(rotation)
             val restored = checkNotNull(WorkspaceLayoutProfile.decode(p.encode()))
             assertEquals(p, restored); assertEquals(p.slots, restored.slots)
-            assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("14,", "13,")))
+            assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("15,", "14,")))
             assertEquals(p.geometry, p.geometry.rotatedTo((rotation + 1) % 4).rotatedTo(rotation))
         }
     }

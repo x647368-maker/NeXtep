@@ -66,6 +66,7 @@ internal class WorkspaceViewport(
     var activeCount = 4
     var adaptive = true
     var mainPriority = true
+    var mainInputRegionReady = false
     var quickExpanded = false
     var cinema = false
     var cinemaPortrait = false
@@ -84,7 +85,8 @@ internal class WorkspaceViewport(
                 sidebarWidth = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.cinemaDepth(g, density)), activeCount = activeCount)
             else -> {
                 val normal = if (adaptive) selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount) else selected.copy(activeCount = activeCount)
-                if (mainPriority) io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.mainPriority(normal, activeCount) else normal
+                if (mainPriority) io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.enlarge(
+                    io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.mainPriority(normal, activeCount), mainInputRegionReady) else normal
             }
         }
     }

@@ -7,8 +7,6 @@ import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.os.*
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.*
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -40,7 +38,6 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var windows = JSONArray()
     private var activeId: String? = null
     private var status = "正在连接系统组件"
-    private var query = ""
     private var body: LinearLayout? = null
     private var stateText: TextView? = null
     private var master: Switch? = null
@@ -52,14 +49,14 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private fun label(s: String, size: Float = 16f, color: Int = ink) = TextView(activity).apply {
         text = s; textSize = size; setTextColor(color); includeFontPadding = false
     }
-    private fun surface() = GradientDrawable().apply { setColor(cardColor); cornerRadius = dp(24).toFloat() }
+    private fun surface() = GradientDrawable().apply { setColor(cardColor); cornerRadius = dp(if (page == "home") 20 else 24).toFloat() }
     private fun toast(s: String) { if (!activity.isDestroyed) Toast.makeText(activity, s, Toast.LENGTH_LONG).show() }
     private fun hint(s: String) = label(s, 12f, secondary).apply {
         setLineSpacing(dp(3).toFloat(), 1f); setPadding(dp(16), dp(12), dp(16), dp(4))
     }
     private fun group(parent: LinearLayout): LinearLayout = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL; background = surface(); clipToOutline = true
-        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(18) })
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if (page == "home") StageHomeLayout.GROUP_GAP_DP else 18) })
     }
     private fun row(parent: LinearLayout, title: String, detail: String? = null, icon: String? = null,
         color: Int = blue, end: View? = null, action: (() -> Unit)? = null): View {
@@ -67,7 +64,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             LinearLayout.LayoutParams(-1, dp(1).coerceAtLeast(1)).apply { marginStart = dp(if (icon != null) 56 else 18); marginEnd = dp(18) })
         return LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(62); setPadding(dp(18), dp(12), dp(18), dp(12))
+            minimumHeight = dp(if (page == "home") StageHomeLayout.ROW_DP else 62); setPadding(dp(18), dp(if (page == "home") 10 else 12), dp(18), dp(if (page == "home") 10 else 12))
             if (icon != null) addView(if (icon == "stage") ImageView(activity).apply {
                 setImageResource(R.drawable.ic_stage_manager_apple); scaleType = ImageView.ScaleType.FIT_CENTER
             } else StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(28)).apply { marginEnd = dp(16) })
@@ -101,7 +98,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         view.removeAllViews()
         view.requestFocus()
         val column = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 84 else 8), dp(16), dp(28))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 20 else 8), dp(16), dp(28))
         }
         val scroll = ScrollView(activity).apply {
             isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
@@ -109,23 +106,20 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (target == "home") {
-            column.addView(label("设置", 40f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(10), 0, 0, dp(20)) })
-            val search = EditText(activity).apply {
-                textSize = 16f; setTextColor(ink); setHintTextColor(secondary)
-                hint = "搜索设置项"; isSingleLine = true
-                setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_stage_search, 0, 0, 0)
-                compoundDrawablePadding = dp(10)
-                inputType = android.text.InputType.TYPE_CLASS_TEXT
-                setPadding(dp(20), 0, dp(20), 0); background = surface()
-                setText(query); setSelection(text.length)
-                addTextChangedListener(object : TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { query = s?.toString().orEmpty(); renderHome() }
-                    override fun afterTextChanged(s: Editable?) = Unit
-                })
-                contentDescription = "搜索台前调度设置"
+            val header = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), 0, dp(10), 0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
             }
-            column.addView(search, LinearLayout.LayoutParams(-1, dp(44)))
+            val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            words.addView(label("台前调度", 26f).apply { typeface = Typeface.DEFAULT_BOLD })
+            stateText = label(homeState(), 13f, secondary).apply { setPadding(0, dp(6), 0, 0) }
+            words.addView(stateText)
+            header.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+            master = toggle(active) { setStage(it) }.apply {
+                minimumHeight = dp(48); contentDescription = "台前调度开关"
+            }
+            header.addView(master, LinearLayout.LayoutParams(dp(52), dp(48)))
+            column.addView(header)
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
@@ -149,38 +143,21 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             }
         }
     }
+    private fun homeState(): String = if (connected) { if (active) "已开启" else "已关闭" } else status
     private fun renderHome() {
         val root = body ?: return; root.removeAllViews()
-        if (query.isBlank()) {
-            val statusCard = group(root)
-            val switch = toggle(active) { setStage(it) }.also { master = it }
-            val stateRow = row(statusCard, "台前调度", null, "stage", Color.rgb(35, 159, 162), switch) { open("diagnostics") }
-            val words = (stateRow as LinearLayout).getChildAt(1) as LinearLayout
-            stateText = label(status, 12f, secondary).apply { setPadding(0, dp(6), 0, 0) }
-            words.addView(stateText)
-        }
-        if (UpdateCoordinator.available(activity) != null) row(group(root), "发现台前调度新版本", "查看说明并验证安装", "info") { open("about") }
-        data class Item(val name: String, val key: String, val icon: String, val tint: Int)
-        val sections = listOf(
-            listOf(Item("影音与常用应用", "core", "apps", blue), Item("窗口与侧栏", "windows", "windows", blue), Item("工作组", "groups", "groups", Color.rgb(142, 88, 224)), Item("手势", "gestures", "gesture", Color.rgb(246, 162, 34))),
-            listOf(Item("控制中心", "tile", "tile", blue), Item("使用与退出", "help", "help", Color.rgb(46, 183, 87)), Item("运行与诊断", "diagnostics", "diagnostics", blue), Item("关于台前调度", "about", "info", secondary)),
-            listOf(Item("建议与反馈", "feedback", "help", blue)),
-        )
-        var count = 0
-        for (section in sections) {
-            val items = section.filter { query.isBlank() || it.name.contains(query, true) }
-            if (items.isEmpty()) continue
+        if (UpdateCoordinator.available(activity) != null)
+            row(group(root), "发现台前调度新版本", icon = "info") { open("about") }
+        for (section in StageHomeLayout.sections) {
+            root.addView(label(section.title, 12f, secondary).apply {
+                setPadding(dp(16), dp(16), dp(16), 0)
+            })
             val card = group(root)
-            for (item in items) {
-                row(card, item.name, detail = if (item.key == "feedback") "前往 ZMW小武 的酷安主页，交流使用体验与功能建议" else null, icon = item.icon, color = item.tint) {
-                    if (item.key == "apps") chooseApp() else { open(item.key); if (item.key == "groups" || item.key == "windows" || item.key == "core") refresh() }
-                }; count++
+            for (item in section.items) row(card, item.name, icon = item.icon, color = blue) {
+                open(item.page)
+                if (item.page in listOf("core", "windows", "groups")) refresh()
             }
         }
-        if (query.isBlank() || "退出台前调度".contains(query)) {
-            row(group(root), "退出台前调度", icon = "exit") { setStage(false) }; count++
-        }
-        if (count == 0 && query.isNotBlank()) root.addView(hint("没有匹配的设置项"))
     }
     private fun windows(root: LinearLayout) {
         val manage = group(root)
@@ -197,7 +174,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         val layout = group(root)
         row(layout, "主窗口显示策略", if (mainPriority) "主窗口优先（推荐）" else "完整显示 · 原 macOS 风格", "windows") {
-            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：可读卡片，紧凑间距", "完整显示：可读卡片，宽松间距")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
+            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：回收控制区留白，等比放大主窗", "完整显示：保留原主窗与卡片布局")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
         }
         row(layout, "顶部横排", "小窗横向排列在主窗上方", "windows") { command("layout_top") }
         row(layout, "侧边纵排", "小窗纵向排列在主窗旁", "windows") { command("layout_side") }
@@ -254,16 +231,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.9.3 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.9.4 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.9.3\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.9.4\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度 · Atomic Workbench", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.9.3", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.9.4", 13f, secondary)); root.addView(hero)
         val credits = group(root)
         row(credits, "ZMW小武 × GPT", "二次开发", "apps")
         row(credits, "需求策划、交互设计与真机测试", "ZMW小武")
@@ -366,8 +343,20 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             }
         }.onFailure { toast("请在控制中心编辑开关，添加台前调度") }
     }
-    private fun syncSwitch() { settingSwitch = true; master?.isChecked = active; settingSwitch = false }
+    private fun syncSwitch() { settingSwitch = true; master?.isChecked = active; stateText?.text = homeState(); settingSwitch = false }
     private fun setStage(value: Boolean) {
+        if (busy) { syncSwitch(); return }
+        if (!value) {
+            syncSwitch()
+            MaterialAlertDialogBuilder(activity).setTitle("退出台前调度？")
+                .setMessage("将退出当前工作区，恢复普通显示。设置和工作组会保留。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("退出") { _, _ -> performSetStage(false) }.show()
+            return
+        }
+        performSetStage(true)
+    }
+    private fun performSetStage(value: Boolean) {
         if (busy) { syncSwitch(); return }
         if (value && !connected) {
             syncSwitch(); open("diagnostics")
@@ -394,7 +383,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         if (name == "query") queryPending = true
         var completed = false
         fun unavailable() {
-            connected = false; status = "系统组件未连接"; stateText?.text = status
+            connected = false; status = "系统组件未连接"; stateText?.text = homeState()
             if (page == "diagnostics") open("diagnostics")
         }
         val timeout = Runnable { if (!completed && !activity.isDestroyed) { completed = true; queryPending = false; unavailable() } }
@@ -412,7 +401,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null || reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) { unavailable(); return }
                     connected = true; active = reply.getBoolean(TriggerBroadcastContract.EXTRA_ACTIVE)
                     status = if (active) "已开启" else "已关闭"
-                    stateText?.text = status; syncSwitch()
+                    stateText?.text = homeState(); syncSwitch()
                     if (!reply.getBoolean(StageControlContract.OK)) { toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return }
                     reply.getString(StageControlContract.GROUPS)?.let { raw -> runCatching {
                         val snapshot = JSONObject(raw); groups = snapshot.getJSONArray("groups")
