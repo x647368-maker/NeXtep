@@ -21,7 +21,7 @@ import org.json.JSONObject
 /** Ordinary native settings: grouped rows and separate pages, no glass or overlays. */
 internal class StageSettingsScreen(private val activity: AppCompatActivity, private val repository: SettingsRepository) {
     val dark = activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-    private val backgroundColor = Color.parseColor(if (dark) "#111214" else "#F0F1F3")
+    private val backgroundColor = activity.resources.getColor(R.color.stage_background, activity.theme)
     private val cardColor = Color.parseColor(if (dark) "#202124" else "#FFFFFF")
     private val ink = Color.parseColor(if (dark) "#F1F2F4" else "#121315")
     private val secondary = Color.parseColor(if (dark) "#A0A2A6" else "#818387")
@@ -220,16 +220,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.8.0 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.8.1 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.8.0\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.8.1\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.8.0", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.8.1", 13f, secondary)); root.addView(hero)
         val card = group(root)
         row(card, "窗口", "一个主窗口，按需显示 0–4 个小窗", "windows")
         row(card, "来源与许可", "基于 NeXtep · Apache-2.0", "info") {

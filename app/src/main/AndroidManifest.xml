@@ -50,7 +50,7 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.NoDisplay" />
+            android:theme="@style/Theme.StageLauncherEntry" />
 
         <!-- Disabling an alias must never finish the visible settings activity. -->
         <activity-alias

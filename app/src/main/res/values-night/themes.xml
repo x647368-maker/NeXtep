@@ -1,6 +1,10 @@
 <resources>
     <style name="Theme.NeXtep" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_splash_round</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_atomic_workbench</item>
+        <!-- Ported from PR #1 onto the recovered 0.8.0 source. -->
+        <item name="android:windowSplashScreenBackground">@color/stage_background</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/stage_background</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="colorPrimary">#A6C5FF</item>
         <item name="colorOnPrimary">#123365</item>
@@ -17,10 +21,16 @@
         <item name="colorOnSurfaceVariant">#C2C2CC</item>
         <item name="colorOutline">#9595A0</item>
         <item name="colorOutlineVariant">#484851</item>
-        <item name="android:colorBackground">#141416</item>
-        <item name="android:statusBarColor">#141416</item>
-        <item name="android:navigationBarColor">#141416</item>
+        <item name="android:colorBackground">@color/stage_background</item>
+        <item name="android:statusBarColor">@color/stage_background</item>
+        <item name="android:navigationBarColor">@color/stage_background</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    <!-- Preserve the no-window launcher trampoline and its stable alias identities. -->
+    <style name="Theme.StageLauncherEntry" parent="android:style/Theme.NoDisplay">
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_atomic_workbench</item>
+        <item name="android:windowSplashScreenBackground">@color/stage_background</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
     </style>
 </resources>

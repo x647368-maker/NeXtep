@@ -34,8 +34,19 @@ internal object LauncherIconManager {
         SolarTermIconCalendar.resolve(Instant.now()).style
     }.getOrDefault(LauncherIconStyle.DEFAULT)
 
-    @Synchronized
+    private val openPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val openWorker = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     fun onAppOpened(context: Context) {
+        if (!openPending.compareAndSet(false, true)) return
+        val app = context.applicationContext ?: context
+        openWorker.execute {
+            try { completeAppOpened(app) } finally { openPending.set(false) }
+        }
+    }
+
+    @Synchronized
+    private fun completeAppOpened(context: Context) {
         runCatching {
             val preferences = preferences(context)
             // Receivers never set this flag: installation alone keeps the default icon.

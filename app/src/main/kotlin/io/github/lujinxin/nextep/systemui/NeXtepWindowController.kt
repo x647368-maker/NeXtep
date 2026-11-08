@@ -449,7 +449,12 @@ class NeXtepWindowController(
         } else {
             sidebarView?.let { applySlotLayout(it, geometry) }
             slotCoordinator?.onTasksChanged()
-            refreshWallpaperBackdrop()
+            val cached = wallpaperBitmap
+            if (StageBackdropReusePolicy.canReuse(cached != null && !cached.isRecycled,
+                    cached?.width ?: 0, cached?.height ?: 0, wallpaperRotation,
+                    geometry.screenWidth, geometry.screenHeight, geometry.displayRotation)) {
+                applyWallpaperBackdrop(geometry)
+            } else refreshWallpaperBackdrop()
         }
         NeXtepLog.info("workspace_configuration", "Reconfigured geometry=$geometry")
         geometry

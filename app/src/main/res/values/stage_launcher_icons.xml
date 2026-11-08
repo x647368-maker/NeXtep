@@ -1,0 +1,10 @@
+<resources>
+    <item type="mipmap" name="ic_launcher">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_launcher_autumn">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_launcher_night">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_launcher_round">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_launcher_spring">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_launcher_summer">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_launcher_winter">@drawable/ic_atomic_workbench</item>
+    <item type="mipmap" name="ic_splash_round">@drawable/ic_atomic_workbench</item>
+</resources>
