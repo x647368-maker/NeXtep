@@ -63,6 +63,7 @@ class NeXtepWindowController(
     private var quickBar: StageQuickBarView? = null
     private var quickExpandButton: android.widget.TextView? = null
     private var quickChromeSuppressed = false
+    private var quickInputReady = false
     private var cinemaPortrait = false
     private val directionDebounce = StageDirectionDebounce()
     private var cinemaEpoch = 0
@@ -618,7 +619,16 @@ class NeXtepWindowController(
             title = "NeXtepTopBar",
             // Reuse the existing status-safe wallpaper host. Only the quick-bar
             // button or explicitly expanded bar owns a narrow touch region.
-            view = StageQuickBarHost(context) {
+            view = StageQuickBarHost(context, { ready ->
+                quickInputReady = ready
+                backdropHandler.post {
+                    renderQuickChrome()
+                    records.firstOrNull { it.title == "NeXtepTopBar" }?.takeIf { it.view.isAttachedToWindow }?.let {
+                        val params = it.view.layoutParams as? WindowManager.LayoutParams
+                        if (params != null) { configureWindow(it, params, geometry()); windowManager.updateViewLayout(it.view, params) }
+                    }
+                }
+            }) {
                 backdropHandler.post { setQuickExpanded(false); showStageMessage("快捷栏触摸区域不可用，已安全收起") }
             }.apply {
                 quickBar = StageQuickBarView(context, ::quickSelected,
@@ -781,7 +791,7 @@ class NeXtepWindowController(
     ) {
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
             record.title == "AtomicSidebarHandle" || record.title == "StageMainHandle" ||
-            (record.title == "NeXtepTopBar" && !quickChromeSuppressed && !groupInputBlocked) ||
+            (record.title == "NeXtepTopBar" && quickInputReady && !quickChromeSuppressed && !groupInputBlocked) ||
             (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -993,7 +1003,7 @@ class NeXtepWindowController(
     }
 
     private fun renderQuickChrome() {
-        val shown = !quickChromeSuppressed && !suspended
+        val shown = quickInputReady && !quickChromeSuppressed && !suspended
         quickBar?.visibility = if (shown && core.enabled && core.expanded) View.VISIBLE else View.GONE
         quickExpandButton?.visibility = if (shown && !(core.enabled && core.expanded)) View.VISIBLE else View.GONE
     }

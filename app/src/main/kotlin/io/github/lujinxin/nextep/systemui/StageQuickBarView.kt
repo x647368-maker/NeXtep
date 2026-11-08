@@ -43,7 +43,7 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
 }
 
 /** Only the visible toolbar receives touches; status/cutout space passes through. */
-internal class StageQuickBarHost(context: Context, private val unavailable: () -> Unit) : FrameLayout(context) {
+internal class StageQuickBarHost(context: Context, private val inputReady: (Boolean) -> Unit, private val unavailable: () -> Unit) : FrameLayout(context) {
     private var listener: Any? = null
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -76,7 +76,8 @@ internal class StageQuickBarHost(context: Context, private val unavailable: () -
             }
             viewTreeObserver.javaClass.getMethod("addOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, callback)
             listener = callback
-        }.onFailure { unavailable() }
+            inputReady(true)
+        }.onFailure { inputReady(false); unavailable() }
     }
     override fun onDetachedFromWindow() {
         listener?.let { callback -> runCatching {
@@ -84,6 +85,7 @@ internal class StageQuickBarHost(context: Context, private val unavailable: () -
             if (viewTreeObserver.isAlive) viewTreeObserver.javaClass.getMethod("removeOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, callback)
         } }
         listener = null
+        inputReady(false)
         super.onDetachedFromWindow()
     }
 }
