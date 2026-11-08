@@ -35,6 +35,7 @@ class SlotTaskCoordinator(
         { _, move, finished -> try { move() } finally { finished() } },
     private val onInternalSlotDrag: (TaskSwitcherView, SlotTaskDrag) -> Boolean = { _, _ -> false },
     private val onInternalDragTouch: (android.view.View, android.view.MotionEvent) -> Boolean = { _, _ -> false },
+    private val onSlotStatesChanged: () -> Unit = {},
 ) : VirtualDisplaySlot.Listener, TaskSwitcherView.Listener {
     private data class SlotRecord(
         var state: SlotState = SlotState.Empty,
@@ -352,6 +353,45 @@ class SlotTaskCoordinator(
     fun restoreInSlot(intent: Intent, index: Int, preferredTaskId: Int): Result<Unit> {
         ensureMainThread()
         return assignIntent(index, intent, preferredTaskId)
+    }
+
+    /** Close only the workspace window: park its real task in the background. */
+    fun closeWindow(index: Int): Result<Unit> = runCatching {
+        ensureMainThread()
+        check(isGroupRestoreReady()) { "工作区正在切换" }
+        val state = slotRecords.getOrNull(index)?.state as? SlotState.Occupied ?: error("窗口已关闭")
+        val drag = SlotTaskDrag(index, state.taskId, state.displayId)
+        check(onSlotDragStarting(drag)) { "窗口忙碌" }
+        try { check(dismissDraggedSlot(drag)) { "无法关闭小窗" } }
+        finally { onSlotDragEnded() }
+        // Clear recovery metadata too; a dismissed task must not reopen itself.
+        clearSlotAssignment(index)
+        slotRecords[index].exitTask = null
+    }
+
+    fun replaceWindow(index: Int, intent: Intent): Result<Unit> {
+        ensureMainThread()
+        if (!isGroupRestoreReady() || index !in slotRecords.indices) return Result.failure(IllegalStateException("工作区忙碌"))
+        val normalized = normalizeLaunchIntent(intent) ?: return Result.failure(IllegalArgumentException("应用不可用"))
+        val previous = slotRecords[index].state as? SlotState.Occupied
+        if (previous != null) {
+            val current = taskRepository.findTask(previous.taskId)
+            val target = findLaunchTask(checkNotNull(normalized.component), normalized.targetUser())
+            if (target?.taskId == previous.taskId) return Result.success(Unit)
+            // Validate the new launcher before parking the old task. Do not kill either app.
+            val closed = closeWindow(index)
+            if (closed.isFailure) return closed
+            val assigned = assignIntent(index, normalized)
+            if (assigned.isFailure && current?.userId != null) {
+                val rollback = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setComponent(previous.component).putExtra(TriggerBroadcastContract.EXTRA_TARGET_USER,
+                        android.os.UserHandle::class.java.getMethod("of", Int::class.javaPrimitiveType).invoke(null, current.userId) as android.os.UserHandle)
+                // Best effort: restore the previous real task if launch was rejected synchronously.
+                assignIntent(index, rollback, previous.taskId)
+            }
+            return assigned
+        }
+        return assignIntent(index, normalized)
     }
 
     fun isGroupRestoreReady(): Boolean = active && !suspended && !transitionInProgress &&
@@ -1974,6 +2014,7 @@ class SlotTaskCoordinator(
         slotRecords[index].state = state
         if (state !is SlotState.Occupied) slotRecords[index].mismatchSince = 0L
         slots[index].view.showState(state)
+        if (previous != state) onSlotStatesChanged()
         if (previous != state) {
             NeXtepLog.info(
                 "slot_state",

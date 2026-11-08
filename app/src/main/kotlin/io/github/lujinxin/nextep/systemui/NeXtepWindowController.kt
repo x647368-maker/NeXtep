@@ -51,6 +51,22 @@ class NeXtepWindowController(
     private var initialized = false
     private var slotCoordinator: SlotTaskCoordinator? = null
     private var sidebarCollapsed = false
+    private var shownWindowCount = 0
+    private var sidebarAddButton: android.widget.TextView? = null
+    private val windowPicker = AtomicPanel(context)
+    private var windowPickerGeneration = 0
+    private var windowRefreshQueued = false
+    private fun scheduleWindowRefresh() {
+        if (windowRefreshQueued) return
+        windowRefreshQueued = true
+        backdropHandler.post {
+            windowRefreshQueued = false
+            if (workspaceVisible && !suspended) {
+                applyStageStack(geometry())
+                scheduleStageFocus()
+            }
+        }
+    }
     private val workgroups = AtomicWorkgroups(context, taskRepository, { slotCoordinator },
         { workspaceVisible && !suspended }, { setSidebarCollapsed(false) }, { scheduleStageFocus() },
         { stageOrder }, { order ->
@@ -144,6 +160,8 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        windowPickerGeneration++
+        windowPicker.dismiss()
         workgroups.cancel()
         backdropHandler.removeCallbacks(stageFocusUpdate)
         stageMainId = null
@@ -284,6 +302,8 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        windowPickerGeneration++
+        windowPicker.dismiss()
         workgroups.cancel()
         backdropHandler.removeCallbacks(stageFocusUpdate)
         stageMainId = null
@@ -344,7 +364,9 @@ class NeXtepWindowController(
         ?: Result.failure(IllegalStateException("Slot coordinator unavailable"))
 
     fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry =
-        viewport.geometry(sidebarSide, refreshViewport).let { if (sidebarCollapsed) it.copy(sidebarWidth = 1) else it }
+        viewport.geometry(sidebarSide, refreshViewport).let {
+            if (sidebarCollapsed || shownWindowCount == 0 && sidebarTouchRegionReady) it.copy(sidebarWidth = 1) else it
+        }
 
     fun projectDisplayRotation(rotation: Int) {
         viewport.projectRotation(rotation)
@@ -444,6 +466,21 @@ class NeXtepWindowController(
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
+            "add_window", "replace_window", "close_window" -> {
+                check(workspaceVisible && !suspended && !workgroups.isSwitching() && !groupInputBlocked) { "请先开启台前调度" }
+                val engine = checkNotNull(slotCoordinator)
+                check(engine.isGroupRestoreReady()) { "窗口正在切换" }
+                val expectedTask = intent.getIntExtra("expected_task", -1)
+                if (expectedTask >= 0) check((engine.slotStates().getOrNull(intent.getIntExtra("slot", -1)) as? SlotState.Occupied)?.taskId == expectedTask) { "小窗已发生变化，请刷新列表" }
+                if (command == "close_window") engine.closeWindow(intent.getIntExtra("slot", -1)).getOrThrow()
+                else {
+                    val launch = checkNotNull(intent.getParcelableExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, Intent::class.java))
+                    val index = if (command == "add_window") engine.slotStates().indexOfFirst { it is SlotState.Ready } else intent.getIntExtra("slot", -1)
+                    check(index >= 0) { "最多四个小窗" }
+                    engine.replaceWindow(index, launch).getOrThrow()
+                }
+                scheduleWindowRefresh()
+            }
             "open" -> {
                 check(workspaceVisible && !suspended && !workgroups.isSwitching()) { "请先开启台前调度，等待任务就绪" }
                 val launch = checkNotNull(intent.getParcelableExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, Intent::class.java))
@@ -469,6 +506,12 @@ class NeXtepWindowController(
         android.os.Bundle().apply {
             putBoolean("ok", true)
             putString("groups", workgroups.settingsSnapshot())
+            putString("windows", org.json.JSONArray().also { array ->
+                slotCoordinator?.slotStates()?.forEachIndexed { index, state ->
+                    if (state is SlotState.Occupied) array.put(org.json.JSONObject().put("slot", index)
+                        .put("task", state.taskId).put("package", state.component.packageName))
+                }
+            }.toString())
             putString("message", if (command == "restore") "已请求切换，最终结果以窗口与提示为准" else "已处理")
         }
     }.getOrElse { android.os.Bundle().apply {
@@ -755,6 +798,7 @@ class NeXtepWindowController(
 
     private fun startWorkgroupCover(onReady: () -> Unit) {
         cancelDragVisuals()
+        windowPickerGeneration++; windowPicker.dismiss()
         val geometry = geometry()
         groupInitialOwners = slotCoordinator?.slotStates().orEmpty().map { (it as? SlotState.Occupied)?.taskId }
         groupInitialFrames = slotWindows.map { it.contentFrameSequence }
@@ -800,6 +844,52 @@ class NeXtepWindowController(
                 }
             }
         }
+    }
+
+    private fun showWindowMenu(index: Int, anchor: View) {
+        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
+        val state = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied ?: return
+        AtomicPopupMenu.show(context, anchor, listOf(
+            "替换应用" to { chooseWindowApp(anchor, index, state.taskId) },
+            "关闭小窗（移回后台）" to {
+                val current = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied
+                if (current?.taskId == state.taskId) slotCoordinator?.closeWindow(index)?.onFailure {
+                    android.widget.Toast.makeText(context, it.message ?: "关闭失败", android.widget.Toast.LENGTH_LONG).show()
+                }
+            },
+        ))
+    }
+
+    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null) {
+        if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
+        val generation = ++windowPickerGeneration
+        Thread({
+            val loaded = runCatching { io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository(context).load().filter {
+                it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE
+            }.sortedBy { it.label } }
+            backdropHandler.post {
+                if (generation == windowPickerGeneration && workspaceVisible && !suspended && anchor.isAttachedToWindow) {
+                    loaded.onSuccess { entries ->
+                        val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
+                        entries.forEach { entry -> rows.addView(windowPicker.label(entry.label).apply {
+                            setOnClickListener {
+                                windowPicker.dismiss()
+                                val engine = slotCoordinator ?: return@setOnClickListener
+                                if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return@setOnClickListener
+                                val current = target?.let { engine.slotStates().getOrNull(it) as? SlotState.Occupied }
+                                if (target != null && current?.taskId != expectedTask) return@setOnClickListener
+                                val index = target ?: engine.slotStates().indexOfFirst { it is SlotState.Ready }
+                                if (index < 0) android.widget.Toast.makeText(context, "最多四个小窗", android.widget.Toast.LENGTH_SHORT).show()
+                                else engine.replaceWindow(index, entry.launchIntent()).onFailure {
+                                    android.widget.Toast.makeText(context, it.message ?: "应用未打开", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }) }
+                        windowPicker.show(anchor, if (target == null) "添加小窗" else "替换应用", rows)
+                    }.onFailure { android.widget.Toast.makeText(context, "无法读取应用列表", android.widget.Toast.LENGTH_SHORT).show() }
+                }
+            }
+        }, "Stage-Window-Picker").start()
     }
 
     private fun sidebarHandle(): View = android.widget.TextView(context).apply {
@@ -855,15 +945,68 @@ class NeXtepWindowController(
         }
     }
 
-    private fun sidebarPanel(geometry: WorkspaceGeometry): View = FrameLayout(context).apply {
+    private var sidebarTouchRegionReady = false
+    private fun sidebarPanel(geometry: WorkspaceGeometry): View = object : FrameLayout(context) {
+        private var insetsListener: Any? = null
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            runCatching {
+                val cls = Class.forName("android.view.ViewTreeObserver\$OnComputeInternalInsetsListener")
+                val listener = java.lang.reflect.Proxy.newProxyInstance(cls.classLoader, arrayOf(cls)) { proxy, method, arguments ->
+                    when (method.name) {
+                        "hashCode" -> return@newProxyInstance System.identityHashCode(proxy)
+                        "equals" -> return@newProxyInstance proxy === arguments?.firstOrNull()
+                        "toString" -> return@newProxyInstance "StageSidebarTouchRegion"
+                    }
+                    if (method.name == "onComputeInternalInsets") {
+                        val info = arguments?.firstOrNull() ?: return@newProxyInstance null
+                        info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType).invoke(info, 3)
+                        val region = info.javaClass.getField("touchableRegion").get(info) as android.graphics.Region
+                        region.setEmpty()
+                        val origin = IntArray(2); rootView.getLocationOnScreen(origin)
+                        val rect = Rect()
+                        slotWindows.forEach { slot ->
+                            if (slot.view.isWorkspaceCardVisible() && slot.view.getScreenVisibleRect(rect)) {
+                                rect.offset(-origin[0], -origin[1]); region.op(rect, android.graphics.Region.Op.UNION)
+                            }
+                        }
+                        sidebarAddButton?.takeIf { it.visibility == View.VISIBLE }?.let { button ->
+                            if (button.getGlobalVisibleRect(rect)) region.op(rect, android.graphics.Region.Op.UNION)
+                        }
+                    }; null
+                }
+                viewTreeObserver.javaClass.getMethod("addOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, listener)
+                insetsListener = listener
+                sidebarTouchRegionReady = true
+                backdropHandler.post { if (workspaceVisible && !suspended) onViewportChanged() }
+                scheduleWindowRefresh()
+            }.onFailure { NeXtepLog.warn("stage_sidebar", "Narrow input region unavailable; keep safe main margin", it) }
+        }
+        override fun onDetachedFromWindow() {
+            insetsListener?.let { listener -> runCatching {
+                val cls = Class.forName("android.view.ViewTreeObserver\$OnComputeInternalInsetsListener")
+                if (viewTreeObserver.isAlive) viewTreeObserver.javaClass.getMethod("removeOnComputeInternalInsetsListener", cls).invoke(viewTreeObserver, listener)
+            } }
+            insetsListener = null; sidebarTouchRegionReady = false
+            super.onDetachedFromWindow()
+        }
+    }.apply {
         sidebarView = this
         setBackgroundColor(Color.TRANSPARENT)
         if (FeatureGate.VIRTUAL_DISPLAY_SLOTS.defaultEnabled) {
             slotWindows = List(WORKSPACE_SLOT_COUNT) { index -> VirtualDisplaySlot(context, index) }
-            slotWindows.forEach { slot ->
+            slotWindows.forEachIndexed { index, slot ->
+                slot.view.setWindowMenuAction(::showWindowMenu)
                 slot.view.setBackgroundSwipeEnabled(slotBackgroundSwipeEnabled)
                 addView(slot.view)
             }
+            sidebarAddButton = android.widget.TextView(context).apply {
+                text = "+"; textSize = 26f; gravity = Gravity.CENTER
+                setTextColor(Color.WHITE); contentDescription = "添加小窗，最多四个"
+                background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.argb(210, 30, 30, 30)); cornerRadius = dp(22) }
+                elevation = dp(30)
+                setOnClickListener { chooseWindowApp(this, null) }
+            }.also { addView(it, FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(), Gravity.CENTER)) }
             applySlotLayout(this, geometry)
             slotCoordinator = SlotTaskCoordinator(
                 context = context,
@@ -876,6 +1019,7 @@ class NeXtepWindowController(
                     internalDrag.start(source, WorkspaceInternalDragController.Payload.Slot(drag))
                 },
                 onInternalDragTouch = internalDrag::touch,
+                onSlotStatesChanged = ::scheduleWindowRefresh,
             )
         }
     }
@@ -1153,10 +1297,22 @@ class NeXtepWindowController(
         if (slotWindows.isEmpty()) return
         val bounds = viewport.layout().slots
         val right = logicalSidebarSide(geometry) == SidebarSide.RIGHT
-        val poses = StageStackPolicy.poses(bounds.map { it.height }, bounds.map { it.top },
-            context.resources.displayMetrics.density, right, stageOrder)
+        val states = slotCoordinator?.slotStates().orEmpty()
+        val occupied = List(WORKSPACE_SLOT_COUNT) { states.getOrNull(it) is SlotState.Occupied }
+        val profile = viewport.layout()
+        val poses = StageActiveWindowPolicy.positions(occupied, bounds.map { it.height }, bounds.map { it.top },
+            profile.geometry.sidebarLogicalHeight, stageOrder, context.resources.displayMetrics.density, right)
+        val countChanged = shownWindowCount != poses.size
+        shownWindowCount = poses.size
+        sidebarAddButton?.apply {
+            visibility = if (shownWindowCount < WORKSPACE_SLOT_COUNT) View.VISIBLE else View.GONE
+            layoutParams = FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(),
+                if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(12).toInt() }
+        }
         slotWindows.forEachIndexed { index, slot ->
             val pose = poses[index]
+            slot.view.setWorkspaceCardVisible(pose != null)
+            if (pose == null) return@forEachIndexed
             slot.view.apply {
                 pivotX = if (right) 0f else bounds[index].width.toFloat()
                 pivotY = bounds[index].height / 2f
@@ -1169,13 +1325,15 @@ class NeXtepWindowController(
                 elevation = pose.z
                 alpha = pose.alpha
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(Color.rgb(20, 25, 34))
+                    setColor(Color.rgb(22, 22, 22))
                     cornerRadius = dp(8)
                     setStroke(dp(1).toInt().coerceAtLeast(1), Color.argb(100, 190, 210, 230))
                 }
                 clipToOutline = true
             }
         }
+        sidebarView?.requestLayout()
+        if (countChanged && workspaceVisible && !suspended) onViewportChanged()
     }
 
     private fun scheduleStageFocus() {

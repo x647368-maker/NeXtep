@@ -32,6 +32,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var connected = false
     private var busy = false
     private var groups = JSONArray()
+    private var windows = JSONArray()
     private var activeId: String? = null
     private var status = "正在连接系统组件"
     private var query = ""
@@ -161,7 +162,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             val card = group(root)
             for (item in items) {
                 row(card, item.name, icon = item.icon, color = item.tint) {
-                    if (item.key == "apps") chooseApp() else { open(item.key); if (item.key == "groups") refresh() }
+                    if (item.key == "apps") chooseApp() else { open(item.key); if (item.key == "groups" || item.key == "windows") refresh() }
                 }; count++
             }
         }
@@ -171,13 +172,25 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         if (count == 0 && query.isNotBlank()) root.addView(hint("没有匹配的设置项"))
     }
     private fun windows(root: LinearLayout) {
+        val manage = group(root)
+        row(manage, "添加小窗", "${windows.length()}/4 · 按需添加，不显示空框", "apps") { chooseApp(window = true) }
+        for (i in 0 until windows.length()) {
+            val item = windows.getJSONObject(i); val slot = item.getInt("slot"); val task = item.getInt("task")
+            val label = runCatching { activity.packageManager.getApplicationLabel(activity.packageManager.getApplicationInfo(item.getString("package"), 0)).toString() }.getOrDefault(item.getString("package"))
+            row(manage, label, "替换或关闭这个小窗", "windows") {
+                MaterialAlertDialogBuilder(activity).setTitle(label).setItems(arrayOf("替换应用", "关闭小窗")) { _, which ->
+                    if (which == 0) chooseApp(window = true, slot = slot, expectedTask = task)
+                    else command("close_window", slot = slot, expectedTask = task)
+                }.setNegativeButton("取消", null).show()
+            }
+        }
         val side = group(root)
         row(side, "侧栏放左边", icon = "windows") { command("left") }
         row(side, "侧栏放右边", icon = "windows") { command("right") }
         val visibility = group(root)
         row(visibility, "收起侧栏", "扩大当前主应用", "windows") { command("collapse") }
         row(visibility, "展开侧栏", "恢复四个侧窗", "windows") { command("expand") }
-        root.addView(hint("点击侧窗交换应用，点击空侧窗添加应用。边缘把手只收起或展开侧栏，不会退出台前调度。"))
+        root.addView(hint("点击侧窗交换应用，通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
     }
     private fun gestures(root: LinearLayout) {
         val settings = repository.topBarSettings(); val card = group(root)
@@ -197,18 +210,18 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.3.2 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.4.0 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.3.2\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.4.0\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.3.2", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.4.0", 13f, secondary)); root.addView(hero)
         val card = group(root)
-        row(card, "窗口", "一个主窗口，四个真实侧窗", "windows")
+        row(card, "窗口", "一个主窗口，按需显示 0–4 个小窗", "windows")
         row(card, "来源与许可", "基于 NeXtep · Apache-2.0", "info") {
             MaterialAlertDialogBuilder(activity).setTitle("来源与许可")
                 .setMessage("原作者：lujinxin / JensenLu。保留 NeXtep 的 Apache-2.0 许可证与第三方声明。Android 任务引擎来自原作，本分支增加四侧窗、工作组和新的交互。\n\n交互参考 macOS Stage Manager，非 Apple 官方应用。")
@@ -245,13 +258,17 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             if (value.isEmpty()) input.error = "请输入名称" else { dialog.dismiss(); command("rename", id, value) }
         } }; dialog.show()
     }
-    private fun chooseApp() {
+    private fun chooseApp(window: Boolean = false, slot: Int? = null, expectedTask: Int? = null) {
         if (!connected || !active) { toast("请先开启台前调度"); return }
         Thread({
             val loaded = runCatching { io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository(activity.applicationContext).load().filter { it.component.packageName != activity.packageName }.sortedBy { it.label } }
             activity.runOnUiThread {
                 if (!activity.isDestroyed) loaded.onSuccess { entries ->
-                    MaterialAlertDialogBuilder(activity).setTitle("选择主应用").setItems(entries.map { it.label }.toTypedArray()) { _, i -> command("open", launch = entries[i].launchIntent()) }
+                    MaterialAlertDialogBuilder(activity).setTitle(if (!window) "选择主应用" else if (slot == null) "添加小窗" else "替换应用")
+                        .setItems(entries.map { it.label }.toTypedArray()) { _, i ->
+                            command(if (!window) "open" else if (slot == null) "add_window" else "replace_window",
+                                launch = entries[i].launchIntent(), slot = slot, expectedTask = expectedTask)
+                        }
                         .setNegativeButton("取消", null).show()
                 }.onFailure { toast("无法读取应用列表") }
             }
@@ -287,7 +304,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     fun refresh() = command("query")
     private var queryPending = false
-    private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null) {
+    private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, slot: Int? = null, expectedTask: Int? = null) {
         if (activity.isDestroyed || name == "query" && queryPending) return
         if (name == "query") queryPending = true
         var completed = false
@@ -300,6 +317,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val intent = Intent(StageControlContract.ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
             .putExtra(StageControlContract.COMMAND, name).putExtra(StageControlContract.ID, id).putExtra(StageControlContract.NAME, title)
             .putExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, launch)
+            .putExtra("slot", slot ?: -1).putExtra("expected_task", expectedTask ?: -1)
         runCatching {
             activity.sendOrderedBroadcast(intent, null, object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, request: Intent?) {
@@ -315,7 +333,8 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                         val snapshot = JSONObject(raw); groups = snapshot.getJSONArray("groups")
                         activeId = snapshot.optString("active").takeIf { it.isNotBlank() && it != "null" }
                     } }
-                    if (page == "groups" || page == "diagnostics") open(page)
+                    reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
+                    if (page == "groups" || page == "diagnostics" || page == "windows") open(page)
                 }
             }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())
         }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); unavailable() }

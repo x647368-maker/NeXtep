@@ -106,3 +106,29 @@ internal object StageGroupSwitchPolicy {
     fun shouldSaveCurrent(activeId: String?, targetId: String): Boolean = activeId != null && activeId != targetId
     fun isComplete(slots: List<Boolean>, main: Boolean): Boolean = slots.size == 4 && slots.all { it } && main
 }
+
+/** Visibility never changes task/display ownership. Empty capacity is not a window. */
+internal object StageActiveWindowPolicy {
+    fun visible(occupied: List<Boolean>): List<Int> {
+        require(occupied.size == 4)
+        return occupied.indices.filter { occupied[it] }
+    }
+    fun positions(occupied: List<Boolean>, heights: List<Int>, tops: List<Int>, panelHeight: Int,
+        order: List<Int>, density: Float, right: Boolean): Map<Int, StageStackPolicy.Pose> {
+        val shown = visible(occupied)
+        require(heights.size == 4 && tops.size == 4 && heights.all { it > 0 } && panelHeight > 0)
+        require(order.sorted() == (0..3).toList() && density > 0)
+        if (shown.isEmpty()) return emptyMap()
+        val pitch = shown.minOf { heights[it] } * .86f
+        val stackHeight = pitch * (shown.size - 1) + shown.maxOf { heights[it] }
+        val padding = ((panelHeight - stackHeight) / 2f).coerceAtLeast(0f)
+        val depthOrder = order.filter { it in shown }
+        val direction = if (right) 1f else -1f
+        return shown.mapIndexed { rank, slot ->
+            val depth = depthOrder.indexOf(slot)
+            slot to StageStackPolicy.Pose(.94f - depth * .018f, direction * depth * 2 * density,
+                padding + rank * pitch - tops[slot], -direction * (8 + depth * 2),
+                (4 + (shown.size - depth) * 4) * density, 1f - depth * .02f)
+        }.toMap()
+    }
+}

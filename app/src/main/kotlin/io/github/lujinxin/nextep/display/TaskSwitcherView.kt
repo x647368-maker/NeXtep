@@ -41,6 +41,24 @@ class TaskSwitcherView(
         gravity = Gravity.CENTER
         background = statusBackground()
     }
+    private var menuAction: ((Int, View) -> Unit)? = null
+    private var workspaceCardVisible = true
+    private val windowMenu = TextView(context).apply {
+        text = "⋯"; textSize = 20f; gravity = Gravity.CENTER
+        setTextColor(Color.WHITE)
+        contentDescription = "小窗菜单：替换或关闭"
+        background = GradientDrawable().apply { setColor(Color.argb(205, 28, 28, 28)); cornerRadius = dp(12).toFloat() }
+        visibility = View.GONE
+        setOnClickListener { if (!busy && !waiting && currentState is SlotState.Occupied) menuAction?.invoke(slotIndex, this) }
+    }
+    fun setWindowMenuAction(action: (Int, View) -> Unit) { menuAction = action }
+    fun isWorkspaceCardVisible(): Boolean = workspaceCardVisible
+    fun setWorkspaceCardVisible(value: Boolean) {
+        workspaceCardVisible = value
+        if (!value) { animate().cancel(); alpha = 0f }
+    }
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean = workspaceCardVisible && super.dispatchTouchEvent(event)
+
     private var listener: Listener? = null
     private var busy = false
     private var currentState: SlotState = SlotState.Empty
@@ -68,6 +86,9 @@ class TaskSwitcherView(
             statusView,
             LayoutParams(dp(30), dp(30), Gravity.CENTER),
         )
+        addView(windowMenu, LayoutParams(dp(30), dp(30), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(4); marginEnd = dp(4)
+        })
         showState(SlotState.Empty)
         setOnDragListener { _, event -> handleDrag(event) }
         setOnClickListener {
@@ -123,6 +144,7 @@ class TaskSwitcherView(
         waiting = false
         val previousState = currentState
         currentState = state
+        windowMenu.visibility = if (state is SlotState.Occupied) View.VISIBLE else View.GONE
         when (state) {
             SlotState.Empty -> showReady(animated = !exchangePreviewActive && previousState is SlotState.Occupied)
             is SlotState.Ready -> showReady(animated = !exchangePreviewActive && previousState is SlotState.Occupied)
@@ -193,7 +215,13 @@ class TaskSwitcherView(
         }
     }
 
-    override fun onInterceptTouchEvent(event: MotionEvent): Boolean = true
+    private var menuTouch = false
+    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) menuTouch = windowMenu.visibility == View.VISIBLE &&
+            event.x >= windowMenu.left && event.x < windowMenu.right &&
+            event.y >= windowMenu.top && event.y < windowMenu.bottom
+        return !menuTouch
+    }
 
     fun capturePreview(width: Int = textureView.width, height: Int = textureView.height): Bitmap? = runCatching {
         io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics.previewCaptures.incrementAndGet()
@@ -250,6 +278,7 @@ class TaskSwitcherView(
     }
 
     fun containsScreenPoint(x: Float, y: Float): Boolean {
+        if (!workspaceCardVisible) return false
         val visible = Rect()
         if (!getScreenVisibleRect(visible) || !visible.contains(x.toInt(), y.toInt())) return false
         val transform = localToScreenMatrix() ?: return false

@@ -1,5 +1,6 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#239FA2" android:pathData="M0,0H108V108H0Z"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M20,28H32V40H20Z M20,48H32V60H20Z M20,68H32V80H20Z"/>
-    <path android:fillColor="#FFFFFF" android:fillType="evenOdd" android:pathData="M43,28H86Q90,28 90,32V76Q90,80 86,80H43Q39,80 39,76V32Q39,28 43,28Z M45,34V74H84V34Z"/>
-</vector>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="8%" android:insetRight="8%"
+    android:insetTop="20.7%" android:insetBottom="20.7%">
+    <bitmap android:src="@drawable/ic_stage_manager_apple" android:antialias="true"
+        android:filter="true" android:gravity="fill" />
+</inset>

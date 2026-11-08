@@ -1,4 +1,6 @@
-# 台前调度 0.3.2 开发版
+# 台前调度 0.4.0 开发版
+
+当前版本以 [DYNAMIC_WINDOWS.md](DYNAMIC_WINDOWS.md) 为准：按需显示 0–4 个真实小窗，支持关闭/替换，移除空框。以下为历史记录。
 
 当前版本以 [COLOROS_SETTINGS_REDESIGN.md](COLOROS_SETTINGS_REDESIGN.md) 为准：原生分组设置页、无顶部操作条、放大四侧窗。以下为历史记录。
 
