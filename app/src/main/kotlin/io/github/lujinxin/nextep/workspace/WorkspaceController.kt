@@ -168,6 +168,12 @@ class WorkspaceController(
             mainTaskPresenter.presentForeground(requestedGeometry, animateFromFullscreen = true).getOrThrow()
             SystemUiRootTransformController.setActive(true)
             val geometry = windowController.show()
+            // The rail's input region can become available while the retained
+            // windows attach. Apply the final zero/occupied-window fit everywhere.
+            SystemUiRootTransformController.setGeometry(geometry)
+            mainTaskPresenter.reconcileForeground(geometry).onFailure {
+                NeXtepLog.warn("workspace", "Initial task fit will retry after task readiness", it)
+            }
             SystemServerWorkspaceBridge.publish(applicationContext, true, geometry)
             applicationContext.sendBroadcast(
                 TriggerBroadcastContract.assistantScreenSetIntent(applicationContext, true),

@@ -63,7 +63,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         return LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(62); setPadding(dp(18), dp(12), dp(18), dp(12))
-            if (icon != null) addView(StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(28)).apply { marginEnd = dp(16) })
+            if (icon != null) addView(if (icon == "stage") ImageView(activity).apply {
+                setImageResource(R.drawable.ic_stage_manager_apple); scaleType = ImageView.ScaleType.FIT_CENTER
+            } else StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(28)).apply { marginEnd = dp(16) })
             val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             words.addView(label(title, 16f, if (icon == "exit") Color.rgb(220, 65, 60) else ink))
             if (!detail.isNullOrBlank()) words.addView(label(detail, 12f, secondary).apply {
@@ -335,6 +337,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     } }
                     reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
                     if (page == "groups" || page == "diagnostics" || page == "windows") open(page)
+                    if (name == "add_window" || name == "replace_window" || name == "close_window") {
+                        for (delay in listOf(500L, 1800L, 4000L)) handler.postDelayed({ if (page == "windows") refresh() }, delay)
+                    }
                 }
             }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())
         }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); unavailable() }

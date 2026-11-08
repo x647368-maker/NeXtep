@@ -815,6 +815,7 @@ class NeXtepWindowController(
                 geometry.contentRight.toFloat(), geometry.contentBottom.toFloat(),
                 geometry.contentLeft.toFloat(), geometry.contentBottom.toFloat())))
             slotWindows.sortedBy { it.view.z }.forEach { slot ->
+                if (!slot.view.isWorkspaceCardVisible()) return@forEach
                 val corners = slot.view.screenQuad() ?: return@forEach
                 // Display-size captures suffice for a stationary cover; avoid allocating
                 // four full-resolution phone bitmaps inside the SystemUI heap.
