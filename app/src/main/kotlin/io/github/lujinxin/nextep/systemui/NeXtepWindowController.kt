@@ -61,6 +61,11 @@ class NeXtepWindowController(
     private val mediaSignals = StageMediaSignals(context) { scheduleCinemaCheck() }
     private var cinemaSlot: Int? = null
     private var quickBar: StageQuickBarView? = null
+    private var quickExpandButton: android.widget.TextView? = null
+    private var quickChromeSuppressed = false
+    private var cinemaPortrait = false
+    private val directionDebounce = StageDirectionDebounce()
+    private var cinemaEpoch = 0
     private var quickGeneration = 0
     private var cinemaApplying = false
     private val cinemaCheck = Runnable { evaluateCinema() }
@@ -185,6 +190,7 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         contentDrag.cancel()
         windowPickerGeneration++
@@ -336,6 +342,7 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         cinemaPolicy.reset(); cinemaSlot = null; viewport.cinema = false
         slotWindows.forEach { it.setCinema(false) }
@@ -518,8 +525,8 @@ class NeXtepWindowController(
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
-            "cinema_auto", "cinema_manual", "cinema_off" -> {
-                leaveCinema(); core.cinemaMode = when(command) { "cinema_auto" -> StageCinemaPolicy.Mode.AUTO; "cinema_manual" -> StageCinemaPolicy.Mode.MANUAL; else -> StageCinemaPolicy.Mode.OFF }
+            "cinema_auto", "cinema_manual", "cinema_landscape", "cinema_portrait", "cinema_off" -> {
+                leaveCinema(); core.cinemaMode = when(command) { "cinema_auto" -> StageCinemaPolicy.Mode.AUTO; "cinema_manual" -> StageCinemaPolicy.Mode.MANUAL; "cinema_landscape" -> StageCinemaPolicy.Mode.LANDSCAPE; "cinema_portrait" -> StageCinemaPolicy.Mode.PORTRAIT; else -> StageCinemaPolicy.Mode.OFF }
                 cinemaPolicy.mode = core.cinemaMode; scheduleCinemaCheck()
             }
             "cinema_enter" -> { check(workspaceVisible && !suspended) { "请先开启台前调度" }; showCinemaMenu(records.first { it.title == "StageMainHandle" }.view) }
@@ -609,8 +616,8 @@ class NeXtepWindowController(
 
         addWindow(
             title = "NeXtepTopBar",
-            // Retain only a transparent status-safe wallpaper host. No controls,
-            // application strip, branding or touch interception above the stage.
+            // Reuse the existing status-safe wallpaper host. Only the quick-bar
+            // button or explicitly expanded bar owns a narrow touch region.
             view = StageQuickBarHost(context) {
                 backdropHandler.post { setQuickExpanded(false); showStageMessage("快捷栏触摸区域不可用，已安全收起") }
             }.apply {
@@ -619,7 +626,15 @@ class NeXtepWindowController(
                 addView(quickBar, FrameLayout.LayoutParams(-1, dp(52).toInt(), Gravity.BOTTOM).apply {
                     leftMargin = dp(8).toInt(); rightMargin = dp(8).toInt(); bottomMargin = dp(4).toInt()
                 })
-                quickBar?.visibility = if (core.enabled && core.expanded) View.VISIBLE else View.GONE
+                quickExpandButton = android.widget.TextView(context).apply {
+                    text = "▦"; textSize = 24f; gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE); contentDescription = "展开常用应用快捷栏"
+                    background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.argb(175, 35, 38, 44)); cornerRadius = dp(18) }
+                    setOnClickListener { setQuickExpanded(true) }
+                }.also { addView(it, FrameLayout.LayoutParams(dp(48).toInt(), dp(48).toInt(), Gravity.BOTTOM or Gravity.END).apply {
+                    rightMargin = dp(12).toInt(); bottomMargin = dp(4).toInt()
+                }) }
+                renderQuickChrome()
             },
             width = geometry.screenWidth,
             height = geometry.topHeight,
@@ -766,7 +781,7 @@ class NeXtepWindowController(
     ) {
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
             record.title == "AtomicSidebarHandle" || record.title == "StageMainHandle" ||
-            (record.title == "NeXtepTopBar" && core.enabled && core.expanded && !geometry.isLandscape) ||
+            (record.title == "NeXtepTopBar" && !quickChromeSuppressed && !groupInputBlocked) ||
             (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
@@ -786,7 +801,7 @@ class NeXtepWindowController(
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         params.gravity = Gravity.TOP or Gravity.LEFT
         setWindowBounds(record.title, params, geometry)
-        if (record.title == "NeXtepTopBar") quickBar?.visibility = if (core.enabled && core.expanded && !geometry.isLandscape) View.VISIBLE else View.GONE
+        if (record.title == "NeXtepTopBar") renderQuickChrome()
         if (record.title == "AtomicSidebarHandle") (record.view as? android.widget.TextView)?.apply {
             text = if (!sidebarCollapsed) "‹›" else if (geometry.railAtTop || geometry.isLandscape)
                 (if (geometry.railAtTop || geometry.isSidebarAtTop) "⌄ 展开小窗" else "⌃ 展开小窗")
@@ -968,13 +983,25 @@ class NeXtepWindowController(
         viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0
         viewport.adaptive = core.adaptive
         viewport.quickExpanded = core.enabled && core.expanded
+        cinemaSlot?.let { index ->
+            if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
+                cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()
+            }
+        }
         viewport.cinema = cinemaSlot != null && !sidebarCollapsed
+        viewport.cinemaPortrait = cinemaPortrait
     }
 
+    private fun renderQuickChrome() {
+        val shown = !quickChromeSuppressed && !suspended
+        quickBar?.visibility = if (shown && core.enabled && core.expanded) View.VISIBLE else View.GONE
+        quickExpandButton?.visibility = if (shown && !(core.enabled && core.expanded)) View.VISIBLE else View.GONE
+    }
     private fun setQuickExpanded(expanded: Boolean) {
+        if (groupInputBlocked || workgroups.isSwitching()) return
         if (expanded) core.enabled = true
         core.expanded = expanded; syncCoreViewport()
-        quickBar?.visibility = if (expanded && core.enabled) View.VISIBLE else View.GONE
+        renderQuickChrome()
         refreshQuickBar()
         if (workspaceVisible && !suspended) onViewportChanged()
     }
@@ -1038,40 +1065,50 @@ class NeXtepWindowController(
         val states = slotCoordinator?.slotStates().orEmpty()
         val occupied = states.filterIsInstance<SlotState.Occupied>()
         val tasks = taskRepository.runningTasks().associateBy { it.taskId }
-        val playingPackages = mediaSignals.playingPackages()
-        val presentPackages = mediaSignals.presentPackages()
-        val present = occupied.filter { tasks[it.taskId]?.component?.packageName in presentPackages }.mapTo(mutableSetOf()) { it.taskId }
-        val playing = occupied.filter { tasks[it.taskId]?.component?.packageName in playingPackages }.mapTo(mutableSetOf()) { it.taskId }
-        // Explicit ActivityInfo landscape request + active playback + exact live slot ownership.
-        // Bounds alone are not proof: our own resize must never retrigger automatic mode.
+        val bound = StageMediaBinding.bind(tasks.values.map { StageObservedTask(it.taskId, it.component.packageName, it.userId) }, mediaSignals.observations())
+        val live = occupied.mapTo(mutableSetOf()) { it.taskId }
+        val playing = occupied.filter { bound[it.taskId]?.state == StagePlayback.PLAYING }.mapTo(mutableSetOf()) { it.taskId }
+        // Missing or ambiguous session data is UNKNOWN, not a command or evidence that playback stopped.
+        val present = live.filterTo(mutableSetOf()) { bound[it]?.state != StagePlayback.STOPPED }
         val trusted = occupied.firstOrNull { state ->
             val task = tasks[state.taskId]
             task != null && task.displayId == state.displayId && state.taskId in playing &&
-                task.requestedOrientation in setOf(0, 6, 8, 11)
+                StageVideoSignalPolicy.direction(task.requestedOrientation, task.configurationOrientation) != null
         }?.taskId
         cinemaPolicy.mode = core.cinemaMode
         val before = cinemaPolicy.task
-        val next = cinemaPolicy.update(trusted, occupied.mapTo(mutableSetOf()) { it.taskId }, playing, android.os.SystemClock.uptimeMillis(), present)
-        if (next != before) applyCinemaTask(next)
-        if (!confirm && next == null && trusted != null) backdropHandler.postDelayed({ evaluateCinema(true) }, 750)
+        val now = android.os.SystemClock.uptimeMillis()
+        val next = cinemaPolicy.update(trusted, live, playing, now, present)
+        val target = next?.let(tasks::get)
+        val direction = target?.let { StageVideoSignalPolicy.direction(it.requestedOrientation, it.configurationOrientation) }
+        val chosen = if (next != null && !cinemaPolicy.isManual) directionDebounce.update(next, direction, next in playing, now) else null
+        if (next != before) applyCinemaTask(next, direction == StageVideoDirection.PORTRAIT)
+        else if (chosen != null && !cinemaPolicy.isManual && (chosen == StageVideoDirection.PORTRAIT) != cinemaPortrait)
+            applyCinemaTask(next, chosen == StageVideoDirection.PORTRAIT)
+        if (!confirm && trusted != null && (next == null || next in playing && !cinemaPolicy.isManual)) {
+            val epoch = cinemaEpoch
+            backdropHandler.postDelayed({ if(epoch == cinemaEpoch) evaluateCinema(true) }, 750)
+        }
     }
-    private fun enterCinema(task: Int) {
+    private fun enterCinema(task: Int, portrait: Boolean = core.cinemaMode == StageCinemaPolicy.Mode.PORTRAIT) {
         if (core.cinemaMode == StageCinemaPolicy.Mode.OFF) { showStageMessage("影音布局已关闭，请在设置中改为手动或自动"); return }
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching() || slotCoordinator?.isGroupRestoreReady() != true) return
-        cinemaPolicy.enter(task); setSidebarCollapsed(false); applyCinemaTask(task)
+        cinemaEpoch++; directionDebounce.reset()
+        cinemaPolicy.enter(task); setSidebarCollapsed(false); applyCinemaTask(task, portrait)
     }
     private fun leaveCinema() {
+        cinemaEpoch++; directionDebounce.reset()
         cinemaPolicy.leave(); applyCinemaTask(null)
     }
-    private fun applyCinemaTask(task: Int?) {
+    private fun applyCinemaTask(task: Int?, portrait: Boolean = cinemaPortrait) {
         if (cinemaApplying) return
         val index = task?.let { id -> slotCoordinator?.slotStates()?.indexOfFirst { (it as? SlotState.Occupied)?.taskId == id }?.takeIf { it >= 0 } }
-        if (index == cinemaSlot) return
+        if (index == cinemaSlot && (index == null || portrait == cinemaPortrait)) return
         if (viewport.geometry(sidebarSide).isLandscape && index != null) { cinemaPolicy.leave(); return }
         cinemaApplying = true
         val previous = cinemaSlot
         try {
-            cinemaSlot = index; syncCoreViewport()
+            cinemaSlot = index; cinemaPortrait = portrait; syncCoreViewport()
             if (workspaceVisible && !suspended) onViewportChanged()
         } catch (error: Throwable) {
             cinemaSlot = null; viewport.cinema = false; cinemaPolicy.leave()
@@ -1087,7 +1124,7 @@ class NeXtepWindowController(
         slotCoordinator?.slotStates()?.forEachIndexed { index, state -> if (state is SlotState.Occupied) {
             items += "小窗 ${index + 1}：${state.component.packageName}" to { enterCinema(state.taskId) }
         } }
-        for ((label, mode) in listOf("自动（可靠横屏播放信号）" to StageCinemaPolicy.Mode.AUTO, "仅手动" to StageCinemaPolicy.Mode.MANUAL, "关闭影音布局" to StageCinemaPolicy.Mode.OFF)) {
+        for ((label, mode) in listOf("自动（可靠方向信号）" to StageCinemaPolicy.Mode.AUTO, "手动横屏影音" to StageCinemaPolicy.Mode.LANDSCAPE, "手动竖屏影音" to StageCinemaPolicy.Mode.PORTRAIT, "关闭影音布局" to StageCinemaPolicy.Mode.OFF)) {
             items += label to { leaveCinema(); core.cinemaMode = mode; cinemaPolicy.mode = mode; scheduleCinemaCheck() }
         }
         AtomicPopupMenu.show(context, anchor, items)
@@ -1151,7 +1188,8 @@ class NeXtepWindowController(
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val state = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied ?: return
         AtomicPopupMenu.show(context, anchor, listOf(
-            "作为上方影音窗口" to { enterCinema(state.taskId) },
+            "横屏影音布局（保留原任务）" to { enterCinema(state.taskId, portrait = false) },
+            "竖屏影音布局（保留原任务）" to { enterCinema(state.taskId, portrait = true) },
             "在小窗中操作" to { slotWindows[index].view.setDirectInteraction(true) },
             "切换为主窗口" to { slotCoordinator?.onSlotClicked(index) },
             "替换应用" to { chooseWindowApp(anchor, index, state.taskId) },
@@ -1171,6 +1209,7 @@ class NeXtepWindowController(
         rows.addView(android.widget.ProgressBar(context), android.widget.LinearLayout.LayoutParams(-1, dp(48).toInt()))
         rows.addView(windowPicker.label("正在读取应用…"))
         windowPicker.onVisibilityChanged = { shown ->
+            quickChromeSuppressed = shown; renderQuickChrome()
             records.filter { it.title == "AtomicSidebarHandle" || it.title == "StageMainHandle" }.forEach {
                 it.view.visibility = if (!shown && workspaceVisible && !suspended) View.VISIBLE else View.GONE
             }
@@ -1730,11 +1769,13 @@ class NeXtepWindowController(
                 if (!slot.setCinema(index == media)) backdropHandler.post { leaveCinema(); showStageMessage("应用横屏显示不可用，已恢复普通布局") }
                 slot.view.setWorkspaceCardVisible(index == media && occupied[index])
                 if (index == media && occupied[index]) {
-                    val w = (profile.geometry.sidebarPhysicalWidth - dp(16)).toInt().coerceAtLeast(1)
-                    val h = minOf((w * 9f / 16).toInt(), (profile.geometry.sidebarPhysicalHeight - dp(64)).toInt()).coerceAtLeast(1)
+                    val w = (profile.geometry.sidebarPhysicalWidth - dp(if (cinemaPortrait) 8 else 16)).toInt().coerceAtLeast(1)
+                    val h = minOf((w * (if (cinemaPortrait) 16f / 9 else 9f / 16)).toInt(),
+                        (profile.geometry.sidebarPhysicalHeight - dp(64)).toInt()).coerceAtLeast(1)
                     val old = slot.view.layoutParams as? FrameLayout.LayoutParams
-                    if (old == null || old.width != w || old.height != h || old.gravity != (Gravity.TOP or Gravity.CENTER_HORIZONTAL))
-                        slot.view.layoutParams = FrameLayout.LayoutParams(w, h, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(8).toInt() }
+                    if (old == null || old.width != w || old.height != h || old.gravity != (Gravity.TOP or Gravity.CENTER_HORIZONTAL) ||
+                        old.topMargin != (if (cinemaPortrait) ((profile.geometry.sidebarPhysicalHeight - h - dp(56)) / 2).toInt().coerceAtLeast(0) else dp(8).toInt()))
+                        slot.view.layoutParams = FrameLayout.LayoutParams(w, h, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = if (cinemaPortrait) ((profile.geometry.sidebarPhysicalHeight - h - dp(56)) / 2).toInt().coerceAtLeast(0) else dp(8).toInt() }
                     slot.view.apply { rotationY = 0f; scaleX = 1f; scaleY = 1f; translationX = 0f; translationY = 0f; alpha = 1f; elevation = dp(8) }
                     slot.view.setDirectInteraction(true)
                 }

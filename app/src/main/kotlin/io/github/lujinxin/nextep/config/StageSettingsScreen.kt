@@ -159,7 +159,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         data class Item(val name: String, val key: String, val icon: String, val tint: Int)
         val sections = listOf(
-            listOf(Item("影音与常用应用", "core", "apps", blue), Item("窗口与侧栏", "windows", "windows", blue), Item("工作组", "groups", "groups", Color.rgb(142, 88, 224)), Item("选择主应用", "apps", "apps", Color.rgb(46, 183, 87)), Item("手势", "gestures", "gesture", Color.rgb(246, 162, 34))),
+            listOf(Item("影音与常用应用", "core", "apps", blue), Item("窗口与侧栏", "windows", "windows", blue), Item("工作组", "groups", "groups", Color.rgb(142, 88, 224)), Item("手势", "gestures", "gesture", Color.rgb(246, 162, 34))),
             listOf(Item("控制中心", "tile", "tile", blue), Item("使用与退出", "help", "help", Color.rgb(46, 183, 87)), Item("运行与诊断", "diagnostics", "diagnostics", blue), Item("关于台前调度", "about", "info", secondary)),
         )
         var count = 0
@@ -200,16 +200,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val visibility = group(root)
         row(visibility, "收起侧栏", "扩大当前主应用", "windows") { command("collapse") }
         row(visibility, "展开侧栏", "显示已有侧窗", "windows") { command("expand") }
-        root.addView(hint("主窗上方“⋯”可切换全屏、切换布局、替换和关闭主窗。\n顶部小窗按紧凑尺寸重新排版；点击小窗切换为主窗，在小窗菜单选择“在小窗中操作”后可尝试直接触摸和滑动。应用与系统支持情况可能不同。\n通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
+        root.addView(hint("主窗上方“⋯”可切换全屏、切换布局、替换和关闭主窗。\n顶部小窗调整展示位置；活动显示器保留原分辨率和 DPI；点击小窗切换为主窗，在小窗菜单选择“在小窗中操作”后可尝试直接触摸和滑动。应用与系统支持情况可能不同。\n通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
     }
     private fun corePage(root: LinearLayout) {
         val video = group(root)
-        row(video, "影音布局", when(cinemaMode) { "MANUAL" -> "仅手动"; "OFF" -> "已关闭"; else -> "自动：仅匹配可信的横屏播放信号" }, "windows") {
-            MaterialAlertDialogBuilder(activity).setTitle("影音布局").setItems(arrayOf("自动", "手动", "关闭")) { _, which ->
-                command(listOf("cinema_auto", "cinema_manual", "cinema_off")[which])
+        row(video, "影音布局", when(cinemaMode) { "MANUAL", "LANDSCAPE" -> "手动横屏影音"; "PORTRAIT" -> "手动竖屏影音"; "OFF" -> "已关闭"; else -> "自动：匹配可靠任务方向和独立媒体身份" }, "windows") {
+            MaterialAlertDialogBuilder(activity).setTitle("影音布局").setItems(arrayOf("自动", "横屏影音", "竖屏影音", "关闭")) { _, which ->
+                command(listOf("cinema_auto", "cinema_landscape", "cinema_portrait", "cinema_off")[which])
             }.setNegativeButton("取消", null).show()
         }
-        row(video, "选择上方影音小窗", "先将视频添加到小窗，再选择；不会旋转手机", "windows") { command("cinema_enter") }
+        row(video, "选择影音小窗", "先添加视频小窗，再选择横屏或竖屏布局", "windows") { command("cinema_enter") }
         row(video, "退出影音布局", "恢复之前的顶部 / 侧边排列", "windows") { command("cinema_leave") }
         val quick = group(root)
         row(quick, "常用应用快捷栏", if (quickExpanded) "已展开" else "已收起", "apps") { command(if (quickExpanded) "quick_collapse" else "quick_expand") }
@@ -219,10 +219,10 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             }.setNegativeButton("取消", null).show()
         }
         row(quick, "关闭快捷栏", "保留固定应用和排序", "apps") { command("quick_off") }
-        root.addView(hint("主窗 ⋯ 菜单可快速展开快捷栏。长按快捷栏或工作区应用列表的图标，可固定、调整顺序、添加到小窗或选择要替换的小窗。点击图标优先复用真实任务。"))
+        root.addView(hint("收起后点击工作区顶部 ▦ 按钮即可展开，触摸区域为 48dp。主窗 ⋯ 菜单也可展开。长按快捷栏或工作区应用列表的图标，可固定、调整顺序、添加到小窗或选择要替换的小窗。点击图标优先复用真实任务。"))
         row(group(root), "按小窗数量智能布局", "关闭后回退到 0.8.1 的固定容量布局", "windows", end = toggle(adaptive) { command(if (it) "adaptive_on" else "adaptive_off") })
         row(group(root), "移动当前微信任务到小窗", "在工作区主窗打开小程序后使用", "windows") { command("wechat_move") }
-        root.addView(hint("微信兼容按系统实际 Task ID 移动，不调用微信私有接口。共用任务会整体移动；系统提供独立任务时保留独立身份。无法保证小程序与微信分别运行。失败会尝试恢复原任务。\n\n自动影音仅依赖媒体会话与明确横屏 Activity 信号；信号不足时使用手动选择。影音模式优先展示一个真实横屏小窗，下方保留主应用，其他小窗保留运行状态。应用自身的黑边或安全内容限制无法消除。"))
+        root.addView(hint("微信兼容按系统实际 Task ID 移动，不调用微信私有接口。共用任务会整体移动；系统提供独立任务时保留独立身份。无法保证小程序与微信分别运行。失败会尝试恢复原任务。\n\n自动影音要求同用户、唯一任务和唯一媒体会话，以及一致的任务方向信号。信号不足、暂停或缓冲时保持布局。可手动指定横屏或竖屏。为避免额外重建，布局仅改变显示几何，不强改播放器分辨率或 DPI，可能保留留白。应用自身黑边无法保证消除。"))
     }
     private fun gestures(root: LinearLayout) {
         val settings = repository.topBarSettings(); val card = group(root)
@@ -247,16 +247,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.9.0 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.9.1 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.9.0\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.9.1\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.9.0", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.9.1", 13f, secondary)); root.addView(hero)
         val card = group(root)
         row(card, "窗口", "一个主窗口，按需显示 0–4 个小窗", "windows")
         row(card, "来源与许可", "基于 NeXtep · Apache-2.0", "info") {

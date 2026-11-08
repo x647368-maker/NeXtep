@@ -18,12 +18,21 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         override fun onSessionDestroyed() { bind(runCatching { manager?.getActiveSessions(null) }.getOrNull().orEmpty()) }
     }
     private val listener = MediaSessionManager.OnActiveSessionsChangedListener { bind(it.orEmpty()) }
-    fun presentPackages(): Set<String> = sessions.filter {
-        runCatching { it.playbackState?.state in setOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING) }.getOrDefault(false)
-    }.mapTo(mutableSetOf()) { it.packageName }
-    fun playingPackages(): Set<String> = sessions.filter {
-        runCatching { it.playbackState?.state == PlaybackState.STATE_PLAYING }.getOrDefault(false)
-    }.mapTo(mutableSetOf()) { it.packageName }
+    fun observations(): List<StagePlaybackObservation> = sessions.mapNotNull { controller ->
+        runCatching {
+            val uid = (runCatching { controller.sessionToken.javaClass.getMethod("getUid").invoke(controller.sessionToken) as? Int }.getOrNull()
+                ?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid)
+                ?: return@runCatching null
+            val state = when (controller.playbackState?.state) {
+                PlaybackState.STATE_PLAYING -> StagePlayback.PLAYING
+                PlaybackState.STATE_PAUSED -> StagePlayback.PAUSED
+                PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING -> StagePlayback.BUFFERING
+                PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE -> StagePlayback.STOPPED
+                else -> StagePlayback.UNKNOWN
+            }
+            StagePlaybackObservation(StageMediaKey(controller.packageName, uid / 100000, controller.sessionToken), state)
+        }.getOrNull()
+    }
     fun start() {
         if (listening) return
         runCatching {

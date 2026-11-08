@@ -82,6 +82,8 @@ class SlotTaskCoordinator(
     private var mainSelectionGeneration = 0
     private var promotedRecoveryGeneration = 0
     private var promotedRecoveryComponent: ComponentName? = null
+    private var promotedRecoveryTaskId: Int? = null
+    private var promotedRecoveryUserId: Int? = null
     private var promotedRecoveryDeadline = 0L
     private var promotedRecoveryAttempts = 0
 
@@ -495,10 +497,11 @@ class SlotTaskCoordinator(
                         "top app promoted from slot",
                     )
                 }
-                taskRepository.bringTaskToFront(existing.taskId).getOrThrow()
+                if (currentMain?.taskId != existing.taskId) taskRepository.bringTaskToFront(existing.taskId).getOrThrow()
                 minimizePreviousMain()
                 mainTaskPresenter.presentTask(existing.taskId, geometryProvider()).getOrThrow()
             } else {
+                check(TaskContinuityPolicy.canLaunch(TaskContinuityPolicy.Origin.USER_LAUNCH, existingTask = false))
                 UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()
                 minimizePreviousMain()
                 val generation = mainSelectionGeneration
@@ -649,10 +652,8 @@ class SlotTaskCoordinator(
                 val wasPresented = mainTaskPresenter.currentTaskId() == retainedTaskId
                 runCatching {
                     mainTaskPresenter.restoreForMove(retainedTaskId).getOrThrow()
-                    ActivityTaskManagerCompat.setTaskResizeable(
-                        retainedTaskId,
-                        TASK_RESIZE_MODE_RESIZEABLE,
-                    ).getOrThrow()
+                    if (retained.resizeMode != TASK_RESIZE_MODE_RESIZEABLE) ActivityTaskManagerCompat.setTaskResizeable(
+                        retainedTaskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
                     moveTaskToDisplayAndWait(retainedTaskId, displayId)
                     ensureSlotLayout(slotIndex, retained)
                 }
@@ -1248,6 +1249,8 @@ class SlotTaskCoordinator(
         var restoredMainTask: TaskRepository.TaskSnapshot? = null
         var mainOriginalLayout: TaskLayout? = null
         try {
+            promotedRecoveryTaskId = slotTask.taskId
+            promotedRecoveryUserId = slotTask.userId
             promotedRecoveryComponent = slotTask.component
             promotedRecoveryDeadline =
                 SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
@@ -1502,6 +1505,8 @@ class SlotTaskCoordinator(
                         return@forEachIndexed
                     }
                     record.retainedTaskId = displayTask.taskId
+                    record.migrationRecoveryComponent = null
+                    record.migrationRecoveryDeadline = 0L; record.migrationRecoveryAttempts = 0
                     record.pendingComponent = null
                     record.pendingAttempts = 0
                     setState(
@@ -1617,8 +1622,10 @@ class SlotTaskCoordinator(
             clearPromotedTaskRecovery()
             return
         }
-        val promotedTask = findLaunchTask(component)
-            ?.takeIf { task -> task.displayId == Display.DEFAULT_DISPLAY }
+        if (suspended || transitionInProgress) return
+        val promotedTask = promotedRecoveryTaskId?.let(taskRepository::findTask)?.takeIf {
+            it.userId == promotedRecoveryUserId && it.component.packageName == component.packageName && it.displayId == Display.DEFAULT_DISPLAY
+        }
         if (promotedTask != null) {
             if (taskRepository.foregroundTask()?.taskId != promotedTask.taskId) {
                 clearPromotedTaskRecovery()
@@ -1642,83 +1649,33 @@ class SlotTaskCoordinator(
                 }
             return
         }
-        if (promotedRecoveryAttempts >= MAX_MIGRATION_RECOVERY_ATTEMPTS) {
-            NeXtepLog.warn(
-                "slot_coordinator",
-                "Promoted task recovery exhausted component=$component",
-            )
-            clearPromotedTaskRecovery()
-            return
-        }
-        val intent = normalizeLaunchIntent(Intent().setComponent(component))
-        if (intent == null) {
-            NeXtepLog.warn(
-                "slot_coordinator",
-                "Promoted task recovery has no launcher Activity component=$component",
-            )
-            clearPromotedTaskRecovery()
-            return
-        }
-        promotedRecoveryAttempts += 1
-        runCatching { applicationContext.startActivity(intent) }
-            .onSuccess {
-                NeXtepLog.warn(
-                    "slot_coordinator",
-                    "Relaunched promoted task after process death component=$component",
-                )
-                postPromotedRecovery(PROMOTED_RECOVERY_POLL_MS)
-            }
-            .onFailure { error ->
-                NeXtepLog.error(
-                    "slot_coordinator",
-                    "Promoted task recovery launch failed component=$component",
-                    error,
-                )
-                clearPromotedTaskRecovery()
-            }
+        // A missing/reclaimed app is not permission to replay its launcher or media session.
+        NeXtepLog.warn("task_continuity", "Promoted task unavailable id=$promotedRecoveryTaskId; no launch or media command issued")
+        clearPromotedTaskRecovery()
     }
 
     private fun clearPromotedTaskRecovery() {
         promotedRecoveryGeneration += 1
         promotedRecoveryComponent = null
+        promotedRecoveryTaskId = null; promotedRecoveryUserId = null
         promotedRecoveryDeadline = 0L
         promotedRecoveryAttempts = 0
     }
 
     private fun recoverMigratedTask(slotIndex: Int, record: SlotRecord) {
-        val component = checkNotNull(record.migrationRecoveryComponent)
-        val intent = normalizeLaunchIntent(Intent().setComponent(component))
-        if (intent == null) {
-            record.migrationRecoveryComponent = null
-            record.migrationRecoveryDeadline = 0L
-            setState(
-                slotIndex,
-                SlotState.Failed("migration recovery unavailable"),
-                "No launcher Activity for $component",
-            )
-            return
-        }
         record.migrationRecoveryAttempts += 1
-        record.retainedTaskId = null
-        record.pendingComponent = component
-        record.pendingAttempts = 0
-        slots[slotIndex].view.showWaiting()
-        slots[slotIndex].launch(intent)
-            .onSuccess {
-                NeXtepLog.warn(
-                    "slot_coordinator",
-                    "Relaunched migrated task after process death slot=$slotIndex " +
-                        "component=$component attempt=${record.migrationRecoveryAttempts}",
-                )
-            }
-            .onFailure { error ->
-                record.pendingComponent = null
-                NeXtepLog.error(
-                    "slot_coordinator",
-                    "Migration recovery launch failed slot=$slotIndex component=$component",
-                    error,
-                )
-            }
+        // Bounded observation only: never launch a replacement Activity during an exchange.
+        if (record.migrationRecoveryAttempts < MAX_MIGRATION_RECOVERY_ATTEMPTS &&
+            SystemClock.uptimeMillis() <= record.migrationRecoveryDeadline) return
+        val id = record.retainedTaskId
+        record.migrationRecoveryComponent = null; record.migrationRecoveryDeadline = 0L
+        record.migrationRecoveryAttempts = 0
+        if (id == null || taskRepository.findTask(id) == null) {
+            clearSlotAssignment(slotIndex)
+            val display = slots[slotIndex].displayId()
+            setState(slotIndex, display?.let(SlotState::Ready) ?: SlotState.Empty, "task exited; explicit user launch required")
+            NeXtepLog.warn("task_continuity", "Task unavailable id=$id; preserved user playback decision by not relaunching")
+        }
     }
 
     private fun reconcileForeground(reason: String) {
@@ -1768,7 +1725,7 @@ class SlotTaskCoordinator(
         targetUser: android.os.UserHandle? = null,
     ): TaskRepository.TaskSnapshot? = taskRepository.findTaskForComponent(
         component,
-        targetUser,
+        targetUser ?: android.os.Process.myUserHandle(),
         // The icon entry is a separate, no-display task; never promote it as settings.
         allowPackageFallback = component != settingsComponent,
     )
@@ -1894,7 +1851,7 @@ class SlotTaskCoordinator(
         if (mainFullscreen &&
             current?.bounds == expectedBounds && current.densityDpi == layout.densityDpi &&
             current.windowingMode == layout.windowingMode) {
-            if (restoreResizeMode) layout.resizeMode?.let {
+            if (restoreResizeMode) layout.resizeMode?.takeIf { it != current.resizeMode }?.let {
                 ActivityTaskManagerCompat.setTaskResizeable(task.taskId, it).getOrThrow()
             }
             return
@@ -1955,6 +1912,7 @@ class SlotTaskCoordinator(
         ?: WINDOWING_MODE_FULLSCREEN_FALLBACK
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
+        if (!TaskContinuityPolicy.shouldMove(taskRepository.findTask(taskId)?.displayId, displayId)) return
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {
             TaskSurfaceCompat.preparePromotion(taskId, geometryProvider()).onFailure {

@@ -41,7 +41,13 @@ class VirtualDisplaySlot(
         view.textureView.surfaceTexture?.let { onSurfaceTextureSizeChanged(it, view.textureView.width, view.textureView.height) }
         return cinema == enabled
     }
-    private fun canvas() = if (cinema) SlotGeometry(1280, 720, 240) else checkNotNull(layoutProfile).canvas
+    private fun canvas(): SlotGeometry {
+        val requested = checkNotNull(layoutProfile).canvas
+        val fixed = TaskContinuityPolicy.canvas(activeGeometry?.let { TaskContinuityPolicy.Canvas(it.width, it.height, it.densityDpi) },
+            TaskContinuityPolicy.Canvas(requested.width, requested.height, requested.densityDpi))
+        return SlotGeometry(fixed.width, fixed.height, fixed.density)
+    }
+
 
     private var pendingLaunch: Intent? = null
     private var freshSurfaceRequired = false
@@ -179,53 +185,21 @@ class VirtualDisplaySlot(
     override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
         if (!active || suspended) return
         if (width <= 0 || height <= 0) return
-        val profile = checkNotNull(layoutProfile) { "Recorded layout must precede slot activation" }
+        checkNotNull(layoutProfile) { "Recorded layout must precede slot activation" }
         val geometry = canvas()
         // TextureView resets the producer buffer to its view size during layout.
         // Restore the recorded canvas even when the VirtualDisplay did not resize.
         texture.setDefaultBufferSize(geometry.width, geometry.height)
-        val transform = if (!cinema) profile.previewTransform(width, height) else {
-            val scale = minOf(width.toFloat() / geometry.width, height.toFloat() / geometry.height)
-            WorkspaceLayoutProfile.PreviewTransform(geometry.width * scale / width, geometry.height * scale / height,
-                (width - geometry.width * scale) / 2f, (height - geometry.height * scale) / 2f)
-        }
+        val scale = minOf(width.toFloat() / geometry.width, height.toFloat() / geometry.height)
+        val transform = WorkspaceLayoutProfile.PreviewTransform(geometry.width * scale / width, geometry.height * scale / height,
+            (width - geometry.width * scale) / 2f, (height - geometry.height * scale) / 2f)
         view.textureView.setTransform(Matrix().apply {
             setScale(transform.scaleX, transform.scaleY)
             postTranslate(transform.x, transform.y)
         })
-        // Reuse the surface when dimensions settle or only the sidebar's position changes.
-        if (virtualDisplay != null && geometry == activeGeometry) {
-            return
-        }
-        activeGeometry = geometry
-        val display = virtualDisplay ?: return
-        if (surface == null) return
-        runCatching {
-            texture.setDefaultBufferSize(geometry.width, geometry.height)
-            display.resize(geometry.width, geometry.height, geometry.densityDpi)
-        }.onSuccess {
-            NeXtepLog.info(
-                "virtual_display",
-                "Resized slot=$index generation=$surfaceGeneration geometry=$geometry",
-            )
-        }.onFailure { error ->
-            NeXtepLog.error(
-                "virtual_display",
-                "Resize/rebind failed slot=$index generation=$surfaceGeneration",
-                error,
-            )
-            if (cinema) {
-                // A rejected cinema resize must retain the display and its task.
-                cinema = false
-                activeGeometry = profile.canvas
-                texture.setDefaultBufferSize(profile.canvas.width, profile.canvas.height)
-                runCatching { display.resize(profile.canvas.width, profile.canvas.height, profile.canvas.densityDpi) }
-                view.post { if (active && !suspended) onSurfaceTextureSizeChanged(texture, width, height) }
-            } else {
-                releaseDisplay("resize/rebind failed")
-                createDisplay(texture, width, height)
-            }
-        }
+        // Presentation changes cannot resize/recreate the producer display, even after a failed request.
+        // A task moving between the physical and virtual displays can still receive Android lifecycle events.
+        if (activeGeometry == null) activeGeometry = geometry
     }
 
     override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {

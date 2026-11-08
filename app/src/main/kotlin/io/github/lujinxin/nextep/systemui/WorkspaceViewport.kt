@@ -67,13 +67,18 @@ internal class WorkspaceViewport(
     var adaptive = true
     var quickExpanded = false
     var cinema = false
+    var cinemaPortrait = false
     private fun selected(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {
         val density = profile.densityDpi / 160f
-        val base = if (quickExpanded && !profile.geometry.isLandscape) profile.copy(geometry = profile.geometry.copy(
-            topHeight = (100 * density).toInt().coerceAtMost(profile.geometry.availableHeight / 4))) else profile
+        // Reserve the 48dp reopen target below the status/cutout band, never over an app.
+        val length = if (profile.geometry.isLandscape) profile.geometry.availableWidth else profile.geometry.availableHeight
+        val thickness = ((if (quickExpanded) 112 else 96) * density).toInt().coerceAtMost(length / 4)
+        val base = profile.copy(geometry = profile.geometry.copy(topHeight = maxOf(profile.geometry.topHeight, thickness)))
         val selected = selectedRail(base)
         val g = selected.geometry
         return when {
+            cinema && cinemaPortrait && !g.isLandscape -> selected.copy(geometry =
+                io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.portraitCinema(g), activeCount = activeCount)
             cinema && !g.isLandscape -> selected.copy(geometry = g.copy(railAtTop = true,
                 sidebarWidth = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.cinemaDepth(g, density)), activeCount = activeCount)
             adaptive -> selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount)

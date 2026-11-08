@@ -69,6 +69,10 @@ object TaskInfoCompat {
         return WindowState(displayId, bounds, windowingMode, resizeMode, densityDpi, token, vendorWindowed)
     }
 
+    fun readConfigurationOrientation(info: ActivityManager.RunningTaskInfo): Int? =
+        (readMember(info, listOf("configuration", "mConfiguration"), listOf("getConfiguration"))
+            as? android.content.res.Configuration)?.orientation?.takeIf { it in 1..2 }
+
     fun readUserId(info: ActivityManager.RunningTaskInfo): Int? = readInt(
         target = info,
         fieldNames = listOf("userId", "mUserId"),

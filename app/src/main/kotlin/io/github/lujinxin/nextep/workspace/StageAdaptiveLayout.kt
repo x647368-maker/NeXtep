@@ -17,6 +17,8 @@ internal object StageAdaptiveLayout {
             g.availableHeight - g.topHeight - (220 * density).toInt()).coerceAtLeast(2)
         return g.copy(sidebarWidth = depth.coerceIn(2, max))
     }
+    fun portraitCinema(g: WorkspaceGeometry): WorkspaceGeometry = g.copy(railAtTop = false,
+        sidebarWidth = (g.availableWidth * .34f).roundToInt().coerceIn(2, g.availableWidth - 1))
     fun cinemaDepth(g: WorkspaceGeometry, density: Float): Int =
         ((g.availableWidth - 16 * density) * 9f / 16f + 64 * density).roundToInt()
             .coerceIn(2, minOf(g.availableWidth - 1, g.availableHeight - g.topHeight - 2).coerceAtLeast(2))

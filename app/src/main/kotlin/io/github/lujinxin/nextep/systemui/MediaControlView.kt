@@ -312,8 +312,12 @@ class MediaControlView(
 
     private fun togglePlayback() {
         val controller = mediaController ?: return
-        val playing = controller.playbackState?.state == PlaybackState.STATE_PLAYING ||
-            controller.playbackState?.state == PlaybackState.STATE_BUFFERING
+        if (!io.github.x647368maker.atomicworkbench.display.TaskContinuityPolicy.canTransport(
+                io.github.x647368maker.atomicworkbench.display.TaskContinuityPolicy.Origin.USER_MEDIA_BUTTON,
+                controller.sessionToken, mediaController?.sessionToken)) return
+        val latestState = controller.playbackState ?: return
+        val playing = latestState.state == PlaybackState.STATE_PLAYING ||
+            latestState.state == PlaybackState.STATE_BUFFERING
         runCatching {
             if (playing) controller.transportControls.pause() else controller.transportControls.play()
         }.onFailure { NeXtepLog.warn("media_control", "Play/pause failed", it) }

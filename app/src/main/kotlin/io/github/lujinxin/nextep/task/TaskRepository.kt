@@ -66,6 +66,7 @@ class TaskRepository(context: Context) {
         val userId: Int?,
         val vendorWindowed: Boolean = false,
         val requestedOrientation: Int? = null,
+        val configurationOrientation: Int? = null,
     )
 
     private val activityManager = context.getSystemService(ActivityManager::class.java)
@@ -133,6 +134,7 @@ class TaskRepository(context: Context) {
             token = windowState.token,
             userId = TaskInfoCompat.readUserId(info),
             vendorWindowed = windowState.vendorWindowed,
+            configurationOrientation = TaskInfoCompat.readConfigurationOrientation(info),
             requestedOrientation = runCatching { info.javaClass.getField("topActivityInfo").get(info) as? android.content.pm.ActivityInfo }.getOrNull()?.screenOrientation,
         )
     }

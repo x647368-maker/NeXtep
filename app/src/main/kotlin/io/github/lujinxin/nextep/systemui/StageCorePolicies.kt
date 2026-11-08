@@ -17,10 +17,11 @@ internal object StageQuickPolicy {
 }
 
 internal class StageCinemaPolicy {
-    enum class Mode { AUTO, MANUAL, OFF }
+    enum class Mode { AUTO, MANUAL, LANDSCAPE, PORTRAIT, OFF }
     var mode = Mode.AUTO
     var task: Int? = null; private set
     private var manual = false
+    val isManual: Boolean get() = manual
     private var blocked = emptySet<Int>()
     private var candidate: Int? = null
     private var candidateSince = 0L
