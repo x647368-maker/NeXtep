@@ -3,6 +3,8 @@ package io.github.x647368maker.atomicworkbench.systemui
 import android.content.Context
 
 internal class StageQuickStore(context: Context) {
+    var layoutScope: String? = null
+    private fun layoutKey(field: String) = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.layoutKey(layoutScope, field)
     private val prefs = context.createDeviceProtectedStorageContext().getSharedPreferences("stage_core_v09", Context.MODE_PRIVATE)
     private var state: StageQuickState
         get() = StageQuickState.decode(prefs.getString("quick_state", null))
@@ -17,11 +19,11 @@ internal class StageQuickStore(context: Context) {
         get() = state.fixed
         set(v) { state = state.copy(fixed = v) }
     var mainPriority: Boolean
-        get() = prefs.getBoolean("main_priority", true)
-        set(v) { prefs.edit().putBoolean("main_priority", v).apply() }
+        get() = prefs.getBoolean(layoutKey("main_priority"), prefs.getBoolean("main_priority", true))
+        set(v) { prefs.edit().putBoolean(layoutKey("main_priority"), v).apply() }
     var adaptive: Boolean
-        get() = prefs.getBoolean("adaptive", true)
-        set(v) { prefs.edit().putBoolean("adaptive", v).apply() }
+        get() = prefs.getBoolean(layoutKey("adaptive"), prefs.getBoolean("adaptive", true))
+        set(v) { prefs.edit().putBoolean(layoutKey("adaptive"), v).apply() }
     var pins: List<String>
         get() = state.pins
         set(v) { state = state.copy(pins = StageQuickPolicy.normalize(v)) }

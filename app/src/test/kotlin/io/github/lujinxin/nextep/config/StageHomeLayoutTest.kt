@@ -4,8 +4,8 @@ import org.junit.Test
 
 class StageHomeLayoutTest {
     @Test fun threeGroupsMatchRequestedOrderWithoutLosingDestinations() {
-        assertEquals(listOf("主要功能","管理","高级"),StageHomeLayout.sections.map{it.title})
-        assertEquals(listOf("core","windows","groups","gestures","tile","feedback","about","diagnostics","help"),
+        assertEquals(listOf("工作台","系统","支持"),StageHomeLayout.sections.map{it.title})
+        assertEquals(listOf("windows","core","groups","gestures","tile","diagnostics","help","feedback","about"),
             StageHomeLayout.sections.flatMap{it.items}.map{it.page})
         assertEquals(listOf(4,3,2),StageHomeLayout.sections.map{it.items.size})
     }
@@ -17,8 +17,8 @@ class StageHomeLayoutTest {
     @Test fun normalTextHomeFitsReferenceViewportAndRowsRemainTouchable() {
         assertTrue(StageHomeLayout.ROW_DP>=48)
         val rows=9*StageHomeLayout.ROW_DP
-        val groups=3*(16+16+StageHomeLayout.GROUP_GAP_DP)+6
-        val total=20+StageHomeLayout.HEADER_DP+rows+groups+28
+        val groups=3*(StageHomeLayout.SECTION_TOP_DP+14+StageHomeLayout.GROUP_GAP_DP)+6
+        val total=12+StageHomeLayout.HEADER_DP+rows+groups+16+48
         assertTrue("Normal font content height $total dp",total<=760)
     }
 }

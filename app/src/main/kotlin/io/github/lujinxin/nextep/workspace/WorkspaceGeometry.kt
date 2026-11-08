@@ -73,7 +73,7 @@ data class WorkspaceGeometry(
     val sidebarLogicalHeight: Int get() = if (railAtTop) sidebarPhysicalHeight else if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight
 
     private val regionWidth: Int get() = if (railAtTop) availableWidth else availableWidth - if (isLandscape) topHeight else sidebarWidth
-    private val effectiveMainOverlap: Int get() = if (railAtTop && !isLandscape) minOf(mainTopOverlap, sidebarWidth - 1) else 0
+    private val effectiveMainOverlap: Int get() = if (railAtTop) minOf(mainTopOverlap, sidebarWidth - 1) else 0
     private val regionHeight: Int get() = if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap else availableHeight - if (isLandscape) sidebarWidth else topHeight
     val contentScale: Float get() = minOf(regionWidth.toFloat() / availableWidth, regionHeight.toFloat() / availableHeight)
     val contentWidth: Int get() = (availableWidth * contentScale).roundToInt().coerceAtLeast(1)

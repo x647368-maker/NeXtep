@@ -75,3 +75,16 @@ for path,sha in preserved.items():
  else:data=(root/path).read_bytes()
  assert hashlib.sha256(data).hexdigest()==sha,path
 print('All preserved top-card algorithms, real preview/input, corners and task engines match 0.9.3 byte-for-byte')
+
+# v0.9.5: state-local geometry preferences and native compact information architecture.
+assert 'StageDisplayPolicy.scope' in viewport and 'layout_state_v1:' in viewport
+assert 'selectLayoutScope(snapshot)' in viewport and 'layout_scopes_migrated_v1' in viewport
+assert 'prepareLayoutScope()' in host and 'viewport.selectedSidebarSide()' in host
+assert 'StageDisplayPolicy.layoutKey' in (k/'systemui/StageQuickStore.kt').read_text()
+assert 'postDelayed(notifyChanged, if (foldChange) 120L else 0L)' in viewport
+assert 'StageHomeLayout.contentWidth' in settings and 'versionName' in settings
+assert '基于 NeXtep 二次开发' in settings and 'StageHomeLayout.SECTION_TOP_DP' in settings
+for title in ['工作台','系统','支持','窗口布局','影音与快捷栏','启动手势','快捷开关','运行诊断']:
+ assert title in home,title
+assert 'MainFooterBackdrop' in host and 'transportControls' not in host
+print('Display-local layout/strategy migration, existing display listener fold settling, capped native settings columns and required home order checked')

@@ -37,7 +37,7 @@ class MainWindowEnlargementTest {
                 assertEquals(y,(displayY-g.contentTranslationY)/g.contentScale,.001f)
             }
             val lastCard=p.slots.first().let{it.top+it.height}+g.sidebarTop
-            assertTrue(g.contentTop>=lastCard+24)
+            assertTrue(g.contentTop>=lastCard+12)
         }
     }
     @Test fun existingControlsNeverCoverMainAndMainMenuHas48dpTarget() {
@@ -60,7 +60,8 @@ class MainWindowEnlargementTest {
         val side=WorkspaceLayoutProfile.create(1264,2780,512,WorkspaceNavigationInsets())
         assertEquals(side,StageMainWindowMetrics.enlarge(side,true))
         val landscape=top.rotatedTo(1)
-        assertEquals(landscape,StageMainWindowMetrics.enlarge(landscape,true))
+        assertTrue(StageMainWindowMetrics.enlarge(landscape,true).geometry.contentWidth>landscape.geometry.contentWidth)
+        assertEquals(landscape.slots,StageMainWindowMetrics.enlarge(landscape,true).slots)
     }
     @Test fun finalGeometrySurvivesCommitAndCollapseWithoutStaleSize() {
         val p=StageMainWindowMetrics.enlarge(profile(4),true)

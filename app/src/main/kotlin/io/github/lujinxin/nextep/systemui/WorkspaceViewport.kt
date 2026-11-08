@@ -16,6 +16,7 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceNavigationInset
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile
 import io.github.x647368maker.atomicworkbench.workspace.SystemServerWorkspaceBridge
 import kotlin.math.roundToInt
+import io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
 
 /** SystemUI records the physical viewport once per display configuration/manual mode. */
 internal class WorkspaceViewport(
@@ -56,11 +57,46 @@ internal class WorkspaceViewport(
     }.onFailure { NeXtepLog.warn("workspace_viewport", "Viewport storage unavailable", it) }.getOrNull()
     private val handler = Handler(Looper.getMainLooper())
     private var topRail = preferences?.getBoolean("rail_top", false) ?: false
+    private var layoutScope: String? = null
+    private var scopedSide = SystemServerWorkspaceBridge.sidebarSide(context)
+    private var migratedLayoutScopes = preferences?.getBoolean("layout_scopes_migrated_v1", false) ?: false
+    private val scopeChoices = mutableMapOf<String, StageDisplayPolicy.Choice>()
+    private fun selectLayoutScope(snapshot: Snapshot) {
+        val dpi = (snapshot.density * 160).roundToInt()
+        val scope = StageDisplayPolicy.scope(snapshot.width, snapshot.height, dpi)
+        if (scope == layoutScope) return
+        val key = "layout_state_v1:$scope"
+        val legacy = if (preferences?.contains("rail_top") == true) preferences.getBoolean("rail_top", false) else null
+        val saved = scopeChoices[scope] ?: StageDisplayPolicy.Choice.decode(preferences?.getString(key, null))
+        val choice = saved ?: StageDisplayPolicy.initial(snapshot.width, snapshot.height, dpi,
+            migratedLayoutScopes, legacy, scopedSide)
+        layoutScope = scope; topRail = choice.top; scopedSide = choice.side
+        scopeChoices[scope] = choice; migratedLayoutScopes = true
+        runCatching { preferences?.edit()?.putString(key, choice.encode())
+            ?.putBoolean("layout_scopes_migrated_v1", true)?.apply() }
+            .onFailure { NeXtepLog.warn("workspace_viewport", "Unable to store display layout", it) }
+    }
+    private fun saveLayoutChoice() {
+        val scope = layoutScope ?: return
+        val choice = StageDisplayPolicy.Choice(topRail, scopedSide)
+        scopeChoices[scope] = choice
+        runCatching { preferences?.edit()?.putString("layout_state_v1:$scope", choice.encode())
+            ?.putBoolean("rail_top", topRail)?.apply() }
+            .onFailure { NeXtepLog.warn("workspace_viewport", "Unable to save display choice", it) }
+    }
+    fun prepareLayoutScope(): String {
+        refresh()
+        return checkNotNull(layoutScope)
+    }
+    fun selectedSidebarSide(): SidebarSide = scopedSide
+    fun setSidebarSide(side: SidebarSide) {
+        prepareLayoutScope(); scopedSide = side; saveLayoutChoice()
+    }
     fun isTopRail(): Boolean = topRail
     fun setTopRail(value: Boolean) {
+        prepareLayoutScope()
         if (topRail == value) return
-        topRail = value
-        preferences?.edit()?.putBoolean("rail_top", value)?.apply()
+        topRail = value; saveLayoutChoice()
         SystemServerWorkspaceBridge.publishLayout(context, layout())
     }
     var activeCount = 4
@@ -118,7 +154,11 @@ internal class WorkspaceViewport(
                 refresh()
                 if (cached != previous) {
                     handler.removeCallbacks(notifyChanged)
-                    handler.post(notifyChanged)
+                    val foldChange = previous != null && cached?.let {
+                        !StageDisplayPolicy.sameCanvas(previous.width, previous.height, (previous.density*160).roundToInt(),
+                            it.width, it.height, (it.density*160).roundToInt())
+                    } == true
+                    handler.postDelayed(notifyChanged, if (foldChange) 120L else 0L)
                 }
             }
         }, handler) }.onFailure {
@@ -243,6 +283,7 @@ internal class WorkspaceViewport(
     }
 
     private fun updateSnapshot(snapshot: Snapshot, key: String?, saved: WorkspaceLayoutProfile? = null) {
+        selectLayoutScope(snapshot)
         if (cached != snapshot || profile == null) {
             profile = saved ?: WorkspaceLayoutProfile.create(snapshot.width, snapshot.height,
                 (snapshot.density * 160).roundToInt(), snapshot.navigationInsets, snapshot.displayRotation)

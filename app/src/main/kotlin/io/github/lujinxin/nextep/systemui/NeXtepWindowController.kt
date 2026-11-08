@@ -496,6 +496,7 @@ class NeXtepWindowController(
         clearHomePreview()
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
+        viewport.setSidebarSide(side)
         sidebarSide = side
         val geometry = geometry()
         applyWindowGeometry(geometry)
@@ -523,6 +524,7 @@ class NeXtepWindowController(
     }
 
     fun stageSettingsCommand(intent: Intent): android.os.Bundle = runCatching {
+        syncCoreViewport()
         val command = intent.getStringExtra(io.github.x647368maker.atomicworkbench.trigger.StageControlContract.COMMAND)
         when (command) {
             "query" -> Unit
@@ -576,7 +578,7 @@ class NeXtepWindowController(
                 // Route through the workspace owner so native geometry and input
                 // mapping change together. Persist side even while inactive.
                 if (workspaceVisible && !suspended) onSidebarSideRequested(side)
-                else { sidebarSide = side; SystemServerWorkspaceBridge.publish(context, false, geometry()) }
+                else { viewport.setSidebarSide(side); sidebarSide = side; SystemServerWorkspaceBridge.publish(context, false, geometry()) }
             }
             else -> error("未知设置操作")
         }
@@ -870,7 +872,7 @@ class NeXtepWindowController(
                 params.width = minOf(dp(64).toInt(), geometry.contentWidth)
                 params.height = dp(24).toInt()
                 params.x = geometry.contentLeft + (geometry.contentWidth - params.width) / 2
-                params.y = if (geometry.mainTopOverlap > 0 && geometry.railAtTop && !geometry.isLandscape && !sidebarCollapsed) {
+                params.y = if (geometry.mainTopOverlap > 0 && geometry.railAtTop && !sidebarCollapsed) {
                     val box = io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.mainHandle(geometry, context.resources.displayMetrics.density)
                     params.x = box.left; params.width = box.width; params.height = box.height
                     box.top
@@ -998,6 +1000,8 @@ class NeXtepWindowController(
     private fun showStageMessage(value: String) = android.widget.Toast.makeText(context, value, android.widget.Toast.LENGTH_LONG).show()
 
     private fun syncCoreViewport() {
+        core.layoutScope = viewport.prepareLayoutScope()
+        sidebarSide = viewport.selectedSidebarSide()
         viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0
         viewport.adaptive = core.adaptive
         viewport.mainPriority = core.mainPriority
@@ -1173,6 +1177,7 @@ class NeXtepWindowController(
     }
 
     private fun showMainMenu() {
+        syncCoreViewport()
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val anchor = records.firstOrNull { it.title == "StageMainHandle" }?.view ?: return
         AtomicPopupMenu.show(context, anchor, listOf(
@@ -1182,7 +1187,7 @@ class NeXtepWindowController(
             },
             (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
             (if (core.mainPriority) "完整显示布局" else "主窗口优先布局") to {
-                core.mainPriority = !core.mainPriority; syncCoreViewport(); onViewportChanged()
+                syncCoreViewport(); core.mainPriority = !core.mainPriority; syncCoreViewport(); onViewportChanged()
             },
             "影音布局与自动模式" to { showCinemaMenu(anchor) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
@@ -1964,7 +1969,7 @@ class NeXtepWindowController(
         val panel = geometry.rotatedTo(0)
         val background = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.sidebarLeft, panel.sidebarTop,
             frostStrength, wallpaperRotation, panel.displayRotation)
-        val visibleBackground = if (geometry.mainTopOverlap > 0 && geometry.railAtTop && !geometry.isLandscape)
+        val visibleBackground = if (geometry.mainTopOverlap > 0 && geometry.railAtTop)
             MainFooterBackdrop(background, Rect(geometry.contentLeft - geometry.sidebarLeft,
                 geometry.contentTop - geometry.sidebarTop, geometry.contentRight - geometry.sidebarLeft,
                 geometry.sidebarPhysicalHeight)) else background

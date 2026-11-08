@@ -38,6 +38,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var windows = JSONArray()
     private var activeId: String? = null
     private var status = "正在连接系统组件"
+    private val versionName by lazy { runCatching { UpdateCoordinator.installed(activity).versionName }.getOrNull().orEmpty() }
     private var body: LinearLayout? = null
     private var stateText: TextView? = null
     private var master: Switch? = null
@@ -67,7 +68,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             minimumHeight = dp(if (page == "home") StageHomeLayout.ROW_DP else 62); setPadding(dp(18), dp(if (page == "home") 10 else 12), dp(18), dp(if (page == "home") 10 else 12))
             if (icon != null) addView(if (icon == "stage") ImageView(activity).apply {
                 setImageResource(R.drawable.ic_stage_manager_apple); scaleType = ImageView.ScaleType.FIT_CENTER
-            } else StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(28)).apply { marginEnd = dp(16) })
+            } else StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(16) })
             val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             words.addView(label(title, 16f, if (icon == "exit") Color.rgb(220, 65, 60) else ink))
             if (!detail.isNullOrBlank()) words.addView(label(detail, 12f, secondary).apply {
@@ -98,11 +99,21 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         view.removeAllViews()
         view.requestFocus()
         val column = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 20 else 8), dp(16), dp(28))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 12 else 8), dp(16), dp(if (target == "home") 16 else 28))
+        }
+        val columnHost = FrameLayout(activity).apply {
+            addView(column, FrameLayout.LayoutParams(-1, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+            addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->
+                val available=r-l
+                if (available>0) {
+                    val targetWidth=StageHomeLayout.contentWidth(available, activity.resources.displayMetrics.density)
+                    if (column.layoutParams.width!=targetWidth) column.layoutParams=(column.layoutParams as FrameLayout.LayoutParams).apply { width=targetWidth }
+                }
+            }
         }
         val scroll = ScrollView(activity).apply {
             isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
-            addView(column, ViewGroup.LayoutParams(-1, -2))
+            addView(columnHost, ViewGroup.LayoutParams(-1, -2))
         }
         view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (target == "home") {
@@ -111,7 +122,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 setPadding(dp(10), 0, dp(10), 0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
             }
             val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-            words.addView(label("台前调度", 26f).apply { typeface = Typeface.DEFAULT_BOLD })
+            words.addView(label("台前调度", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
             stateText = label(homeState(), 13f, secondary).apply { setPadding(0, dp(6), 0, 0) }
             words.addView(stateText)
             header.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
@@ -123,12 +134,12 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与常用应用", "windows" to "窗口与侧栏", "groups" to "工作组", "gestures" to "手势", "tile" to "控制中心", "help" to "使用与退出", "diagnostics" to "运行与诊断", "about" to "关于台前调度", "feedback" to "建议与反馈")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回设置"; setOnClickListener { open("home") }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
-            header.addView(label(titles[target] ?: "设置", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
+            header.addView(label(titles[target] ?: "设置", 24f).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             column.addView(header)
             when (target) {
                 "core" -> corePage(column)
@@ -143,14 +154,14 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             }
         }
     }
-    private fun homeState(): String = if (connected) { if (active) "已开启" else "已关闭" } else status
+    private fun homeState(): String = "${if (connected) { if (active) "已开启" else "已关闭" } else "待连接"} · $versionName"
     private fun renderHome() {
         val root = body ?: return; root.removeAllViews()
         if (UpdateCoordinator.available(activity) != null)
             row(group(root), "发现台前调度新版本", icon = "info") { open("about") }
         for (section in StageHomeLayout.sections) {
             root.addView(label(section.title, 12f, secondary).apply {
-                setPadding(dp(16), dp(16), dp(16), 0)
+                setPadding(dp(16), dp(StageHomeLayout.SECTION_TOP_DP), dp(16), 0)
             })
             val card = group(root)
             for (item in section.items) row(card, item.name, icon = item.icon, color = blue) {
@@ -158,6 +169,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 if (item.page in listOf("core", "windows", "groups")) refresh()
             }
         }
+        root.addView(label("ZMW小武 × GPT\n基于 NeXtep 二次开发", 11f, secondary).apply {
+            gravity=Gravity.CENTER; setLineSpacing(dp(3).toFloat(),1f); setPadding(0,dp(14),0,dp(6))
+        })
     }
     private fun windows(root: LinearLayout) {
         val manage = group(root)
@@ -174,8 +188,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         val layout = group(root)
         row(layout, "主窗口显示策略", if (mainPriority) "主窗口优先（推荐）" else "完整显示 · 原 macOS 风格", "windows") {
-            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：回收控制区留白，等比放大主窗", "完整显示：保留原主窗与卡片布局")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
+            MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：安全空间最大化，保持完整画面", "完整显示：保留原主窗与卡片布局")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
         }
+        row(layout, "自动适配", "按实际屏幕状态与小窗数量计算；每个屏幕状态分别保存排列和显示策略", "windows", end = toggle(adaptive) { command(if (it) "adaptive_on" else "adaptive_off") })
         row(layout, "顶部横排", "小窗横向排列在主窗上方", "windows") { command("layout_top") }
         row(layout, "侧边纵排", "小窗纵向排列在主窗旁", "windows") { command("layout_side") }
         val side = group(root)
@@ -184,7 +199,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val visibility = group(root)
         row(visibility, "收起侧栏", "扩大当前主应用", "windows") { command("collapse") }
         row(visibility, "展开侧栏", "显示已有侧窗", "windows") { command("expand") }
-        root.addView(hint("主窗上方“⋯”可切换全屏、切换布局、替换和关闭主窗。\n顶部小窗调整展示位置；活动显示器保留原分辨率和 DPI；点击小窗切换为主窗，在小窗菜单选择“在小窗中操作”后可尝试直接触摸和滑动。应用与系统支持情况可能不同。\n通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
+        root.addView(hint("主窗“⋯”可切换全屏、切换布局、替换和关闭主窗。\n内外屏与横竖屏分别保存排列、侧栏方向和显示策略。主窗优先使用原始画面可安全显示的最大尺寸；任务比例不合适时仍有留白。顶部小窗保持原尺寸；活动显示器保留原分辨率和 DPI；点击小窗切换为主窗，在小窗菜单选择“在小窗中操作”后可尝试直接触摸和滑动。应用与系统支持情况可能不同。\n通过加号添加小窗，通过小窗“⋯”替换或关闭。边缘把手只收起或展开侧栏，不会退出台前调度。"))
     }
     private fun corePage(root: LinearLayout) {
         val video = group(root)
@@ -231,16 +246,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.9.4 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.9.5 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.9.4\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：0.9.5\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度 · Atomic Workbench", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.9.4", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.9.5", 13f, secondary)); root.addView(hero)
         val credits = group(root)
         row(credits, "ZMW小武 × GPT", "二次开发", "apps")
         row(credits, "需求策划、交互设计与真机测试", "ZMW小武")
@@ -431,6 +446,7 @@ private class StageSettingsIcon(context: Context, private val kind: String, colo
         fun rect(l: Float, t: Float, r: Float, b: Float) = canvas.drawRoundRect(l, t, r, b, 1.5f, 1.5f, paint)
         when (kind) {
             "stage", "windows" -> { rect(9f, 3f, 22f, 21f); for (y in listOf(4f, 10f, 16f)) rect(2f, y, 5f, y + 3) }
+            "feedback" -> { rect(3f, 3f, 21f, 17f); canvas.drawLine(3f, 17f, 3f, 21f, paint); canvas.drawLine(3f, 21f, 8f, 17f, paint); canvas.drawLine(8f, 9f, 16f, 9f, paint) }
             "groups" -> { rect(3f, 3f, 17f, 17f); canvas.drawLine(8f, 21f, 21f, 21f, paint); canvas.drawLine(21f, 8f, 21f, 21f, paint) }
             "apps" -> { for (x in listOf(3f, 14f)) for (y in listOf(3f, 14f)) rect(x, y, x + 7, y + 7) }
             "tile" -> { rect(2f, 4f, 22f, 10f); rect(2f, 14f, 22f, 20f); canvas.drawCircle(7f, 7f, 1f, paint); canvas.drawCircle(17f, 17f, 1f, paint) }
