@@ -46,13 +46,14 @@ class LivePreviewInstrumentation : Instrumentation() {
                     card=if(legacy) FrameLayout(activity).apply {
                         clipToOutline=true
                         outlineProvider=object: ViewOutlineProvider() {
-                            override fun getOutline(v: View,o: Outline) { o.setRoundRect(0,0,v.width,v.height,16f) }
+                            override fun getOutline(v: View,o: Outline) { o.setRoundRect(0,0,v.width,v.height,io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(v.width.toFloat(),v.height.toFloat(),v.resources.displayMetrics.density)) }
                         }
                     } else TaskSwitcherView(activity,0).apply {
                         for(i in 0 until childCount) if(getChildAt(i) is TextView) getChildAt(i).visibility=View.GONE
                     }
                     texture=if(legacy) TextureView(activity).also { card.addView(it,FrameLayout.LayoutParams(-1,-1)) }
                         else (card as TaskSwitcherView).textureView
+                    texture.alpha=1f // Test a live occupied producer, not the initial Empty state.
                     root.addView(card,FrameLayout.LayoutParams(240,520).apply { leftMargin=80;topMargin=100 })
                     texture.surfaceTextureListener=object: TextureView.SurfaceTextureListener {
                         override fun onSurfaceTextureAvailable(st: SurfaceTexture,w: Int,h: Int) {
@@ -126,6 +127,7 @@ class LivePreviewInstrumentation : Instrumentation() {
                 val box=boxes[i];val source=sources[i]
                 val card=TaskSwitcherView(activity,i)
                 for(c in 0 until card.childCount) if(card.getChildAt(c) is TextView) card.getChildAt(c).visibility=View.GONE
+                card.textureView.alpha=1f // Occupied test producer.
                 cards.add(card)
                 root.addView(card,FrameLayout.LayoutParams(box.width,box.height).apply {
                     leftMargin=if(top) box.left else (g.sidebarWidth-box.width)/2
