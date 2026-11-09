@@ -160,7 +160,7 @@ class TaskRepository(context: Context) {
     }
 
     private companion object {
-        @SuppressLint("BlockedPrivateApi")
+        @get:SuppressLint("BlockedPrivateApi")
         private val displayTaskQuery: Pair<Any, java.lang.reflect.Method>? by lazy {
             runCatching {
                 val type = Class.forName("android.app.ActivityTaskManager")

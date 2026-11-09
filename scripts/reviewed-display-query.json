@@ -3,7 +3,7 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/task/TaskRepository.kt": {
       "baseline_sha256": "6bfa556c6ae6e51c28c7aaa8f1d53fe655808ea96bbb084a3f39b491a5ec84b2",
-      "updated_sha256": "a39676fcd05ba844ac97d1d9c887e1521cb6bf8d31a2de099381d5b14c77df9f",
+      "updated_sha256": "52f69a913f65120d3196e89b891eaf4c6ba6e2347ddadc9dc7923efddc6ce229",
       "patches": [
         {
           "before": "    fun findTaskForComponent(",
@@ -11,7 +11,7 @@
         },
         {
           "before": "        const val MAX_TASK_QUERY = 64",
-          "after": "        @SuppressLint(\"BlockedPrivateApi\")\n        private val displayTaskQuery: Pair<Any, java.lang.reflect.Method>? by lazy {\n            runCatching {\n                val type = Class.forName(\"android.app.ActivityTaskManager\")\n                val instance = checkNotNull(type.getDeclaredMethod(\"getInstance\").invoke(null))\n                val method = type.getDeclaredMethod(\"getTasks\", Int::class.javaPrimitiveType,\n                    Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,\n                    Int::class.javaPrimitiveType).apply { isAccessible = true }\n                instance to method\n            }.getOrNull()\n        }\n        const val MAX_TASK_QUERY = 64"
+          "after": "        @get:SuppressLint(\"BlockedPrivateApi\")\n        private val displayTaskQuery: Pair<Any, java.lang.reflect.Method>? by lazy {\n            runCatching {\n                val type = Class.forName(\"android.app.ActivityTaskManager\")\n                val instance = checkNotNull(type.getDeclaredMethod(\"getInstance\").invoke(null))\n                val method = type.getDeclaredMethod(\"getTasks\", Int::class.javaPrimitiveType,\n                    Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,\n                    Int::class.javaPrimitiveType).apply { isAccessible = true }\n                instance to method\n            }.getOrNull()\n        }\n        const val MAX_TASK_QUERY = 64"
         }
       ]
     },
