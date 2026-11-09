@@ -670,6 +670,7 @@ class SlotTaskCoordinator(
                 handler.post { completePendingAdd() }
                 handler.postDelayed({
                     if(generation==addGeneration && pendingAddIntent!=null) {
+                        runCatching {
                         reconcile("add deadline")
                         completePendingAdd()
                         if(pendingAddIntent!=null) {
@@ -679,6 +680,10 @@ class SlotTaskCoordinator(
                             NeXtepLog.warn("slot_add",reason)
                             callback?.invoke(reason)
                         }
+                        }.onFailure { error ->
+                            NeXtepLog.warn("slot_add", "Add deadline recovery failed", error)
+                            cancelPendingAdd("小窗恢复失败："+(error.message ?: "系统任务服务暂不可用"))
+                        }
                     }
                 },2500L)
             }
@@ -686,6 +691,7 @@ class SlotTaskCoordinator(
         Unit
     }
     private fun completePendingAdd() {
+        runCatching {
         val intent=pendingAddIntent ?: return
         if(!active || suspended) { cancelPendingAdd("工作区已退出或挂起");return }
         if(!isGroupRestoreReady()) return
@@ -695,6 +701,10 @@ class SlotTaskCoordinator(
         val callback=pendingAddFailure
         pendingAddIntent=null;pendingAddFailure=null;addGeneration++
         replaceWindow(decision.index,intent).onFailure { callback?.invoke(it.message ?: "应用未打开") }
+        }.onFailure { error ->
+            NeXtepLog.warn("slot_add", "Surface-ready recovery failed", error)
+            cancelPendingAdd("小窗恢复失败："+(error.message ?: "系统任务服务暂不可用"))
+        }
     }
     private fun cancelPendingAdd(reason: String) {
         val callback=pendingAddFailure

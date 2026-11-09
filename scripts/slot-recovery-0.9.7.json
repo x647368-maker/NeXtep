@@ -2,5 +2,5 @@
   "app/src/main/kotlin/io/github/lujinxin/nextep/display/TaskSwitcherView.kt": "31ef30c9822ea94614b79c0c5ec7327b4569eeaf13f7d3831ae5f3626a4746e0",
   "app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt": "5d6ee5ac7d61e8093edf2b844f70db788c1789357563c44949bb2c03f7ab576a",
   "app/src/main/kotlin/io/github/lujinxin/nextep/framework/WindowCornerPolicy.kt": "49d0347a8bf0d0fc9e3e8e47c677ebb830aadfba9b86efce9883d27d581fe5f9",
-  "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": "5b5096bfb167c3a7ec71085423ae38644fd493bc3061974838a825fbfda9712b"
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": "f2eb14af6262fa8c63a28bd09607ccb351148327052085cb1a43ceea779d1a7b"
 }
