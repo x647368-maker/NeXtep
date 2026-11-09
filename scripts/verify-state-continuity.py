@@ -62,15 +62,16 @@ assert '搜索设置项' not in settings and 'TextWatcher' not in settings and '
 assert 'StageHomeLayout.sections' in settings and '发现台前调度新版本' in settings
 assert 'setPositiveButton("退出")' in settings and 'performSetStage(false)' in settings
 assert 'MainFooterBackdrop' in host and 'mainInputRegionReady = sidebarTouchRegionReady' in host
-assert 'StageMainWindowMetrics.enlarge' in viewport
+assert 'StagePresentationPolicy.apply' in viewport and 'StageMainWindowMetrics.enlarge' in (k/'workspace/StagePresentationPolicy.kt').read_text()
 assert 'clipOutRect(main)' in (k/'systemui/MainFooterBackdrop.kt').read_text()
-assert 'it.mainTopOverlap' in (k/'workspace/SystemServerWorkspaceBridge.kt').read_text()
+assert 'WorkspaceGeometryCodec.encode(it)' in (k/'workspace/SystemServerWorkspaceBridge.kt').read_text()
 print('Compact native home, confirmed exit, main/background/input geometry and safe input-gated fallback checked')
 
 import hashlib
 preserved=json.loads((root/'scripts/preserved-top-cards-0.9.3.json').read_text())
 preserved.update(json.loads((root/'scripts/visual-repair-0.9.6.json').read_text()))
 preserved.update(json.loads((root/'scripts/slot-recovery-0.9.7.json').read_text()))
+preserved.update(json.loads((root/'scripts/transform-repair-0.9.8.json').read_text()))
 for path,sha in preserved.items():
  if path=='profile_card_section_sha256':
   text=(k/'workspace/WorkspaceLayoutProfile.kt').read_text();data=text[text.index('    val canvas ='):text.index('    fun geometry(')].encode()
@@ -90,3 +91,11 @@ for title in ['工作台','系统','支持','窗口布局','影音与快捷栏',
  assert title in home,title
 assert 'MainFooterBackdrop' in host and 'transportControls' not in host
 print('Display-local layout/strategy migration, existing display listener fold settling, capped native settings columns and required home order checked')
+
+# v0.9.8 source/destination separation is shared by each existing fitting owner.
+assert '0, 0, geometry.screenWidth, geometry.screenHeight' in (k/'framework/TaskSurfaceCompat.kt').read_text()
+assert 'Rect(0, 0, geometry.screenWidth, geometry.screenHeight)' in (k/'systemserver/WorkspaceTaskSurfaceHook.kt').read_text()
+assert 'WorkspaceGeometryCodec.encode(it)' in (k/'workspace/SystemServerWorkspaceBridge.kt').read_text()
+assert 'it.mainInset' not in host # geometry is consumed through shared metrics, not independent knobs
+assert 'StageWindowTouchRegion.add' in (k/'systemui/StageQuickBarView.kt').read_text()
+print('Full-source crop, shared margin snapshot and window-local chrome input boundaries checked')

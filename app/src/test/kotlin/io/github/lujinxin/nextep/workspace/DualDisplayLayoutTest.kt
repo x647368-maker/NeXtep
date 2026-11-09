@@ -19,24 +19,17 @@ class DualDisplayLayoutTest {
         val normal=b.copy(geometry=StageAdaptiveLayout.rail(g,count,d),activeCount=count)
         return StageAdaptiveLayout.mainPriority(normal,count)
     }
-    /** Frozen 0.9.4 presentation for numerical before/after comparisons, not a device assertion. */
-    private fun baseline094(p:WorkspaceLayoutProfile):WorkspaceLayoutProfile {
-        val g=p.geometry;if(!g.railAtTop||g.isLandscape||p.activeCount==0)return p
-        val d=p.densityDpi/160f;val body=p.slots.first().let{it.top+it.height}
-        val overlap=(g.sidebarPhysicalHeight-body-(8*d).roundToInt()).coerceAtLeast(0)
-        if(overlap==0)return p
-        val large=g.copy(mainTopOverlap=overlap);val margin=(56*d).roundToInt()
-        return if(large.contentLeft-large.availableLeft<margin||large.availableRight-large.contentRight<margin)p else p.copy(geometry=large)
-    }
+    /** Complete current strategy is the safe no-overlap comparison, not historical pixels. */
+    private fun completePresentation(p:WorkspaceLayoutProfile)=StagePresentationPolicy.apply(p,false,true)
     @Test fun fiveDisplayStatesKeepCardsAndImproveOrPreserveActualContent() {
         for(device in devices)for(count in 0..4)for(top in listOf(true,false)) {
-            val p=profile(device,count,top);val old=baseline094(p);val next=StageMainWindowMetrics.enlarge(p,true);val g=next.geometry
+            val p=profile(device,count,top);val old=completePresentation(p);val next=StageMainWindowMetrics.enlarge(p,true);val g=next.geometry
             assertEquals(p.slots,next.slots);assertEquals(p.canvas,next.canvas);assertEquals(p.source,next.source)
             assertEquals(p.geometry.sidebarTop,g.sidebarTop);assertEquals(p.geometry.sidebarPhysicalWidth,g.sidebarPhysicalWidth)
             assertTrue("${device.name}/$count/$top",g.contentWidth>=old.geometry.contentWidth && g.contentHeight>=old.geometry.contentHeight)
             assertTrue(g.contentLeft>=g.availableLeft && g.contentRight<=g.availableRight && g.contentBottom<=g.availableBottom)
-            assertEquals(g.availableWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
-            assertEquals(g.availableHeight*g.contentScale,g.contentHeight.toFloat(),.51f)
+            assertEquals(g.screenWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
+            assertEquals(g.screenHeight*g.contentScale,g.contentHeight.toFloat(),.51f)
             assertEquals(next,WorkspaceLayoutProfile.decode(next.encode()))
             if(top && count==4) {
                 val area=g.contentWidth.toLong()*g.contentHeight
@@ -60,15 +53,14 @@ class DualDisplayLayoutTest {
             val app=StageTopLayoutMetrics.Box(g.contentLeft,g.contentTop,g.contentWidth,g.contentHeight)
             val controls=StageTopLayoutMetrics.actions(g.sidebarPhysicalWidth,g.sidebarPhysicalHeight,d)
             val menu=StageMainWindowMetrics.mainHandle(g,d)
-            listOf(menu,controls.add.copy(left=controls.add.left+g.sidebarLeft,top=controls.add.top+g.sidebarTop),
-                controls.collapse.copy(left=controls.collapse.left+g.sidebarLeft,top=controls.collapse.top+g.sidebarTop)).forEach {
+            listOf(menu,StageTopLayoutMetrics.Box(g.availableRight-(56*d).toInt(),g.availableTop+(4*d).toInt(),(48*d).toInt(),(48*d).toInt())).forEach {
                 assertFalse("${device.name}: $it vs $app",it.overlaps(app));assertTrue(it.top>=g.availableTop && it.bottom<=g.availableBottom)
             }
-            val x=g.availableRight*g.contentScale+g.contentTranslationX
-            val y=g.availableBottom*g.contentScale+g.contentTranslationY
+            val x=g.screenWidth*g.contentScale+g.contentTranslationX
+            val y=g.screenHeight*g.contentScale+g.contentTranslationY
             assertEquals(g.contentRight.toFloat(),x,.51f);assertEquals(g.contentBottom.toFloat(),y,.51f)
-            assertEquals(g.availableRight.toFloat(),(x-g.contentTranslationX)/g.contentScale,.001f)
-            assertEquals(g.availableBottom.toFloat(),(y-g.contentTranslationY)/g.contentScale,.001f)
+            assertEquals(g.screenWidth.toFloat(),(x-g.contentTranslationX)/g.contentScale,.001f)
+            assertEquals(g.screenHeight.toFloat(),(y-g.contentTranslationY)/g.contentScale,.001f)
         }
     }
     @Test fun foldRoundTripRestoresGeometryWithoutReusingAbsolutePixels() {

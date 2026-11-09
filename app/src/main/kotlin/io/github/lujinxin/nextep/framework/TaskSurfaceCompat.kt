@@ -701,7 +701,7 @@ object TaskSurfaceCompat {
     }
 
     private fun sourceCrop(geometry: WorkspaceGeometry) = Rect(
-        geometry.availableLeft, geometry.availableTop, geometry.availableRight, geometry.availableBottom,
+        0, 0, geometry.screenWidth, geometry.screenHeight,
     )
 
     private fun setCrop(transaction: Any, leash: Any, crop: Rect?) {

@@ -49,7 +49,7 @@ class LiveCardRegressionTest {
     @Test fun geometryRecordRevisionRejectsOldButPreservesCurrent() {
         val p=profile()
         assertEquals(p, WorkspaceLayoutProfile.decode(p.encode()))
-        assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("17,","16,")))
+        assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("18,","17,")))
     }
     @Test fun measuredRegressionTableUsesActualKotlinPolicies() {
         val dpi=512;val density=3.2f

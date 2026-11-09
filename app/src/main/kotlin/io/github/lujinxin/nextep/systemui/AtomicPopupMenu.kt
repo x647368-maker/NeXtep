@@ -15,16 +15,18 @@ import android.widget.TextView
  * with dark-theme foregrounds on ColorOS. Use the same readable menu for both actions
  * and saved group selection, independent of the host's day/night theme. */
 internal object AtomicPopupMenu {
+    private var active: PopupWindow? = null
     fun show(context: Context, anchor: View, items: List<Pair<String, () -> Unit>>) {
         if (items.isEmpty()) return
+        active?.dismiss()
         val density = context.resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
         val screen = context.resources.displayMetrics
-        val width = minOf(dp(220), (screen.widthPixels * 0.55f).toInt()).coerceAtLeast(1)
+        val width = minOf(dp(300), screen.widthPixels-dp(16)).coerceAtLeast(1)
         val rowHeight = dp(48)
         val padding = dp(6)
         val height = minOf(rowHeight * items.size + padding * 2,
-            (screen.heightPixels * 0.55f).toInt()).coerceAtLeast(1)
+            (screen.heightPixels * 0.75f).toInt()).coerceAtLeast(1)
         val background = GradientDrawable().apply {
             setColor(Color.rgb(30, 35, 44))
             cornerRadius = dp(12).toFloat()
@@ -51,11 +53,12 @@ internal object AtomicPopupMenu {
             rows.addView(TextView(context).apply {
                 text = label
                 contentDescription = label
-                textSize = 16f
+                textSize = 15f
+                minHeight = rowHeight
                 setTextColor(Color.WHITE)
                 setBackgroundColor(Color.rgb(30, 35, 44))
                 gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setPadding(dp(14), 0, dp(14), 0)
+                setPadding(dp(14), dp(6), dp(14), dp(6))
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
@@ -63,7 +66,7 @@ internal object AtomicPopupMenu {
                     // Finish dismissing the action menu before opening the group list.
                     anchor.post { action() }
                 }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, rowHeight))
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val location = IntArray(2)
         anchor.getLocationOnScreen(location)
@@ -71,6 +74,8 @@ internal object AtomicPopupMenu {
             .coerceIn(0, (screen.widthPixels - width).coerceAtLeast(0))
         val y = (location[1] + anchor.height).coerceIn(0,
             (screen.heightPixels - height).coerceAtLeast(0))
+        active=popup
+        popup.setOnDismissListener {if(active===popup)active=null}
         popup.showAtLocation(anchor, Gravity.TOP or Gravity.LEFT, x, y)
     }
 }

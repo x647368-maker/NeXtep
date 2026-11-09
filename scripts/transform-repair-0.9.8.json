@@ -1,0 +1,8 @@
+{
+  "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageAdaptiveLayout.kt": "b33f891fc08fe01933c793faa487495e3a3d64af67e315ea8c9dab4755a4bc86",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt": "5d6ee5ac7d61e8093edf2b844f70db788c1789357563c44949bb2c03f7ab576a",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/TaskSwitcherView.kt": "90cf8e4a85f29f021eb1799272ca625567a577e7633cdd544411dddf4e872a38",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt": "b432f9a603f9e645a3b5ae7a8e5e5b6b9201a5b47c3a8a931da1f1540815254a",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": "f2eb14af6262fa8c63a28bd09607ccb351148327052085cb1a43ceea779d1a7b",
+  "app/src/main/kotlin/io/github/lujinxin/nextep/framework/WindowCornerPolicy.kt": "49d0347a8bf0d0fc9e3e8e47c677ebb830aadfba9b86efce9883d27d581fe5f9"
+}

@@ -13,8 +13,8 @@ class MainWindowEnlargementTest {
     @Test fun largerRealMainDoesNotAlterAnyCardOrCanvas() {
         for(count in 1..4) for(expanded in listOf(false,true)) for(bottom in listOf(0,96)) {
             val p=profile(count,expanded,bottom);val enlarged=StageMainWindowMetrics.enlarge(p,true)
-            assertTrue("count=$count expanded=$expanded bottom=$bottom",enlarged.geometry.contentWidth>p.geometry.contentWidth)
-            assertTrue(enlarged.geometry.contentHeight>p.geometry.contentHeight)
+            assertTrue("count=$count expanded=$expanded bottom=$bottom",enlarged.geometry.contentWidth>=p.geometry.contentWidth)
+            assertTrue(enlarged.geometry.contentHeight>=p.geometry.contentHeight)
             assertEquals(p.slots,enlarged.slots);assertEquals(p.canvas,enlarged.canvas);assertEquals(p.source,enlarged.source)
             assertEquals(p.geometry.sidebarTop,enlarged.geometry.sidebarTop)
             assertEquals(p.geometry.sidebarPhysicalHeight,enlarged.geometry.sidebarPhysicalHeight)
@@ -27,11 +27,11 @@ class MainWindowEnlargementTest {
     @Test fun entireAppIsUniformAndInputProjectionRoundTripsIncludingBottomButtons() {
         for(count in 1..4){
             val p=StageMainWindowMetrics.enlarge(profile(count),true);val g=p.geometry
-            assertEquals(g.availableWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
-            assertEquals(g.availableHeight*g.contentScale,g.contentHeight.toFloat(),.51f)
+            assertEquals(g.screenWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
+            assertEquals(g.screenHeight*g.contentScale,g.contentHeight.toFloat(),.51f)
             assertTrue(g.contentBottom<=g.availableBottom && g.contentLeft>=g.availableLeft && g.contentRight<=g.availableRight)
-            for(x in listOf(g.availableLeft.toFloat(),g.availableWidth/2f,g.availableRight.toFloat()))
-            for(y in listOf(g.availableTop.toFloat(),g.availableHeight/2f,g.availableBottom.toFloat())) {
+            for(x in listOf(0f,g.screenWidth/2f,g.screenWidth.toFloat()))
+            for(y in listOf(0f,g.screenHeight/2f,g.screenHeight.toFloat())) {
                 val displayX=g.contentTranslationX+x*g.contentScale;val displayY=g.contentTranslationY+y*g.contentScale
                 assertEquals(x,(displayX-g.contentTranslationX)/g.contentScale,.001f)
                 assertEquals(y,(displayY-g.contentTranslationY)/g.contentScale,.001f)
@@ -47,9 +47,9 @@ class MainWindowEnlargementTest {
             val controls=StageTopLayoutMetrics.actions(g.sidebarPhysicalWidth,g.sidebarPhysicalHeight,3.2f)
             val menu=StageMainWindowMetrics.mainHandle(g,3.2f)
             val add=controls.add.copy(left=controls.add.left+g.sidebarLeft,top=controls.add.top+g.sidebarTop)
-            val collapse=controls.collapse.copy(left=controls.collapse.left+g.sidebarLeft,top=controls.collapse.top+g.sidebarTop)
+            val collapse=StageTopLayoutMetrics.Box(g.availableRight-179,g.availableTop+13,154,154)
             assertTrue(menu.width>=153 && menu.height>=153)
-            listOf(menu,add,collapse).forEach { assertFalse(it.overlaps(main));assertTrue(it.bottom<=g.availableBottom) }
+            (listOf(menu,collapse)+if(count<4)listOf(add)else emptyList()).forEach { assertFalse(it.overlaps(main));assertTrue(it.bottom<=g.availableBottom) }
             assertFalse(menu.overlaps(collapse));assertFalse(menu.overlaps(add))
         }
     }

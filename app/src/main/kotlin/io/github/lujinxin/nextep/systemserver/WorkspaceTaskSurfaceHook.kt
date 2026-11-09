@@ -108,11 +108,10 @@ internal object WorkspaceTaskSurfaceHook {
         val context = field(service, "mContext") as? Context ?: return
         val geometry = SystemServerWorkspaceBridge.activeGeometry(context) ?: return
         setMatrix.invoke(transaction, leash, geometry.contentScale, 0f, 0f, geometry.contentScale)
-        transaction.setCrop(leash, Rect(geometry.availableLeft, geometry.availableTop,
-            geometry.availableRight, geometry.availableBottom))
+        transaction.setCrop(leash, Rect(0, 0, geometry.screenWidth, geometry.screenHeight))
         transaction.setPosition(leash, geometry.contentTranslationX, geometry.contentTranslationY)
         setCornerRadius.invoke(transaction, leash, io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.sourceRadius(
-            geometry.contentScale, geometry.contentScale, geometry.availableWidth, geometry.availableHeight,
+            geometry.contentScale, geometry.contentScale, geometry.screenWidth, geometry.screenHeight,
             context.resources.displayMetrics.density, true))
     }
 

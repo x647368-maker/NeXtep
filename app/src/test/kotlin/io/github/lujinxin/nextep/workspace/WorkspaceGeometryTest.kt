@@ -53,7 +53,7 @@ class WorkspaceGeometryTest {
             )
             assertEquals(
                 "The safe app canvas must not be squeezed into a different aspect ratio",
-                geometry.availableWidth.toFloat() / geometry.availableHeight,
+                geometry.screenWidth.toFloat() / geometry.screenHeight,
                 geometry.contentWidth.toFloat() / geometry.contentHeight,
                 1f / geometry.contentHeight,
             )
@@ -69,10 +69,10 @@ class WorkspaceGeometryTest {
         for ((width, height) in devices) for (navigation in insets) for (side in SidebarSide.entries) {
             for (rotation in if (width > height) listOf(1, 3) else listOf(0)) {
                 val g = WorkspaceGeometry.forDisplay(width, height, side, 3f, navigation, rotation)
-                val left = g.availableLeft * g.contentScale + g.contentTranslationX
-                val right = g.availableRight * g.contentScale + g.contentTranslationX
-                val top = g.availableTop * g.contentScale + g.contentTranslationY
-                val bottom = g.availableBottom * g.contentScale + g.contentTranslationY
+                val left = 0f * g.contentScale + g.contentTranslationX
+                val right = g.screenWidth * g.contentScale + g.contentTranslationX
+                val top = 0f * g.contentScale + g.contentTranslationY
+                val bottom = g.screenHeight * g.contentScale + g.contentTranslationY
                 assertEquals(g.contentLeft.toFloat(), left, .6f)
                 assertEquals(g.contentRight.toFloat(), right, .6f)
                 assertEquals(g.contentTop.toFloat(), top, .6f)

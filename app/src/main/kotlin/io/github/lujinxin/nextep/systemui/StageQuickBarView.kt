@@ -10,6 +10,8 @@ import io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository
 
 internal class StageQuickBarView(context: Context, private val choose: (LauncherAppRepository.AppEntry, View, Boolean) -> Unit,
     private val add: (View) -> Unit, private val collapse: () -> Unit) : LinearLayout(context) {
+    internal var hasEntries = false
+        private set
     private val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     init {
@@ -21,9 +23,10 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
         addView(TextView(context).apply {
             text = "⌃"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             contentDescription = "收起常用应用快捷栏"; setOnClickListener { collapse() }
-        }, LayoutParams(dp(44), dp(48)))
+        }, LayoutParams(dp(48), dp(48)))
     }
     fun render(entries: List<LauncherAppRepository.AppEntry>) {
+        hasEntries = entries.isNotEmpty()
         row.removeAllViews()
         entries.forEach { entry ->
             val icon = ImageView(context).apply {
@@ -38,7 +41,7 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
         row.addView(TextView(context).apply {
             text = "+"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
             contentDescription = "选择应用，长按可固定"; setOnClickListener { add(this) }
-        }, LayoutParams(dp(44), dp(48)))
+        }, LayoutParams(dp(48), dp(48)))
     }
 }
 
@@ -60,14 +63,7 @@ internal class StageQuickBarHost(context: Context, private val inputReady: (Bool
                             info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType).invoke(info, 3)
                             val region = info.javaClass.getField("touchableRegion").get(info) as android.graphics.Region
                             region.setEmpty()
-                            val origin = IntArray(2); rootView.getLocationOnScreen(origin)
-                            val rect = android.graphics.Rect()
-                            for (index in 0 until childCount) {
-                                val child = getChildAt(index)
-                                if (child.visibility == View.VISIBLE && child.getGlobalVisibleRect(rect)) {
-                                    rect.offset(-origin[0], -origin[1]); region.op(rect, android.graphics.Region.Op.UNION)
-                                }
-                            }
+                            for (index in 0 until childCount) StageWindowTouchRegion.add(region,getChildAt(index))
                         }
                         null
                     }

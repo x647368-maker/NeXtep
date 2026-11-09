@@ -237,10 +237,8 @@ object LauncherTransformController {
             // Use SystemUI's recorded navigation mode, including zero padding in
             // gesture mode. A page transition must not sample different live insets.
             val insets = geometry.navigationInsets
-            Rect(insets.left, insets.top,
-                decor.width - insets.right, decor.height - insets.bottom)
-        } else Rect(geometry.availableLeft, geometry.availableTop,
-            geometry.availableRight, geometry.availableBottom)
+            Rect(0, 0, decor.width, decor.height)
+        } else Rect(0, 0, geometry.screenWidth, geometry.screenHeight)
         if (sourceBounds.width() <= 0 || sourceBounds.height() <= 0) return
         val transform = if (isAssistant && saved != null) {
             val scale = minOf(geometry.contentWidth.toFloat() / sourceBounds.width(),

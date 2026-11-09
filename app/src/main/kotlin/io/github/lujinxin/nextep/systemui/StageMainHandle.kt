@@ -17,7 +17,7 @@ internal class StageMainHandle(context: Context, private val menu: () -> Unit, p
     init {
         text = "⋯"; textSize = 22f; gravity = Gravity.CENTER
         setTextColor(Color.rgb(145, 145, 150))
-        setBackgroundColor(Color.TRANSPARENT)
+        background=GradientDrawable().apply {setColor(Color.argb(190,35,38,44));cornerRadius=16*resources.displayMetrics.density}
         setShadowLayer(resources.displayMetrics.density, 0f, 0f, Color.argb(140, 255, 255, 255))
         contentDescription = "主窗菜单；在把手上向左滑动关闭主窗"
         isClickable = true

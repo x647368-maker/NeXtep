@@ -36,8 +36,8 @@ class ReadableTopCardsTest {
             assertTrue(g.contentWidth >= 800 && g.contentHeight >= 1700)
             assertTrue(g.contentTop >= g.sidebarTop+g.sidebarPhysicalHeight)
             assertTrue(g.contentBottom <= g.availableBottom)
-            assertEquals(g.availableWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
-            assertEquals(g.availableHeight*g.contentScale,g.contentHeight.toFloat(),.51f)
+            assertEquals(g.screenWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
+            assertEquals(g.screenHeight*g.contentScale,g.contentHeight.toFloat(),.51f)
             println("ACE top4 priority=$priority card=${b[0].width}x${b[0].height} group=${last-first}/${g.availableWidth} main=${g.contentWidth}x${g.contentHeight}")
         }
     }
@@ -83,7 +83,7 @@ class ReadableTopCardsTest {
     }
     @Test fun oldTinyGeometryCacheIsInvalidatedAndNewRecordRoundTrips() {
         val p=profile(4,true)
-        assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("17,","16,")))
+        assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("18,","17,")))
         assertEquals(p,WorkspaceLayoutProfile.decode(p.encode()))
     }
 }

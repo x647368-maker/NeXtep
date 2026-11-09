@@ -20,6 +20,7 @@ data class WorkspaceGeometry(
     val displayRotation: Int = 0,
     val railAtTop: Boolean = false,
     val mainTopOverlap: Int = 0,
+    val mainInset: Int = 0,
 ) {
     val isLandscape: Boolean get() = screenWidth > screenHeight
     // Surface rotations are quarter turns from the phone's natural portrait axes.
@@ -32,8 +33,8 @@ data class WorkspaceGeometry(
     val isSidebarAtTop: Boolean get() =
         SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)
 
-    // The task still occupies the full display. Its navigation-safe source rectangle
-    // is fitted uniformly, so the native navigation padding is not scaled a second time.
+    // Insets constrain the DESTINATION only. Source task coordinates always start
+    // at (0,0) and include the complete physical fullscreen task, including edges.
     val availableLeft: Int get() = navigationInsets.left
     val availableTop: Int get() = navigationInsets.top
     val availableRight: Int get() = screenWidth - navigationInsets.right
@@ -51,6 +52,7 @@ data class WorkspaceGeometry(
         require(navigationInsets.top <= screenHeight - 2 &&
             navigationInsets.bottom <= screenHeight - navigationInsets.top - 2)
         require(availableWidth > 1 && availableHeight > 1)
+        require(mainInset >= 0 && mainInset * 2 < minOf(availableWidth, availableHeight))
         require(mainTopOverlap in 0..maxOf(screenWidth, screenHeight))
         require(topHeight in 1 until (if (isLandscape) availableWidth else availableHeight))
         require(!railAtTop || topHeight + sidebarWidth < availableHeight)
@@ -72,16 +74,16 @@ data class WorkspaceGeometry(
     val sidebarPhysicalHeight: Int get() = if (railAtTop || isLandscape) sidebarWidth else availableHeight - topHeight
     val sidebarLogicalHeight: Int get() = if (railAtTop) sidebarPhysicalHeight else if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight
 
-    private val regionWidth: Int get() = if (railAtTop) availableWidth else availableWidth - if (isLandscape) topHeight else sidebarWidth
+    private val regionWidth: Int get() = (if (railAtTop) availableWidth else availableWidth - if (isLandscape) topHeight else sidebarWidth) - 2 * mainInset
     private val effectiveMainOverlap: Int get() = if (railAtTop) minOf(mainTopOverlap, sidebarWidth - 1) else 0
-    private val regionHeight: Int get() = if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap else availableHeight - if (isLandscape) sidebarWidth else topHeight
-    val contentScale: Float get() = minOf(regionWidth.toFloat() / availableWidth, regionHeight.toFloat() / availableHeight)
-    val contentWidth: Int get() = (availableWidth * contentScale).roundToInt().coerceAtLeast(1)
-    val contentHeight: Int get() = (availableHeight * contentScale).roundToInt().coerceAtLeast(1)
-    val contentTop: Int get() = availableTop + (if (railAtTop) topHeight + sidebarWidth - effectiveMainOverlap else if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +
+    private val regionHeight: Int get() = (if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap else availableHeight - if (isLandscape) sidebarWidth else topHeight) - 2 * mainInset
+    val contentScale: Float get() = minOf(regionWidth.toFloat() / screenWidth, regionHeight.toFloat() / screenHeight)
+    val contentWidth: Int get() = (screenWidth * contentScale).roundToInt().coerceAtLeast(1)
+    val contentHeight: Int get() = (screenHeight * contentScale).roundToInt().coerceAtLeast(1)
+    val contentTop: Int get() = availableTop + mainInset + (if (railAtTop) topHeight + sidebarWidth - effectiveMainOverlap else if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +
         (regionHeight - contentHeight) / 2
     val contentBottom: Int get() = contentTop + contentHeight
-    val contentLeft: Int get() = availableLeft + (if (railAtTop) 0 else if (isLandscape) {
+    val contentLeft: Int get() = availableLeft + mainInset + (if (railAtTop) 0 else if (isLandscape) {
         if (isControlOnLeft) topHeight else 0
     } else if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0) +
         (regionWidth - contentWidth + if (!railAtTop && isLandscape && !isControlOnLeft) 1 else 0) / 2
@@ -90,10 +92,10 @@ data class WorkspaceGeometry(
         get() = contentLeft + contentWidth
 
     val contentTranslationX: Float
-        get() = contentLeft + (contentWidth - availableWidth * contentScale) / 2f - availableLeft * contentScale
+        get() = contentLeft + (contentWidth - screenWidth * contentScale) / 2f
 
     val contentTranslationY: Float
-        get() = contentTop + (contentHeight - availableHeight * contentScale) / 2f - availableTop * contentScale
+        get() = contentTop + (contentHeight - screenHeight * contentScale) / 2f
 
     /** Project a recorded layout; rotating must never recalibrate its thicknesses. */
     fun rotatedTo(rotation: Int): WorkspaceGeometry {

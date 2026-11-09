@@ -57,11 +57,7 @@ object SystemServerWorkspaceBridge {
                 Settings.Global.putString(resolver, SIDEBAR_SIDE_KEY, it.sidebarSide.name)
                 // Publish one complete snapshot so another process cannot combine
                 // new navigation insets with an old rotation or control thickness.
-                Settings.Global.putString(resolver, GEOMETRY_KEY, listOf(
-                    it.screenWidth, it.screenHeight, it.topHeight, it.sidebarWidth, it.sidebarSide.name,
-                    it.navigationInsets.left, it.navigationInsets.top,
-                    it.navigationInsets.right, it.navigationInsets.bottom, it.displayRotation, it.railAtTop, it.mainTopOverlap,
-                ).joinToString(","))
+                Settings.Global.putString(resolver, GEOMETRY_KEY, WorkspaceGeometryCodec.encode(it))
             }
             Settings.Global.putInt(resolver, ACTIVE_KEY, if (active) 1 else 0)
         }.onFailure { error ->
@@ -73,8 +69,8 @@ object SystemServerWorkspaceBridge {
         val resolver = context.contentResolver
         if (Settings.Global.getInt(resolver, ACTIVE_KEY, 0) != 1) return@runCatching null
         Settings.Global.getString(resolver, GEOMETRY_KEY)?.let(::decodeGeometry)?.let { recorded ->
-            val width = recorded.availableWidth
-            val height = recorded.availableHeight
+            val width = recorded.screenWidth
+            val height = recorded.screenHeight
             return@runCatching if (height > width) height.toFloat() / width else null
         }
         val width = Settings.Global.getInt(resolver, WIDTH_KEY, 0)
@@ -147,21 +143,5 @@ object SystemServerWorkspaceBridge {
                 ?.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0)
     }.getOrNull()
 
-    private fun decodeGeometry(encoded: String): WorkspaceGeometry? = runCatching {
-        val fields = encoded.split(',')
-        if (fields.size !in 9..12) return@runCatching null
-        WorkspaceGeometry(
-            screenWidth = fields[0].toInt(),
-            screenHeight = fields[1].toInt(),
-            topHeight = fields[2].toInt(),
-            sidebarWidth = fields[3].toInt(),
-            sidebarSide = SidebarSide.valueOf(fields[4]),
-            navigationInsets = WorkspaceNavigationInsets(
-                fields[5].toInt(), fields[6].toInt(), fields[7].toInt(), fields[8].toInt(),
-            ),
-            displayRotation = if (fields.size >= 10) fields[9].toInt() else 0,
-            railAtTop = fields.getOrNull(10)?.toBooleanStrict() ?: false,
-            mainTopOverlap = fields.getOrNull(11)?.toInt() ?: 0,
-        )
-    }.getOrNull()
+    private fun decodeGeometry(encoded: String): WorkspaceGeometry? = WorkspaceGeometryCodec.decode(encoded)
 }

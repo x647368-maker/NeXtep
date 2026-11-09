@@ -15,12 +15,12 @@ class StageWorkspaceLayoutTest {
                 assertTrue(g.contentTop >= g.availableTop)
                 assertTrue(g.contentRight <= g.availableRight)
                 assertTrue(g.contentBottom <= g.availableBottom)
-                assertEquals(g.availableWidth * g.contentScale,
+                assertEquals(g.screenWidth*g.contentScale,
                     g.contentWidth.toFloat(), .51f)
-                assertEquals(g.availableHeight * g.contentScale,
+                assertEquals(g.screenHeight*g.contentScale,
                     g.contentHeight.toFloat(), .51f)
-                assertEquals(g.contentLeft.toFloat(), g.availableLeft * g.contentScale + g.contentTranslationX, .51f)
-                assertEquals(g.contentTop.toFloat(), g.availableTop * g.contentScale + g.contentTranslationY, .51f)
+                assertEquals(g.contentLeft.toFloat(), 0f * g.contentScale + g.contentTranslationX, .51f)
+                assertEquals(g.contentTop.toFloat(), 0f * g.contentScale + g.contentTranslationY, .51f)
             }
         }
     }
@@ -35,6 +35,6 @@ class StageWorkspaceLayoutTest {
         assertEquals(2780, profile.canvas.height)
         assertTrue(profile.geometry.copy(sidebarWidth = 1).contentScale > profile.geometry.contentScale)
         assertEquals(profile, WorkspaceLayoutProfile.decode(profile.encode()))
-        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("17,", "16,")))
+        assertNull(WorkspaceLayoutProfile.decode(profile.encode().replaceFirst("18,", "17,")))
     }
 }

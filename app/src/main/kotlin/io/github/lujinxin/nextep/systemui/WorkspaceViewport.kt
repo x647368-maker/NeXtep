@@ -110,8 +110,8 @@ internal class WorkspaceViewport(
         val density = profile.densityDpi / 160f
         // Reserve the 48dp reopen target below the status/cutout band, never over an app.
         val length = if (profile.geometry.isLandscape) profile.geometry.availableWidth else profile.geometry.availableHeight
-        val thickness = ((if (quickExpanded) 112 else 96) * density).toInt().coerceAtMost(length / 4)
-        val base = profile.copy(geometry = profile.geometry.copy(topHeight = maxOf(profile.geometry.topHeight, thickness)))
+        val thickness = (io.github.x647368maker.atomicworkbench.workspace.StagePresentationPolicy.toolbarDp(mainPriority,quickExpanded) * density).toInt().coerceAtMost(length / 4)
+        val base = profile.copy(geometry = profile.geometry.copy(topHeight = thickness))
         val selected = selectedRail(base)
         val g = selected.geometry
         return when {
@@ -121,8 +121,7 @@ internal class WorkspaceViewport(
                 sidebarWidth = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.cinemaDepth(g, density)), activeCount = activeCount)
             else -> {
                 val normal = if (adaptive) selected.copy(geometry = io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.rail(g, activeCount, density), activeCount = activeCount) else selected.copy(activeCount = activeCount)
-                if (mainPriority) io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.enlarge(
-                    io.github.x647368maker.atomicworkbench.workspace.StageAdaptiveLayout.mainPriority(normal, activeCount), mainInputRegionReady) else normal
+                io.github.x647368maker.atomicworkbench.workspace.StagePresentationPolicy.apply(normal,mainPriority,mainInputRegionReady)
             }
         }
     }
@@ -268,8 +267,7 @@ internal class WorkspaceViewport(
                 (if (navigationButtonsEnabled) WindowInsets.Type.navigationBars() else 0)
             val bars = window.windowInsets.getInsetsIgnoringVisibility(types)
             val gestures = window.windowInsets.getInsets(WindowInsets.Type.systemGestures())
-            val navigation = WorkspaceNavigationInsets(maxOf(bars.left,gestures.left), maxOf(bars.top,gestures.top),
-                maxOf(bars.right,gestures.right), maxOf(bars.bottom,gestures.bottom))
+            val navigation = WorkspaceNavigationInsets(bars.left, bars.top, bars.right, maxOf(bars.bottom,gestures.bottom))
             Snapshot(width, height, metrics.density, navigation, rotation)
         }.onSuccess { measured ->
             updateSnapshot(measured, key)
@@ -307,8 +305,8 @@ internal class WorkspaceViewport(
 
     private companion object {
         const val MODE_KEY = "navigation_buttons_enabled"
-        const val BUTTONS_PREFIX = "buttons_v2:"
-        const val FULL_PREFIX = "full_v2:"
+        const val BUTTONS_PREFIX = "buttons_v3:"
+        const val FULL_PREFIX = "full_v3:"
         const val MAX_PROFILES = 16
     }
 }

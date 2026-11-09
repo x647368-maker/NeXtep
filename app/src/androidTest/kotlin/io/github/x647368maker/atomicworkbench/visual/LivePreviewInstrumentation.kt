@@ -105,6 +105,7 @@ class LivePreviewInstrumentation : Instrumentation() {
                 renderFour(root,activity,out,top)
                 checks.add("PASS four ${if(top) "top" else "side"} live buffers, rounded corners and exact compact bounds")
             }
+            checks.addAll(InteractionRegression(this).run(activity,root,out))
             File(out,"render-results.txt").writeText(checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             result.putString("stream",checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             runOnMainSync { activity.finish() }

@@ -637,7 +637,7 @@ class NeXtepWindowController(
                 quickBar = StageQuickBarView(context, ::quickSelected,
                     { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })
                 addView(quickBar, FrameLayout.LayoutParams(-1, dp(52).toInt(), Gravity.BOTTOM).apply {
-                    leftMargin = dp(8).toInt(); rightMargin = dp(8).toInt(); bottomMargin = dp(4).toInt()
+                    leftMargin = dp(64).toInt(); rightMargin = dp(64).toInt(); bottomMargin = dp(4).toInt()
                 })
                 quickExpandButton = android.widget.TextView(context).apply {
                     text = "▦"; textSize = 24f; gravity = Gravity.CENTER
@@ -645,7 +645,7 @@ class NeXtepWindowController(
                     background = android.graphics.drawable.GradientDrawable().apply { setColor(Color.argb(175, 35, 38, 44)); cornerRadius = dp(18) }
                     setOnClickListener { setQuickExpanded(true) }
                 }.also { addView(it, FrameLayout.LayoutParams(dp(48).toInt(), dp(48).toInt(), Gravity.BOTTOM or Gravity.END).apply {
-                    rightMargin = dp(12).toInt(); bottomMargin = dp(4).toInt()
+                    rightMargin = dp(64).toInt(); bottomMargin = dp(4).toInt()
                 }) }
                 renderQuickChrome()
             },
@@ -706,7 +706,7 @@ class NeXtepWindowController(
         )
         addWindow(
             title = "StageMainHandle", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow),
-            width = dp(64).toInt(), height = dp(24).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
+            width = dp(48).toInt(), height = dp(48).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
             touchable = true, windowType = windowType,
         )
         if (records.size != EXPECTED_WINDOW_COUNT) {
@@ -864,47 +864,12 @@ class NeXtepWindowController(
         val geometry = requested
         when (title) {
             "StageMainHandle" -> {
-                params.width = minOf(dp(64).toInt(), geometry.contentWidth)
-                params.height = dp(24).toInt()
-                params.x = geometry.contentLeft + (geometry.contentWidth - params.width) / 2
-                params.y = if (geometry.mainTopOverlap > 0 && geometry.railAtTop && !sidebarCollapsed) {
-                    val box = io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.mainHandle(geometry, context.resources.displayMetrics.density)
-                    params.x = box.left; params.width = box.width; params.height = box.height
-                    box.top
-                } else if (geometry.railAtTop && !sidebarCollapsed) {
-                    val actions = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
-                        requested.sidebarPhysicalWidth, requested.sidebarPhysicalHeight, context.resources.displayMetrics.density)
-                    params.x = requested.sidebarLeft + actions.main.left
-                    requested.sidebarTop + actions.main.top
-                } else (geometry.contentTop - params.height).coerceAtLeast(geometry.availableTop +
-                    if (!geometry.isLandscape) geometry.topHeight - params.height else 0)
+                val box=io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.mainHandle(geometry,context.resources.displayMetrics.density)
+                params.width=box.width;params.height=box.height;params.x=box.left;params.y=box.top
             }
             "AtomicSidebarHandle" -> {
-                if (sidebarCollapsed) {
-                    val base = viewport.geometry(sidebarSide).rotatedTo(requested.displayRotation)
-                    val box = io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.handle(base, requested, context.resources.displayMetrics.density)
-                    params.width = box.width; params.height = box.height
-                    params.x = box.left; params.y = box.top
-                } else if (geometry.railAtTop) {
-                    val box = io.github.x647368maker.atomicworkbench.workspace.StageTopLayoutMetrics.actions(
-                        geometry.sidebarPhysicalWidth, geometry.sidebarPhysicalHeight, context.resources.displayMetrics.density).collapse
-                    params.width = box.width; params.height = box.height
-                    params.x = geometry.sidebarLeft + box.left; params.y = geometry.sidebarTop + box.top
-                } else if (!geometry.isLandscape) {
-                    params.width = dp(16).toInt()
-                    params.height = dp(32).toInt()
-                    params.x = if (geometry.sidebarSide == SidebarSide.LEFT)
-                        geometry.sidebarLeft + geometry.sidebarPhysicalWidth - params.width else geometry.sidebarLeft
-                    params.x = params.x.coerceIn(geometry.availableLeft, geometry.availableRight - params.width)
-                    params.y = geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height - dp(12).toInt()
-                } else {
-                    params.width = dp(80).toInt()
-                    params.height = dp(20).toInt()
-                    params.x = geometry.sidebarLeft + (geometry.sidebarPhysicalWidth - params.width) / 2
-                    params.y = if (geometry.isSidebarAtTop)
-                        geometry.sidebarTop + geometry.sidebarPhysicalHeight - params.height else geometry.sidebarTop
-                    params.y = params.y.coerceIn(geometry.availableTop, geometry.availableBottom - params.height)
-                }
+                params.width=dp(48).toInt();params.height=dp(48).toInt()
+                params.x=geometry.availableRight-dp(56).toInt();params.y=geometry.availableTop+dp(4).toInt()
             }
             "NeXtepTopBar" -> {
                 params.width = geometry.controlWidth
@@ -951,8 +916,7 @@ class NeXtepWindowController(
         try {
             val main = taskRepository.foregroundTask()
             val bitmap = if (WorkspaceWallpaperBackdrop.canCapture(context) && main != null) runCatching {
-                TaskSurfaceCompat.capturePreview(main.taskId, Rect(geometry.availableLeft, geometry.availableTop,
-                    geometry.availableRight, geometry.availableBottom))
+                TaskSurfaceCompat.capturePreview(main.taskId, Rect(0, 0, geometry.screenWidth, geometry.screenHeight))
             }.getOrNull() else null
             frames.add(WorkgroupTransitionCover.Frame(bitmap, floatArrayOf(
                 geometry.contentLeft.toFloat(), geometry.contentTop.toFloat(),
@@ -1023,13 +987,15 @@ class NeXtepWindowController(
         val shown = quickInputReady && !quickChromeSuppressed && !suspended
         quickBar?.visibility = if (shown && core.enabled && core.expanded) View.VISIBLE else View.GONE
         quickExpandButton?.visibility = if (shown && !(core.enabled && core.expanded)) View.VISIBLE else View.GONE
+        quickBar?.parent?.requestLayout()
     }
     private fun setQuickExpanded(expanded: Boolean) {
         if (groupInputBlocked || workgroups.isSwitching()) return
         if (expanded) core.enabled = true
         core.expanded = expanded; syncCoreViewport()
         renderQuickChrome()
-        refreshQuickBar()
+        if (!expanded) quickGeneration += 1
+        else if (quickBar?.hasEntries != true) refreshQuickBar()
         if (workspaceVisible && !suspended) onViewportChanged()
     }
 
@@ -1184,19 +1150,27 @@ class NeXtepWindowController(
         val anchor = records.firstOrNull { it.title == "StageMainHandle" }?.view ?: return
         AtomicPopupMenu.show(context, anchor, listOf(
             "切换全屏（保留工作区）" to { onExitRequested() },
-            (if (viewport.isTopRail()) "切换为侧边纵排" else "切换为顶部横排") to {
-                runCatching { changeStageLayout(!viewport.isTopRail()) }.onFailure { showStageMessage(it.message ?: "布局未切换") }
-            },
+            "顶部横排" to { changeStageLayout(true) },
+            "左侧排列" to { if (viewport.isTopRail()) changeStageLayout(false);onSidebarSideRequested(SidebarSide.LEFT) },
+            "右侧排列" to { if (viewport.isTopRail()) changeStageLayout(false);onSidebarSideRequested(SidebarSide.RIGHT) },
             (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
-            (if (core.mainPriority) "完整显示布局" else "主窗口优先布局") to {
-                syncCoreViewport(); core.mainPriority = !core.mainPriority; syncCoreViewport(); onViewportChanged()
-            },
+            (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
+            (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
+            "添加小窗" to { chooseWindowApp(anchor,null) },
             "影音布局与自动模式" to { showCinemaMenu(anchor) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
             "关闭主窗（移回后台）" to { closeMainWindow() },
             "退出台前调度" to { onExitRequested() },
         ))
+    }
+
+    private fun setMainPriority(priority: Boolean) {
+        val before=currentGeometry()
+        core.mainPriority=priority;syncCoreViewport();onViewportChanged()
+        val after=currentGeometry()
+        if(before.contentWidth==after.contentWidth && before.contentHeight==after.contentHeight)
+            showStageMessage("当前屏幕空间已达完整显示上限，保持原比例")
     }
 
     private fun closeMainWindow() {
@@ -1429,16 +1403,10 @@ class NeXtepWindowController(
                         info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType).invoke(info, 3)
                         val region = info.javaClass.getField("touchableRegion").get(info) as android.graphics.Region
                         region.setEmpty()
-                        val origin = IntArray(2); rootView.getLocationOnScreen(origin)
-                        val rect = Rect()
                         slotWindows.forEach { slot ->
-                            if (slot.view.isWorkspaceCardVisible() && slot.view.getScreenVisibleRect(rect)) {
-                                rect.offset(-origin[0], -origin[1]); region.op(rect, android.graphics.Region.Op.UNION)
-                            }
+                            if (slot.view.isWorkspaceCardVisible()) StageWindowTouchRegion.add(region,slot.view)
                         }
-                        sidebarAddButton?.takeIf { it.visibility == View.VISIBLE }?.let { button ->
-                            if (button.getGlobalVisibleRect(rect)) region.op(rect, android.graphics.Region.Op.UNION)
-                        }
+                        sidebarAddButton?.let { StageWindowTouchRegion.add(region,it) }
                         if (!sidebarTouchRegionReady) {
                             sidebarTouchRegionReady = true
                             backdropHandler.post { if (workspaceVisible && !suspended) onViewportChanged() }
@@ -1610,8 +1578,7 @@ class NeXtepWindowController(
         val backdrop = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, 0, 0, frostStrength)
         val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null
         val mainPreview = mainTaskId?.let {
-            TaskSurfaceCompat.capturePreview(it, Rect(geometry.availableLeft, geometry.availableTop,
-                geometry.availableRight, geometry.availableBottom))
+            TaskSurfaceCompat.capturePreview(it, Rect(0, 0, geometry.screenWidth, geometry.screenHeight))
         }
         fun slotPreview(slot: VirtualDisplaySlot): android.graphics.Bitmap? {
             val source = slot.sourceBounds()

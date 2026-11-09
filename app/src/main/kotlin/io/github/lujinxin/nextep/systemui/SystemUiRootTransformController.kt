@@ -141,7 +141,7 @@ object SystemUiRootTransformController {
         view.translationX = transform.translationX
         view.translationY = transform.translationY
         geometry?.let {
-            view.clipBounds = Rect(it.availableLeft, it.availableTop, it.availableRight, it.availableBottom)
+            view.clipBounds = Rect(0, 0, it.screenWidth, it.screenHeight)
             SystemUiShadeInputController.apply(view, it)
         }
     }

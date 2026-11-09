@@ -14,8 +14,8 @@ class MainPriorityLayoutTest {
             assertTrue(preferred.geometry.contentTop>=preferred.geometry.sidebarTop+preferred.geometry.sidebarPhysicalHeight)
             assertTrue(preferred.geometry.contentRight<=preferred.geometry.availableRight)
             assertTrue(preferred.geometry.contentBottom<=preferred.geometry.availableBottom)
-            assertEquals(preferred.geometry.availableWidth*preferred.geometry.contentScale,preferred.geometry.contentWidth.toFloat(),.51f)
-            assertEquals(preferred.geometry.availableHeight*preferred.geometry.contentScale,preferred.geometry.contentHeight.toFloat(),.51f)
+            assertEquals(preferred.geometry.screenWidth*preferred.geometry.contentScale,preferred.geometry.contentWidth.toFloat(),.51f)
+            assertEquals(preferred.geometry.screenHeight*preferred.geometry.contentScale,preferred.geometry.contentHeight.toFloat(),.51f)
         }
     }
     @Test fun topFourMainGetsMoreActualPixelsWithoutCroppingOrStretching() {
@@ -28,7 +28,11 @@ class MainPriorityLayoutTest {
     }
     @Test fun sideLayoutAndManualCompleteChoiceAreNotRewritten() {
         val p=WorkspaceLayoutProfile.create(1264,2780,512,WorkspaceNavigationInsets())
-        assertEquals(p,StageAdaptiveLayout.mainPriority(p,4))
+        val priority=StageAdaptiveLayout.mainPriority(p,4)
+        assertTrue(priority.geometry.contentWidth>=p.geometry.contentWidth)
+        assertTrue(priority.geometry.contentHeight>=p.geometry.contentHeight)
+        assertEquals(p.canvas,priority.canvas)
+        assertTrue(priority.geometry.topHeight<p.geometry.topHeight)
     }
     @Test fun visualReorderKeepsSlotIdentityAndCanRoundTrip() {
         val order=listOf(0,1,2,3)
