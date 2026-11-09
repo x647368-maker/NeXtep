@@ -71,12 +71,22 @@ internal class ShadeRegression(private val inst:Instrumentation) {
         }
         ui{AtomicPopupMenu.dismissAll();wm.removeViewImmediate(panel)};settle()
         record("PASS 20 real popup/native-window-fixture mutual exclusion cycles; panel open dismisses menu, collapse denial blocks overlay, closed state reopens")
+        ui {
+            val nativeContext=object:android.content.ContextWrapper(activity) {
+                override fun getPackageName()="com.android.systemui"
+            }
+            check(SystemUiPanelMonitor.refresh(nativeContext)==StagePanelMenuGate.State.UNKNOWN) {
+                "Missing native panel inventory must not be considered closed"
+            }
+            check(SystemUiPanelMonitor.refresh(activity)==StagePanelMenuGate.State.CLOSED)
+        }
+        record("PASS native panel detach/missing OEM root fails closed; non-SystemUI fixtures retain normal menu access")
         // Actual unmodified emulator SystemUI: open via public accessibility action and close by raw swipe.
         fun shell(command:String):String = ParcelFileDescriptor.AutoCloseInputStream(
             inst.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText() }
         // Accessibility's active window can remain the app while an empty native shade
         // owns input. Verify the actual WindowManager focus, not accessibility cache.
-        fun focus():String = shell("dumpsys window windows").lineSequence()
+        fun focus():String = shell("dumpsys window").lineSequence()
             .filter { it.contains("mCurrentFocus=") }.joinToString("\n")
         fun waitFocus(native:Boolean, polls:Int=30):Boolean {
             repeat(polls) {
@@ -89,7 +99,7 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             return false
         }
         fun evidence(name:String) {
-            File(out,"shade-$name-window.txt").writeText(shell("dumpsys window windows"))
+            File(out,"shade-$name-window.txt").writeText(shell("dumpsys window"))
             File(out,"shade-$name-statusbar.txt").writeText(shell("dumpsys statusbar"))
             inst.uiAutomation.takeScreenshot()?.let { b ->
                 File(out,"shade-$name.png").outputStream().use {b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
@@ -97,14 +107,16 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             }
             record("OBSERVE $name focus=${focus()} accessibility=${inst.uiAutomation.rootInActiveWindow?.packageName}")
         }
-        fun swipeUp() {
+        fun swipe(from:Float,to:Float) {
             val m=activity.resources.displayMetrics;val x=m.widthPixels*.5f;val down=SystemClock.uptimeMillis()
-            for(i in 0..24){val y=m.heightPixels*(.88f-.85f*i/24f);val action=when(i){0->MotionEvent.ACTION_DOWN;24->MotionEvent.ACTION_UP;else->MotionEvent.ACTION_MOVE};val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);check(inst.uiAutomation.injectInputEvent(e,true));e.recycle();Thread.sleep(10)}
+            for(i in 0..24){val y=m.heightPixels*(from+(to-from)*i/24f);val action=when(i){0->MotionEvent.ACTION_DOWN;24->MotionEvent.ACTION_UP;else->MotionEvent.ACTION_MOVE};val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);e.source=android.view.InputDevice.SOURCE_TOUCHSCREEN;check(inst.uiAutomation.injectInputEvent(e,true));e.recycle();Thread.sleep(10)}
         }
-        for((action,name)in listOf(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS to "notifications",AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS to "quick settings")) {
+        fun swipeUp()=swipe(.88f,.03f)
+        for((action,name)in listOf(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS to "notifications",AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS to "quick settings",0 to "raw pull-down notifications")) {
             var secondSwipe=0
             repeat(20){cycle->
-                check(inst.uiAutomation.performGlobalAction(action))
+                if(action==0)swipe(.001f,.80f)
+                else check(inst.uiAutomation.performGlobalAction(action))
                 val opened=waitFocus(true)
                 if(cycle==0 || !opened)evidence("${action}-${cycle}-open")
                 check(opened){"Native $name did not open; focus=${focus()}; see shade diagnostics"}
@@ -116,7 +128,7 @@ internal class ShadeRegression(private val inst:Instrumentation) {
                     check(closed){"Native $name cycle=$cycle did not close after two swipes; focus=${focus()}"}
                 }
             }
-            record("PASS 20 actual AOSP $name accessibility-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
+            record("PASS 20 actual AOSP $name ${if(action==0) "raw-swipe-open" else "accessibility-open"}/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
         }
         File(out,"shade-results.txt").writeText(lines.joinToString("\n")+"\n")
         return lines

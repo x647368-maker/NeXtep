@@ -1,6 +1,6 @@
-# Native shade / bounded glass menu, 0.9.9-dev
+# Native shade / bounded glass menu, 0.9.9
 
-Base 273c4d6, versionCode23. Stable 0.9.8 backup retained. Runtime protocol and derived viewport revision remain unchanged. No geometry/config migration.
+Base 273c4d6, versionCode24. Stable 0.9.8 backup retained. Runtime protocol and derived viewport revision remain unchanged. No geometry/config migration.
 
 182 stable runtime Kotlin files are byte-frozen, including WorkspaceGeometry, WorkspaceViewport, all adaptive/top/live/main metrics, TaskSurfaceCompat, controllers/presenters, four slots, quickbar, input and existing injection installation. Existing tests and new frozen-source guard enforce this boundary.
 
@@ -15,3 +15,11 @@ P2 native notification glass is intentionally not implemented: no new experiment
 Tests distinguish production adapter and real popup fixtures, unmodified AOSP native notification/QS gestures, and unverified ColorOS injection. No actual PMS110/Find N5 is connected; those device results must not be claimed.
 
 Native AOSP quick settings may remain in SystemUI after the first upward gesture. The separate emulator baseline test records whether a second native swipe is needed (maximum two); no workspace or SystemUI production code is changed for this emulator-only observation. ColorOS single-swipe behaviour still requires PMS110 validation.
+
+Takeover audit: the existing signed versionCode23 APK and original private PKCS12 key were recovered. Both match the fixed SHA-256 certificate b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd and signed 0.9.8 versionCode22. CI signing Secrets remain unset; deliverables are signed privately with this original key, never an emulator key. No private signing material is committed.
+
+Remaining menu-state fix: a readable root inventory with zero recognized native panel roots is UNKNOWN in SystemUI, not CLOSED. Failed inventory is also UNKNOWN. This prevents an unrecognized/detached OEM panel from allowing a menu overlay; all frozen geometry/task/input files remain unchanged. The real popup test verifies detached/missing-root behavior.
+
+The native-shade test now verifies WindowManager input focus independently of the accessibility active-window cache, retains window/statusbar dumps and screenshots on failures, and adds raw pull-down/up gestures. Failure assertions are retained. Emulator AOSP results do not validate ColorOS module injection.
+
+Diagnostic run 42578032996: actual notification shade visibly expanded to 1272x2772, WindowManager reported shown=true/isVisible=true, and accessibility eventually reported com.android.systemui. The initial focus probe read the windows-only dump, which omits display focus on this emulator; the final probe reads the full dump. Native open/close assertions remain mandatory. Native swipe events explicitly use SOURCE_TOUCHSCREEN.

@@ -28,7 +28,7 @@ mkdir -p visual-results
 # Capture every diagnostic even on assertion failure; no empty placeholder files.
 adb exec-out run-as io.github.x647368maker.atomicworkbench tar -C files/visual-regression -cf - . > visual-results.tar
 if [ -s visual-results.tar ]; then tar -xf visual-results.tar -C visual-results; fi
-adb shell dumpsys window windows > visual-results/final-window.txt
+adb shell dumpsys window > visual-results/final-window.txt
 adb shell dumpsys statusbar > visual-results/final-statusbar.txt
 adb logcat -d > visual-results/logcat.txt
 

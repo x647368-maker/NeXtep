@@ -57,8 +57,11 @@ internal object SystemUiPanelMonitor {
         }
         return state()
     }
-    fun state(requireNativeRoot:Boolean=systemUi && !inventoryConfirmed):StagePanelMenuGate.State {
+    fun state(requireNativeRoot:Boolean=systemUi):StagePanelMenuGate.State {
+        if(requireNativeRoot && !inventoryConfirmed)return StagePanelMenuGate.State.UNKNOWN
         val entries=roots.keys.toList()
+        // A readable inventory with no recognized OEM panel is still unknown.
+        // Never treat successful reflection alone as proof the shade is closed.
         if(entries.isEmpty())return if(requireNativeRoot)StagePanelMenuGate.State.UNKNOWN else StagePanelMenuGate.State.CLOSED
         var unknown=false
         for(view in entries) {
