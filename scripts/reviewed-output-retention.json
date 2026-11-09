@@ -2,9 +2,13 @@
   "purpose": "Exact, reversible output-retention fragments only; preserve v0.9.8 geometry/task invariants",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt": {
-      "updated_sha256": "0754efb82b608c99ccaf7ad067aac5c56348922b7a1445229dd8bc7d393884ba",
+      "updated_sha256": "d06860f3d15fd5905953fee35d4b14773e739443ba03e5a1a4b214e4d34142f5",
       "baseline_sha256": "5d6ee5ac7d61e8093edf2b844f70db788c1789357563c44949bb2c03f7ab576a",
       "patches": [
+        {
+          "before": "    internal fun retryInitialization() {\n        if (!active || suspended || virtualDisplay != null) return\n        creationAttempts = 0 // one explicit user repair, not a background retry loop\n        lastCreationFailure = null\n        val texture = view.textureView.surfaceTexture\n        if (texture != null && view.textureView.isAvailable) createDisplay(texture, view.textureView.width, view.textureView.height)\n        else { view.invalidate(); view.textureView.invalidate() }\n    }",
+          "after": "    internal fun retryInitialization() {\n        if (!active || suspended) return\n        val texture = view.textureView.surfaceTexture\n        if (virtualDisplay != null) {\n            // Recover the existing task-owning display rather than creating a new one.\n            if (texture != null && view.textureView.isAvailable) {\n                reconnectRetainedOutput(texture, view.textureView.width, view.textureView.height)\n            } else { view.invalidate(); view.textureView.invalidate() }\n            return\n        }\n        creationAttempts = 0 // one explicit user repair, not a background retry loop\n        lastCreationFailure = null\n        if (texture != null && view.textureView.isAvailable) createDisplay(texture, view.textureView.width, view.textureView.height)\n        else { view.invalidate(); view.textureView.invalidate() }\n    }"
+        },
         {
           "before": "    private var suspended = false\n    private var surface: Surface? = null\n    private var virtualDisplay: VirtualDisplay? = null\n    private var outputConnected = false\n",
           "after": "    private var suspended = false\n    private var surface: Surface? = null\n    // The producer texture can disappear while its virtual display still owns live tasks.\n    private var boundTexture: SurfaceTexture? = null\n    private var virtualDisplay: VirtualDisplay? = null\n    private var outputConnected = false\n"
