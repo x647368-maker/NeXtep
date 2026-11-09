@@ -13,3 +13,5 @@ Menu:20dp corners, one82–86% opaque neutral gradient, transparent rows with st
 P2 native notification glass is intentionally not implemented: no new experimental flag, theme resource overlays or extra hooks. Native appearance is the safe fallback.
 
 Tests distinguish production adapter and real popup fixtures, unmodified AOSP native notification/QS gestures, and unverified ColorOS injection. No actual PMS110/Find N5 is connected; those device results must not be claimed.
+
+Native AOSP quick settings may remain in SystemUI after the first upward gesture. The separate emulator baseline test records whether a second native swipe is needed (maximum two); no workspace or SystemUI production code is changed for this emulator-only observation. ColorOS single-swipe behaviour still requires PMS110 validation.

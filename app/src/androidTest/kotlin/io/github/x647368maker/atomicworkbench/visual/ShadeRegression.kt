@@ -20,7 +20,9 @@ internal class ShadeRegression(private val inst:Instrumentation) {
     private fun settle(){inst.waitForIdleSync();Thread.sleep(130)}
     private fun menuCount()=inst.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("GLASS_TEST_ACTION")?.size ?: 0
     fun run(activity:Activity,root:FrameLayout,out:File):List<String> {
-        val lines=mutableListOf<String>();val wm=activity.getSystemService(WindowManager::class.java)
+        val lines=mutableListOf<String>()
+        fun record(text:String){lines.add(text);File(out,"shade-results.txt").writeText(lines.joinToString("\n")+"\n")}
+        val wm=activity.getSystemService(WindowManager::class.java)
         lateinit var anchor:TextView;lateinit var panel:FrameLayout
         ui {
             root.removeAllViews();root.setBackgroundColor(Color.rgb(80,125,180))
@@ -50,7 +52,7 @@ internal class ShadeRegression(private val inst:Instrumentation) {
                 check(panel.scaleX==1f && panel.scaleY==1f && panel.translationX==0f && panel.translationY==0f && panel.clipBounds==clip && params.flags==flags)
             };event.recycle();panel.clipBounds=null
         }
-        lines.add("PASS native shade adapter: 20 cycles preserve matrix, clip, native flags, location and MotionEvent exactly; no custom touch region")
+        record("PASS native shade adapter: 20 cycles preserve matrix, clip, native flags, location and MotionEvent exactly; no custom touch region")
         repeat(20) { i->
             ui{AtomicPopupMenu.show(activity,anchor,(listOf("GLASS_TEST_ACTION" to {}) + if(i==0)(1..15).map{"MENU_ITEM_$it" to {}} else emptyList()))};settle();check(menuCount()==1){"Menu unavailable while panel closed"}
             if(i==0) {
@@ -67,10 +69,10 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             ui{panel.visibility=View.INVISIBLE};settle()
         }
         ui{AtomicPopupMenu.dismissAll();wm.removeViewImmediate(panel)};settle()
-        lines.add("PASS 20 real popup/native-window-fixture mutual exclusion cycles; panel open dismisses menu, collapse denial blocks overlay, closed state reopens")
+        record("PASS 20 real popup/native-window-fixture mutual exclusion cycles; panel open dismisses menu, collapse denial blocks overlay, closed state reopens")
         // Actual unmodified emulator SystemUI: open via public accessibility action and close by raw swipe.
-        fun waitPackage(pkg:String):Boolean {
-            repeat(30){if(inst.uiAutomation.rootInActiveWindow?.packageName?.toString()==pkg)return true;Thread.sleep(100)}
+        fun waitPackage(pkg:String, polls:Int=30):Boolean {
+            repeat(polls){if(inst.uiAutomation.rootInActiveWindow?.packageName?.toString()==pkg)return true;Thread.sleep(100)}
             return false
         }
         fun swipeUp() {
@@ -78,11 +80,16 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             for(i in 0..24){val y=m.heightPixels*(.88f-.85f*i/24f);val action=when(i){0->MotionEvent.ACTION_DOWN;24->MotionEvent.ACTION_UP;else->MotionEvent.ACTION_MOVE};val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);check(inst.uiAutomation.injectInputEvent(e,true));e.recycle();Thread.sleep(10)}
         }
         for((action,name)in listOf(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS to "notifications",AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS to "quick settings")) {
-            repeat(20){
+            var secondSwipe=0
+            repeat(20){cycle->
                 check(inst.uiAutomation.performGlobalAction(action));check(waitPackage("com.android.systemui")){"Native $name did not open"}
-                Thread.sleep(220);swipeUp();check(waitPackage(activity.packageName)){"Native $name swipe-up did not return input focus"}
+                Thread.sleep(220);swipeUp()
+                if(!waitPackage(activity.packageName,10)) {
+                    secondSwipe++;swipeUp()
+                    check(waitPackage(activity.packageName)){"Native $name cycle=$cycle did not close after two swipes; active=${inst.uiAutomation.rootInActiveWindow?.packageName}"}
+                }
             }
-            lines.add("PASS 20 actual AOSP $name accessibility-open/raw-swipe-up-close cycles; activity input focus returned")
+            record("PASS 20 actual AOSP $name accessibility-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; activity input focus returned")
         }
         File(out,"shade-results.txt").writeText(lines.joinToString("\n")+"\n")
         return lines
