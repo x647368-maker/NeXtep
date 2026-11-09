@@ -45,7 +45,28 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         LauncherIconManager.onAppOpened(this)
         if (::settings.isInitialized) settings.refresh()
-        UpdateCoordinator.maybeCheck(this) { if (::settings.isInitialized) settings.open(settings.page) }
+        showUpdatePrompt()
+        UpdateCoordinator.maybeCheck(this) {
+            if (::settings.isInitialized) settings.open(settings.page)
+            showUpdatePrompt()
+        }
+    }
+    private var promptedCode = 0L
+    private fun showUpdatePrompt() {
+        if (!UpdateCoordinator.auto(this) || isFinishing || isDestroyed) return
+        val release = UpdateCoordinator.available(this) ?: return
+        if (promptedCode >= release.metadata.versionCode) return
+        promptedCode = release.metadata.versionCode
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle("发现台前调度 ${release.version}")
+            .setMessage(release.notes.ifBlank { "有经过身份校验的新版本可用。" }.take(2000))
+            .setNegativeButton("稍后", null)
+            .setPositiveButton("查看并安装") { _, _ -> settings.open("about") }.show()
+    }
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("stage_page")?.let { if (::settings.isInitialized) settings.open(it) }
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("stage_page", settings.page)

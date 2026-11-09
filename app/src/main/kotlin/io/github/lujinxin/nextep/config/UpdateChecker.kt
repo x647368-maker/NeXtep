@@ -15,7 +15,7 @@ internal object UpdateChecker {
         var fetched = 0
         for(index in 0 until releases.length()) {
             val release = releases.getJSONObject(index)
-            if(release.optBoolean("draft")) continue
+            if(release.optBoolean("draft") || (release.optBoolean("prerelease") && channel==UpdatePolicy.Channel.STABLE)) continue
             val assets = release.optJSONArray("assets") ?: continue
             val all = (0 until assets.length()).map { assets.getJSONObject(it) }.filter { it.optString("state") == "uploaded" }
             val manifests = all.filter { it.optString("name") == "atomic-update.json" }

@@ -11,7 +11,7 @@ import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
 import java.util.concurrent.Executors
 
-/** Opt-in checks on settings entry, at most every 12 hours. No service or boot polling. */
+/** Opt-in checks on app entry: 12h after success, 1h after failure. No background polling. */
 internal object UpdateCoordinator {
     private val worker=Executors.newSingleThreadExecutor()
     @Volatile private var checking=false
@@ -22,7 +22,7 @@ internal object UpdateCoordinator {
     }.getOrDefault(UpdatePolicy.Channel.DEV)
     fun setChannel(c: Context,v: UpdatePolicy.Channel) { prefs(c).edit().putString("channel",v.name).putLong("last_check",0).apply() }
     fun auto(c: Context)=prefs(c).getBoolean("auto",false)
-    fun setAuto(c: Context,v: Boolean) { prefs(c).edit().putBoolean("auto",v).apply() }
+    fun setAuto(c: Context,v: Boolean) { prefs(c).edit().putBoolean("auto",v).putLong("last_check",0).apply() }
     fun available(c: Context): UpdateChecker.Release? = runCatching {
         val release=UpdateChecker.decode(prefs(c).getString("available",null) ?: return@runCatching null)
         release.takeIf { UpdatePolicy.eligible(it.metadata,installed(c).longVersionCode,channel(c)) }
@@ -38,11 +38,13 @@ internal object UpdateCoordinator {
         p.edit().putLong("seen_code",code).apply()
         if(previous<code) android.widget.Toast.makeText(activity,"已升级台前调度，请正常重启设备以加载新版 Vector 模块",android.widget.Toast.LENGTH_LONG).show()
         val now=System.currentTimeMillis()
-        if(!auto(activity)||checking||now-p.getLong("last_check",0) < 12L*60*60*1000) return
+        if(!UpdateCheckSchedule.due(auto(activity),checking,now,p.getLong("last_check",0),p.getBoolean("last_success",true))) return
         p.edit().putLong("last_check",now).apply();checking=true
         val app=activity.applicationContext
         worker.execute {
-            val release=runCatching { check(app) }.getOrNull()
+            val result=runCatching { check(app) }
+            prefs(app).edit().putBoolean("last_success",result.isSuccess).apply()
+            val release=result.getOrNull()
             checking=false
             if(release!=null) {
                 runCatching { notify(app,release) }
@@ -55,7 +57,7 @@ internal object UpdateCoordinator {
         val p=prefs(c);if(p.getLong("notified",0)>=r.metadata.versionCode) return
         val manager=c.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("atomic_updates","台前调度更新",NotificationManager.IMPORTANCE_DEFAULT))
-        val intent=Intent(c,MainActivity::class.java).putExtra("stage_page","about")
+        val intent=Intent(c,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("stage_page","about")
         val pending=PendingIntent.getActivity(c,72,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(72,Notification.Builder(c,"atomic_updates").setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("台前调度发现新版本").setContentText(r.version+" · 点击查看更新说明")

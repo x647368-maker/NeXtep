@@ -53,11 +53,29 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         }
         check(ready.await(10,TimeUnit.SECONDS));settle()
         val initial=textures.toSet();check(initial.size==4)
+        // Optional smart hiding uses alpha only: the live hosts stay attached and sized.
+        var allowed=true
+        lateinit var smart:StageSmartRail
+        val oldSizes=cards.map { it.width to it.height }
+        ui {
+            smart=StageSmartRail(activity,Handler(Looper.getMainLooper()),{ allowed }) { hidden -> cards.forEach { it.alpha=if(hidden)0f else 1f } }
+            smart.setEnabled(false);smart.setPinned(false)
+            check(!smart.hidden)
+            smart.setEnabled(true)
+        }
+        Thread.sleep(3800)
+        ui { check(smart.hidden && cards.all { it.alpha==0f });smart.interact();check(!smart.hidden)
+            smart.hideNow();check(smart.hidden);smart.setPinned(true);check(!smart.hidden)
+            smart.hideNow();check(!smart.hidden);smart.setPinned(false);allowed=false
+            smart.hideNow();check(!smart.hidden);smart.setEnabled(false);smart.stop()
+        }
+        check(destroyed==0 && cards.map { it.width to it.height }==oldSizes && cards.mapNotNull{it.textureView.surfaceTexture}.toSet()==initial)
+        record("PASS optional idle hide/restore/pin/blocked native state/disable retain all four attached TextureViews and exact dimensions; main expansion intentionally absent")
         val metrics=mutableListOf<Long>()
         val metricThread=HandlerThread("StageFrameMetrics").apply{start()}
         val listener=Window.OnFrameMetricsAvailableListener{_,m,_->synchronized(metrics){metrics.add(m.getMetric(FrameMetrics.TOTAL_DURATION))}}
         ui{activity.window.addOnFrameMetricsAvailableListener(listener,Handler(metricThread.looper))}
-        val commands=listOf("切换全屏（保留工作区）","顶部横排","左侧排列","右侧排列","收起常用应用快捷栏","完整显示布局","✓ 主窗口优先布局","添加小窗","影音布局与自动模式","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）","退出台前调度")
+        val commands=listOf("切换全屏（保留工作区）","顶部横排","左侧排列","右侧排列","收起常用应用快捷栏","完整显示布局","✓ 主窗口优先布局","添加小窗","影音布局与自动模式","开启智能侧栏（静置收起）","固定侧栏","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）","退出台前调度")
         var fired=-1
         val actions=commands.mapIndexed{i,label->label to {fired=i}}
         val expected=(0..3).map{category->commands.indices.filter{StageMenuPolicy.group(commands[it])==category}}

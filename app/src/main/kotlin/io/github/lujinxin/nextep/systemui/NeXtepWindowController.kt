@@ -124,6 +124,23 @@ class NeXtepWindowController(
         Thread(runnable, "NeXtep-Backdrop")
     }
     private val backdropHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val smartRail = StageSmartRail(context, backdropHandler,
+        { workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked &&
+            cinemaSlot == null && !workgroups.isSwitching() && slotCoordinator?.isGroupRestoreReady() == true &&
+            !geometry().railAtTop && !AtomicPopupMenu.isShowing() &&
+            SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)
+    private fun renderSmartRail(hidden: Boolean) {
+        // Display buffers and the frozen main/slot geometry remain untouched.
+        records.filter { it.title == "NeXtepSidebar" || it.title == "AtomicSidebarHandle" }.forEach { record ->
+            val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
+            configureWindow(record, params, geometry())
+            windowManager.updateViewLayout(record.view, params)
+            if (record.title == "NeXtepSidebar") {
+                record.view.animate().cancel()
+                record.view.alpha = if (hidden) 0f else 1f
+            }
+        }
+    }
     private var stageOrder = List(WORKSPACE_SLOT_COUNT) { it }
     private var stageMainId: Int? = null
     private var stageFocusBadge: android.widget.TextView? = null
@@ -192,6 +209,7 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        smartRail.stop()
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         contentDrag.cancel()
@@ -344,6 +362,7 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        smartRail.stop()
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         cinemaPolicy.reset(); cinemaSlot = null; viewport.cinema = false
@@ -796,7 +815,7 @@ class NeXtepWindowController(
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
             record.title == "AtomicSidebarHandle" || record.title == "StageMainHandle" ||
             (record.title == "NeXtepTopBar" && quickInputReady && !quickChromeSuppressed && !groupInputBlocked) ||
-            (record.title == "NeXtepSidebar" && !sidebarCollapsed && FeatureGate.TASK_SWAP.defaultEnabled))
+            (record.title == "NeXtepSidebar" && !sidebarCollapsed && !smartRail.hidden && FeatureGate.TASK_SWAP.defaultEnabled))
         params.flags = if (touchable) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         // A foreground app normally hides live wallpaper, so screenshotWallpaper()
@@ -821,7 +840,8 @@ class NeXtepWindowController(
                 (if (geometry.railAtTop || geometry.isSidebarAtTop) "⌄ 展开小窗" else "⌃ 展开小窗")
                 else if (geometry.sidebarSide == SidebarSide.LEFT) "›\n展开" else "‹\n展开"
             textSize = if (sidebarCollapsed) 13f else 14f
-            contentDescription = if (sidebarCollapsed) "展开小窗" else "收起小窗"
+            contentDescription = if (sidebarCollapsed || smartRail.hidden) "展开小窗" else "收起小窗"
+            if (smartRail.hidden) { text = "│"; textSize = 18f }
         }
         if (record.title == "NeXtepContentPanel") {
             contentHighlightView?.layoutParams = FrameLayout.LayoutParams(
@@ -871,6 +891,13 @@ class NeXtepWindowController(
             "AtomicSidebarHandle" -> {
                 params.width=dp(48).toInt();params.height=dp(48).toInt()
                 params.x=geometry.availableRight-dp(56).toInt();params.y=geometry.availableTop+dp(4).toInt()
+                if (smartRail.hidden && !geometry.railAtTop) {
+                    // Inset from the back-gesture edge; no gesture exclusion or global listener.
+                    params.width=dp(24).toInt();params.height=dp(48).toInt()
+                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()
+                        else geometry.availableRight-dp(56).toInt()
+                    params.y=(geometry.availableTop+geometry.availableBottom-params.height)/2
+                }
             }
             "NeXtepTopBar" -> {
                 params.width = geometry.controlWidth
@@ -1130,6 +1157,7 @@ class NeXtepWindowController(
     }
 
     private fun changeStageLayout(top: Boolean, side: SidebarSide = sidebarSide) {
+        smartRail.stop()
         check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
         if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
         // Preserve the established collapsed-rail expand/side callbacks. Atomic
@@ -1170,6 +1198,11 @@ class NeXtepWindowController(
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
             "添加小窗" to { chooseWindowApp(anchor,null) },
             "影音布局与自动模式" to { showCinemaMenu(anchor) },
+            (if (smartRail.enabled) "关闭智能侧栏" else "开启智能侧栏（静置收起）") to {
+                smartRail.setEnabled(!smartRail.enabled)
+                showStageMessage(if (smartRail.enabled) "智能侧栏已开启：侧栏静置后收起，保留任务和主窗比例；顶部布局不受影响" else "已恢复原有侧栏行为")
+            },
+            (if (smartRail.pinned) "取消固定侧栏" else "固定侧栏") to { smartRail.setPinned(!smartRail.pinned) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
             "关闭主窗（移回后台）" to { closeMainWindow() },
@@ -1357,7 +1390,12 @@ class NeXtepWindowController(
         }
         contentDescription = "滑动收起或展开侧栏"
         isClickable = true
-        setOnClickListener { setSidebarCollapsed(!sidebarCollapsed) }
+        setOnClickListener {
+            if (smartRail.hidden) {
+                if (SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) smartRail.interact()
+            } else if (smartRail.enabled && !sidebarCollapsed && !geometry().railAtTop) smartRail.hideNow()
+            else setSidebarCollapsed(!sidebarCollapsed)
+        }
         var downX = 0f
         var downY = 0f
         setOnTouchListener { view, event ->
@@ -1379,6 +1417,7 @@ class NeXtepWindowController(
 
     private fun setSidebarCollapsed(value: Boolean) {
         if (!workspaceVisible || suspended || groupInputBlocked || sidebarCollapsed == value) return
+        smartRail.stop()
         cancelDragVisuals()
         sidebarCollapsed = value
         onViewportChanged()
@@ -1402,6 +1441,10 @@ class NeXtepWindowController(
 
     private var sidebarTouchRegionReady = false
     private fun sidebarPanel(geometry: WorkspaceGeometry): View = object : FrameLayout(context) {
+        override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) smartRail.interact()
+            return super.dispatchTouchEvent(event)
+        }
         private var insetsListener: Any? = null
         override fun onAttachedToWindow() {
             super.onAttachedToWindow()
@@ -1878,6 +1921,7 @@ class NeXtepWindowController(
                     applyStageStack(geometry())
                 }
                 stageMainId = main.taskId
+                smartRail.interact()
             }
             val label = runCatching {
                 val info = context.packageManager.getApplicationInfo(main.component.packageName, 0)

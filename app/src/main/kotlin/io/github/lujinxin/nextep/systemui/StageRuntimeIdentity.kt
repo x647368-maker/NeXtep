@@ -5,8 +5,8 @@ import android.os.*
 
 /** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */
 internal object StageRuntimeIdentity {
-    const val BUILD = "0.9.11/26-glass-transition"
-    const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_26"
+    const val BUILD = "0.9.12/27-exchange-diagnostics"
+    const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_27"
     private var registered=false
     fun bootstrap() {
         runCatching {
@@ -24,10 +24,11 @@ internal object StageRuntimeIdentity {
                     if(i.action!=ACTION)return
                     setResultExtras(Bundle().apply{
                         putString("loaded_build",BUILD)
+                        putString("exchange_metrics",io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.describe())
                         putInt("loaded_pid",Process.myPid())
                         putString("native_panel",SystemUiPanelMonitor.refresh(context).name)
                         putString("panel_windows",SystemUiPanelMonitor.diagnostic())
-                    });resultCode=26
+                    });resultCode=27
                 }
             },IntentFilter(ACTION),"io.github.x647368maker.atomicworkbench.permission.CONTROL_WORKSPACE",null,Context.RECEIVER_EXPORTED)
             registered=true

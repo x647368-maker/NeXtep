@@ -29,14 +29,17 @@ internal object UpdateSection {
             }
         }
         root.addView(Switch(activity).apply {
-            text="打开设置时自动检测（最多每12小时一次）";isChecked=UpdateCoordinator.auto(activity)
+            text="启动应用时自动检查更新（正常每12小时一次）";isChecked=UpdateCoordinator.auto(activity)
             setOnCheckedChangeListener { _,enabled ->
                 UpdateCoordinator.setAuto(activity,enabled)
+                if(enabled) UpdateCoordinator.maybeCheck(activity) {
+                    if(!activity.isDestroyed && !activity.isFinishing) Toast.makeText(activity,"发现可验证的新版本，请点击查看 / 安装新版本",Toast.LENGTH_LONG).show()
+                }
                 if(enabled && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
                     activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),72)
             }
         })
-        val status=label("仅接收本项目带 versionCode 与校验元数据的版本。")
+        val status=label("首次开启后，启动 App 时按频率检查；不是实时推送。拒绝通知仍可在应用内查看。仅接收本项目校验完整的正式发布。")
         root.addView(status)
         var release=UpdateCoordinator.available(activity)
         var disposed=false
@@ -46,7 +49,7 @@ internal object UpdateSection {
             override fun onViewDetachedFromWindow(v:View) { disposed=true;worker.shutdownNow() }
         })
         val check=Button(activity).apply { text="检查更新" }
-        val download=Button(activity).apply { text="查看 / 安装新版本";isEnabled=release!=null }
+        val download=Button(activity).apply { text="查看 / 安装新版本";isEnabled=true }
         fun valid()=!disposed&&!activity.isDestroyed&&!activity.isFinishing
         fun showRelease(r:UpdateChecker.Release) {
             MaterialAlertDialogBuilder(activity).setTitle("台前调度 ${r.version}")
@@ -88,7 +91,7 @@ internal object UpdateSection {
                 }
             }
         }
-        download.setOnClickListener { release?.takeIf { UpdatePolicy.eligible(it.metadata,installed.longVersionCode,UpdateCoordinator.channel(activity)) }?.let(::showRelease) }
+        download.setOnClickListener { release=UpdateCoordinator.available(activity); if(release==null) { check.performClick(); return@setOnClickListener }; release?.takeIf { UpdatePolicy.eligible(it.metadata,installed.longVersionCode,UpdateCoordinator.channel(activity)) }?.let(::showRelease) }
         for(button in listOf(check,download)) root.addView(button,LinearLayout.LayoutParams(-1,dp(52)))
         root.addView(Button(activity).apply { text="查看项目发布页面";setOnClickListener { openBrowser(activity,UpdateChecker.RELEASES_URL) } },LinearLayout.LayoutParams(-1,dp(52)))
         root.addView(label("更新后需要正常重启一次加载新版模块；不会清除工作组、固定应用或设置。"))

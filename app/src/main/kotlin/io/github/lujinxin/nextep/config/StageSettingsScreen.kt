@@ -401,7 +401,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         activity.sendOrderedBroadcast(intent,null,object:BroadcastReceiver(){
             override fun onReceive(c:Context?,i:Intent?) {
                 val b=getResultExtras(false);val build=b?.getString("loaded_build")
-                runtimeIdentity=if(resultCode==26 && build==expected) "本版已加载：$build · PID ${b?.getInt("loaded_pid")} · 面板 ${b?.getString("native_panel")}" else "未取得本版注入凭据：可能仍是旧组件；正常重启后打开工作区再刷新"
+                runtimeIdentity=if(resultCode==27 && build==expected) "本版已加载：$build · PID ${b?.getInt("loaded_pid")} · 面板 ${b?.getString("native_panel")}\n任务迁移实测（本次启动）：\n${b?.getString("exchange_metrics")}\nmain=true 表示在主线程执行；这里只报告测量，不代表已解决 ColorOS 卡顿。" else "未取得本版注入凭据：可能仍是旧组件；正常重启后打开工作区再刷新"
                 if(page=="diagnostics")open("diagnostics")
             }
         },handler,0,null,Bundle())

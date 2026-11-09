@@ -1485,7 +1485,7 @@ class SlotTaskCoordinator(
                         taskRepository.foregroundTask()?.taskId == expectedMainTaskId
                     ) { "Main task or slot changed during the exchange preview" }
                 }
-                operation()
+                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("exchange_move") { operation() }
             }.onFailure { error ->
                 NeXtepLog.error("slot_coordinator", "Transition failed $label", error)
                 if (animated) showMessage(AppLanguage.string(applicationContext, R.string.window_swap_incomplete))
@@ -2016,16 +2016,20 @@ class SlotTaskCoordinator(
             TaskSurfaceCompat.cancelPreparedPromotion(taskId)
         }
         try {
-            ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
+            io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_binder") {
+                ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
+            }
         } catch (error: Throwable) {
             TaskSurfaceCompat.cancelDisplayExchange(taskId)
             throw error
         }
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
         var observedDisplayId = taskRepository.findTask(taskId)?.displayId
+        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_observation") {
         while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
             observedDisplayId = taskRepository.findTask(taskId)?.displayId
+        }
         }
         val after = taskRepository.findTask(taskId)
         NeXtepLog.info("task_continuity", "move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
@@ -2040,7 +2044,7 @@ class SlotTaskCoordinator(
         bounds: Rect,
         densityDpi: Int,
         windowingMode: Int,
-    ) {
+    ) = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("layout_observation") {
         val deadline = SystemClock.uptimeMillis() + TASK_LAYOUT_TIMEOUT_MS
         var snapshot = taskRepository.findTask(taskId)
         while (snapshot != null &&

@@ -7,17 +7,18 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
-reviewed=json.loads((root/'scripts/reviewed-refinements-0.9.11.json').read_text())['files']
+reviewed_chain=[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
- if path not in reviewed:return data
- spec=reviewed[path]
- assert hashlib.sha256(data).hexdigest()==spec['updated_sha256'],path
- text=data.decode()
- for patch in spec['patches']:
-  assert text.count(patch['after'])==1,path
-  text=text.replace(patch['after'],patch['before'],1)
- data=text.encode();assert hashlib.sha256(data).hexdigest()==spec['baseline_sha256'],path
+ for reviewed in reviewed_chain:
+  if path not in reviewed:continue
+  spec=reviewed[path]
+  assert hashlib.sha256(data).hexdigest()==spec['updated_sha256'],path
+  text=data.decode()
+  for patch in spec['patches']:
+   assert text.count(patch['after'])==1,path
+   text=text.replace(patch['after'],patch['before'],1)
+  data=text.encode();assert hashlib.sha256(data).hexdigest()==spec['baseline_sha256'],path
  return data
 s=(k/'display/SlotTaskCoordinator.kt').read_text()
 def function(text,name):
@@ -129,4 +130,4 @@ menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
 assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
 assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
 assert 'TRANSPARENT' in menu and '*.38f' in menu
-print('0.9.8 frozen hashes enforced after exact reviewed 0.9.11 fragment normalization; geometry/task/input writers remain original; native shade and bounded menu checked')
+print('0.9.8 frozen hashes enforced after exact reviewed 0.9.12 and 0.9.11 fragment normalization; geometry/task/input writers remain original; native shade and bounded menu checked')
