@@ -30,7 +30,7 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             val p=WindowManager.LayoutParams(-1,-1,WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,PixelFormat.TRANSLUCENT)
             p.token=activity.window.decorView.windowToken;p.setTitle("NotificationShade-Fixture");panel.visibility=View.INVISIBLE
-            wm.addView(panel,p);SystemUiPanelMonitor.observe(panel)
+            wm.addView(panel,p);check(SystemUiPanelMonitor.isPanel(panel)){"Native fixture not recognized"};SystemUiPanelMonitor.observe(panel)
         };settle()
         ui {
             val params=panel.layoutParams as WindowManager.LayoutParams
@@ -59,12 +59,12 @@ internal class ShadeRegression(private val inst:Instrumentation) {
                 check(bounds.width()<=300*activity.resources.displayMetrics.density+3)
                 inst.uiAutomation.takeScreenshot()?.let {b->File(out,"099-glass-menu.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}
             }
-            ui{panel.visibility=View.VISIBLE;SystemUiPanelMonitor.changed()};settle()
-            check(menuCount()==0){"Menu overlapped native panel"}
+            ui{panel.visibility=View.VISIBLE};settle()
+            check(menuCount()==0){"Menu overlapped native panel: ${SystemUiPanelMonitor.state()} ${SystemUiPanelMonitor.diagnostic()}"}
             ui{check(!AtomicPopupMenu.isShowing()){ "Popup survived native panel opening" }}
             // The normal test APK lacks STATUS_BAR: collapse denial must never create an overlay.
             ui{AtomicPopupMenu.show(activity,anchor,listOf("GLASS_TEST_ACTION" to {}))};settle();check(menuCount()==0)
-            ui{panel.visibility=View.INVISIBLE;SystemUiPanelMonitor.changed()};settle()
+            ui{panel.visibility=View.INVISIBLE};settle()
         }
         ui{AtomicPopupMenu.dismissAll();wm.removeViewImmediate(panel)};settle()
         lines.add("PASS 20 real popup/native-window-fixture mutual exclusion cycles; panel open dismisses menu, collapse denial blocks overlay, closed state reopens")

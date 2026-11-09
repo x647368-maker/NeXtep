@@ -11,7 +11,10 @@ import java.util.WeakHashMap
 internal object SystemUiPanelMonitor {
     private var inventoryConfirmed=false
     private var systemUi=false
-    private val roots=WeakHashMap<View,ViewTreeObserver.OnGlobalLayoutListener>()
+    private data class Observers(val layout:ViewTreeObserver.OnGlobalLayoutListener,
+        val draw:ViewTreeObserver.OnPreDrawListener, val focus:ViewTreeObserver.OnWindowFocusChangeListener)
+    private val roots=WeakHashMap<View,Observers>()
+    private var lastState:StagePanelMenuGate.State?=null
     fun isPanel(view:View):Boolean {
         val title=(view.layoutParams as? WindowManager.LayoutParams)?.title?.toString().orEmpty()
         return title.contains("NotificationShade",true) || title.contains("ControlCenter",true) ||
@@ -22,12 +25,20 @@ internal object SystemUiPanelMonitor {
         if(!isPanel(view) || roots.containsKey(view))return
         val ref=WeakReference(view)
         val listener=ViewTreeObserver.OnGlobalLayoutListener {if(ref.get()!=null)changed()}
-        roots[view]=listener
+        val draw=ViewTreeObserver.OnPreDrawListener {if(ref.get()!=null)changed();true}
+        val focus=ViewTreeObserver.OnWindowFocusChangeListener {if(ref.get()!=null)changed()}
+        roots[view]=Observers(listener,draw,focus)
         view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        view.viewTreeObserver.addOnPreDrawListener(draw)
+        view.viewTreeObserver.addOnWindowFocusChangeListener(focus)
         view.addOnAttachStateChangeListener(object:View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v:View) {changed()}
             override fun onViewDetachedFromWindow(v:View) {
-                roots.remove(v)?.let {if(v.viewTreeObserver.isAlive)v.viewTreeObserver.removeOnGlobalLayoutListener(it)}
+                roots.remove(v)?.let {if(v.viewTreeObserver.isAlive){
+                    v.viewTreeObserver.removeOnGlobalLayoutListener(it.layout)
+                    v.viewTreeObserver.removeOnPreDrawListener(it.draw)
+                    v.viewTreeObserver.removeOnWindowFocusChangeListener(it.focus)
+                }}
                 v.removeOnAttachStateChangeListener(this);changed()
             }
         })
@@ -62,5 +73,13 @@ internal object SystemUiPanelMonitor {
         }
         return if(unknown)StagePanelMenuGate.State.UNKNOWN else StagePanelMenuGate.State.CLOSED
     }
-    fun changed() { AtomicPopupMenu.onPanelChanged() }
+    internal fun diagnostic():String=roots.keys.toList().joinToString(";") {
+        val p=it.layoutParams as? WindowManager.LayoutParams
+        "attached=${it.isAttachedToWindow},shown=${it.isShown},visibility=${it.visibility},window=${it.windowVisibility},flags=${p?.flags}"
+    }
+    fun changed() {
+        val next=state()
+        if(next!=lastState){lastState=next;io.github.x647368maker.atomicworkbench.logging.NeXtepLog.info("shade_state","$next ${diagnostic()}")}
+        AtomicPopupMenu.onPanelChanged()
+    }
 }
