@@ -1132,6 +1132,13 @@ class NeXtepWindowController(
     private fun changeStageLayout(top: Boolean, side: SidebarSide = sidebarSide) {
         check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
         if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
+        // Preserve the established collapsed-rail expand/side callbacks. Atomic
+        // layout selection applies to the visible four-card path, not its state machine.
+        if (!top && sidebarCollapsed && side != sidebarSide) {
+            if (viewport.isTopRail()) changeStageLayout(false)
+            onSidebarSideRequested(side)
+            return
+        }
         cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
         leaveCinema()
         val previous = viewport.isTopRail()
