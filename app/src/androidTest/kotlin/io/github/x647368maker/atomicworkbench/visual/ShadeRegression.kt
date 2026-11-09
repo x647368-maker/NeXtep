@@ -105,11 +105,22 @@ internal class ShadeRegression(private val inst:Instrumentation) {
         fun focus():String = shell("dumpsys window").lineSequence()
             .filter { it.contains("mCurrentFocus=") }.joinToString("\n")
         fun waitFocus(native:Boolean, polls:Int=30):Boolean {
+            var closedSince:Long?=null
             repeat(polls) {
-                val f=focus()
-                val matches=if(native) f.contains("NotificationShade") || f.contains("ControlCenter")
-                    else f.contains(activity.packageName)
-                if(matches)return true
+                val dump=shell("dumpsys window")
+                val f=dump.lineSequence().filter{it.contains("mCurrentFocus=")}.joinToString("\n")
+                val panels=dump.split(Regex("(?m)^  Window #")).drop(1).filter {
+                    val header=it.lineSequence().firstOrNull().orEmpty()
+                    header.contains("NotificationShade") || header.contains("ControlCenter")
+                }
+                val visible=panels.any{block->block.lineSequence().any{it.trim()=="isVisible=true"}}
+                val focused=if(native) f.contains("NotificationShade") || f.contains("ControlCenter") else f.contains(activity.packageName)
+                if(native && focused && visible)return true
+                if(!native && focused && panels.isNotEmpty() && !visible) {
+                    val now=SystemClock.uptimeMillis()
+                    if(closedSince==null)closedSince=now
+                    if(now-closedSince!!>=80)return true
+                } else closedSince=null
                 Thread.sleep(100)
             }
             return false
