@@ -646,7 +646,7 @@ class SlotTaskCoordinator(
             }, display, task, tasks.firstOrNull { it.taskId==task }?.displayId,
                 tasks.filter { it.displayId==display }.map { it.taskId },
                 slots[i].view.textureView.isAvailable && slots[i].view.textureView.surfaceTexture != null,
-                slots[i].view.hasVisibleContent())
+                slots[i].view.hasVisibleContent(), when(state) {is SlotState.Ready -> state.displayId;is SlotState.Occupied -> state.displayId;else -> null})
         }
     }
 

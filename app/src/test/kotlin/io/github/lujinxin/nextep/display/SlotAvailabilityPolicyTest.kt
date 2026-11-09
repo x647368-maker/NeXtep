@@ -48,4 +48,11 @@ class SlotAvailabilityPolicyTest {
     @Test fun lostProducerDoesNotReserveAReadySlot() {
         assertEquals(SlotAvailabilityPolicy.Decision.Recover,SlotAvailabilityPolicy.decide(List(4){ready(it).copy(surface=false)}))
     }
+    @Test fun staleReadyDisplayCannotReceiveANewLaunch() {
+        assertEquals(SlotAvailabilityPolicy.Decision.Recover,SlotAvailabilityPolicy.decide(List(4){ready(it).copy(recordedDisplay=99)}))
+    }
+    @Test fun staleOccupiedDisplayCannotEstablishFullCapacity() {
+        assertEquals(SlotAvailabilityPolicy.Decision.Recover,SlotAvailabilityPolicy.decide(List(4){occupied(it).copy(recordedDisplay=99)}))
+    }
+
 }

@@ -242,8 +242,7 @@ internal class WorkspaceViewport(
         if (cachedKey == key && cached != null) return
         val encoded = runCatching { preferences?.getString(key, null) }.getOrNull()
         val savedProfile = WorkspaceLayoutProfile.decode(encoded)?.takeIf {
-            it.geometry.screenWidth == width && it.geometry.screenHeight == height &&
-                (navigationButtonsEnabled || it.geometry.navigationInsets == WorkspaceNavigationInsets())
+            it.geometry.screenWidth == width && it.geometry.screenHeight == height
         }?.let { it.copy(geometry = it.geometry.copy(displayRotation = rotation)) }
         if (savedProfile != null) {
             val g = savedProfile.geometry
