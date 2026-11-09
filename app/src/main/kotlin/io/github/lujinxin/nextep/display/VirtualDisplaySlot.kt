@@ -40,10 +40,17 @@ class VirtualDisplaySlot(
     private var lastCreationFailure: String? = null
     internal fun initializationFailure(): String? = lastCreationFailure
     internal fun retryInitialization() {
-        if (!active || suspended || virtualDisplay != null) return
+        if (!active || suspended) return
+        val texture = view.textureView.surfaceTexture
+        if (virtualDisplay != null) {
+            // Recover the existing task-owning display rather than creating a new one.
+            if (texture != null && view.textureView.isAvailable) {
+                reconnectRetainedOutput(texture, view.textureView.width, view.textureView.height)
+            } else { view.invalidate(); view.textureView.invalidate() }
+            return
+        }
         creationAttempts = 0 // one explicit user repair, not a background retry loop
         lastCreationFailure = null
-        val texture = view.textureView.surfaceTexture
         if (texture != null && view.textureView.isAvailable) createDisplay(texture, view.textureView.width, view.textureView.height)
         else { view.invalidate(); view.textureView.invalidate() }
     }
