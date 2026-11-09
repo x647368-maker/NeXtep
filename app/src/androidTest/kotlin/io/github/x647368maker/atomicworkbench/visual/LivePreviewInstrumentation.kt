@@ -107,6 +107,7 @@ class LivePreviewInstrumentation : Instrumentation() {
             }
             checks.addAll(InteractionRegression(this).run(activity,root,out))
             checks.addAll(ShadeRegression(this).run(activity,root,out))
+            checks.addAll(RefinementRegression(this).run(activity,root,out))
             File(out,"render-results.txt").writeText(checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             result.putString("stream",checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             runOnMainSync { activity.finish() }

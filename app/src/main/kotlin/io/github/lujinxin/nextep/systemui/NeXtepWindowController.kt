@@ -99,6 +99,7 @@ class NeXtepWindowController(
     private var slotBackgroundSwipeEnabled = true
     private var frostStrength = 50
     private val swapAnimator = WorkspaceSwapAnimator(context)
+    private val swapCapture = StageAsyncPreviewCapture()
     private val internalDrag = WorkspaceInternalDragController(
         context, ::geometry, { slotWindows.map { it.view } },
         ::highlightInternalDragTarget, ::dropInternalPayload,
@@ -1128,16 +1129,20 @@ class NeXtepWindowController(
         showStageMessage("已移动实际微信任务；共用任务的小程序会与微信一起移动")
     }
 
-    private fun changeStageLayout(top: Boolean) {
+    private fun changeStageLayout(top: Boolean, side: SidebarSide = sidebarSide) {
         check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
         if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
         cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
         leaveCinema()
         val previous = viewport.isTopRail()
+        val previousSide=sidebarSide
+        if(previous==top && previousSide==side)return
         runCatching {
+            viewport.setSidebarSide(side);sidebarSide=side;topAppStrip?.setSidebarSide(side)
             viewport.setTopRail(top)
             if (workspaceVisible && !suspended) onViewportChanged()
         }.onFailure {
+            viewport.setSidebarSide(previousSide);sidebarSide=previousSide;topAppStrip?.setSidebarSide(previousSide)
             viewport.setTopRail(previous)
             if (workspaceVisible && !suspended) onViewportChanged()
             throw it
@@ -1151,8 +1156,8 @@ class NeXtepWindowController(
         AtomicPopupMenu.show(context, anchor, listOf(
             "切换全屏（保留工作区）" to { onExitRequested() },
             "顶部横排" to { changeStageLayout(true) },
-            "左侧排列" to { if (viewport.isTopRail()) changeStageLayout(false);onSidebarSideRequested(SidebarSide.LEFT) },
-            "右侧排列" to { if (viewport.isTopRail()) changeStageLayout(false);onSidebarSideRequested(SidebarSide.RIGHT) },
+            "左侧排列" to { changeStageLayout(false,SidebarSide.LEFT) },
+            "右侧排列" to { changeStageLayout(false,SidebarSide.RIGHT) },
             (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
@@ -1162,7 +1167,10 @@ class NeXtepWindowController(
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
             "关闭主窗（移回后台）" to { closeMainWindow() },
             "退出台前调度" to { onExitRequested() },
-        ))
+        ), avoidBounds = buildList {
+            val g=geometry();add(Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom))
+            slotWindows.forEach { slot -> val box=Rect();if(slot.view.getScreenVisibleRect(box))add(box) }
+        })
     }
 
     private fun setMainPriority(priority: Boolean) {
@@ -1474,6 +1482,7 @@ class NeXtepWindowController(
         slotWindows.forEach { it.view.cancelBackgroundSwipe() }
         slotCoordinator?.onSlotDragEnded()
         slotCoordinator?.cancelPendingExchange()
+        swapCapture.cancel()
         swapAnimator.cancel()
     }
 
@@ -1534,13 +1543,33 @@ class NeXtepWindowController(
     }
 
     private fun animateSwap(
+        sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?,
+        move: () -> Boolean, onFinished: () -> Unit,
+    ) {
+        val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
+        if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
+            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null);return
+        }
+        val capturedGeometry=geometry()
+        val states=slotCoordinator?.slotStates().orEmpty().toList()
+        swapCapture.request(
+            load={TaskSurfaceCompat.capturePreview(task,Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))},
+            valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
+            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it)},
+            onCancel=onFinished,
+        )
+    }
+
+    private fun animateSwapPrepared(
         sourceIndex: Int,
         targetIndex: Int?,
         drag: SlotTaskDrag?,
         move: () -> Boolean,
         onFinished: () -> Unit,
+        capturedMainPreview: Bitmap?,
     ) {
         fun withoutPreview() {
+            if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()
             try { move() } finally { onFinished(); scheduleStageFocus() }
         }
         if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
@@ -1577,9 +1606,7 @@ class NeXtepWindowController(
         }
         val backdrop = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, 0, 0, frostStrength)
         val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null
-        val mainPreview = mainTaskId?.let {
-            TaskSurfaceCompat.capturePreview(it, Rect(0, 0, geometry.screenWidth, geometry.screenHeight))
-        }
+        val mainPreview = capturedMainPreview
         fun slotPreview(slot: VirtualDisplaySlot): android.graphics.Bitmap? {
             val source = slot.sourceBounds()
             return slot.view.capturePreview(source.width, source.height)
@@ -1647,7 +1674,8 @@ class NeXtepWindowController(
                     } else if (parkingMain) {
                         returningHomePackage != null &&
                             taskRepository.foregroundTask()?.component?.packageName == returningHomePackage
-                    } else mainTaskPresenter.currentTaskId() == incomingTaskId
+                    } else incomingTaskId!=null && mainTaskPresenter.currentTaskId()==incomingTaskId &&
+                        TaskSurfaceCompat.isPresentationSettled(incomingTaskId,geometry)
                     sourceReady && targetReady
                 },
                 onFinished = {

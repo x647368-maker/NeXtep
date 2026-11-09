@@ -396,6 +396,16 @@ object TaskSurfaceCompat {
         NeXtepLog.error("task_surface", "Reapply failed taskId=$taskId", error)
     }
 
+    /** Read-only handoff probe. Does not change any surface, crop, transform or input. */
+    internal fun isPresentationSettled(taskId: Int, geometry: WorkspaceGeometry): Boolean {
+        val p=activePresentations[taskId] ?: return false
+        val f=p.frame
+        return !p.restoring && p.geometry==geometry && ownsMainTask(taskId) &&
+            !presentationAnimators.containsKey(taskId) &&
+            f.scaleX==p.scaleX && f.scaleY==p.scaleY &&
+            f.positionX==p.positionX && f.positionY==p.positionY && f.crop==p.crop
+    }
+
     fun ownsMainTask(taskId: Int): Boolean = activePresentations[taskId]?.let {
         !it.restoring && ownedTaskLeash(taskId) === it.leash
     } == true

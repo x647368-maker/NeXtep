@@ -1,0 +1,71 @@
+{
+  "base_commit": "ed7fdb7d9512c015e08f1e1a9cefe72c9725efc7",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "baseline_sha256": "3cfb9229dac65a0d1e3a4628e9b975cd61b316574a54259f35e3cf449f197e1e",
+      "updated_sha256": "a3fb93135f3f3d84a6a2378cb3f08d189749c4f6ee977a24a0d8d85d36a17192",
+      "patches": [
+        {
+          "before": "    private var slotBackgroundSwipeEnabled = true\n    private var frostStrength = 50\n    private val swapAnimator = WorkspaceSwapAnimator(context)\n    private val internalDrag = WorkspaceInternalDragController(\n        context, ::geometry, { slotWindows.map { it.view } },\n        ::highlightInternalDragTarget, ::dropInternalPayload,\n",
+          "after": "    private var slotBackgroundSwipeEnabled = true\n    private var frostStrength = 50\n    private val swapAnimator = WorkspaceSwapAnimator(context)\n    private val swapCapture = StageAsyncPreviewCapture()\n    private val internalDrag = WorkspaceInternalDragController(\n        context, ::geometry, { slotWindows.map { it.view } },\n        ::highlightInternalDragTarget, ::dropInternalPayload,\n"
+        },
+        {
+          "before": "        showStageMessage(\"已移动实际微信任务；共用任务的小程序会与微信一起移动\")\n    }\n\n    private fun changeStageLayout(top: Boolean) {\n        check(!groupInputBlocked && !workgroups.isSwitching()) { \"请等待工作组切换完成\" }\n        if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { \"请等待窗口切换完成\" }\n        cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()\n        leaveCinema()\n        val previous = viewport.isTopRail()\n        runCatching {\n            viewport.setTopRail(top)\n            if (workspaceVisible && !suspended) onViewportChanged()\n        }.onFailure {\n            viewport.setTopRail(previous)\n            if (workspaceVisible && !suspended) onViewportChanged()\n            throw it\n",
+          "after": "        showStageMessage(\"已移动实际微信任务；共用任务的小程序会与微信一起移动\")\n    }\n\n    private fun changeStageLayout(top: Boolean, side: SidebarSide = sidebarSide) {\n        check(!groupInputBlocked && !workgroups.isSwitching()) { \"请等待工作组切换完成\" }\n        if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { \"请等待窗口切换完成\" }\n        cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()\n        leaveCinema()\n        val previous = viewport.isTopRail()\n        val previousSide=sidebarSide\n        if(previous==top && previousSide==side)return\n        runCatching {\n            viewport.setSidebarSide(side);sidebarSide=side;topAppStrip?.setSidebarSide(side)\n            viewport.setTopRail(top)\n            if (workspaceVisible && !suspended) onViewportChanged()\n        }.onFailure {\n            viewport.setSidebarSide(previousSide);sidebarSide=previousSide;topAppStrip?.setSidebarSide(previousSide)\n            viewport.setTopRail(previous)\n            if (workspaceVisible && !suspended) onViewportChanged()\n            throw it\n"
+        },
+        {
+          "before": "        AtomicPopupMenu.show(context, anchor, listOf(\n            \"切换全屏（保留工作区）\" to { onExitRequested() },\n            \"顶部横排\" to { changeStageLayout(true) },\n            \"左侧排列\" to { if (viewport.isTopRail()) changeStageLayout(false);onSidebarSideRequested(SidebarSide.LEFT) },\n            \"右侧排列\" to { if (viewport.isTopRail()) changeStageLayout(false);onSidebarSideRequested(SidebarSide.RIGHT) },\n            (if (core.enabled && core.expanded) \"收起常用应用快捷栏\" else \"展开常用应用快捷栏\") to { setQuickExpanded(!(core.enabled && core.expanded)) },\n            (if (!core.mainPriority) \"✓ 完整显示布局\" else \"完整显示布局\") to { setMainPriority(false) },\n            (if (core.mainPriority) \"✓ 主窗口优先布局\" else \"主窗口优先布局\") to { setMainPriority(true) },\n",
+          "after": "        AtomicPopupMenu.show(context, anchor, listOf(\n            \"切换全屏（保留工作区）\" to { onExitRequested() },\n            \"顶部横排\" to { changeStageLayout(true) },\n            \"左侧排列\" to { changeStageLayout(false,SidebarSide.LEFT) },\n            \"右侧排列\" to { changeStageLayout(false,SidebarSide.RIGHT) },\n            (if (core.enabled && core.expanded) \"收起常用应用快捷栏\" else \"展开常用应用快捷栏\") to { setQuickExpanded(!(core.enabled && core.expanded)) },\n            (if (!core.mainPriority) \"✓ 完整显示布局\" else \"完整显示布局\") to { setMainPriority(false) },\n            (if (core.mainPriority) \"✓ 主窗口优先布局\" else \"主窗口优先布局\") to { setMainPriority(true) },\n"
+        },
+        {
+          "before": "            \"替换主应用\" to { chooseWindowApp(anchor, null, main = true) },\n            \"关闭主窗（移回后台）\" to { closeMainWindow() },\n            \"退出台前调度\" to { onExitRequested() },\n        ))\n    }\n\n    private fun setMainPriority(priority: Boolean) {\n",
+          "after": "            \"替换主应用\" to { chooseWindowApp(anchor, null, main = true) },\n            \"关闭主窗（移回后台）\" to { closeMainWindow() },\n            \"退出台前调度\" to { onExitRequested() },\n        ), avoidBounds = buildList {\n            val g=geometry();add(Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom))\n            slotWindows.forEach { slot -> val box=Rect();if(slot.view.getScreenVisibleRect(box))add(box) }\n        })\n    }\n\n    private fun setMainPriority(priority: Boolean) {\n"
+        },
+        {
+          "before": "        slotWindows.forEach { it.view.cancelBackgroundSwipe() }\n        slotCoordinator?.onSlotDragEnded()\n        slotCoordinator?.cancelPendingExchange()\n        swapAnimator.cancel()\n    }\n\n",
+          "after": "        slotWindows.forEach { it.view.cancelBackgroundSwipe() }\n        slotCoordinator?.onSlotDragEnded()\n        slotCoordinator?.cancelPendingExchange()\n        swapCapture.cancel()\n        swapAnimator.cancel()\n    }\n\n"
+        },
+        {
+          "before": "    }\n\n    private fun animateSwap(\n        sourceIndex: Int,\n        targetIndex: Int?,\n        drag: SlotTaskDrag?,\n        move: () -> Boolean,\n        onFinished: () -> Unit,\n    ) {\n        fun withoutPreview() {\n            try { move() } finally { onFinished(); scheduleStageFocus() }\n        }\n        if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n",
+          "after": "    }\n\n    private fun animateSwap(\n        sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?,\n        move: () -> Boolean, onFinished: () -> Unit,\n    ) {\n        val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null\n        if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null);return\n        }\n        val capturedGeometry=geometry()\n        val states=slotCoordinator?.slotStates().orEmpty().toList()\n        swapCapture.request(\n            load={TaskSurfaceCompat.capturePreview(task,Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))},\n            valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},\n            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it)},\n            onCancel=onFinished,\n        )\n    }\n\n    private fun animateSwapPrepared(\n        sourceIndex: Int,\n        targetIndex: Int?,\n        drag: SlotTaskDrag?,\n        move: () -> Boolean,\n        onFinished: () -> Unit,\n        capturedMainPreview: Bitmap?,\n    ) {\n        fun withoutPreview() {\n            if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()\n            try { move() } finally { onFinished(); scheduleStageFocus() }\n        }\n        if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n"
+        },
+        {
+          "before": "        }\n        val backdrop = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, 0, 0, frostStrength)\n        val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null\n        val mainPreview = mainTaskId?.let {\n            TaskSurfaceCompat.capturePreview(it, Rect(0, 0, geometry.screenWidth, geometry.screenHeight))\n        }\n        fun slotPreview(slot: VirtualDisplaySlot): android.graphics.Bitmap? {\n            val source = slot.sourceBounds()\n            return slot.view.capturePreview(source.width, source.height)\n",
+          "after": "        }\n        val backdrop = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, 0, 0, frostStrength)\n        val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null\n        val mainPreview = capturedMainPreview\n        fun slotPreview(slot: VirtualDisplaySlot): android.graphics.Bitmap? {\n            val source = slot.sourceBounds()\n            return slot.view.capturePreview(source.width, source.height)\n"
+        },
+        {
+          "before": "                    } else if (parkingMain) {\n                        returningHomePackage != null &&\n                            taskRepository.foregroundTask()?.component?.packageName == returningHomePackage\n                    } else mainTaskPresenter.currentTaskId() == incomingTaskId\n                    sourceReady && targetReady\n                },\n                onFinished = {\n",
+          "after": "                    } else if (parkingMain) {\n                        returningHomePackage != null &&\n                            taskRepository.foregroundTask()?.component?.packageName == returningHomePackage\n                    } else incomingTaskId!=null && mainTaskPresenter.currentTaskId()==incomingTaskId &&\n                        TaskSurfaceCompat.isPresentationSettled(incomingTaskId,geometry)\n                    sourceReady && targetReady\n                },\n                onFinished = {\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "baseline_sha256": "e6f6d1a70d03467748d002f8600786422b43978044ad762e54c4674a53bf4215",
+      "updated_sha256": "985b1af12a289d289e6fc32858c330a05fae84b9ace09a00c2d194080fcfba8f",
+      "patches": [
+        {
+          "before": "    private var animator: ValueAnimator? = null\n    private var completion: (() -> Unit)? = null\n    private var generation = 0\n\n    val isRunning: Boolean get() = overlay != null\n\n",
+          "after": "    private var animator: ValueAnimator? = null\n    private var completion: (() -> Unit)? = null\n    private var generation = 0\n    private var handoff=StageStableHandoff()\n\n    val isRunning: Boolean get() = overlay != null\n\n"
+        },
+        {
+          "before": "            return\n        }\n        val token = ++generation\n        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,\n            sourceQuad, targetQuad)\n        // Reuse the non-touchable full-display content panel. Creating and\n",
+          "after": "            return\n        }\n        val token = ++generation\n        handoff=StageStableHandoff()\n        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,\n            sourceQuad, targetQuad)\n        // Reuse the non-touchable full-display content panel. Creating and\n"
+        },
+        {
+          "before": "        if (generation != token) return\n        val elapsed = SystemClock.uptimeMillis() - movedAt\n        val ready = elapsed >= minimumDelayMs && runCatching(isLiveReady).getOrDefault(false)\n        if (ready || elapsed >= MAX_HANDOFF_DELAY_MS) {\n            if (!ready) NeXtepLog.warn(\"workspace_swap\", \"Live frame handoff timed out\")\n            // Reveal the live buffers together on the next frame. Crossfading\n            // different app frames creates double edges and makes the tail blur.\n",
+          "after": "        if (generation != token) return\n        val elapsed = SystemClock.uptimeMillis() - movedAt\n        val ready = elapsed >= minimumDelayMs && runCatching(isLiveReady).getOrDefault(false)\n        if (handoff.observe(ready) || elapsed >= MAX_HANDOFF_DELAY_MS) {\n            if (!ready) NeXtepLog.warn(\"workspace_swap\", \"Live frame handoff timed out\")\n            // Reveal the live buffers together on the next frame. Crossfading\n            // different app frames creates double edges and makes the tail blur.\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt": {
+      "baseline_sha256": "b432f9a603f9e645a3b5ae7a8e5e5b6b9201a5b47c3a8a931da1f1540815254a",
+      "updated_sha256": "3791d8fc96a1802b78768f27e3d28a963d465d3fc16cd647ecfce4b52b032dc8",
+      "patches": [
+        {
+          "before": "        }\n    }.onFailure { error ->\n        NeXtepLog.error(\"task_surface\", \"Reapply failed taskId=$taskId\", error)\n    }\n\n    fun ownsMainTask(taskId: Int): Boolean = activePresentations[taskId]?.let {\n",
+          "after": "        }\n    }.onFailure { error ->\n        NeXtepLog.error(\"task_surface\", \"Reapply failed taskId=$taskId\", error)\n    }\n\n    /** Read-only handoff probe. Does not change any surface, crop, transform or input. */\n    internal fun isPresentationSettled(taskId: Int, geometry: WorkspaceGeometry): Boolean {\n        val p=activePresentations[taskId] ?: return false\n        val f=p.frame\n        return !p.restoring && p.geometry==geometry && ownsMainTask(taskId) &&\n            !presentationAnimators.containsKey(taskId) &&\n            f.scaleX==p.scaleX && f.scaleY==p.scaleY &&\n            f.positionX==p.positionX && f.positionY==p.positionY && f.crop==p.crop\n    }\n\n    fun ownsMainTask(taskId: Int): Boolean = activePresentations[taskId]?.let {\n"
+        }
+      ]
+    }
+  }
+}

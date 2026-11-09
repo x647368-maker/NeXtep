@@ -5,8 +5,8 @@ import android.os.*
 
 /** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */
 internal object StageRuntimeIdentity {
-    const val BUILD = "0.9.10/25-native-shade"
-    const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_25"
+    const val BUILD = "0.9.11/26-glass-transition"
+    const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_26"
     private var registered=false
     fun bootstrap() {
         runCatching {
@@ -27,7 +27,7 @@ internal object StageRuntimeIdentity {
                         putInt("loaded_pid",Process.myPid())
                         putString("native_panel",SystemUiPanelMonitor.refresh(context).name)
                         putString("panel_windows",SystemUiPanelMonitor.diagnostic())
-                    });resultCode=25
+                    });resultCode=26
                 }
             },IntentFilter(ACTION),"io.github.x647368maker.atomicworkbench.permission.CONTROL_WORKSPACE",null,Context.RECEIVER_EXPORTED)
             registered=true

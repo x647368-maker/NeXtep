@@ -59,7 +59,7 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             if(i==0) {
                 val bounds=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(bounds)
                 check(bounds.height()<=minOf(301*activity.resources.displayMetrics.density,activity.resources.displayMetrics.heightPixels*.42f))
-                check(bounds.width()<=236*activity.resources.displayMetrics.density+3)
+                check(bounds.width()<=220*activity.resources.displayMetrics.density+3)
                 inst.uiAutomation.takeScreenshot()?.let {b->File(out,"099-glass-menu.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}
             }
             ui{panel.visibility=View.VISIBLE};settle()

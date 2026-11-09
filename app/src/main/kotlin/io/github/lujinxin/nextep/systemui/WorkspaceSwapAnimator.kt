@@ -27,6 +27,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
     private var animator: ValueAnimator? = null
     private var completion: (() -> Unit)? = null
     private var generation = 0
+    private var handoff=StageStableHandoff()
 
     val isRunning: Boolean get() = overlay != null
 
@@ -54,6 +55,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
             return
         }
         val token = ++generation
+        handoff=StageStableHandoff()
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
             sourceQuad, targetQuad)
         // Reuse the non-touchable full-display content panel. Creating and
@@ -122,7 +124,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         if (generation != token) return
         val elapsed = SystemClock.uptimeMillis() - movedAt
         val ready = elapsed >= minimumDelayMs && runCatching(isLiveReady).getOrDefault(false)
-        if (ready || elapsed >= MAX_HANDOFF_DELAY_MS) {
+        if (handoff.observe(ready) || elapsed >= MAX_HANDOFF_DELAY_MS) {
             if (!ready) NeXtepLog.warn("workspace_swap", "Live frame handoff timed out")
             // Reveal the live buffers together on the next frame. Crossfading
             // different app frames creates double edges and makes the tail blur.

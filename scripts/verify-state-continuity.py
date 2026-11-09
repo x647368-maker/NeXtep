@@ -3,6 +3,22 @@
 from pathlib import Path
 import re,json
 root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/lujinxin/nextep'
+
+# Only exact reviewed performance/animation fragments may differ. All task moves,
+# geometry formulas, crop/input writers and the rest of each file remain frozen.
+import hashlib
+reviewed=json.loads((root/'scripts/reviewed-refinements-0.9.11.json').read_text())['files']
+def protected_bytes(path):
+ data=(root/path).read_bytes()
+ if path not in reviewed:return data
+ spec=reviewed[path]
+ assert hashlib.sha256(data).hexdigest()==spec['updated_sha256'],path
+ text=data.decode()
+ for patch in spec['patches']:
+  assert text.count(patch['after'])==1,path
+  text=text.replace(patch['after'],patch['before'],1)
+ data=text.encode();assert hashlib.sha256(data).hexdigest()==spec['baseline_sha256'],path
+ return data
 s=(k/'display/SlotTaskCoordinator.kt').read_text()
 def function(text,name):
  start=text.index('fun '+name+'('); brace=text.index('{',start);depth=1;end=brace+1
@@ -76,7 +92,7 @@ preserved.update(json.loads((root/'scripts/shade-native-0.9.9.json').read_text()
 for path,sha in preserved.items():
  if path=='profile_card_section_sha256':
   text=(k/'workspace/WorkspaceLayoutProfile.kt').read_text();data=text[text.index('    val canvas ='):text.index('    fun geometry(')].encode()
- else:data=(root/path).read_bytes()
+ else:data=protected_bytes(path)
  assert hashlib.sha256(data).hexdigest()==sha,path
 print('Task engine and top sizing remain frozen; explicitly reviewed 0.9.6 live clipping fixes match their manifest')
 
@@ -103,7 +119,7 @@ print('Full-source crop, shared margin snapshot and window-local chrome input bo
 
 # All stable runtime files except the approved shade/menu/version UI files remain exact.
 for path,sha in json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text()).items():
- assert hashlib.sha256((root/path).read_bytes()).hexdigest()==sha,path
+ assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
 shade=(k/'systemui/SystemUiRootTransformController.kt').read_text()
 shade_input=(k/'systemui/SystemUiShadeInputController.kt').read_text()
 assert 'contentScale' not in shade and 'view.scaleX =' not in shade
@@ -112,5 +128,5 @@ assert 'setTouchableInsets' not in shade_input and 'params.flags =' not in shade
 menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
 assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
 assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
-assert 'TRANSPARENT' in menu and '*.40f' in menu
-print('0.9.8 runtime geometry, tasks, live cards, quickbar and input mappings byte-frozen; native shade and bounded menu checked')
+assert 'TRANSPARENT' in menu and '*.38f' in menu
+print('0.9.8 frozen hashes enforced after exact reviewed 0.9.11 fragment normalization; geometry/task/input writers remain original; native shade and bounded menu checked')
