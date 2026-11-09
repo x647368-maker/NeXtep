@@ -21,7 +21,7 @@ adb shell settings put global animator_duration_scale 0
 adb shell input keyevent 82
 adb logcat -c
 set +e
-adb shell am instrument -w io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation | tee visual-instrumentation.txt
+timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -w io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation | tee visual-instrumentation.txt
 set -e
 adb logcat -d -s NeXtep > virtual-display-log.txt
 mkdir -p visual-results

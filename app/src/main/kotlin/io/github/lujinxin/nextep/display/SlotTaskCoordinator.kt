@@ -2121,7 +2121,7 @@ class SlotTaskCoordinator(
         const val DISPLAY_MOVE_TIMEOUT_MS = 700L
         const val DISPLAY_MOVE_POLL_MS = 30L
         const val TASK_LAYOUT_TIMEOUT_MS = 900L
-        const val TASK_LAYOUT_POLL_MS = 30L
+        const val TASK_LAYOUT_POLL_MS = 8L
         const val SLOT_MISMATCH_GRACE_MS = 2_400L
         const val MIGRATION_RECOVERY_WINDOW_MS = 5_000L
         const val MAX_MIGRATION_RECOVERY_ATTEMPTS = 1

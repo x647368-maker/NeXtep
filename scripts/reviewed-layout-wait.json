@@ -1,0 +1,16 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "baseline_sha256": "9fd31e2bdea3611c83d6f0c7b97fbbba754752fad986a3d82ec1cc2520cb1725",
+      "updated_sha256": "551ff2a8cedcc74361990585e4e302affcb6a04b988c190bf69e6488c1da8ff3",
+      "patches": [
+        {
+          "before": "const val TASK_LAYOUT_POLL_MS = 30L",
+          "after": "const val TASK_LAYOUT_POLL_MS = 8L"
+        }
+      ]
+    }
+  },
+  "base_commit": "d871e1cd04576a0b6ad83ace7da9c6f05b2dc46c",
+  "scope": "Experiment: only layout polling interval 30ms to 8ms; no condition/deadline/thread/geometry change"
+}
