@@ -1,0 +1,43 @@
+{
+  "purpose": "Exact, reversible output-retention fragments only; preserve v0.9.8 geometry/task invariants",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt": {
+      "updated_sha256": "0754efb82b608c99ccaf7ad067aac5c56348922b7a1445229dd8bc7d393884ba",
+      "baseline_sha256": "5d6ee5ac7d61e8093edf2b844f70db788c1789357563c44949bb2c03f7ab576a",
+      "patches": [
+        {
+          "before": "    private var suspended = false\n    private var surface: Surface? = null\n    private var virtualDisplay: VirtualDisplay? = null\n    private var outputConnected = false\n",
+          "after": "    private var suspended = false\n    private var surface: Surface? = null\n    // The producer texture can disappear while its virtual display still owns live tasks.\n    private var boundTexture: SurfaceTexture? = null\n    private var virtualDisplay: VirtualDisplay? = null\n    private var outputConnected = false\n"
+        },
+        {
+          "before": "        val texture = textureView.surfaceTexture\n        if (textureView.isAvailable && texture != null) {\n            createDisplay(texture, textureView.width, textureView.height)\n        }\n    }\n",
+          "after": "        val texture = textureView.surfaceTexture\n        if (textureView.isAvailable && texture != null) {\n            if (virtualDisplay != null) reconnectRetainedOutput(texture, textureView.width, textureView.height)\n            else createDisplay(texture, textureView.width, textureView.height)\n        }\n    }\n"
+        },
+        {
+          "before": "        } else {\n            val currentSurface = surface?.takeIf { it.isValid } ?: view.textureView.surfaceTexture?.let {\n                Surface(it).also { replacement -> surface?.release(); surface = replacement }\n            } ?: return false\n            check(currentSurface.isValid) { \"Slot $index output Surface is invalid\" }\n",
+          "after": "        } else {\n            val currentSurface = surface?.takeIf { it.isValid } ?: view.textureView.surfaceTexture?.let {\n                Surface(it).also { replacement ->\n                    surface?.release()\n                    surface = replacement\n                    boundTexture = it\n                }\n            } ?: return false\n            check(currentSurface.isValid) { \"Slot $index output Surface is invalid\" }\n"
+        },
+        {
+          "before": "\n    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {\n        if (active) createDisplay(texture, width, height)\n    }\n\n",
+          "after": "\n    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {\n        if (!active) return\n        if (virtualDisplay != null) reconnectRetainedOutput(texture, width, height)\n        else createDisplay(texture, width, height)\n    }\n\n"
+        },
+        {
+          "before": "\n    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {\n        releaseDisplay(\"surface destroyed\")\n        return true\n    }\n",
+          "after": "\n    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {\n        // Ignore stale callbacks from a replaced TextureView. Never detach a newer producer.\n        if (boundTexture != null && boundTexture !== texture) return true\n        if (active && virtualDisplay != null) {\n            // A task can still belong to this display during a multi-step exchange.\n            // The TextureView owns this SurfaceTexture and is about to destroy it;\n            // disconnect only the output, not the task-owning VirtualDisplay.\n            runCatching { virtualDisplay?.setSurface(null) }.onFailure {\n                NeXtepLog.warn(\"virtual_display\", \"Unable to disconnect lost texture slot=$index\", it)\n            }\n            outputConnected = false\n            surface?.release()\n            surface = null\n            boundTexture = null\n            NeXtepLog.info(\"virtual_display\", \"Retained display=${displayId()} after texture loss slot=$index\")\n        } else if (virtualDisplay != null || surface != null) {\n            releaseDisplay(\"surface destroyed\")\n        }\n        return true\n    }\n"
+        },
+        {
+          "before": "    }\n\n    private fun createDisplay(texture: SurfaceTexture, width: Int, height: Int) {\n        if (!active || suspended || virtualDisplay != null || width <= 0 || height <= 0 || creationAttempts >= 2) return\n",
+          "after": "    }\n\n    private fun reconnectRetainedOutput(texture: SurfaceTexture, width: Int, height: Int) {\n        val display = virtualDisplay ?: return\n        if (!active || suspended || width <= 0 || height <= 0) return\n        if (boundTexture === texture && outputConnected && surface?.isValid == true) return\n        val geometry = canvas()\n        texture.setDefaultBufferSize(geometry.width, geometry.height)\n        onSurfaceTextureSizeChanged(texture, width, height)\n        val replacement = Surface(texture)\n        try {\n            check(replacement.isValid) { \"Slot $index replacement surface is invalid\" }\n            display.setSurface(replacement)\n            surface?.release()\n            surface = replacement\n            boundTexture = texture\n            outputConnected = true\n            NeXtepLog.info(\"virtual_display\", \"Reconnected retained display=${displayId()} slot=$index\")\n        } catch (error: Throwable) {\n            replacement.release()\n            NeXtepLog.warn(\"virtual_display\", \"Retained display output reconnect failed slot=$index\", error)\n        }\n    }\n\n    private fun createDisplay(texture: SurfaceTexture, width: Int, height: Int) {\n        if (!active || suspended || virtualDisplay != null || width <= 0 || height <= 0 || creationAttempts >= 2) return\n"
+        },
+        {
+          "before": "                lastCreationFailure = null\n                surface = createdSurface\n                virtualDisplay = display\n                outputConnected = true\n",
+          "after": "                lastCreationFailure = null\n                surface = createdSurface\n                boundTexture = texture\n                virtualDisplay = display\n                outputConnected = true\n"
+        },
+        {
+          "before": "        surface?.release()\n        surface = null\n        view.showWaiting()\n        NeXtepLog.info(\n",
+          "after": "        surface?.release()\n        surface = null\n        boundTexture = null\n        view.showWaiting()\n        NeXtepLog.info(\n"
+        }
+      ]
+    }
+  }
+}
