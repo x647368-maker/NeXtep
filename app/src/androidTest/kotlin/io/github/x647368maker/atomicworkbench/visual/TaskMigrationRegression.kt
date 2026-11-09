@@ -43,7 +43,10 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 Choreographer.getInstance().postFrameCallback(this)
             }
         }
-        fun taskDisplay(id: Int) = am.getRunningTasks(100).firstOrNull { it.taskId==id }?.displayId
+        fun taskDisplay(id: Int): Int? = am.getRunningTasks(100).firstOrNull { it.taskId==id }?.let {
+            // TaskInfo.displayId is a public runtime field hidden from the SDK stubs.
+            it.javaClass.getField("displayId").getInt(it)
+        }
         fun awaitFrame(slot: Int, previous: Int) {
             val end=SystemClock.uptimeMillis()+5000
             while(frames[slot].get()<=previous && SystemClock.uptimeMillis()<end) Thread.sleep(20)

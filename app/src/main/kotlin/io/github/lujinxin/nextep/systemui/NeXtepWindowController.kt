@@ -127,7 +127,7 @@ class NeXtepWindowController(
     private val smartRail = StageSmartRail(context, backdropHandler,
         { workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked &&
             cinemaSlot == null && !workgroups.isSwitching() && slotCoordinator?.isGroupRestoreReady() == true &&
-            !geometry().railAtTop && !AtomicPopupMenu.isShowing() &&
+            !geometry().railAtTop && !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&
             SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)
     private fun renderSmartRail(hidden: Boolean) {
         // Display buffers and the frozen main/slot geometry remain untouched.
@@ -1442,7 +1442,10 @@ class NeXtepWindowController(
     private var sidebarTouchRegionReady = false
     private fun sidebarPanel(geometry: WorkspaceGeometry): View = object : FrameLayout(context) {
         override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-            if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) smartRail.interact()
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> smartRail.touch(true)
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> smartRail.touch(false)
+            }
             return super.dispatchTouchEvent(event)
         }
         private var insetsListener: Any? = null

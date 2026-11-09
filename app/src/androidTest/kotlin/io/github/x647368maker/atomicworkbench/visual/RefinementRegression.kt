@@ -61,8 +61,10 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             smart=StageSmartRail(activity,Handler(Looper.getMainLooper()),{ allowed }) { hidden -> cards.forEach { it.alpha=if(hidden)0f else 1f } }
             smart.setEnabled(false);smart.setPinned(false)
             check(!smart.hidden)
-            smart.setEnabled(true)
+            smart.setEnabled(true);smart.touch(true)
         }
+        Thread.sleep(3800)
+        ui { check(!smart.hidden) { "Long touch was hidden" };smart.touch(false) }
         Thread.sleep(3800)
         ui { check(smart.hidden && cards.all { it.alpha==0f });smart.interact();check(!smart.hidden)
             smart.hideNow();check(smart.hidden);smart.setPinned(true);check(!smart.hidden)

@@ -68,6 +68,10 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         intent.getStringExtra("stage_page")?.let { if (::settings.isInitialized) settings.open(it) }
     }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 72) UpdateCoordinator.onNotificationPermission(this)
+    }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("stage_page", settings.page)
         super.onSaveInstanceState(outState)

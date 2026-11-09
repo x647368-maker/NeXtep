@@ -22,6 +22,12 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
         if (hidden) { hidden = false; render(false) }
         if (enabled && !pinned) handler.postDelayed(idle, 3500)
     }
+    fun touch(active: Boolean) {
+        // A long press/drag must never disappear underneath the user's finger.
+        if (!active) { interact(); return }
+        handler.removeCallbacks(idle)
+        if (hidden) { hidden = false; render(false) }
+    }
     fun hideNow() {
         handler.removeCallbacks(idle)
         if (enabled && !pinned && !hidden && allowed()) { hidden = true; render(true) }

@@ -52,6 +52,7 @@ internal object UpdateCoordinator {
             }
         }
     }
+    fun onNotificationPermission(c: Context) { if (!auto(c)) return; available(c)?.let { runCatching { notify(c,it) } } }
     private fun notify(c: Context,r: UpdateChecker.Release) {
         if(c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) return
         val p=prefs(c);if(p.getLong("notified",0)>=r.metadata.versionCode) return
