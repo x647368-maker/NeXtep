@@ -27,11 +27,10 @@ object ActivityTaskManagerCompat {
         secondArgument = windowingMode,
     )
 
-    fun setTaskResizeable(taskId: Int, resizeMode: Int): Result<Unit> = invokeTaskMethod(
-        names = listOf("setTaskResizeable"),
-        taskId = taskId,
-        secondArgument = resizeMode,
-    )
+    fun setTaskResizeable(taskId: Int, resizeMode: Int): Result<Unit> =
+        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("resize_mode") {
+            invokeTaskMethod(names=listOf("setTaskResizeable"),taskId=taskId,secondArgument=resizeMode)
+        }
 
     fun moveTaskToDisplay(taskId: Int, displayId: Int): Result<Unit> = invokeTaskMethod(
         names = listOf("moveRootTaskToDisplay", "moveTaskToDisplay"),

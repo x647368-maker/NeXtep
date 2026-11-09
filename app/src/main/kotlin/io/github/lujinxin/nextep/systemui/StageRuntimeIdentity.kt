@@ -5,8 +5,8 @@ import android.os.*
 
 /** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */
 internal object StageRuntimeIdentity {
-    const val BUILD = "0.9.13/28-injection-audit"
-    const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_28"
+    const val BUILD = "0.9.14/29-exchange-phases"
+    const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_29"
     const val AUDIT_ACTION="io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1"
     private var registered=false
     fun bootstrap() {
@@ -35,7 +35,7 @@ internal object StageRuntimeIdentity {
                         putString("loaded_process",android.app.Application.getProcessName())
                         putString("native_panel",SystemUiPanelMonitor.refresh(context).name)
                         putString("panel_windows",SystemUiPanelMonitor.diagnostic())
-                    });resultCode=28
+                    });resultCode=29
                 }
             },IntentFilter(ACTION).apply{addAction(AUDIT_ACTION)},"io.github.x647368maker.atomicworkbench.permission.CONTROL_WORKSPACE",null,Context.RECEIVER_EXPORTED)
             registered=true

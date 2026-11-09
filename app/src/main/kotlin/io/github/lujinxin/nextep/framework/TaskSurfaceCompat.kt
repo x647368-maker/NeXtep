@@ -149,7 +149,7 @@ object TaskSurfaceCompat {
         transactionGuard.ownedTransaction {
             try {
                 writeFrame(transaction, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
-                invokeRequired(transaction, "apply")
+                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
                 slot.lastAppliedAt = now
             } finally {
                 invokeOptional(transaction, "close")
@@ -644,7 +644,7 @@ object TaskSurfaceCompat {
         transactionGuard.ownedTransaction {
             try {
                 writeFrame(transaction, leash, frame)
-                invokeRequired(transaction, "apply")
+                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
             } finally {
                 invokeOptional(transaction, "close")
             }
@@ -728,7 +728,7 @@ object TaskSurfaceCompat {
         }
     }
 
-    private fun findTaskLeash(taskId: Int, requireMainDisplay: Boolean = true, allowHomeRoot: Boolean = false): Any? = runCatching {
+    private fun findTaskLeash(taskId: Int, requireMainDisplay: Boolean = true, allowHomeRoot: Boolean = false): Any? = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("leash_lookup") { runCatching {
         val loader = hostClassLoader ?: error("SystemUI host class loader is unavailable")
         val factoryClass = loader.loadClass(SYSTEM_UI_FACTORY)
         val initializer = findField(factoryClass, INITIALIZER_FIELD).get(null)
@@ -771,6 +771,7 @@ object TaskSurfaceCompat {
     }.onFailure { error ->
         NeXtepLog.warn("task_surface", "Task leash lookup failed taskId=$taskId", error)
     }.getOrNull()
+    }
 
     private fun findHomeRoot(tasks: Any, taskId: Int): Any? {
         // ColorOS reports the launcher child through ActivityManager but only
@@ -796,9 +797,13 @@ object TaskSurfaceCompat {
     private fun findLiveTaskState(taskId: Int): TaskInfoCompat.WindowState? {
         val manager = checkNotNull(activityManager) { "Live task access is unavailable" }
         WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()
-        val taskInfo = manager.getRunningTasks(MAX_TASK_QUERY).firstOrNull { it.taskId == taskId }
+        val taskInfo = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_query_binder") {
+            manager.getRunningTasks(MAX_TASK_QUERY)
+        }.firstOrNull { it.taskId == taskId }
             ?: return null
-        return TaskInfoCompat.readWindowState(taskInfo)?.also { observeTaskState(taskId, it) }
+        return io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_query_decode") {
+            TaskInfoCompat.readWindowState(taskInfo)?.also { observeTaskState(taskId, it) }
+        }
     }
 
     private fun resolveTaskOrganizer(wmComponent: Any): Any? {

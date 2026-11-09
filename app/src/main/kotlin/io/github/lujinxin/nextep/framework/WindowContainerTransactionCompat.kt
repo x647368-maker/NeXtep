@@ -89,7 +89,9 @@ object WindowContainerTransactionCompat {
         val organizer = organizerClass.getDeclaredConstructor().apply {
             isAccessible = true
         }.newInstance()
-        invoke(organizer, "applyTransaction", transaction)
+        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("wct_submit") {
+            invoke(organizer, "applyTransaction", transaction)
+        }
     }
 
     private fun invoke(target: Any, name: String, vararg arguments: Any): Any? {

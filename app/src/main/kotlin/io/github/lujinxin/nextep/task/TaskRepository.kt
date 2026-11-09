@@ -111,9 +111,10 @@ class TaskRepository(context: Context) {
     @Suppress("DEPRECATION")
     fun runningTasks(): List<TaskSnapshot> = try {
         WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()
-        activityManager?.getRunningTasks(MAX_TASK_QUERY)
-            ?.mapNotNull(::snapshot)
-            .orEmpty()
+        val raw=io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_binder") {
+            activityManager?.getRunningTasks(MAX_TASK_QUERY).orEmpty()
+        }
+        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_decode") { raw.mapNotNull(::snapshot) }
     } catch (error: Throwable) {
         NeXtepLog.error("task_repository", "Running task query failed", error)
         emptyList()

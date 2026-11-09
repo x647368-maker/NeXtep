@@ -1325,10 +1325,12 @@ class SlotTaskCoordinator(
             packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE
     }
 
+    private fun <T> timed(name:String,block:()->T):T = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase(name,block)
+
     private fun swapWithMain(slotIndex: Int, occupied: SlotState.Occupied) {
-        val slotTask = taskRepository.findTask(occupied.taskId)
+        val slotTask = timed("source_lookup") { taskRepository.findTask(occupied.taskId) }
             ?: error("Slot task ${occupied.taskId} exited")
-        val mainTask = taskRepository.foregroundTask()
+        val mainTask = timed("main_lookup") { taskRepository.foregroundTask() }
         val record = slotRecords[slotIndex]
         val slotOriginalLayout = record.originalLayout
             ?: defaultMainLayout(slotTask.resizeMode)
@@ -1348,7 +1350,7 @@ class SlotTaskCoordinator(
                 SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
             promotedRecoveryAttempts = 0
             if (mainIsExchangeable) {
-                restoredMainTask = taskRepository.findTask(mainTask.taskId) ?: mainTask
+                restoredMainTask = timed("outgoing_lookup") { taskRepository.findTask(mainTask.taskId) } ?: mainTask
                 mainOriginalLayout = restoredMainTask.toLayout()
                 if (restoredMainTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE) {
                     ActivityTaskManagerCompat.setTaskResizeable(
@@ -1364,23 +1366,23 @@ class SlotTaskCoordinator(
                     TASK_RESIZE_MODE_RESIZEABLE,
                 ).getOrThrow()
             }
-            moveTaskToDisplayAndWait(slotTask.taskId, Display.DEFAULT_DISPLAY)
+            timed("promote_display") { moveTaskToDisplayAndWait(slotTask.taskId, Display.DEFAULT_DISPLAY) }
             slotMovedToMain = true
-            restoreTaskLayout(slotTask, slotOriginalLayout, restoreResizeMode = false)
-            taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()
+            timed("incoming_layout") { restoreTaskLayout(slotTask, slotOriginalLayout, restoreResizeMode = false) }
+            timed("bring_front") { taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow() }
 
             if (mainIsExchangeable) {
                 record.migrationRecoveryComponent = mainTask.component
                 record.migrationRecoveryDeadline =
                     SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
                 record.migrationRecoveryAttempts = 0
-                moveTaskToDisplayAndWait(mainTask.taskId, occupied.displayId)
+                timed("demote_display") { moveTaskToDisplayAndWait(mainTask.taskId, occupied.displayId) }
                 mainMovedToSlot = true
-                mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
+                timed("outgoing_surface_restore") { mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow() }
                 record.originalLayout = mainOriginalLayout
-                ensureSlotLayout(slotIndex, checkNotNull(restoredMainTask), mainOriginalLayout)
+                timed("slot_layout_and_fit") { ensureSlotLayout(slotIndex, checkNotNull(restoredMainTask), mainOriginalLayout) }
                 record.retainedTaskId = mainTask.taskId
-                setState(
+                timed("publish_state") { setState(
                     slotIndex,
                     SlotState.Occupied(
                         occupied.displayId,
@@ -1388,20 +1390,21 @@ class SlotTaskCoordinator(
                         mainTask.component,
                     ),
                     "main and slot exchanged",
-                )
+                ) }
             } else {
                 // Promotion intentionally emptied the slot. An old migration
                 // recovery would otherwise relaunch this live task back into it,
                 // leaving the visible '+' blocked by pendingComponent.
                 clearSlotAssignment(slotIndex)
-                setState(slotIndex, SlotState.Ready(occupied.displayId), "slot promoted to main")
+                timed("publish_state") { setState(slotIndex, SlotState.Ready(occupied.displayId), "slot promoted to main") }
             }
-            val presentation = mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider())
+            val presentation = timed("incoming_presentation") { mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()) }
             if (presentation.isFailure && taskRepository.findTask(slotTask.taskId) != null) {
                 presentation.getOrThrow()
             }
-            schedulePromotedTaskRecovery()
+            timed("schedule_recovery") { schedulePromotedTaskRecovery() }
         } catch (error: Throwable) {
+            timed("rollback") {
             clearPromotedTaskRecovery()
             val rollbackErrors = mutableListOf<Throwable>()
             if (slotMovedToMain) {
@@ -1436,14 +1439,15 @@ class SlotTaskCoordinator(
             record.migrationRecoveryDeadline = 0L
             record.migrationRecoveryAttempts = 0
             if (rollbackErrors.isEmpty()) {
-                setState(slotIndex, occupied, "swap rolled back")
+                timed("publish_state") { setState(slotIndex, occupied, "swap rolled back") }
             } else {
                 slotRecords[slotIndex].retainedTaskId = null
                 slotRecords[slotIndex].originalLayout = null
-                setState(slotIndex, SlotState.Failed("rollback failed"), "swap rollback incomplete")
+                timed("publish_state") { setState(slotIndex, SlotState.Failed("rollback failed"), "swap rollback incomplete") }
                 rollbackErrors.forEach(error::addSuppressed)
             }
             throw error
+            }
         }
     }
 
@@ -2009,7 +2013,7 @@ class SlotTaskCoordinator(
         NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {
-            TaskSurfaceCompat.preparePromotion(taskId, geometryProvider()).onFailure {
+            timed("promotion_prepare") { TaskSurfaceCompat.preparePromotion(taskId, geometryProvider()) }.onFailure {
                 NeXtepLog.warn("task_surface", "Early promotion fitting unavailable taskId=$taskId", it)
             }
         } else {

@@ -124,8 +124,11 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         if (generation != token) return
         val elapsed = SystemClock.uptimeMillis() - movedAt
         val ready = elapsed >= minimumDelayMs && runCatching(isLiveReady).getOrDefault(false)
-        if (handoff.observe(ready) || elapsed >= MAX_HANDOFF_DELAY_MS) {
-            if (!ready) NeXtepLog.warn("workspace_swap", "Live frame handoff timed out")
+        val decision=handoff.decide(ready,elapsed >= MAX_HANDOFF_DELAY_MS)
+        val stable=decision==StageStableHandoff.Decision.READY
+        if (decision!=StageStableHandoff.Decision.WAIT) {
+            io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.handoff(stable,elapsed)
+            if (!stable) NeXtepLog.warn("workspace_swap", "Live frame handoff timed out")
             // Reveal the live buffers together on the next frame. Crossfading
             // different app frames creates double edges and makes the tail blur.
             preview.postOnAnimation {
