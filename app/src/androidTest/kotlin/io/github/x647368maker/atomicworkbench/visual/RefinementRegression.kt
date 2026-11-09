@@ -92,6 +92,17 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                     check(fired==index){"Wrong callback $mode $index -> $fired"};check(!AtomicPopupMenu.isShowing())
                 }
             }
+            var scrolled=-1
+            ui{AtomicPopupMenu.show(activity,anchor,(0..19).map{i->"SCROLL_ACTION_$i" to {scrolled=i}},avoid)};settle()
+            fun scrollNode(n:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
+                if(n==null)return null
+                if(n.isScrollable)return n
+                for(i in 0 until n.childCount){val found=scrollNode(n.getChild(i));if(found!=null)return found}
+                return null
+            }
+            val scroll=checkNotNull(scrollNode(inst.uiAutomation.rootInActiveWindow)){"Bounded menu cannot scroll"}
+            repeat(4){scroll.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);settle()}
+            click("SCROLL_ACTION_19");check(scrolled==19){"Last scrolled command was not dispatched"}
             check(textures.toSet()==initial && destroyed==0){"Presentation rebuilt TextureView producers"}
             counts.add("$mode=13 callbacks, 4 back navigations, producer identities unchanged")
         }
@@ -109,19 +120,28 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         repeat(4){ui{inst.uiAutomation.takeScreenshot()?.recycle()};Thread.sleep(45)}
         Thread.sleep(120);lateinit var before:Pair<Int,Long>;ui{before=snapshotStats()}
         val beforeMs=SystemClock.uptimeMillis()-beforeTime
-        val helper=StageAsyncPreviewCapture();var nonUi=0;var completed=0
+        val helper=StageAsyncPreviewCapture();var nonUi=0;var completed=0;var fallbacks=0
+        val loads=CountDownLatch(4)
         ui{beatTimes.clear()};Thread.sleep(120);val afterTime=SystemClock.uptimeMillis()
-        repeat(4){val latch=CountDownLatch(1)
-            ui{helper.request(load={check(Looper.myLooper()!=Looper.getMainLooper());nonUi++;inst.uiAutomation.takeScreenshot()},valid={true},accept={it?.recycle();completed++;latch.countDown()},onCancel={error("Capture cancelled unexpectedly")})}
-            check(latch.await(5,TimeUnit.SECONDS));Thread.sleep(45)
+        repeat(4){val latch=CountDownLatch(1);val captureDone=CountDownLatch(1)
+            ui{helper.request(load={check(Looper.myLooper()!=Looper.getMainLooper());nonUi++;try{inst.uiAutomation.takeScreenshot()}finally{loads.countDown();captureDone.countDown()}},valid={true},accept={if(it==null)fallbacks++;it?.recycle();completed++;latch.countDown()},onCancel={error("Capture cancelled unexpectedly")})}
+            check(latch.await(5,TimeUnit.SECONDS) && captureDone.await(5,TimeUnit.SECONDS));Thread.sleep(45)
         }
         Thread.sleep(120);lateinit var after:Pair<Int,Long>;ui{after=snapshotStats();tracing=false;helper.cancel()}
-        check(completed==4 && nonUi==4)
-        record("MEASURE screenshot scheduling fixture, same emulator/four live producers/right layout: baseline_ui_capture elapsed_ms=$beforeMs frames=${before.first} max_gap_ms=${before.second}; candidate_worker_capture elapsed_ms=${SystemClock.uptimeMillis()-afterTime} frames=${after.first} max_gap_ms=${after.second}; no assertion that fixture timing equals ColorOS task performance")
+        check(loads.await(8,TimeUnit.SECONDS) && completed==4 && nonUi==4)
+        record("MEASURE screenshot scheduling fixture, same emulator/four live producers/right layout: baseline_ui_capture elapsed_ms=$beforeMs frames=${before.first} max_gap_ms=${before.second}; candidate_worker_capture elapsed_ms=${SystemClock.uptimeMillis()-afterTime} frames=${after.first} max_gap_ms=${after.second} deadline_fallbacks=$fallbacks; no assertion that fixture timing equals ColorOS task performance")
         val cancelDone=CountDownLatch(1);val release=CountDownLatch(1);var staleAccepted=false
         ui{helper.request(load={release.await(2,TimeUnit.SECONDS);null},valid={true},accept={staleAccepted=true},onCancel={cancelDone.countDown()});helper.cancel()}
         release.countDown();check(cancelDone.await(2,TimeUnit.SECONDS));Thread.sleep(250);check(!staleAccepted)
-        record("PASS asynchronous capture never blocks UI workload; exactly-once result and cancelled generation never accepts stale capture; stable handoff unit tests retain final geometry")
+        for(failValid in listOf(true,false)) {
+            val done=CountDownLatch(1);var bitmap:Bitmap?=null;var cancels=0
+            ui {helper.request(load={Bitmap.createBitmap(4,4,Bitmap.Config.ARGB_8888).also{bitmap=it}},
+                valid={if(failValid)error("intentional validation failure") else true},
+                accept={error("intentional accept failure")},onCancel={cancels++;done.countDown()})}
+            check(done.await(3,TimeUnit.SECONDS));Thread.sleep(100)
+            check(cancels==1 && bitmap?.isRecycled==true){"Failed async callback leaked its bitmap or transition"}
+        }
+        record("PASS asynchronous capture never blocks UI workload; exactly-once result and cancelled generation never accepts stale capture; validation/accept exceptions recycle and cancel exactly once; stable handoff unit tests retain final geometry")
         val samples=synchronized(metrics){metrics.toList().sorted()}
         check(samples.isNotEmpty() && after.first>=3){"No real HWUI/frame-clock samples"}
         record("MEASURE HWUI FrameMetrics across top/left/right popup/producer fixtures: samples=${samples.size} p50_ms=${samples.getOrElse(samples.size/2){0}/1_000_000.0} p95_ms=${samples.getOrElse((samples.size*.95).toInt().coerceAtMost((samples.size-1).coerceAtLeast(0))){0}/1_000_000.0} over_16.67ms=${samples.count{it>16_666_667}}. No actual third-party task is launched or migrated in this fixture.")
