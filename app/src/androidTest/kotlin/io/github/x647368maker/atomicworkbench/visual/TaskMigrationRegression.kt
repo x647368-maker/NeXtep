@@ -89,12 +89,14 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             check(ids.distinct().size==4) { "Probe did not create four separate real tasks" }
             val raw=am.getRunningTasks(64).filter{it.taskId in ids}
             check(raw.size==4) { "Task decoder comparison needs the same four real tasks" }
-            fun values(x:io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat.WindowState?) =
+            fun values(x:io.github.x647368maker.atomicworkbench.framework.CandidateTaskInfoCompat.WindowState?) =
                 x?.let{listOf(it.displayId,it.bounds,it.windowingMode,it.resizeMode,it.densityDpi,it.token,it.vendorWindowed)}
             for(info in raw) {
                 val old=io.github.x647368maker.atomicworkbench.framework.BaselineTaskInfoCompat.readWindowState(info)
-                val new=io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat.readWindowState(info)
+                val new=io.github.x647368maker.atomicworkbench.framework.CandidateTaskInfoCompat.readWindowState(info)
                 check(old!=null && new!=null && listOf(old.displayId,old.bounds,old.windowingMode,old.resizeMode,old.densityDpi,old.token,old.vendorWindowed)==values(new))
+                val production=checkNotNull(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat.readWindowState(info))
+                check(listOf(production.displayId,production.bounds,production.windowingMode,production.resizeMode,production.densityDpi,production.token,production.vendorWindowed)==values(new))
             }
             val baseline=mutableListOf<Long>();val cached=mutableListOf<Long>()
             // Alternate order, same immutable snapshot batch, same UI thread and four displays.
@@ -104,7 +106,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                         val start=SystemClock.elapsedRealtimeNanos()
                         repeat(128){n->val info=raw[n%raw.size]
                             if(old)checkNotNull(io.github.x647368maker.atomicworkbench.framework.BaselineTaskInfoCompat.readWindowState(info))
-                            else checkNotNull(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat.readWindowState(info))
+                            else checkNotNull(io.github.x647368maker.atomicworkbench.framework.CandidateTaskInfoCompat.readWindowState(info))
                         }
                         return SystemClock.elapsedRealtimeNanos()-start
                     }
@@ -112,7 +114,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     else{cached.add(sample(false));baseline.add(sample(true))}
                 }
             }
-            val comparison="metadata-only comparison: 128 decodes/batch, 8 alternating UI-thread batches, same four real task snapshots; baseline_median_ms=${baseline.sorted()[4]/1_000_000.0} cached_median_ms=${cached.sorted()[4]/1_000_000.0}; state_fields_equal=true; not full exchange or ColorOS FPS"
+            val comparison="rejected candidate metadata comparison (production unchanged): 128 decodes/batch, 8 alternating UI-thread batches, same four real task snapshots; baseline_median_ms=${baseline.sorted()[4]/1_000_000.0} cached_median_ms=${cached.sorted()[4]/1_000_000.0}; state_fields_equal=true; not full exchange or ColorOS FPS"
             lines.add(comparison);File(out,"task-decoder-comparison.txt").writeText(comparison)
             i.runOnMainSync { Choreographer.getInstance().postFrameCallback(callback) }
             Thread.sleep(80)

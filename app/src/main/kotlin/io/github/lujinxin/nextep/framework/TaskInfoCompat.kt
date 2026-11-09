@@ -101,12 +101,11 @@ object TaskInfoCompat {
             val currentType = type
             for (fieldName in fieldNames) {
                 try {
-                    val field = TaskMemberCache.field(currentType, fieldName)
+                    val field = currentType.getDeclaredField(fieldName).apply { isAccessible = true }
                     return field.get(target)
                 } catch (_: NoSuchFieldException) {
                     // Continue through candidates and the superclass chain.
                 } catch (error: Throwable) {
-                    TaskMemberCache.invalidateField(currentType, fieldName)
                     NeXtepLog.warn(
                         "task_info_compat",
                         "Field ${currentType.name}#$fieldName failed",
@@ -125,12 +124,11 @@ object TaskInfoCompat {
             val currentType = type
             for (methodName in methodNames) {
                 try {
-                    val method = TaskMemberCache.method(currentType, methodName)
+                    val method = currentType.getDeclaredMethod(methodName).apply { isAccessible = true }
                     return method.invoke(target)
                 } catch (_: NoSuchMethodException) {
                     // Continue through candidates and the superclass chain.
                 } catch (error: Throwable) {
-                    TaskMemberCache.invalidateMethod(currentType, methodName)
                     NeXtepLog.warn(
                         "task_info_compat",
                         "Method ${currentType.name}#$methodName failed",

@@ -1,6 +1,6 @@
 {
   "base_commit": "d71d1e57e2b2b7d00666ac64e6d9ba14087ac17a",
-  "scope": "read-only nested timing, metadata-only decoder optimization and accurate handoff timeout classification; no task/Surface writer or geometry/input changes",
+  "scope": "read-only nested timing and accurate handoff timeout classification; rejected cache removed from production; no task/Surface writer or geometry/input changes",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
       "baseline_sha256": "2ea1ff063a1b9dc741ff44abb6999fb0305aa8acc4c59a165ba606a7a6ca412c",
@@ -39,20 +39,6 @@
         {
           "before": "        secondArgument = windowingMode,\n    )\n\n    fun setTaskResizeable(taskId: Int, resizeMode: Int): Result<Unit> = invokeTaskMethod(\n        names = listOf(\"setTaskResizeable\"),\n        taskId = taskId,\n        secondArgument = resizeMode,\n    )\n\n    fun moveTaskToDisplay(taskId: Int, displayId: Int): Result<Unit> = invokeTaskMethod(\n        names = listOf(\"moveRootTaskToDisplay\", \"moveTaskToDisplay\"),\n",
           "after": "        secondArgument = windowingMode,\n    )\n\n    fun setTaskResizeable(taskId: Int, resizeMode: Int): Result<Unit> =\n        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase(\"resize_mode\") {\n            invokeTaskMethod(names=listOf(\"setTaskResizeable\"),taskId=taskId,secondArgument=resizeMode)\n        }\n\n    fun moveTaskToDisplay(taskId: Int, displayId: Int): Result<Unit> = invokeTaskMethod(\n        names = listOf(\"moveRootTaskToDisplay\", \"moveTaskToDisplay\"),\n"
-        }
-      ]
-    },
-    "app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskInfoCompat.kt": {
-      "baseline_sha256": "206d0c6780f9077c590335f5a87b9ca54c9005bfdfc44ce7b090c558aa8dd94c",
-      "updated_sha256": "24f820d8ee0d9f71ec42180f63c41b8c365c2a578e72aa128f38e374e7dd6155",
-      "patches": [
-        {
-          "before": "            val currentType = type\n            for (fieldName in fieldNames) {\n                try {\n                    val field = currentType.getDeclaredField(fieldName).apply { isAccessible = true }\n                    return field.get(target)\n                } catch (_: NoSuchFieldException) {\n                    // Continue through candidates and the superclass chain.\n                } catch (error: Throwable) {\n                    NeXtepLog.warn(\n                        \"task_info_compat\",\n                        \"Field ${currentType.name}#$fieldName failed\",\n",
-          "after": "            val currentType = type\n            for (fieldName in fieldNames) {\n                try {\n                    val field = TaskMemberCache.field(currentType, fieldName)\n                    return field.get(target)\n                } catch (_: NoSuchFieldException) {\n                    // Continue through candidates and the superclass chain.\n                } catch (error: Throwable) {\n                    TaskMemberCache.invalidateField(currentType, fieldName)\n                    NeXtepLog.warn(\n                        \"task_info_compat\",\n                        \"Field ${currentType.name}#$fieldName failed\",\n"
-        },
-        {
-          "before": "            val currentType = type\n            for (methodName in methodNames) {\n                try {\n                    val method = currentType.getDeclaredMethod(methodName).apply { isAccessible = true }\n                    return method.invoke(target)\n                } catch (_: NoSuchMethodException) {\n                    // Continue through candidates and the superclass chain.\n                } catch (error: Throwable) {\n                    NeXtepLog.warn(\n                        \"task_info_compat\",\n                        \"Method ${currentType.name}#$methodName failed\",\n",
-          "after": "            val currentType = type\n            for (methodName in methodNames) {\n                try {\n                    val method = TaskMemberCache.method(currentType, methodName)\n                    return method.invoke(target)\n                } catch (_: NoSuchMethodException) {\n                    // Continue through candidates and the superclass chain.\n                } catch (error: Throwable) {\n                    TaskMemberCache.invalidateMethod(currentType, methodName)\n                    NeXtepLog.warn(\n                        \"task_info_compat\",\n                        \"Method ${currentType.name}#$methodName failed\",\n"
         }
       ]
     },
