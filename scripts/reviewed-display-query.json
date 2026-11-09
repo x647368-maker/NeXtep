@@ -1,0 +1,33 @@
+{
+  "base_commit": "c4965dd1495d7f23a141d88f06d2727e8b11e36b",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/task/TaskRepository.kt": {
+      "baseline_sha256": "6bfa556c6ae6e51c28c7aaa8f1d53fe655808ea96bbb084a3f39b491a5ec84b2",
+      "updated_sha256": "a39676fcd05ba844ac97d1d9c887e1521cb6bf8d31a2de099381d5b14c77df9f",
+      "patches": [
+        {
+          "before": "    fun findTaskForComponent(",
+          "after": "    /** Fresh destination-only observation. The caller retains its final global observation.\n     * Missing/unsupported/failed filtered reads always fall back to the existing full query. */\n    fun findTaskOnDisplay(taskId: Int, displayId: Int): TaskSnapshot? {\n        val query = displayTaskQuery ?: return findTask(taskId)\n        val result = runCatching {\n            WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()\n            @Suppress(\"UNCHECKED_CAST\")\n            val raw = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase(\"query_binder\") {\n                query.second.invoke(query.first, MAX_TASK_QUERY, false, false, displayId)\n                    as List<ActivityManager.RunningTaskInfo>\n            }\n            io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase(\"query_decode\") {\n                raw.firstOrNull { it.taskId == taskId }?.let(::snapshot)\n                    ?.takeIf { it.displayId == displayId }\n            }\n        }.getOrNull()\n        return result ?: findTask(taskId)\n    }\n\n    fun findTaskForComponent("
+        },
+        {
+          "before": "        const val MAX_TASK_QUERY = 64",
+          "after": "        @SuppressLint(\"BlockedPrivateApi\")\n        private val displayTaskQuery: Pair<Any, java.lang.reflect.Method>? by lazy {\n            runCatching {\n                val type = Class.forName(\"android.app.ActivityTaskManager\")\n                val instance = checkNotNull(type.getDeclaredMethod(\"getInstance\").invoke(null))\n                val method = type.getDeclaredMethod(\"getTasks\", Int::class.javaPrimitiveType,\n                    Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,\n                    Int::class.javaPrimitiveType).apply { isAccessible = true }\n                instance to method\n            }.getOrNull()\n        }\n        const val MAX_TASK_QUERY = 64"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "baseline_sha256": "9fd31e2bdea3611c83d6f0c7b97fbbba754752fad986a3d82ec1cc2520cb1725",
+      "updated_sha256": "67bb59cb477a6eb19a7cbb465981e74b2ae23eb5f5593de6e2603872a6e9d773",
+      "patches": [
+        {
+          "before": "var observedDisplayId = taskRepository.findTask(taskId)?.displayId",
+          "after": "var observedDisplayId = taskRepository.findTaskOnDisplay(taskId, displayId)?.displayId"
+        },
+        {
+          "before": "            observedDisplayId = taskRepository.findTask(taskId)?.displayId",
+          "after": "            observedDisplayId = taskRepository.findTaskOnDisplay(taskId, displayId)?.displayId"
+        }
+      ]
+    }
+  }
+}
