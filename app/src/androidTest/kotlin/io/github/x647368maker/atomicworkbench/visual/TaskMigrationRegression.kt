@@ -87,7 +87,6 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             }
             val ids=taskIds.toList()
             check(ids.distinct().size==4) { "Probe did not create four separate real tasks" }
-            lines.add(DisplayQueryRegression(i).run(original,out,ids,displays.map{it.display.displayId},{frames[0].get()},{ previous->awaitFrame(0,previous) }))
             val raw=am.getRunningTasks(64).filter{it.taskId in ids}
             check(raw.size==4) { "Task decoder comparison needs the same four real tasks" }
             fun values(x:io.github.x647368maker.atomicworkbench.framework.CandidateTaskInfoCompat.WindowState?) =

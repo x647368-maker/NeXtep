@@ -2028,11 +2028,11 @@ class SlotTaskCoordinator(
             throw error
         }
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-        var observedDisplayId = taskRepository.findTaskOnDisplay(taskId, displayId)?.displayId
+        var observedDisplayId = taskRepository.findTask(taskId)?.displayId
         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_observation") {
         while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
-            observedDisplayId = taskRepository.findTaskOnDisplay(taskId, displayId)?.displayId
+            observedDisplayId = taskRepository.findTask(taskId)?.displayId
         }
         }
         val after = taskRepository.findTask(taskId)

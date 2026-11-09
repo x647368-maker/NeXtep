@@ -87,25 +87,6 @@ class TaskRepository(context: Context) {
         null
     }
 
-    /** Fresh destination-only observation. The caller retains its final global observation.
-     * Missing/unsupported/failed filtered reads always fall back to the existing full query. */
-    fun findTaskOnDisplay(taskId: Int, displayId: Int): TaskSnapshot? {
-        val query = displayTaskQuery ?: return findTask(taskId)
-        val result = runCatching {
-            WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()
-            @Suppress("UNCHECKED_CAST")
-            val raw = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_binder") {
-                query.second.invoke(query.first, MAX_TASK_QUERY, false, false, displayId)
-                    as List<ActivityManager.RunningTaskInfo>
-            }
-            io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_decode") {
-                raw.firstOrNull { it.taskId == taskId }?.let(::snapshot)
-                    ?.takeIf { it.displayId == displayId }
-            }
-        }.getOrNull()
-        return result ?: findTask(taskId)
-    }
-
     fun findTaskForComponent(
         component: ComponentName,
         userHandle: UserHandle? = null,
@@ -160,17 +141,6 @@ class TaskRepository(context: Context) {
     }
 
     private companion object {
-        @get:SuppressLint("BlockedPrivateApi")
-        private val displayTaskQuery: Pair<Any, java.lang.reflect.Method>? by lazy {
-            runCatching {
-                val type = Class.forName("android.app.ActivityTaskManager")
-                val instance = checkNotNull(type.getDeclaredMethod("getInstance").invoke(null))
-                val method = type.getDeclaredMethod("getTasks", Int::class.javaPrimitiveType,
-                    Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,
-                    Int::class.javaPrimitiveType).apply { isAccessible = true }
-                instance to method
-            }.getOrNull()
-        }
         const val MAX_TASK_QUERY = 64
     }
 }
