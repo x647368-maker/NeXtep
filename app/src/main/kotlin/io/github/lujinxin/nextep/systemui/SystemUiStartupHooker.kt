@@ -12,6 +12,7 @@ class SystemUiStartupHooker : XposedInterface.Hooker {
             if (context == null) {
                 NeXtepLog.warn("systemui_startup", "Startup target did not expose a Context")
             } else {
+                StageRuntimeIdentity.install(context)
                 SystemUiRuntime.initialize(context)
             }
         } catch (error: Throwable) {

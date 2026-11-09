@@ -248,11 +248,11 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var slotDiagnostics = "尚未取得槽位状态"
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) runtimeIdentity else "未连接系统组件", "diagnostics") { refresh() }
+        row(card, "系统组件", runtimeIdentity + "\n工作区通信：" + if(queryPending) "查询中" else if(connected) "已连接" else "尚未连接（与注入状态分别判断）", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
         root.addView(hint(slotDiagnostics))
-        root.addView(hint("安装包：$versionName\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint("安装包：$versionName\n\n模块需要支持现代 libxposed API 101/102 的框架。仅显示 LSP 名称不足以确认实际 API。作用域中的 SystemUI 与 system（系统进程）承担不同职责，Launcher 是独立适配项。\n\n更新 APK 不会立即替换已注入代码，安装后正常重启一次。无需为了使用台前调度关闭全部其他模块。无响应时原因待查，可提供本页截图及框架错误日志；不要分享包含私人内容的完整日志。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
@@ -395,16 +395,50 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
     }
     fun refresh() { queryRuntimeIdentity(); command("query") }
+    private var identityGeneration=0
     private fun queryRuntimeIdentity() {
+        val generation=++identityGeneration
         val expected=io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.BUILD
-        val intent=Intent(io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.ACTION).setPackage("com.android.systemui")
-        activity.sendOrderedBroadcast(intent,null,object:BroadcastReceiver(){
-            override fun onReceive(c:Context?,i:Intent?) {
-                val b=getResultExtras(false);val build=b?.getString("loaded_build")
-                runtimeIdentity=if(resultCode==27 && build==expected) "本版已加载：$build · PID ${b?.getInt("loaded_pid")} · 面板 ${b?.getString("native_panel")}\n任务迁移实测（本次启动）：\n${b?.getString("exchange_metrics")}\nmain=true 表示在主线程执行；这里只报告测量，不代表已解决 ColorOS 卡顿。" else "未取得本版注入凭据：可能仍是旧组件；正常重启后打开工作区再刷新"
-                if(page=="diagnostics")open("diagnostics")
+        val actions=listOf(io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.AUDIT_ACTION,
+            "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_27",
+            "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_26")
+        var received=false
+        fun render(){if(page=="diagnostics" && !activity.isDestroyed)open("diagnostics")}
+        handler.postDelayed({
+            if(generation==identityGeneration && !received) {
+                runtimeIdentity=InjectionDiagnosis.describe(false,expected,null,0,"",false);render()
             }
-        },handler,0,null,Bundle())
+        },1500)
+        fun probe(index:Int) {
+            val intent=Intent(actions[index]).setPackage("com.android.systemui")
+            activity.sendOrderedBroadcast(intent,null,object:BroadcastReceiver(){
+                override fun onReceive(c:Context?,i:Intent?) {
+                    if(generation!=identityGeneration || activity.isDestroyed)return
+                    val bundle=getResultExtras(false);val build=bundle?.getString("loaded_build")
+                    if(build==null) {
+                        if(index+1<actions.size)probe(index+1)
+                        else {runtimeIdentity=InjectionDiagnosis.describe(false,expected,null,0,"",false);render()}
+                        return
+                    }
+                    received=true
+                    val reply=checkNotNull(bundle)
+                    val pid=reply.getInt("loaded_pid")
+                    val started=reply.getLong("process_started",-1)
+                    val prefs=activity.getSharedPreferences("atomic_injection_observation_v1",Context.MODE_PRIVATE)
+                    val boot=runCatching { android.provider.Settings.Global.getInt(activity.contentResolver,"boot_count",-1) }.getOrDefault(-1)
+                    val changed=prefs.contains("pid") && prefs.getInt("boot",-2)==boot &&
+                        (prefs.getInt("pid",-1)!=pid || prefs.getLong("started",-1)!=started)
+                    prefs.edit().putInt("pid",pid).putLong("started",started).putInt("boot",boot).apply()
+                    val failures=reply.getString("hook_failures").orEmpty().take(8000)
+                    runtimeIdentity=InjectionDiagnosis.describe(true,expected,build,reply.getInt("framework_api"),failures,changed)+
+                        "\n实际代码：$build · PID $pid\n${reply.getString("framework").orEmpty()}\n"+
+                        reply.getString("init_stages").orEmpty().take(8000)+
+                        "\n迁移实测：\n"+reply.getString("exchange_metrics").orEmpty().take(4000)
+                    render()
+                }
+            },handler,0,null,Bundle())
+        }
+        probe(0)
     }
     private var queryPending = false
     private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, slot: Int? = null, expectedTask: Int? = null) {

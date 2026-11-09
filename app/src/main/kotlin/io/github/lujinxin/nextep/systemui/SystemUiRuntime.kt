@@ -180,6 +180,8 @@ object SystemUiRuntime {
     fun initialize(context: Context) {
         if (!initialized.compareAndSet(false, true)) return
         try {
+            StageRuntimeIdentity.install(context)
+            io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.stage("runtime_initializing",true)
             applicationContext = context.applicationContext ?: context
             LauncherAppCatalogContract.register(applicationContext)
             TaskSurfaceCompat.initializeTaskAccess(applicationContext)
@@ -270,10 +272,12 @@ object SystemUiRuntime {
                 // after the physical screen locks, so SCREEN_OFF alone is insufficient.
                 updateLockStateObservation()
             }
+            io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.stage("runtime_ready",true)
             NeXtepLog.info("systemui_runtime", "Initialized control receiver")
         } catch (error: Throwable) {
             initialized.set(false)
-            NeXtepLog.error("systemui_runtime", "Initialization failed and remains retryable", error)
+            io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.stage("runtime_ready",false,error)
+            NeXtepLog.error("systemui_runtime", "Initialization failed and remains retryable type=${error.javaClass.simpleName}")
         }
     }
 

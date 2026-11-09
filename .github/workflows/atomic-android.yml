@@ -94,6 +94,16 @@ jobs:
         run: python3 scripts/test-ci-retry.py
       - name: Check task continuity source boundaries
         run: python3 scripts/verify-state-continuity.py
+      - name: Verify real API 101 source and JVM contracts
+        run: |
+          bash scripts/ci-android-build.sh :app:testDebugUnitTest -PatomicXposedApi=101.0.0
+          mkdir -p api101-unit-results
+          cp -R app/build/test-results/testDebugUnitTest/. api101-unit-results/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-api101-unit-results
+          path: api101-unit-results/
       - name: Build and test; retry only transient dependency downloads
         run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
       - name: Verify compiled launch resources and aliases
@@ -126,7 +136,7 @@ jobs:
           python3 scripts/prepare-update.py --apk "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)" --apksigner "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" --notes RELEASE_NOTES.md --out release-ready
       - uses: actions/upload-artifact@v4
         with:
-          name: atomic-workbench-0.9.12-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
+          name: atomic-workbench-0.9.13-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
           if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk

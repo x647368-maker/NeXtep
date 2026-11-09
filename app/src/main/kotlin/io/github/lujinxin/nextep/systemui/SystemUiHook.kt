@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import io.github.x647368maker.atomicworkbench.safety.FeatureGate
 
 object SystemUiHook {
+    private val installOnce=io.github.x647368maker.atomicworkbench.xposed.InjectionOnce()
     private data class StartupCandidate(val className: String, val methodName: String)
 
     private val touchRootCandidates = listOf(
@@ -24,6 +25,7 @@ object SystemUiHook {
     )
 
     fun install(module: XposedModule, classLoader: ClassLoader) {
+        if(!installOnce.claim()) { NeXtepLog.info("systemui_install","Duplicate callback ignored in this module generation");return }
         HookGuard.run("workspace_display_transition") { WorkspaceDisplayTransitionHook.install(module, classLoader) }
         HookGuard.run("task_surface_ownership") {
             val organizerClass = classLoader.loadClass("com.android.wm.shell.ShellTaskOrganizer")
@@ -115,7 +117,7 @@ object SystemUiHook {
                     })
                 }
         }
-        SystemUiBrightnessMirrorHook.install(module, classLoader)
+        HookGuard.run("brightness_install") { SystemUiBrightnessMirrorHook.install(module, classLoader) }
         HookGuard.run("systemui_framework_startup") {
             val method = Instrumentation::class.java.getDeclaredMethod(
                 "callApplicationOnCreate",

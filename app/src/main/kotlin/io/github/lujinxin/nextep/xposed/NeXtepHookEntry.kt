@@ -15,8 +15,11 @@ import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
 import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 class NeXtepHookEntry : XposedModule() {
+    private var loadedProcess=""
     override fun onModuleLoaded(param: ModuleLoadedParam) {
         super.onModuleLoaded(param)
+        loadedProcess=param.processName
+        HookGuard.run("framework_identity") { InjectionDiagnostics.loaded(frameworkName,frameworkVersion,apiVersion,param.isSystemServer) }
         NeXtepLog.info("module", "NeXtepHookEntry loaded; systemServer=${param.isSystemServer}")
         if (param.isSystemServer) {
             log(Log.INFO, "NeXtep", "system_server module generation loaded")
@@ -31,11 +34,11 @@ class NeXtepHookEntry : XposedModule() {
             log(Log.WARN, "NeXtep", "system_server hooks disabled by safety gate")
             return
         }
-        SystemServerHook.install(this, param.classLoader)
+        HookGuard.run("system_server_install") { SystemServerHook.install(this, param.classLoader) }
     }
 
     override fun onPackageLoaded(param: PackageLoadedParam) {
-        if (!param.isFirstPackage) return
+        if (!InjectionDispatchPolicy.accept(param.isFirstPackage,param.packageName,loadedProcess)) return
         val packageName = param.packageName
         NeXtepLog.info(
             "dispatcher",
@@ -43,9 +46,10 @@ class NeXtepHookEntry : XposedModule() {
         )
 
         if (packageName == "com.android.systemui") {
+            InjectionDiagnostics.stage(if(param.isFirstPackage)"systemui_first_package" else "systemui_later_package",true)
             if (!EmergencyDisable.isRequested() && FeatureGate.SYSTEM_UI.defaultEnabled) {
-                TaskSurfaceCompat.initialize(param.defaultClassLoader)
-                SystemUiHook.install(this, param.defaultClassLoader)
+                HookGuard.run("systemui_surface_access") { TaskSurfaceCompat.initialize(param.defaultClassLoader) }
+                HookGuard.run("systemui_install") { SystemUiHook.install(this, param.defaultClassLoader) }
             }
             return
         }

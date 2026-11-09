@@ -12,6 +12,11 @@ import io.github.libxposed.api.XposedInterface
 class SystemUiApplicationHooker : XposedInterface.Hooker {
     override fun intercept(chain: XposedInterface.Chain): Any? {
         val application = chain.getArg(0) as? Application
+        // Register the read-only probe before Application callbacks can fail.
+        io.github.x647368maker.atomicworkbench.xposed.HookGuard.run("diagnostic_bootstrap") {
+            if(application?.packageName==TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
+                StageRuntimeIdentity.install(application)
+        }
         val result = chain.proceed()
         if (application?.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE) return result
 

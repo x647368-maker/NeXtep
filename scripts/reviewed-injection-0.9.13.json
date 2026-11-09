@@ -1,0 +1,86 @@
+{
+  "base_commit": "aa1fd0e2319174dcb4172f8b1a5d2e5d63799f41",
+  "scope": "entry dispatch, one-time hook installation and read-only initialization diagnostics only; no chain callbacks/Surface/task/geometry/input changes",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiApplicationHooker.kt": {
+      "baseline_sha256": "f073d62cee73af6ce1c6c05a634f735efd0c271e424b3a5a100f681606047bc0",
+      "updated_sha256": "ac756cd829d36e951978969d505cc6eb5a7c54fc5063a67fcc1b6c6938ce7793",
+      "patches": [
+        {
+          "before": "class SystemUiApplicationHooker : XposedInterface.Hooker {\n    override fun intercept(chain: XposedInterface.Chain): Any? {\n        val application = chain.getArg(0) as? Application\n        val result = chain.proceed()\n        if (application?.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE) return result\n\n",
+          "after": "class SystemUiApplicationHooker : XposedInterface.Hooker {\n    override fun intercept(chain: XposedInterface.Chain): Any? {\n        val application = chain.getArg(0) as? Application\n        // Register the read-only probe before Application callbacks can fail.\n        io.github.x647368maker.atomicworkbench.xposed.HookGuard.run(\"diagnostic_bootstrap\") {\n            if(application?.packageName==TriggerBroadcastContract.SYSTEM_UI_PACKAGE)\n                StageRuntimeIdentity.install(application)\n        }\n        val result = chain.proceed()\n        if (application?.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE) return result\n\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiHook.kt": {
+      "baseline_sha256": "99df2fdf872fbd290ed6f36e4aaeae8b60f4dc6a9d5c52714b97a8248d3a072a",
+      "updated_sha256": "38d05250aac28dec6840e6950515b1bf3b66eca59c92aebf6893bb7e376324df",
+      "patches": [
+        {
+          "before": "import io.github.x647368maker.atomicworkbench.safety.FeatureGate\n\nobject SystemUiHook {\n    private data class StartupCandidate(val className: String, val methodName: String)\n\n    private val touchRootCandidates = listOf(\n",
+          "after": "import io.github.x647368maker.atomicworkbench.safety.FeatureGate\n\nobject SystemUiHook {\n    private val installOnce=io.github.x647368maker.atomicworkbench.xposed.InjectionOnce()\n    private data class StartupCandidate(val className: String, val methodName: String)\n\n    private val touchRootCandidates = listOf(\n"
+        },
+        {
+          "before": "    )\n\n    fun install(module: XposedModule, classLoader: ClassLoader) {\n        HookGuard.run(\"workspace_display_transition\") { WorkspaceDisplayTransitionHook.install(module, classLoader) }\n        HookGuard.run(\"task_surface_ownership\") {\n            val organizerClass = classLoader.loadClass(\"com.android.wm.shell.ShellTaskOrganizer\")\n",
+          "after": "    )\n\n    fun install(module: XposedModule, classLoader: ClassLoader) {\n        if(!installOnce.claim()) { NeXtepLog.info(\"systemui_install\",\"Duplicate callback ignored in this module generation\");return }\n        HookGuard.run(\"workspace_display_transition\") { WorkspaceDisplayTransitionHook.install(module, classLoader) }\n        HookGuard.run(\"task_surface_ownership\") {\n            val organizerClass = classLoader.loadClass(\"com.android.wm.shell.ShellTaskOrganizer\")\n"
+        },
+        {
+          "before": "                    })\n                }\n        }\n        SystemUiBrightnessMirrorHook.install(module, classLoader)\n        HookGuard.run(\"systemui_framework_startup\") {\n            val method = Instrumentation::class.java.getDeclaredMethod(\n                \"callApplicationOnCreate\",\n",
+          "after": "                    })\n                }\n        }\n        HookGuard.run(\"brightness_install\") { SystemUiBrightnessMirrorHook.install(module, classLoader) }\n        HookGuard.run(\"systemui_framework_startup\") {\n            val method = Instrumentation::class.java.getDeclaredMethod(\n                \"callApplicationOnCreate\",\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt": {
+      "baseline_sha256": "9821e397fcb1a0c350e283a90c819549cf8788fbbab1505fd486f30e0321a481",
+      "updated_sha256": "7a750b0be979124b449b8898ec472324039e40ef2f13431251afcb2961baae5b",
+      "patches": [
+        {
+          "before": "    fun initialize(context: Context) {\n        if (!initialized.compareAndSet(false, true)) return\n        try {\n            applicationContext = context.applicationContext ?: context\n            LauncherAppCatalogContract.register(applicationContext)\n            TaskSurfaceCompat.initializeTaskAccess(applicationContext)\n",
+          "after": "    fun initialize(context: Context) {\n        if (!initialized.compareAndSet(false, true)) return\n        try {\n            StageRuntimeIdentity.install(context)\n            io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.stage(\"runtime_initializing\",true)\n            applicationContext = context.applicationContext ?: context\n            LauncherAppCatalogContract.register(applicationContext)\n            TaskSurfaceCompat.initializeTaskAccess(applicationContext)\n"
+        },
+        {
+          "before": "                // after the physical screen locks, so SCREEN_OFF alone is insufficient.\n                updateLockStateObservation()\n            }\n            NeXtepLog.info(\"systemui_runtime\", \"Initialized control receiver\")\n        } catch (error: Throwable) {\n            initialized.set(false)\n            NeXtepLog.error(\"systemui_runtime\", \"Initialization failed and remains retryable\", error)\n        }\n    }\n\n",
+          "after": "                // after the physical screen locks, so SCREEN_OFF alone is insufficient.\n                updateLockStateObservation()\n            }\n            io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.stage(\"runtime_ready\",true)\n            NeXtepLog.info(\"systemui_runtime\", \"Initialized control receiver\")\n        } catch (error: Throwable) {\n            initialized.set(false)\n            io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.stage(\"runtime_ready\",false,error)\n            NeXtepLog.error(\"systemui_runtime\", \"Initialization failed and remains retryable type=${error.javaClass.simpleName}\")\n        }\n    }\n\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiStartupHooker.kt": {
+      "baseline_sha256": "d323cc12a463f050170b26decccfddab1d98fb576658e37b01de2c6389c3736d",
+      "updated_sha256": "e3859b5b7ff91f18d8bb434f81d10c9460f92ae1cd2aeb222596f2d9f48773ff",
+      "patches": [
+        {
+          "before": "            if (context == null) {\n                NeXtepLog.warn(\"systemui_startup\", \"Startup target did not expose a Context\")\n            } else {\n                SystemUiRuntime.initialize(context)\n            }\n        } catch (error: Throwable) {\n",
+          "after": "            if (context == null) {\n                NeXtepLog.warn(\"systemui_startup\", \"Startup target did not expose a Context\")\n            } else {\n                StageRuntimeIdentity.install(context)\n                SystemUiRuntime.initialize(context)\n            }\n        } catch (error: Throwable) {\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/xposed/HookGuard.kt": {
+      "baseline_sha256": "ea7df585e2a177d2abb03e658bc4e4fbfeb434f1890386a287835fdb7af7d029",
+      "updated_sha256": "0bb58c7d6c57f974a7649d941df1018cb8076953c24566a43496383ee5fb437f",
+      "patches": [
+        {
+          "before": "object HookGuard {\n    inline fun run(feature: String, block: () -> Unit): Boolean = try {\n        block()\n        true\n    } catch (error: Throwable) {\n        NeXtepLog.error(feature, \"Hook initialization failed open\", error)\n        false\n    }\n}\n",
+          "after": "object HookGuard {\n    inline fun run(feature: String, block: () -> Unit): Boolean = try {\n        block()\n        InjectionDiagnostics.stage(feature,true)\n        true\n    } catch (error: Throwable) {\n        InjectionDiagnostics.stage(feature,false,error)\n        NeXtepLog.error(feature, \"Hook initialization failed open type=${error.javaClass.simpleName}\")\n        false\n    }\n}\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/xposed/NeXtepHookEntry.kt": {
+      "baseline_sha256": "22083c83667b80cef039a65fc6ae8923d303f8cbf3376a46ca9ce9128d76a064",
+      "updated_sha256": "3cf3fcb886ab1a422d18e8f12c9cbefaf7472b756e8c93b2437b4dd0e8e8c9f9",
+      "patches": [
+        {
+          "before": "import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam\n\nclass NeXtepHookEntry : XposedModule() {\n    override fun onModuleLoaded(param: ModuleLoadedParam) {\n        super.onModuleLoaded(param)\n        NeXtepLog.info(\"module\", \"NeXtepHookEntry loaded; systemServer=${param.isSystemServer}\")\n        if (param.isSystemServer) {\n            log(Log.INFO, \"NeXtep\", \"system_server module generation loaded\")\n",
+          "after": "import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam\n\nclass NeXtepHookEntry : XposedModule() {\n    private var loadedProcess=\"\"\n    override fun onModuleLoaded(param: ModuleLoadedParam) {\n        super.onModuleLoaded(param)\n        loadedProcess=param.processName\n        HookGuard.run(\"framework_identity\") { InjectionDiagnostics.loaded(frameworkName,frameworkVersion,apiVersion,param.isSystemServer) }\n        NeXtepLog.info(\"module\", \"NeXtepHookEntry loaded; systemServer=${param.isSystemServer}\")\n        if (param.isSystemServer) {\n            log(Log.INFO, \"NeXtep\", \"system_server module generation loaded\")\n"
+        },
+        {
+          "before": "            log(Log.WARN, \"NeXtep\", \"system_server hooks disabled by safety gate\")\n            return\n        }\n        SystemServerHook.install(this, param.classLoader)\n    }\n\n    override fun onPackageLoaded(param: PackageLoadedParam) {\n        if (!param.isFirstPackage) return\n        val packageName = param.packageName\n        NeXtepLog.info(\n            \"dispatcher\",\n",
+          "after": "            log(Log.WARN, \"NeXtep\", \"system_server hooks disabled by safety gate\")\n            return\n        }\n        HookGuard.run(\"system_server_install\") { SystemServerHook.install(this, param.classLoader) }\n    }\n\n    override fun onPackageLoaded(param: PackageLoadedParam) {\n        if (!InjectionDispatchPolicy.accept(param.isFirstPackage,param.packageName,loadedProcess)) return\n        val packageName = param.packageName\n        NeXtepLog.info(\n            \"dispatcher\",\n"
+        },
+        {
+          "before": "        )\n\n        if (packageName == \"com.android.systemui\") {\n            if (!EmergencyDisable.isRequested() && FeatureGate.SYSTEM_UI.defaultEnabled) {\n                TaskSurfaceCompat.initialize(param.defaultClassLoader)\n                SystemUiHook.install(this, param.defaultClassLoader)\n            }\n            return\n        }\n",
+          "after": "        )\n\n        if (packageName == \"com.android.systemui\") {\n            InjectionDiagnostics.stage(if(param.isFirstPackage)\"systemui_first_package\" else \"systemui_later_package\",true)\n            if (!EmergencyDisable.isRequested() && FeatureGate.SYSTEM_UI.defaultEnabled) {\n                HookGuard.run(\"systemui_surface_access\") { TaskSurfaceCompat.initialize(param.defaultClassLoader) }\n                HookGuard.run(\"systemui_install\") { SystemUiHook.install(this, param.defaultClassLoader) }\n            }\n            return\n        }\n"
+        }
+      ]
+    }
+  }
+}

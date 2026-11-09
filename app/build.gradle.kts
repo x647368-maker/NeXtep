@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 27
-        versionName = "0.9.12"
+        versionCode = 28
+        versionName = "0.9.13"
         testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
 
     }
@@ -54,7 +54,7 @@ android {
 
 dependencies {
     // The framework provides this API at runtime; it must never be packaged in the APK.
-    compileOnly("io.github.libxposed:api:102.0.0")
+    compileOnly("io.github.libxposed:api:${providers.gradleProperty("atomicXposedApi").getOrElse("102.0.0")}")
 
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
@@ -62,4 +62,5 @@ dependencies {
     implementation("androidx.viewpager:viewpager:1.0.0")
     implementation("cn.6tail:lunar:1.7.7")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("io.github.libxposed:api:${providers.gradleProperty("atomicXposedApi").getOrElse("102.0.0")}") // JVM contract tests only; not in target APK
 }
