@@ -84,8 +84,8 @@ internal class QueryElisionRegression(private val i:Instrumentation) {
                 i.runOnMainSync {Choreographer.getInstance().removeFrameCallback(frame);mode.set(-1)}
             }
             fun median(a:List<Double>)=a.sorted()[a.size/2]
-            check(queries[0].all{it>=8} && queries[1].all{it>=4})
-            check(queries[0].sorted()[5]-queries[1].sorted()[5]==4L) {"Expected four eliminated logging-only queries per two-leg exchange"}
+            check(queries[0].all{it>=8} && queries[1].all{it>=6})
+            check(queries[0].sorted()[5]-queries[1].sorted()[5]==2L) {"Expected two eliminated pre-mutation queries per two-leg exchange"}
             // Actual foreground activity receives a raw touch; the task identity stays intact.
             val target=i.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("运行诊断")?.firstOrNull{it.text?.toString()=="运行诊断"}
                 ?: error("Promoted real application did not expose its live UI")
@@ -123,7 +123,7 @@ internal class QueryElisionRegression(private val i:Instrumentation) {
             }.toString(2))
             log.add("All five task IDs retained; promoted real UI received raw touch; destination fresh buffers observed; idempotence/failure cleanup passed; lifecycle restart/flicker and full production exchange NOT VERIFIED")
             File(out,"query-elision-comparison.txt").writeText(log.joinToString("\n"))
-            return "PASS actual migration helper comparison, four redundant queries removed per pair, ownership/fresh buffers/error cleanup retained; no ColorOS claim"
+            return "PASS actual migration helper comparison, two pre-mutation queries removed per pair, ownership/fresh buffers/error cleanup retained; no ColorOS claim"
         } finally {
             i.runOnMainSync {mode.set(-1);Choreographer.getInstance().removeFrameCallback(frame)
                 activity.application.unregisterActivityLifecycleCallbacks(lifecycle)

@@ -2028,15 +2028,14 @@ class SlotTaskCoordinator(
             throw error
         }
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-        var after = taskRepository.findTask(taskId)
-        var observedDisplayId = after?.displayId
+        var observedDisplayId = taskRepository.findTask(taskId)?.displayId
         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_observation") {
         while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
-            after = taskRepository.findTask(taskId)
-            observedDisplayId = after?.displayId
+            observedDisplayId = taskRepository.findTask(taskId)?.displayId
         }
         }
+        val after = taskRepository.findTask(taskId)
         NeXtepLog.info("task_continuity", "move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         check(observedDisplayId == displayId) {
             "Task $taskId display move did not settle: expected=$displayId " +
