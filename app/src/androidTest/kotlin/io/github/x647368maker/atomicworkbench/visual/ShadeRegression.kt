@@ -58,8 +58,8 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             ui{AtomicPopupMenu.show(activity,anchor,(listOf("GLASS_TEST_ACTION" to {}) + if(i==0)(1..15).map{"MENU_ITEM_$it" to {}} else emptyList()))};settle();check(menuCount()==1){"Menu unavailable while panel closed"}
             if(i==0) {
                 val bounds=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(bounds)
-                check(bounds.height()<=activity.resources.displayMetrics.heightPixels*.60f)
-                check(bounds.width()<=300*activity.resources.displayMetrics.density+3)
+                check(bounds.height()<=minOf(301*activity.resources.displayMetrics.density,activity.resources.displayMetrics.heightPixels*.42f))
+                check(bounds.width()<=236*activity.resources.displayMetrics.density+3)
                 inst.uiAutomation.takeScreenshot()?.let {b->File(out,"099-glass-menu.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}
             }
             ui{panel.visibility=View.VISIBLE};settle()
@@ -81,6 +81,22 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             check(SystemUiPanelMonitor.refresh(activity)==StagePanelMenuGate.State.CLOSED)
         }
         record("PASS native panel detach/missing OEM root fails closed; non-SystemUI fixtures retain normal menu access")
+        val identityReady=java.util.concurrent.CountDownLatch(1)
+        var loaded:String?=null
+        ui {
+            StageRuntimeIdentity.install(object:android.content.ContextWrapper(activity){
+                override fun getPackageName()="com.android.systemui"
+            })
+            activity.sendOrderedBroadcast(android.content.Intent(StageRuntimeIdentity.ACTION).setPackage(activity.packageName),null,
+                object:android.content.BroadcastReceiver(){
+                    override fun onReceive(c:android.content.Context?,i:android.content.Intent?){
+                        loaded=getResultExtras(false)?.getString("loaded_build");identityReady.countDown()
+                    }
+                },android.os.Handler(android.os.Looper.getMainLooper()),0,null,android.os.Bundle())
+        }
+        check(identityReady.await(5,java.util.concurrent.TimeUnit.SECONDS) && loaded==StageRuntimeIdentity.BUILD){"Loaded-code identity handshake failed"}
+        record("PASS signature-permission protected loaded-code identity receiver fixture; reports compiled stamp, not installed package version")
+
         // Actual unmodified emulator SystemUI: open via public accessibility action and close by raw swipe.
         fun shell(command:String):String = ParcelFileDescriptor.AutoCloseInputStream(
             inst.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText() }

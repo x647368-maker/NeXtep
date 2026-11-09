@@ -33,6 +33,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var mainPriority = true
     private var active = false
     private var connected = false
+    private var runtimeIdentity = "尚未核实注入代码"
     private var busy = false
     private var groups = JSONArray()
     private var windows = JSONArray()
@@ -247,7 +248,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var slotDiagnostics = "尚未取得槽位状态"
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "已连接（更新后需重启）" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) runtimeIdentity else "未连接系统组件", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
         root.addView(hint(slotDiagnostics))
@@ -393,7 +394,18 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             }
         }
     }
-    fun refresh() = command("query")
+    fun refresh() { queryRuntimeIdentity(); command("query") }
+    private fun queryRuntimeIdentity() {
+        val expected=io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.BUILD
+        val intent=Intent(io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.ACTION).setPackage("com.android.systemui")
+        activity.sendOrderedBroadcast(intent,null,object:BroadcastReceiver(){
+            override fun onReceive(c:Context?,i:Intent?) {
+                val b=getResultExtras(false);val build=b?.getString("loaded_build")
+                runtimeIdentity=if(resultCode==25 && build==expected) "本版已加载：$build · PID ${b?.getInt("loaded_pid")} · 面板 ${b?.getString("native_panel")}" else "未取得本版注入凭据：可能仍是旧组件；正常重启后打开工作区再刷新"
+                if(page=="diagnostics")open("diagnostics")
+            }
+        },handler,0,null,Bundle())
+    }
     private var queryPending = false
     private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, slot: Int? = null, expectedTask: Int? = null) {
         if (activity.isDestroyed || name == "query" && queryPending) return

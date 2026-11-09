@@ -8,8 +8,8 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 internal object SystemUiShadeInputController {
     fun apply(view: View, geometry: WorkspaceGeometry) { SystemUiPanelMonitor.observe(view) }
     fun beforeLayout(view: View, params: WindowManager.LayoutParams) {
-        SystemUiPanelMonitor.observe(view)
-        if(SystemUiPanelMonitor.isPanel(view))view.post {SystemUiPanelMonitor.changed()}
+        SystemUiPanelMonitor.observe(view,params)
+        if(SystemUiPanelMonitor.isPanel(view,params))view.post {SystemUiPanelMonitor.changed()}
     }
     fun restore(view: View) = Unit
 }

@@ -112,5 +112,5 @@ assert 'setTouchableInsets' not in shade_input and 'params.flags =' not in shade
 menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
 assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
 assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
-assert 'TRANSPARENT' in menu and '*.58f' in menu
+assert 'TRANSPARENT' in menu and '*.40f' in menu
 print('0.9.8 runtime geometry, tasks, live cards, quickbar and input mappings byte-frozen; native shade and bounded menu checked')

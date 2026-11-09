@@ -7,8 +7,9 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 
 /** Native shade owns its drawing, input region and MotionEvents. Main/slot transforms are unrelated. */
 object SystemUiRootTransformController {
-    fun observeRoot(view: View) { SystemUiPanelMonitor.observe(view) }
+    fun observeRoot(view: View) { StageRuntimeIdentity.install(view.context); SystemUiPanelMonitor.observe(view) }
     fun setActive(requestedActive: Boolean, fitExistingShade: Boolean = true) {
+        StageRuntimeIdentity.bootstrap()
         if(!requestedActive) AtomicPopupMenu.dismissAll()
     }
     fun setGeometry(value: WorkspaceGeometry) = Unit

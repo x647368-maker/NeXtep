@@ -28,6 +28,7 @@ internal object AtomicPopupMenu {
     internal fun isShowing():Boolean=active?.isShowing==true
     fun onPanelChanged(){gate.panelChanged()}
     fun show(context:Context,anchor:View,items:List<Pair<String,()->Unit>>) {
+        StageRuntimeIdentity.install(context)
         if(items.isEmpty())return
         SystemUiPanelMonitor.refresh(context)
         gate.request({anchor.isAttachedToWindow}, {SystemUiPanelCollapser.tryCollapse(context)},
@@ -44,9 +45,9 @@ internal object AtomicPopupMenu {
             val b=Rect(m.bounds);val i=m.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             b.inset(i.left,i.top,i.right,i.bottom);b
         }.getOrElse{Rect(0,0,screen.widthPixels,screen.heightPixels)}
-        val width=minOf(dp(300),(safe.width()-dp(16)).coerceAtLeast(1))
+        val width=minOf(dp(236),(safe.width()-dp(16)).coerceAtLeast(1))
         val row=dp(48);val padding=dp(6)
-        val height=minOf(row*items.size+padding*2,(safe.height()*.58f).toInt()).coerceAtLeast(1)
+        val height=minOf(row*items.size+padding*2,minOf(dp(300),(safe.height()*.40f).toInt())).coerceAtLeast(1)
         // PopupWindow has no public Window object for scoped background blur. Keep the
         // allowed gradient fallback instead of blurring the full display behind it.
         val glass=GradientDrawable(GradientDrawable.Orientation.TL_BR,

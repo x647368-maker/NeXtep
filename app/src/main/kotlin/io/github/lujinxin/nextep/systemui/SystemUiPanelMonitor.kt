@@ -15,14 +15,11 @@ internal object SystemUiPanelMonitor {
         val draw:ViewTreeObserver.OnPreDrawListener, val focus:ViewTreeObserver.OnWindowFocusChangeListener)
     private val roots=WeakHashMap<View,Observers>()
     private var lastState:StagePanelMenuGate.State?=null
-    fun isPanel(view:View):Boolean {
-        val title=(view.layoutParams as? WindowManager.LayoutParams)?.title?.toString().orEmpty()
-        return title.contains("NotificationShade",true) || title.contains("ControlCenter",true) ||
-            view.javaClass.name.contains("NotificationShadeWindowView")
-    }
-    fun observe(view:View) {
-        if(android.os.Looper.myLooper()!=android.os.Looper.getMainLooper()){view.post{observe(view)};return}
-        if(!isPanel(view) || roots.containsKey(view))return
+    fun isPanel(view:View,params:WindowManager.LayoutParams?=view.layoutParams as? WindowManager.LayoutParams):Boolean =
+        StageNativePanelIdentity.matches(params?.title?.toString().orEmpty(),view.javaClass.name,params?.type ?: -1)
+    fun observe(view:View,params:WindowManager.LayoutParams?=view.layoutParams as? WindowManager.LayoutParams) {
+        if(android.os.Looper.myLooper()!=android.os.Looper.getMainLooper()){view.post{observe(view,params)};return}
+        if(!isPanel(view,params) || roots.containsKey(view))return
         val ref=WeakReference(view)
         val listener=ViewTreeObserver.OnGlobalLayoutListener {if(ref.get()!=null)changed()}
         val draw=ViewTreeObserver.OnPreDrawListener {if(ref.get()!=null)changed();true}
