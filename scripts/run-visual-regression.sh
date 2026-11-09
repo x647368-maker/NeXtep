@@ -25,8 +25,11 @@ adb shell am instrument -w io.github.x647368maker.atomicworkbench.test/io.github
 set -e
 adb logcat -d -s NeXtep > virtual-display-log.txt
 mkdir -p visual-results
-for name in 095-parent-only.png 096-live-clip.png 096-top-four-live.png 096-side-four-live.png render-results.txt cold-bootstrap.txt interaction-results.txt 098-main-complete.png 098-main-priority.png 099-glass-menu.png shade-results.txt; do
-  adb exec-out run-as io.github.x647368maker.atomicworkbench cat "files/visual-regression/$name" > "visual-results/$name"
-done
+# Capture every diagnostic even on assertion failure; no empty placeholder files.
+adb exec-out run-as io.github.x647368maker.atomicworkbench tar -C files/visual-regression -cf - . > visual-results.tar
+if [ -s visual-results.tar ]; then tar -xf visual-results.tar -C visual-results; fi
+adb shell dumpsys window windows > visual-results/final-window.txt
+adb shell dumpsys statusbar > visual-results/final-statusbar.txt
+adb logcat -d > visual-results/logcat.txt
 
 grep -F 'HWUI_RENDER_PASS' visual-instrumentation.txt

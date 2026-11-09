@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.SystemClock
+import android.os.ParcelFileDescriptor
 import android.view.*
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -71,9 +72,30 @@ internal class ShadeRegression(private val inst:Instrumentation) {
         ui{AtomicPopupMenu.dismissAll();wm.removeViewImmediate(panel)};settle()
         record("PASS 20 real popup/native-window-fixture mutual exclusion cycles; panel open dismisses menu, collapse denial blocks overlay, closed state reopens")
         // Actual unmodified emulator SystemUI: open via public accessibility action and close by raw swipe.
-        fun waitPackage(pkg:String, polls:Int=30):Boolean {
-            repeat(polls){if(inst.uiAutomation.rootInActiveWindow?.packageName?.toString()==pkg)return true;Thread.sleep(100)}
+        fun shell(command:String):String = ParcelFileDescriptor.AutoCloseInputStream(
+            inst.uiAutomation.executeShellCommand(command)).bufferedReader().use { it.readText() }
+        // Accessibility's active window can remain the app while an empty native shade
+        // owns input. Verify the actual WindowManager focus, not accessibility cache.
+        fun focus():String = shell("dumpsys window windows").lineSequence()
+            .filter { it.contains("mCurrentFocus=") }.joinToString("\n")
+        fun waitFocus(native:Boolean, polls:Int=30):Boolean {
+            repeat(polls) {
+                val f=focus()
+                val matches=if(native) f.contains("NotificationShade") || f.contains("ControlCenter")
+                    else f.contains(activity.packageName)
+                if(matches)return true
+                Thread.sleep(100)
+            }
             return false
+        }
+        fun evidence(name:String) {
+            File(out,"shade-$name-window.txt").writeText(shell("dumpsys window windows"))
+            File(out,"shade-$name-statusbar.txt").writeText(shell("dumpsys statusbar"))
+            inst.uiAutomation.takeScreenshot()?.let { b ->
+                File(out,"shade-$name.png").outputStream().use {b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+                b.recycle()
+            }
+            record("OBSERVE $name focus=${focus()} accessibility=${inst.uiAutomation.rootInActiveWindow?.packageName}")
         }
         fun swipeUp() {
             val m=activity.resources.displayMetrics;val x=m.widthPixels*.5f;val down=SystemClock.uptimeMillis()
@@ -82,14 +104,19 @@ internal class ShadeRegression(private val inst:Instrumentation) {
         for((action,name)in listOf(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS to "notifications",AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS to "quick settings")) {
             var secondSwipe=0
             repeat(20){cycle->
-                check(inst.uiAutomation.performGlobalAction(action));check(waitPackage("com.android.systemui")){"Native $name did not open"}
+                check(inst.uiAutomation.performGlobalAction(action))
+                val opened=waitFocus(true)
+                if(cycle==0 || !opened)evidence("${action}-${cycle}-open")
+                check(opened){"Native $name did not open; focus=${focus()}; see shade diagnostics"}
                 Thread.sleep(220);swipeUp()
-                if(!waitPackage(activity.packageName,10)) {
+                if(!waitFocus(false,10)) {
                     secondSwipe++;swipeUp()
-                    check(waitPackage(activity.packageName)){"Native $name cycle=$cycle did not close after two swipes; active=${inst.uiAutomation.rootInActiveWindow?.packageName}"}
+                    val closed=waitFocus(false)
+                    if(!closed)evidence("${action}-${cycle}-close-failed")
+                    check(closed){"Native $name cycle=$cycle did not close after two swipes; focus=${focus()}"}
                 }
             }
-            record("PASS 20 actual AOSP $name accessibility-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; activity input focus returned")
+            record("PASS 20 actual AOSP $name accessibility-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
         }
         File(out,"shade-results.txt").writeText(lines.joinToString("\n")+"\n")
         return lines
