@@ -58,10 +58,11 @@ internal class QueryElisionRegression(private val i:Instrumentation) {
             }
             check(taskDisplay(main)==0 && taskDisplay(small)==displays[0])
             // Alternating orders, identical five real tasks, same displays, same main looper.
-            for(round in 0..9)for(which in if(round%2==0)listOf(0,1)else listOf(1,0)) {
+            for(round in -2..9)for(which in if(round%2==0)listOf(0,1)else listOf(1,0)) {
+                val measured=round>=0
                 val owner=if(which==0)baseline else candidate
                 val mainBefore=main;val smallBefore=small
-                i.runOnMainSync {mode.set(which);last=0;Choreographer.getInstance().postFrameCallback(frame)}
+                i.runOnMainSync {mode.set(if(measured)which else -1);last=0;if(measured)Choreographer.getInstance().postFrameCallback(frame)}
                 Thread.sleep(40)
                 var stamp=0
                 i.runOnMainSync {
@@ -72,8 +73,10 @@ internal class QueryElisionRegression(private val i:Instrumentation) {
                     am.moveTaskToFront(smallBefore,ActivityManager.MOVE_TASK_WITH_HOME)
                     stamp=bufferStamp()
                     move(owner,mainBefore,displays[0])
-                    elapsed[which].add((SystemClock.elapsedRealtimeNanos()-start)/1_000_000.0)
-                    queries[which].add(WorkspaceEnergyDiagnostics.taskQueries.get()-count)
+                    if(measured) {
+                        elapsed[which].add((SystemClock.elapsedRealtimeNanos()-start)/1_000_000.0)
+                        queries[which].add(WorkspaceEnergyDiagnostics.taskQueries.get()-count)
+                    }
                 }
                 main=smallBefore;small=mainBefore
                 check(taskDisplay(main)==0 && taskDisplay(small)==displays[0]) {"Real task ownership changed unexpectedly"}
@@ -105,7 +108,7 @@ internal class QueryElisionRegression(private val i:Instrumentation) {
                 }
                 check(taskDisplay(main)==0)
             }
-            log.add("Scope: actual baseline/candidate SlotTaskCoordinator migration helpers + real foreground move; five real tasks/four VDs; Surface fitting, production overlay and ColorOS not exercised")
+            log.add("Scope: two warmup pairs per cohort then 10 measured pairs per cohort; actual baseline/candidate SlotTaskCoordinator migration helpers + real foreground move; five real tasks/four VDs; Surface fitting, production overlay and ColorOS not exercised")
             for(which in 0..1) {
                 val frames=synchronized(render[which]){render[which].sorted()}
                 check(frames.isNotEmpty()){ "No actual Window.FrameMetrics in cohort $which" }
