@@ -231,7 +231,13 @@ class LivePreviewInstrumentation : Instrumentation() {
         }
         File(out,if(top) "096-top-four-live.png" else "096-side-four-live.png").outputStream().use {shot.compress(Bitmap.CompressFormat.PNG,100,it)}
         shot.recycle()
-        runOnMainSync {root.removeAllViews();producers.forEach {it.release()} }
+        runOnMainSync {
+            check(cards.all {it.hasVisibleContent()}) {"Visible fixture cards not recognized"}
+            root.alpha=0f
+            check(cards.none {it.hasVisibleContent()}) {"Hidden parent incorrectly counts as visible capacity"}
+            root.alpha=1f
+            root.removeAllViews();producers.forEach {it.release()}
+        }
     }
 
 }

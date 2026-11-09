@@ -112,6 +112,11 @@ class TaskSwitcherView(
     }
     internal fun hasVisibleContent(): Boolean {
         val rect = Rect()
+        var ancestor = parent
+        while (ancestor is View) {
+            if (!ancestor.isShown || ancestor.alpha <= .05f) return false
+            ancestor = ancestor.parent
+        }
         return workspaceCardVisible && isShown && alpha > 0f && textureView.alpha > .05f && width > 1 && height > 1 &&
             getGlobalVisibleRect(rect) && rect.width() > 1 && rect.height() > 1
     }
