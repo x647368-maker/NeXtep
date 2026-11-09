@@ -18,6 +18,7 @@ internal object SystemUiPanelMonitor {
             view.javaClass.name.contains("NotificationShadeWindowView")
     }
     fun observe(view:View) {
+        if(android.os.Looper.myLooper()!=android.os.Looper.getMainLooper()){view.post{observe(view)};return}
         if(!isPanel(view) || roots.containsKey(view))return
         val ref=WeakReference(view)
         val listener=ViewTreeObserver.OnGlobalLayoutListener {if(ref.get()!=null)changed()}
@@ -34,6 +35,7 @@ internal object SystemUiPanelMonitor {
     }
     fun refresh(context:Context):StagePanelMenuGate.State {
         systemUi=context.packageName=="com.android.systemui"
+        if(systemUi)inventoryConfirmed=false
         if(systemUi)runCatching {
             val c=Class.forName("android.view.WindowManagerGlobal")
             val global=c.getMethod("getInstance").invoke(null)
