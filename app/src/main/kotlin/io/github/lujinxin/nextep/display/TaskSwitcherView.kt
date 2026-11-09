@@ -63,7 +63,17 @@ class TaskSwitcherView(
     }
 
     override fun dispatchDraw(canvas: Canvas) {
-        if (!workspaceCardVisible) return
+        if (!workspaceCardVisible) {
+            // TextureView creates its SurfaceTexture lazily during draw. Skipping
+            // this call leaves Empty -> Ready permanently blocked on cold start.
+            // Call the producer directly with an empty clip: no pixels/placeholders,
+            // no detachment or alpha-zero RenderNode culling.
+            val saved = canvas.save()
+            canvas.clipRect(0, 0, 0, 0)
+            textureView.draw(canvas)
+            canvas.restoreToCount(saved)
+            return
+        }
         val b = if (liveBounds.isEmpty) RectF(0f, 0f, width.toFloat(), height.toFloat()) else liveBounds
         liveClip.reset(); liveClip.addRoundRect(b, liveRadius(b), liveRadius(b), Path.Direction.CW)
         val saved = canvas.save()
@@ -96,9 +106,14 @@ class TaskSwitcherView(
     fun isWorkspaceCardVisible(): Boolean = workspaceCardVisible
     fun setWorkspaceCardVisible(value: Boolean) {
         workspaceCardVisible = value
-        if (!value) { animate().cancel(); alpha = 0f; windowMenu.visibility = View.GONE }
+        if (!value) { animate().cancel(); alpha = 1f; windowMenu.visibility = View.GONE }
         else windowMenu.visibility = if (currentState is SlotState.Occupied) View.VISIBLE else View.GONE
         invalidate()
+    }
+    internal fun hasVisibleContent(): Boolean {
+        val rect = Rect()
+        return workspaceCardVisible && isShown && alpha > 0f && textureView.alpha > .05f && width > 1 && height > 1 &&
+            getGlobalVisibleRect(rect) && rect.width() > 1 && rect.height() > 1
     }
     private var directInteraction = false
     private var inputGesture = false

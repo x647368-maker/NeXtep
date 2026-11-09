@@ -70,6 +70,7 @@ print('Compact native home, confirmed exit, main/background/input geometry and s
 import hashlib
 preserved=json.loads((root/'scripts/preserved-top-cards-0.9.3.json').read_text())
 preserved.update(json.loads((root/'scripts/visual-repair-0.9.6.json').read_text()))
+preserved.update(json.loads((root/'scripts/slot-recovery-0.9.7.json').read_text()))
 for path,sha in preserved.items():
  if path=='profile_card_section_sha256':
   text=(k/'workspace/WorkspaceLayoutProfile.kt').read_text();data=text[text.index('    val canvas ='):text.index('    fun geometry(')].encode()

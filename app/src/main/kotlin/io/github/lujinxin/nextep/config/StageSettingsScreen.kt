@@ -244,18 +244,20 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         root.addView(hint("主窗把手：点击打开菜单，向左滑动关闭主窗。小窗沿侧栏外侧方向滑动关闭；顶部横排时向左滑动。\n\n退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
     }
+    private var slotDiagnostics = "尚未取得槽位状态"
     private fun diagnostics(root: LinearLayout) {
         val card = group(root)
-        row(card, "系统组件", if (connected) "0.9.5 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
+        row(card, "系统组件", if (connected) "0.9.7 已连接" else "未连接本版注入代码", "diagnostics") { refresh() }
         row(card, "退出当前工作区", "可用于退出仍在运行的旧版界面", "exit") { setStage(false) }
         row(card, "刷新连接状态", icon = "diagnostics") { refresh() }
-        root.addView(hint("安装包：0.9.5\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
+        root.addView(hint(slotDiagnostics))
+        root.addView(hint("安装包：0.9.7\n\n更新 APK 不会立即替换已经注入到系统进程中的代码。若未连接，请先退出当前工作区，确认 Vector 只启用本模块，再正常重启手机一次。\n\n若仍未连接，提供 Vector 日志即可，无需运行终端命令。"))
     }
     private fun about(root: LinearLayout) {
         val hero = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, dp(34), 0, dp(18)) }
         hero.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) }, LinearLayout.LayoutParams(dp(72), dp(72)))
         hero.addView(label("台前调度 · Atomic Workbench", 23f).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(16), 0, dp(8)) })
-        hero.addView(label("0.9.5", 13f, secondary)); root.addView(hero)
+        hero.addView(label("0.9.7", 13f, secondary)); root.addView(hero)
         val credits = group(root)
         row(credits, "ZMW小武 × GPT", "二次开发", "apps")
         row(credits, "需求策划、交互设计与真机测试", "ZMW小武")
@@ -422,6 +424,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                         val snapshot = JSONObject(raw); groups = snapshot.getJSONArray("groups")
                         activeId = snapshot.optString("active").takeIf { it.isNotBlank() && it != "null" }
                     } }
+                    slotDiagnostics = reply.getString("slot_diagnostics") ?: "系统组件未返回槽位诊断"
                     cinemaMode = reply.getString("cinema_mode", "AUTO")
                     quickFixed = reply.getBoolean("quick_fixed"); quickExpanded = reply.getBoolean("quick_expanded")
                     adaptive = reply.getBoolean("adaptive", true)

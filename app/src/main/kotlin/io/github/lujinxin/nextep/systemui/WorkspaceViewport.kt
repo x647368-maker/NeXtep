@@ -262,13 +262,15 @@ internal class WorkspaceViewport(
         }
         runCatching {
             // No inset-dispatch listener: only an unseen configuration/manual
-            // recalibration reaches WindowMetrics. Gesture mode reserves no bar.
+            // recalibration reaches WindowMetrics. Gesture mode still respects cutout and gesture safety.
             val window = context.getSystemService(WindowManager::class.java).maximumWindowMetrics
             check(width > 1 && height > 1)
-            val navigation = if (navigationButtonsEnabled) {
-                val inset = window.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars())
-                WorkspaceNavigationInsets(inset.left, inset.top, inset.right, inset.bottom)
-            } else WorkspaceNavigationInsets()
+            val types = WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout() or
+                (if (navigationButtonsEnabled) WindowInsets.Type.navigationBars() else 0)
+            val bars = window.windowInsets.getInsetsIgnoringVisibility(types)
+            val gestures = window.windowInsets.getInsets(WindowInsets.Type.systemGestures())
+            val navigation = WorkspaceNavigationInsets(maxOf(bars.left,gestures.left), maxOf(bars.top,gestures.top),
+                maxOf(bars.right,gestures.right), maxOf(bars.bottom,gestures.bottom))
             Snapshot(width, height, metrics.density, navigation, rotation)
         }.onSuccess { measured ->
             updateSnapshot(measured, key)
@@ -306,8 +308,8 @@ internal class WorkspaceViewport(
 
     private companion object {
         const val MODE_KEY = "navigation_buttons_enabled"
-        const val BUTTONS_PREFIX = "buttons_v1:"
-        const val FULL_PREFIX = "full_v1:"
+        const val BUTTONS_PREFIX = "buttons_v2:"
+        const val FULL_PREFIX = "full_v2:"
         const val MAX_PROFILES = 16
     }
 }

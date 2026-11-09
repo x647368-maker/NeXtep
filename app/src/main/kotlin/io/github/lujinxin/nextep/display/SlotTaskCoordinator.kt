@@ -163,6 +163,7 @@ class SlotTaskCoordinator(
             throw error
         }
         active = false
+        cancelPendingAdd("工作区已退出")
         cancelPendingExchange()
         onSlotDragEnded()
         recentSelectionGeneration += 1
@@ -627,6 +628,87 @@ class SlotTaskCoordinator(
             }
     }
 
+    private var pendingAddIntent: Intent? = null
+    private var pendingAddFailure: ((String) -> Unit)? = null
+    private var addGeneration = 0
+
+    private fun availability(): List<SlotAvailabilityPolicy.Fact> {
+        val tasks = taskRepository.runningTasks()
+        return slotRecords.mapIndexed { i, record ->
+            val state=record.state
+            val display=slots[i].displayId()
+            val task=(state as? SlotState.Occupied)?.taskId
+            SlotAvailabilityPolicy.Fact(when(state) {
+                SlotState.Empty -> SlotAvailabilityPolicy.State.EMPTY
+                is SlotState.Ready -> SlotAvailabilityPolicy.State.READY
+                is SlotState.Occupied -> SlotAvailabilityPolicy.State.OCCUPIED
+                is SlotState.Failed -> SlotAvailabilityPolicy.State.FAILED
+            }, display, task, tasks.firstOrNull { it.taskId==task }?.displayId,
+                tasks.filter { it.displayId==display }.map { it.taskId },
+                slots[i].view.textureView.isAvailable && slots[i].view.textureView.surfaceTexture != null,
+                slots[i].view.hasVisibleContent())
+        }
+    }
+
+    fun addWindow(intent: Intent, onFailure: (String) -> Unit = {}): Result<Unit> = runCatching {
+        ensureMainThread()
+        check(isGroupRestoreReady()) { "窗口正在切换，请稍后重试" }
+        check(pendingAddIntent == null) { "正在初始化小窗，请勿重复点击" }
+        reconcile("user add snapshot")
+        when(val decision=SlotAvailabilityPolicy.decide(availability())) {
+            is SlotAvailabilityPolicy.Decision.Available -> replaceWindow(decision.index,intent).getOrThrow()
+            SlotAvailabilityPolicy.Decision.Full -> error("最多四个小窗")
+            SlotAvailabilityPolicy.Decision.Recover -> {
+                pendingAddIntent=Intent(intent);pendingAddFailure=onFailure
+                val generation=++addGeneration
+                // Failed/Empty records with an existing producer are reconciled, never destroyed.
+                slotRecords.forEachIndexed { i, record ->
+                    if ((record.state is SlotState.Empty || record.state is SlotState.Failed) && slots[i].displayId()==null)
+                        slots[i].retryInitialization()
+                }
+                onSlotStatesChanged()
+                handler.post { completePendingAdd() }
+                handler.postDelayed({
+                    if(generation==addGeneration && pendingAddIntent!=null) {
+                        reconcile("add deadline")
+                        completePendingAdd()
+                        if(pendingAddIntent!=null) {
+                            val callback=pendingAddFailure
+                            pendingAddIntent=null;pendingAddFailure=null;addGeneration++
+                            val reason="小窗初始化或画面绑定未完成："+slotDiagnostics()
+                            NeXtepLog.warn("slot_add",reason)
+                            callback?.invoke(reason)
+                        }
+                    }
+                },2500L)
+            }
+        }
+        Unit
+    }
+    private fun completePendingAdd() {
+        val intent=pendingAddIntent ?: return
+        if(!active || suspended) { cancelPendingAdd("工作区已退出或挂起");return }
+        if(!isGroupRestoreReady()) return
+        val decision=SlotAvailabilityPolicy.decide(availability())
+        if(decision == SlotAvailabilityPolicy.Decision.Full) { cancelPendingAdd("最多四个小窗");return }
+        if(decision !is SlotAvailabilityPolicy.Decision.Available) return
+        val callback=pendingAddFailure
+        pendingAddIntent=null;pendingAddFailure=null;addGeneration++
+        replaceWindow(decision.index,intent).onFailure { callback?.invoke(it.message ?: "应用未打开") }
+    }
+    private fun cancelPendingAdd(reason: String) {
+        val callback=pendingAddFailure
+        pendingAddIntent=null;pendingAddFailure=null;addGeneration++
+        callback?.invoke(reason)
+    }
+    fun slotDiagnostics(): String = slotRecords.mapIndexed { i, record ->
+        val slot=slots[i];val view=slot.view
+        val task=(record.state as? SlotState.Occupied)?.taskId ?: record.retainedTaskId
+        val state=when(record.state) {SlotState.Empty->"Empty";is SlotState.Ready->"Ready";is SlotState.Occupied->"Occupied";is SlotState.Failed->"Failed"}
+        val failure=(record.state as? SlotState.Failed)?.message ?: slot.initializationFailure().orEmpty()
+        "槽${i+1} $state task=$task display=${slot.displayId()} texture=${view.textureView.isAvailable} visible=${view.hasVisibleContent()} bounds=${view.width}x${view.height}@${view.x.toInt()},${view.y.toInt()} failure=$failure"
+    }.joinToString("\n")
+
     fun slotStates(): List<SlotState> = slotRecords.map { it.state }
 
     override fun onDisplayReady(slotIndex: Int, displayId: Int) {
@@ -634,6 +716,7 @@ class SlotTaskCoordinator(
         if (!active) return
         validateExitedTasks()
         setState(slotIndex, SlotState.Ready(displayId), "display ready")
+        handler.post { completePendingAdd() }
         val retainedTaskId = slotRecords[slotIndex].retainedTaskId
         if (retainedTaskId != null) {
             val exited = slotRecords[slotIndex].exitTask
@@ -1466,7 +1549,7 @@ class SlotTaskCoordinator(
                 }
             }
             val displayId = slot.displayId() ?: run {
-                setState(index, SlotState.Empty, "$reason: no display")
+                if (slotRecords[index].state !is SlotState.Failed) setState(index, SlotState.Empty, "$reason: no display")
                 return@forEachIndexed
             }
             val displayTasks = tasks.filter { it.displayId == displayId }
@@ -1987,6 +2070,7 @@ class SlotTaskCoordinator(
         if (state !is SlotState.Occupied) slotRecords[index].mismatchSince = 0L
         slots[index].view.showState(state)
         if (previous != state) onSlotStatesChanged()
+        if (previous != state && state is SlotState.Ready && pendingAddIntent != null) handler.post { completePendingAdd() }
         if (previous != state) {
             NeXtepLog.info(
                 "slot_state",

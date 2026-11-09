@@ -36,6 +36,7 @@ class LivePreviewInstrumentation : Instrumentation() {
             waitForIdleSync()
             val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
             val checks=mutableListOf<String>()
+            checks.add(coldBootstrap(root,activity,out))
             for (legacy in listOf(true,false)) {
                 val ready=CountDownLatch(1)
                 lateinit var card: FrameLayout
@@ -110,11 +111,75 @@ class LivePreviewInstrumentation : Instrumentation() {
             finish(Activity.RESULT_OK,result)
         } catch(t: Throwable) { result.putString("stream",t.stackTraceToString());finish(Activity.RESULT_CANCELED,result) }
     }
+    private fun coldBootstrap(root: FrameLayout, activity: Activity, out: File): String {
+        val before=java.util.concurrent.atomic.AtomicInteger()
+        runOnMainSync {
+            root.removeAllViews()
+            repeat(4) {
+                val hidden=object: FrameLayout(activity) { override fun dispatchDraw(c: Canvas) {} }.apply {alpha=0f}
+                val texture=TextureView(activity)
+                texture.surfaceTextureListener=object: TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture,w: Int,h: Int) {before.incrementAndGet()}
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture,w: Int,h: Int) {}
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture)=true
+                }
+                hidden.addView(texture,FrameLayout.LayoutParams(-1,-1))
+                root.addView(hidden,FrameLayout.LayoutParams(1,1))
+            }
+        }
+        Thread.sleep(700)
+        check(before.get()==0) {"Legacy initialization deadlock was not reproduced"}
+        val log=mutableListOf("BEFORE legacy hidden Empty=4 surfaceAvailable=${before.get()} ready=0; old indexOfReady=-1 incorrectly meant full")
+        val ready=CountDownLatch(4)
+        val slots=mutableListOf<io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot>()
+        val failures=mutableListOf<String>()
+        uiAutomation.adoptShellPermissionIdentity()
+        runOnMainSync {
+            root.removeAllViews()
+            val p=WorkspaceLayoutProfile.create(1272,2772,512,WorkspaceNavigationInsets(top=108,bottom=96))
+            repeat(4) { i ->
+                val slot=io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot(activity,i)
+                slot.setLayoutProfile(p)
+                slot.view.setWorkspaceCardVisible(false)
+                slot.setListener(object: io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot.Listener {
+                    override fun onDisplayReady(index: Int,id: Int) {log.add("AFTER slot=$index state=Ready display=$id surface=true hiddenHost=1x1 task=none");ready.countDown()}
+                    override fun onDisplayReleased(index: Int,id: Int?,reason: String) {log.add("RELEASE slot=$index display=$id reason=$reason")}
+                    override fun onDisplayFailed(index: Int,message: String) {failures.add("slot=$index $message")}
+                })
+                slots.add(slot);root.addView(slot.view,FrameLayout.LayoutParams(1,1));slot.activate()
+            }
+        }
+        check(ready.await(20,TimeUnit.SECONDS)) {"Hidden producer startup failed: $failures"}
+        val ids=slots.map{it.displayId()}
+        check(ids.filterNotNull().distinct().size==4) {"Four distinct real displays were not created"}
+        runOnMainSync {slots.forEach {it.setSuspended(true);it.setSuspended(false)}}
+        check(ids==slots.map{it.displayId()}) {"Suspend/resume changed display identity"}
+        log.add("PASS four real VirtualDisplays cold-start behind hidden 1x1 hosts; suspend/resume preserved IDs=$ids")
+        runOnMainSync {slots.forEach {it.deactivate()};root.removeAllViews()}
+        val reopened=CountDownLatch(4)
+        runOnMainSync {
+            slots.forEachIndexed {i,slot ->
+                slot.setListener(object: io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot.Listener {
+                    override fun onDisplayReady(index: Int,id: Int) {log.add("REENTER slot=$index state=Ready display=$id texture=true task=none");reopened.countDown()}
+                    override fun onDisplayReleased(index: Int,id: Int?,reason: String) {}
+                    override fun onDisplayFailed(index: Int,message: String) {failures.add(message)}
+                })
+                root.addView(slot.view,FrameLayout.LayoutParams(1,1));slot.activate()
+            }
+        }
+        check(reopened.await(20,TimeUnit.SECONDS)) {"Reenter failed: $failures"}
+        check(slots.all{it.displayId()!=null && it.view.textureView.isAvailable})
+        runOnMainSync {slots.forEach{it.deactivate()};root.removeAllViews()}
+        uiAutomation.dropShellPermissionIdentity()
+        File(out,"cold-bootstrap.txt").writeText(log.joinToString("\n"))
+        return "PASS cold Empty -> four Ready real displays, zero painted placeholders, exit/reenter and suspend/resume"
+    }
     private fun renderFour(root: FrameLayout, activity: Activity, out: File, top: Boolean) {
         val ready=CountDownLatch(4)
         val producers=mutableListOf<Surface>()
         val cards=mutableListOf<TaskSwitcherView>()
-        val p0=WorkspaceLayoutProfile.create(1264,2780,512,WorkspaceNavigationInsets(bottom=96))
+        val p0=WorkspaceLayoutProfile.create(1272,2772,512,WorkspaceNavigationInsets(bottom=96))
         val toolbar=p0.geometry.copy(topHeight=307)
         val g=StageAdaptiveLayout.rail(if(top) toolbar.copy(railAtTop=true,sidebarWidth=StageTopLayoutMetrics.depth(toolbar,3.2f,4))
             else toolbar,4,3.2f)

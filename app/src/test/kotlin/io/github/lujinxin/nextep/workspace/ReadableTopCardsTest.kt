@@ -83,7 +83,7 @@ class ReadableTopCardsTest {
     }
     @Test fun oldTinyGeometryCacheIsInvalidatedAndNewRecordRoundTrips() {
         val p=profile(4,true)
-        assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("16,","15,")))
+        assertNull(WorkspaceLayoutProfile.decode(p.encode().replaceFirst("17,","16,")))
         assertEquals(p,WorkspaceLayoutProfile.decode(p.encode()))
     }
 }

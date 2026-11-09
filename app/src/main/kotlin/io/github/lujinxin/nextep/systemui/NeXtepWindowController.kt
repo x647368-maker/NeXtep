@@ -554,9 +554,8 @@ class NeXtepWindowController(
                 if (command == "close_window") engine.closeWindow(intent.getIntExtra("slot", -1)).getOrThrow()
                 else {
                     val launch = checkNotNull(intent.getParcelableExtra(TriggerBroadcastContract.EXTRA_LAUNCH_INTENT, Intent::class.java))
-                    val index = if (command == "add_window") engine.slotStates().indexOfFirst { it is SlotState.Ready } else intent.getIntExtra("slot", -1)
-                    check(index >= 0) { "最多四个小窗" }
-                    engine.replaceWindow(index, launch).getOrThrow()
+                    if (command == "add_window") addStageWindow(engine, launch).getOrThrow()
+                    else engine.replaceWindow(intent.getIntExtra("slot", -1), launch).getOrThrow()
                 }
                 scheduleWindowRefresh()
             }
@@ -589,6 +588,7 @@ class NeXtepWindowController(
             putBoolean("quick_fixed", core.fixed); putBoolean("quick_expanded", core.enabled && core.expanded)
             putBoolean("adaptive", core.adaptive); putBoolean("main_priority", core.mainPriority)
             putString("groups", workgroups.settingsSnapshot())
+            putString("slot_diagnostics", slotStatesDescription())
             putString("windows", org.json.JSONArray().also { array ->
                 slotCoordinator?.slotStates()?.forEachIndexed { index, state ->
                     if (state is SlotState.Occupied) array.put(org.json.JSONObject().put("slot", index)
@@ -601,11 +601,8 @@ class NeXtepWindowController(
         putBoolean("ok", false); putString("message", it.message ?: "操作失败")
     } }
 
-    fun slotStatesDescription(): String = slotCoordinator
-        ?.slotStates()
-        ?.mapIndexed { index, state -> "${index + 1}:$state" }
-        ?.joinToString(" | ")
-        ?: "unavailable"
+    fun slotStatesDescription(): String = "screen=${currentGeometry().screenWidth}x${currentGeometry().screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
+        (slotCoordinator?.slotDiagnostics() ?: "unavailable")
 
     internal fun visibleSlotTaskIds(): Set<Int> = if (!workspaceVisible || suspended) emptySet() else {
         slotCoordinator?.slotStates().orEmpty().filterIsInstance<SlotState.Occupied>()
@@ -864,9 +861,7 @@ class NeXtepWindowController(
     }
 
     private fun setWindowBounds(title: String, params: WindowManager.LayoutParams, requested: WorkspaceGeometry) {
-        val geometry = if ((title == "NeXtepSidebar" && (sidebarCollapsed || shownWindowCount > 0)) ||
-            (title == "AtomicSidebarHandle" && !sidebarCollapsed && shownWindowCount > 0))
-            viewport.geometry(sidebarSide).rotatedTo(requested.displayRotation) else requested
+        val geometry = requested
         when (title) {
             "StageMainHandle" -> {
                 params.width = minOf(dp(64).toInt(), geometry.contentWidth)
@@ -1016,6 +1011,14 @@ class NeXtepWindowController(
         viewport.cinemaPortrait = cinemaPortrait
     }
 
+    private fun addStageWindow(engine: SlotTaskCoordinator, intent: Intent): Result<Unit> {
+        if (sidebarCollapsed) setSidebarCollapsed(false)
+        // Rebind presentation before capacity checks. Existing tasks are never removed.
+        sidebarView?.let { applySlotLayout(it, currentGeometry()) }
+        scheduleWindowRefresh()
+        return engine.addWindow(intent) { showStageMessage(it) }
+    }
+
     private fun renderQuickChrome() {
         val shown = quickInputReady && !quickChromeSuppressed && !suspended
         quickBar?.visibility = if (shown && core.enabled && core.expanded) View.VISIBLE else View.GONE
@@ -1058,8 +1061,7 @@ class NeXtepWindowController(
         val actions = mutableListOf<Pair<String, () -> Unit>>()
         actions += "启动 / 切换到主窗" to { open() }
         actions += "添加到小窗" to {
-            val index = slotCoordinator?.slotStates()?.indexOfFirst { it is SlotState.Ready } ?: -1
-            if (index < 0) showStageMessage("请先空出一个小窗") else open(index)
+            slotCoordinator?.let { addStageWindow(it,entry.launchIntent()).onFailure { error -> showStageMessage(error.message ?: "小窗未打开") } }
         }
         slotCoordinator?.slotStates()?.forEachIndexed { index, state -> if (state is SlotState.Occupied) {
             val expected = state.taskId
@@ -1293,9 +1295,8 @@ class NeXtepWindowController(
                     } else {
                         val current = target?.let { engine.slotStates().getOrNull(it) as? SlotState.Occupied }
                         if (target != null && current?.taskId != expectedTask) return
-                        val index = target ?: engine.slotStates().indexOfFirst { it is SlotState.Ready }
-                        if (index < 0) showStageMessage("最多四个小窗")
-                        else engine.replaceWindow(index, entry.launchIntent()).onFailure { showStageMessage(it.message ?: "应用未打开") }
+                        val result = if (target == null) addStageWindow(engine,entry.launchIntent()) else engine.replaceWindow(target,entry.launchIntent())
+                        result.onFailure { showStageMessage(it.message ?: "应用未打开") }
                     }
                 }
                 grid.setOnItemClickListener { _, _, position, _ ->
@@ -1762,28 +1763,18 @@ class NeXtepWindowController(
 
     private fun applySlotLayout(panel: FrameLayout, geometry: WorkspaceGeometry) {
         panel.invalidate()
-        val profile = viewport.layout()
-        val bounds = profile.slots
-        slotWindows.forEachIndexed { index, slot ->
-            slot.setLayoutProfile(profile)
-            slot.view.setBackgroundSwipeSide(if (geometry.railAtTop) SidebarSide.LEFT else logicalSidebarSide(geometry))
-            slot.view.layoutParams = FrameLayout.LayoutParams(
-                bounds[index].width,
-                bounds[index].height,
-                Gravity.TOP,
-            ).apply {
-                marginStart = if (geometry.railAtTop) bounds[index].left else (profile.geometry.sidebarWidth - bounds[index].width) / 2
-                marginEnd = 0
-                topMargin = bounds[index].top
-            }
-        }
+        // applyStageStack owns the single state/profile/bounds snapshot.
         applyStageStack(geometry)
     }
 
     private fun applyStageStack(geometry: WorkspaceGeometry) {
         if (slotWindows.isEmpty()) return
         syncCoreViewport()
-        val selectedProfile = viewport.layout()
+        val selectedProfile = viewport.layout().let { selected ->
+            // The no-task compact rail is ONLY a parent/add affordance. Hidden
+            // producer hosts remain 1x1 until an occupied state chooses real bounds.
+            if (viewport.activeCount > 0 && !sidebarCollapsed) selected.copy(geometry = geometry) else selected
+        }
         val right = logicalSidebarSide(geometry) == SidebarSide.RIGHT
         val states = slotCoordinator?.slotStates().orEmpty()
         val occupied = List(WORKSPACE_SLOT_COUNT) { states.getOrNull(it) is SlotState.Occupied }
@@ -1792,9 +1783,9 @@ class NeXtepWindowController(
             profile, slotWindows.map { it.geometry() }, occupied, stageOrder)
         slotWindows.forEachIndexed { index, slot ->
             slot.setLayoutProfile(profile)
-            val box = bounds[index]
+            val box = if (occupied[index]) bounds[index] else io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile.Slot(1, 1, 0, 0)
             if (cinemaSlot == null) {
-                val x = if (geometry.railAtTop) box.left else (profile.geometry.sidebarWidth - box.width) / 2
+                val x = if (!occupied[index]) 0 else if (geometry.railAtTop) box.left else (profile.geometry.sidebarWidth - box.width) / 2
                 val old = slot.view.layoutParams as? FrameLayout.LayoutParams
                 if (old == null || old.width != box.width || old.height != box.height || old.marginStart != x || old.topMargin != box.top) {
                     slot.view.layoutParams = FrameLayout.LayoutParams(box.width, box.height, Gravity.TOP).apply { marginStart = x; topMargin = box.top }
@@ -1834,7 +1825,10 @@ class NeXtepWindowController(
             slot.setCinema(false)
             val pose = poses[index]
             slot.view.setWorkspaceCardVisible(pose != null)
-            if (pose == null) return@forEachIndexed
+            if (pose == null) {
+                slot.view.apply { translationX=0f;translationY=0f;scaleX=1f;scaleY=1f;rotationY=0f;elevation=0f }
+                return@forEachIndexed
+            }
             slot.view.apply {
                 pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()
                 pivotY = bounds[index].height / 2f

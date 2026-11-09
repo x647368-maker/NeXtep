@@ -34,6 +34,17 @@ class VirtualDisplaySlot(
     private var outputConnected = false
     private var activeGeometry: SlotGeometry? = null
     private var layoutProfile: WorkspaceLayoutProfile? = null
+    private var creationAttempts = 0
+    private var lastCreationFailure: String? = null
+    internal fun initializationFailure(): String? = lastCreationFailure
+    internal fun retryInitialization() {
+        if (!active || suspended || virtualDisplay != null) return
+        creationAttempts = 0 // one explicit user repair, not a background retry loop
+        lastCreationFailure = null
+        val texture = view.textureView.surfaceTexture
+        if (texture != null && view.textureView.isAvailable) createDisplay(texture, view.textureView.width, view.textureView.height)
+        else { view.invalidate(); view.textureView.invalidate() }
+    }
     private var cinema = false
     fun setCinema(enabled: Boolean): Boolean {
         if (cinema == enabled) return true
@@ -91,6 +102,7 @@ class VirtualDisplaySlot(
     fun isSuspended(): Boolean = suspended
 
     fun activate() {
+        if (!active) { creationAttempts = 0; lastCreationFailure = null }
         active = true
         val textureView = if (freshSurfaceRequired) {
             freshSurfaceRequired = false
@@ -214,7 +226,8 @@ class VirtualDisplaySlot(
     }
 
     private fun createDisplay(texture: SurfaceTexture, width: Int, height: Int) {
-        if (!active || suspended || virtualDisplay != null || width <= 0 || height <= 0) return
+        if (!active || suspended || virtualDisplay != null || width <= 0 || height <= 0 || creationAttempts >= 2) return
+        creationAttempts += 1
         val geometry = canvas()
         activeGeometry = geometry
         texture.setDefaultBufferSize(geometry.width, geometry.height)
@@ -222,6 +235,7 @@ class VirtualDisplaySlot(
         val createdSurface = Surface(texture)
         factory.create(index, geometry, createdSurface)
             .onSuccess { display ->
+                lastCreationFailure = null
                 surface = createdSurface
                 virtualDisplay = display
                 outputConnected = true
@@ -238,6 +252,7 @@ class VirtualDisplaySlot(
             }
             .onFailure {
                 createdSurface.release()
+                lastCreationFailure = it.message ?: "display unavailable"
                 view.showWaiting()
                 listener?.onDisplayFailed(index, it.message ?: "display unavailable")
             }
