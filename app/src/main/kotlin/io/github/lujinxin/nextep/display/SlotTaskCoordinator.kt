@@ -2008,8 +2008,8 @@ class SlotTaskCoordinator(
         ?: WINDOWING_MODE_FULLSCREEN_FALLBACK
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
-        if (!TaskContinuityPolicy.shouldMove(taskRepository.findTask(taskId)?.displayId, displayId)) return
         val before = taskRepository.findTask(taskId)
+        if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) return
         NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {
@@ -2028,14 +2028,15 @@ class SlotTaskCoordinator(
             throw error
         }
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-        var observedDisplayId = taskRepository.findTask(taskId)?.displayId
+        var after = taskRepository.findTask(taskId)
+        var observedDisplayId = after?.displayId
         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_observation") {
         while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
-            observedDisplayId = taskRepository.findTask(taskId)?.displayId
+            after = taskRepository.findTask(taskId)
+            observedDisplayId = after?.displayId
         }
         }
-        val after = taskRepository.findTask(taskId)
         NeXtepLog.info("task_continuity", "move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         check(observedDisplayId == displayId) {
             "Task $taskId display move did not settle: expected=$displayId " +
