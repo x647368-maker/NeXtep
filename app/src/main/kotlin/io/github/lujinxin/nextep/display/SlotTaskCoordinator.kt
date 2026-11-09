@@ -2008,8 +2008,8 @@ class SlotTaskCoordinator(
         ?: WINDOWING_MODE_FULLSCREEN_FALLBACK
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
+        if (!TaskContinuityPolicy.shouldMove(taskRepository.findTask(taskId)?.displayId, displayId)) return
         val before = taskRepository.findTask(taskId)
-        if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) return
         NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {

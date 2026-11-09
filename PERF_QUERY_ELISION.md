@@ -1,19 +1,28 @@
-# Candidate: eliminate migration logging-only task queries
+# Rejected P0 candidate: duplicate pre-mutation query elision
 
-Base verified: ebe9de646d7d800fb1d3d6bf295e4ef12e68aade. No version increment or deliverable is authorized before evidence of benefit. Independent branch atomic-workbench/perf-query-elision. Existing diagnostics are reused, not expanded.
+Baseline: ebe9de646d7d800fb1d3d6bf295e4ef12e68aade.
+Tested candidate: 01eae45462ff8f4bda6beed5ffdb41e5e19db233.
+Actions run: https://github.com/x647368-maker/NeXtep/actions/runs/42640008362
 
-## Actual production modification
+The production candidate reused the immediate pre-mutation task snapshot for move_begin logging, removing one complete task-list query per move. All post-mutation queries, task migration threads, polling, Surface operations, geometry, failure cleanup and rollback remained unchanged. A broader draft was narrowed before the evaluated run because the post-move logging read also refreshes global Surface observations.
 
-Only moveTaskToDisplayAndWait changes. Previously it queried the entire task list once for shouldMove, again for move_begin logging, once for the required post-move check, and again solely for move_end logging. The candidate reuses only the immediate precheck snapshot for move_begin. The post-move logging query also refreshes the global task-state observations; it remains unchanged for safety. Every poll still performs a fresh task query. There is no cross-operation cache, no reuse across a task mutation, and no omitted destination, layout, ownership, Surface, cancellation or rollback check. The Binder task call, preparation, main-thread execution, timeout, sleeps, polling predicates and subsequent mandatory layout/Surface queries stay original. A complete two-leg swap removes two unnecessary pre-mutation full-list queries/decodes; all post-mutation observation passes remain. Logging is not a valid readiness barrier; explicit task/Surface checks remain mandatory.
+Two warmup pairs per cohort, then ten alternating measured two-leg pairs used the actual baseline/candidate private migration helpers on the main looper, five real application tasks, four consuming virtual displays and a real bring-to-front operation. This measured a framework harness pair, not the complete production SystemUI exchange, Surface fitting, overlay, ColorOS or Find N5 behavior.
 
-## Independent verification
+| Metric | Baseline | Candidate |
+|---|---:|---:|
+| Main critical section median ms | 55.645033 | 45.675647 |
+| Main critical section maximum ms | 80.590778 | 62.005260 |
+| Task-list queries per pair | 8 | 6 |
+| Choreographer maximum gap ms | 116 | 116 |
+| FrameMetrics P95 ms | 136.025125 | 149.269408 |
+| Frame samples | 67 | 53 |
+| Frame samples over 17ms | 67 | 53 |
+| Activity creation callbacks | 20 | 20 |
 
-The unmodified full baseline coordinator is copied into androidTest with only its class name changed. The comparison invokes the actual private migration helper in baseline and candidate classes on the main looper. Five real tasks use four real VDs. After two warm-up pairs for each cohort, twenty alternating measured two-leg framework pairs include a real bring-to-front call. It records complete harness-pair critical-section median/max, query counts, Choreographer gaps, actual Window.FrameMetrics, and activity creation counts. It checks retained task IDs, fresh destination buffers, raw input reaching the promoted live application, idempotence and real invalid-display failure cleanup. Existing tests, including rollback policy and all original assertions, remain mandatory.
+The critical-section median decreased 17.9%, but FrameMetrics P95 worsened 9.7% and the maximum Choreographer gap did not improve. The unequal render samples and framework activity recreations prevent a reliable continuity or no-restart claim. These figures do not measure the user's 274–422ms full ColorOS exchange and cannot establish a phone performance fix.
 
-The harness does NOT recreate the production SystemUI Shell leash, workspace WCT fitting, preview overlay or ColorOS compositor. Its pair timings are not complete production exchange timings. It cannot prove no intermediate vendor flicker, app-process restart, LSP runtime compatibility or ColorOS fluidity. Existing production recovery and ownership code is byte-preserved outside the exact reviewed helper edits.
+Decision: reject and restore every production and test source file to the baseline. Keep only this evidence note on the independent branch. No version increment, new signed APK, power/thermal work, or public Release. No assertions were removed to obtain a pass; the evaluated candidate passed the existing automated guards and behavior assertions but did not meet the conservative performance acceptance decision.
 
-Pre-declared decision: require fewer queries and a useful lower critical-section median (at least 10% and 2ms), with no failed behavior/safety assertion. Inspect max blocking and real frame metrics for regressions; a credible regression rejects the candidate. Do not cherry-pick an emulator pass as ColorOS proof. Without useful benefit, revert the production change, retain stable APKs and stop. Do not start low-power work or increment an APK version for a failed candidate.
+Task IDs, fresh destination buffers, raw foreground input, idempotence and actual invalid-display failure cleanup passed. Frozen geometry checks and API 101/102 builds/unit tests passed. Existing AOSP menu, native shade and Surface clipping regressions passed. Actual ColorOS/LSP coexistence, scaled production exchange continuity and Find N5 were not verified.
 
-## Stage gate
-
-Phase 2 power/thermal work remains blocked until phase 1 demonstrates meaningful safe improvement; vendor behavior remains subject to normal phone acceptance. No new power percentages, temperature or battery claims. No resolution/refresh-rate changes, screenshots as task substitutes, task termination, added waits, background migration, new polling or public Release.
+The remaining blocker is evidence for the vendor production task/Surface path and its loaded build identity. Moving the whole exchange to a worker, delaying animations, suppressing necessary readiness checks or guessing vendor first-buffer readiness would exceed the safe evidence available. Preserve the installed stable build rather than shipping another diagnostics-only or unproven performance version.
