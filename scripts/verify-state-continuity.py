@@ -72,6 +72,7 @@ preserved=json.loads((root/'scripts/preserved-top-cards-0.9.3.json').read_text()
 preserved.update(json.loads((root/'scripts/visual-repair-0.9.6.json').read_text()))
 preserved.update(json.loads((root/'scripts/slot-recovery-0.9.7.json').read_text()))
 preserved.update(json.loads((root/'scripts/transform-repair-0.9.8.json').read_text()))
+preserved.update(json.loads((root/'scripts/shade-native-0.9.9.json').read_text()))
 for path,sha in preserved.items():
  if path=='profile_card_section_sha256':
   text=(k/'workspace/WorkspaceLayoutProfile.kt').read_text();data=text[text.index('    val canvas ='):text.index('    fun geometry(')].encode()
@@ -99,3 +100,17 @@ assert 'WorkspaceGeometryCodec.encode(it)' in (k/'workspace/SystemServerWorkspac
 assert 'it.mainInset' not in host # geometry is consumed through shared metrics, not independent knobs
 assert 'StageWindowTouchRegion.add' in (k/'systemui/StageQuickBarView.kt').read_text()
 print('Full-source crop, shared margin snapshot and window-local chrome input boundaries checked')
+
+# All stable runtime files except the approved shade/menu/version UI files remain exact.
+for path,sha in json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text()).items():
+ assert hashlib.sha256((root/path).read_bytes()).hexdigest()==sha,path
+shade=(k/'systemui/SystemUiRootTransformController.kt').read_text()
+shade_input=(k/'systemui/SystemUiShadeInputController.kt').read_text()
+assert 'contentScale' not in shade and 'view.scaleX =' not in shade
+assert 'Transform? = null' in shade
+assert 'setTouchableInsets' not in shade_input and 'params.flags =' not in shade_input
+menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
+assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
+assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
+assert 'TRANSPARENT' in menu and '*.58f' in menu
+print('0.9.8 runtime geometry, tasks, live cards, quickbar and input mappings byte-frozen; native shade and bounded menu checked')
