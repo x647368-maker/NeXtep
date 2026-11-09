@@ -64,7 +64,12 @@ internal object AtomicPopupMenu {
                 setOnClickListener {
                     popup.dismiss()
                     // Finish dismissing the action menu before opening the group list.
-                    anchor.post { action() }
+                    anchor.post {
+                        runCatching { action() }.onFailure {
+                            io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("workspace_menu", "Action failed", it)
+                            android.widget.Toast.makeText(context,it.message ?: "操作未完成，请稍后重试",android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }

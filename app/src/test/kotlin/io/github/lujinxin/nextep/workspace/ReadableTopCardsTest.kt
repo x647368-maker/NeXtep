@@ -33,7 +33,12 @@ class ReadableTopCardsTest {
             assertTrue(b[0].width >= 164 * 1.65f)
             assertTrue(b[0].width * b[0].height >= 164*256*2.8f)
             assertTrue(g.sidebarPhysicalHeight > 144*3.2f)
-            assertTrue(g.contentWidth >= 800 && g.contentHeight >= 1700)
+            // The former 800px minimum assumed a cropped 2684px source. Full
+            // 2780px content must fit the available height uniformly instead.
+            val fit = minOf(g.availableWidth.toFloat()/g.screenWidth,
+                (g.availableHeight-g.topHeight-g.sidebarWidth).toFloat()/g.screenHeight)
+            assertEquals(fit,g.contentScale,.00001f)
+            assertTrue(g.contentHeight >= 1700)
             assertTrue(g.contentTop >= g.sidebarTop+g.sidebarPhysicalHeight)
             assertTrue(g.contentBottom <= g.availableBottom)
             assertEquals(g.screenWidth*g.contentScale,g.contentWidth.toFloat(),.51f)
