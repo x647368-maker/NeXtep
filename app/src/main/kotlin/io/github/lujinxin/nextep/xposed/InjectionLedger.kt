@@ -20,6 +20,9 @@ class InjectionOnce {
 }
 
 object InjectionDispatchPolicy {
-    fun accept(first:Boolean,packageName:String,processName:String):Boolean = first ||
-        (packageName=="com.android.systemui" && processName=="com.android.systemui")
+    fun accept(first:Boolean,packageName:String,processName:String):Boolean {
+        // Auxiliary SystemUI processes cannot own the main Shell/workspace receiver.
+        if(packageName=="com.android.systemui" && processName.startsWith("com.android.systemui:"))return false
+        return first || (packageName=="com.android.systemui" && processName=="com.android.systemui")
+    }
 }

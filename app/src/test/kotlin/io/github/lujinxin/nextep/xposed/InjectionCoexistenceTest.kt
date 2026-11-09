@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger
 class InjectionCoexistenceTest {
     @Test fun laterSystemUiPackageIsAcceptedOnlyInKnownMainProcess() {
         assertTrue(InjectionDispatchPolicy.accept(false,"com.android.systemui","com.android.systemui"))
+        assertFalse(InjectionDispatchPolicy.accept(true,"com.android.systemui","com.android.systemui:screenshot"))
+        assertFalse(InjectionDispatchPolicy.accept(false,"com.android.systemui","com.android.systemui:screenshot"))
         assertFalse(InjectionDispatchPolicy.accept(false,"com.android.systemui","com.oplus.launcher"))
         assertFalse(InjectionDispatchPolicy.accept(false,"com.android.systemui",""))
         assertFalse(InjectionDispatchPolicy.accept(false,"com.oplus.launcher","com.android.systemui"))

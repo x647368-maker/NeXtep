@@ -20,7 +20,7 @@ class NeXtepHookEntry : XposedModule() {
         super.onModuleLoaded(param)
         loadedProcess=param.processName
         HookGuard.run("framework_identity") { InjectionDiagnostics.loaded(frameworkName,frameworkVersion,apiVersion,param.isSystemServer) }
-        NeXtepLog.info("module", "NeXtepHookEntry loaded; systemServer=${param.isSystemServer}")
+        NeXtepLog.info("module", "NeXtepHookEntry loaded build=${io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.BUILD} process=$loadedProcess systemServer=${param.isSystemServer}")
         if (param.isSystemServer) {
             log(Log.INFO, "NeXtep", "system_server module generation loaded")
         }

@@ -32,6 +32,7 @@ internal object StageRuntimeIdentity {
                         putString("init_stages",io.github.x647368maker.atomicworkbench.xposed.InjectionDiagnostics.summary())
                         putString("exchange_metrics",io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.describe())
                         putInt("loaded_pid",Process.myPid())
+                        putString("loaded_process",android.app.Application.getProcessName())
                         putString("native_panel",SystemUiPanelMonitor.refresh(context).name)
                         putString("panel_windows",SystemUiPanelMonitor.diagnostic())
                     });resultCode=28

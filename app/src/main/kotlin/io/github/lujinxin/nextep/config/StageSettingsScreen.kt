@@ -431,7 +431,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     prefs.edit().putInt("pid",pid).putLong("started",started).putInt("boot",boot).apply()
                     val failures=reply.getString("hook_failures").orEmpty().take(8000)
                     runtimeIdentity=InjectionDiagnosis.describe(true,expected,build,reply.getInt("framework_api"),failures,changed)+
-                        "\n实际代码：$build · PID $pid\n${reply.getString("framework").orEmpty()}\n"+
+                        "\n实际代码：$build · PID $pid · ${reply.getString("loaded_process").orEmpty()}\n${reply.getString("framework").orEmpty()}\n"+
                         reply.getString("init_stages").orEmpty().take(8000)+
                         "\n迁移实测：\n"+reply.getString("exchange_metrics").orEmpty().take(4000)
                     render()
