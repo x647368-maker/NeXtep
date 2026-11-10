@@ -101,7 +101,13 @@ internal class ExchangeSession<L>(
     private fun notifyComplete() {
         if (notified) return
         notified = true
-        completed(phase == Phase.COMMITTED)
+        // UI/animation listeners are external to the transaction. A callback
+        // failure must not crash the owning SystemUI Looper or restart a move.
+        try {
+            completed(phase == Phase.COMMITTED)
+        } catch (error: Throwable) {
+            failure = error
+        }
     }
 
     private fun checkThread() {
