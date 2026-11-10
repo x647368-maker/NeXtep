@@ -1522,9 +1522,7 @@ class NeXtepWindowController(
                 onSwapAnimation = ::animateDragSwap,
                 onMainSlotAnimation = ::animateMainSlotSwap,
                 onPhasedMainSlotAnimation = { index, move, canRelease, finished ->
-                    phasedMove = move
-                    phasedCanRelease = canRelease
-                    animateMainSlotSwap(index, { true }, finished)
+                    animateSwap(index, null, null, { true }, finished, move, canRelease)
                 },
                 onInternalSlotDrag = { source, drag ->
                     internalDrag.start(source, WorkspaceInternalDragController.Payload.Slot(drag))
@@ -1587,8 +1585,7 @@ class NeXtepWindowController(
         }
     }
 
-    private var phasedMove: ((((Boolean) -> Unit) -> Unit))? = null
-    private var phasedCanRelease: (() -> Boolean)? = null
+    fun isExchangePending(): Boolean = slotCoordinator?.isExchangePending() == true
 
     fun deferExchangeExit(action: () -> Unit): Boolean =
         slotCoordinator?.deferUntilExchangeSettled(action) == true
@@ -1609,17 +1606,19 @@ class NeXtepWindowController(
     private fun animateSwap(
         sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?,
         move: () -> Boolean, onFinished: () -> Unit,
+        asyncMove: (((Boolean) -> Unit) -> Unit)? = null,
+        canRelease: () -> Boolean = { true },
     ) {
         val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null);return
+            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
         }
         val capturedGeometry=geometry()
         val states=slotCoordinator?.slotStates().orEmpty().toList()
         swapCapture.request(
             load={TaskSurfaceCompat.capturePreview(task,Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))},
             valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
-            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it)},
+            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)},
             onCancel=onFinished,
         )
     }
@@ -1631,13 +1630,12 @@ class NeXtepWindowController(
         move: () -> Boolean,
         onFinished: () -> Unit,
         capturedMainPreview: Bitmap?,
+        asyncMove: (((Boolean) -> Unit) -> Unit)? = null,
+        canRelease: () -> Boolean = { true },
     ) {
         fun withoutPreview() {
             if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()
-            val asynchronous = phasedMove
-            phasedMove = null
-            phasedCanRelease = null
-            if (asynchronous != null) asynchronous { onFinished(); scheduleStageFocus() }
+            if (asyncMove != null) asyncMove { onFinished(); scheduleStageFocus() }
             else try { move() } finally { onFinished(); scheduleStageFocus() }
         }
         if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
@@ -1721,7 +1719,7 @@ class NeXtepWindowController(
                 returningHome = parkingMain,
                 sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),
                 targetQuad = if (parkingMain) sourceSlot.view.screenQuad() else targetSlot?.view?.screenQuad(),
-                moveAsync = phasedMove?.let { startMove ->
+                moveAsync = asyncMove?.let { startMove ->
                     { done: (Boolean) -> Unit ->
                         startMove { success ->
                             sourceFrame = sourceSlot.contentFrameSequence
@@ -1729,8 +1727,8 @@ class NeXtepWindowController(
                             done(success)
                         }
                     }
-                }.also { phasedMove = null },
-                canRelease = phasedCanRelease.also { phasedCanRelease = null } ?: { true },
+                },
+                canRelease = canRelease,
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.

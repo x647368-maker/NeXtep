@@ -72,6 +72,8 @@ class SlotTaskCoordinator(
     private var exchangeSession: ExchangeSession<TaskLayout>? = null
     private val exchangeEndActions = mutableListOf<() -> Unit>()
 
+    fun isExchangePending(): Boolean = exchangeSession?.settled == false
+
     fun deferUntilExchangeSettled(action: () -> Unit): Boolean {
         ensureMainThread()
         val session = exchangeSession ?: return false
@@ -1992,6 +1994,7 @@ class SlotTaskCoordinator(
     }
 
     private fun reconcileForeground(reason: String) {
+        if (isExchangePending()) return
         val tasks = taskRepository.runningTasks()
         val foreground = tasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY } ?: return
         val promotedSlot = slotRecords.indexOfFirst { record ->
