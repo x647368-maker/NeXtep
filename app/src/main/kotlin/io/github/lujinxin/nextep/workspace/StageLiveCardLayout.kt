@@ -14,6 +14,30 @@ internal object StageLiveCardLayout {
         val shown = order.filter { occupied[it] }
         val base = profile.slots
         if (shown.isEmpty()) return base
+        if (g.isNativeLandscapeRail) {
+            // On a native-landscape tablet the physical panel is NOT rotated.
+            // A side selection maps to a top/bottom band, both with upright cards.
+            val cardHeight = (g.sidebarPhysicalHeight - (56 * density).roundToInt() - 2 * gap)
+                .coerceAtLeast(1)
+            val cardWidth = ((g.sidebarPhysicalWidth - (shown.size + 1) * gap) / shown.size)
+                .coerceAtLeast(1)
+            val fitted = shown.associateWith { i ->
+                val canvas = canvases[i] ?: profile.canvas
+                val scale = minOf(cardWidth.toFloat() / canvas.width,
+                    cardHeight.toFloat() / canvas.height)
+                val width = (canvas.width * scale).roundToInt().coerceIn(1, cardWidth)
+                val height = (canvas.height * scale).roundToInt().coerceIn(1, cardHeight)
+                WorkspaceLayoutProfile.Slot(width, height, gap + (cardHeight - height) / 2)
+            }
+            val total = shown.sumOf { fitted.getValue(it).width } + (shown.size - 1) * gap
+            var x = ((g.sidebarPhysicalWidth - total) / 2).coerceAtLeast(0)
+            return base.toMutableList().also { result ->
+                shown.forEach { i ->
+                    result[i] = fitted.getValue(i).copy(left = x)
+                    x += result[i].width + gap
+                }
+            }
+        }
         val fitted = base.mapIndexed { i, box ->
             val canvas = canvases[i] ?: profile.canvas
             val maxWidth = if (g.railAtTop) box.width else (g.sidebarWidth - 2 * gap).coerceAtLeast(1)
