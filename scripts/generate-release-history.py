@@ -19,6 +19,8 @@ MAX_NOTE_CHARS = 32768
 
 def identify(notes: str) -> str | None:
     # Version must occur near the heading, not merely in a reference to an old version.
+    if "台前调度" not in notes[:500]:
+        return None
     match = VERSION.search(notes[:500])
     return match.group(1) if match else None
 
@@ -62,7 +64,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.self_test:
         assert identify("台前调度 0.9.17-dev（版本号 32）\n\n更新说明") == "0.9.17-dev"
-        assert identify("0.9.18 / 33 发布版") == "0.9.18"
+        assert identify("台前调度 0.9.18 / 33 发布版") == "0.9.18"
         assert identify("这段内容不包含版本号") is None
         assert VERSION.search("0.9.1") is not None
         assert identify("0.9.170x") is None
