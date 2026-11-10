@@ -167,7 +167,10 @@ class SlotTaskCoordinator(
     fun deactivate() {
         ensureMainThread()
         if (!active) return
-        if (deferUntilExchangeSettled { deactivate() }) return
+        if (deferUntilExchangeSettled { deactivate() }) {
+            suspended = true
+            return
+        }
         // Never destroy a display while a task failed to leave it.
         try {
             parkTasksBeforeExit()
@@ -1478,13 +1481,12 @@ class SlotTaskCoordinator(
         }
     }
 
-    private fun runPhasedMainTransition(slotIndex: Int): Result<Unit> {
+    private fun runPhasedMainTransition(slotIndex: Int, expectedMainTaskId: Int): Result<Unit> {
         if (!active || suspended || transitionInProgress || recentSelectionPending) {
             return Result.failure(IllegalStateException("Another transition is settling"))
         }
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
             ?: return Result.failure(IllegalStateException("Slot changed"))
-        val expectedMainTaskId = mainTaskPresenter.currentTaskId()
         val token = ++transitionGeneration
         transitionInProgress = true
         visualTransitionPending = true
@@ -1569,6 +1571,7 @@ class SlotTaskCoordinator(
                     check(geometryProvider() == exchangeGeometry)
                     val before = taskRepository.runningTasks()
                     check(current(slotTask, before).displayId == occupied.displayId)
+                    check(before.firstOrNull { it.displayId == occupied.displayId }?.taskId == slotTask.taskId)
                     check(current(mainTask, before).displayId == Display.DEFAULT_DISPLAY)
                     check(before.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == mainTask.taskId)
                     check(current(mainTask, before).toLayout() == mainLayout)
@@ -1672,8 +1675,11 @@ class SlotTaskCoordinator(
         operation: () -> Unit,
     ): Result<Unit> {
         if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&
-            onPhasedMainSlotAnimation != null && isExchangeableMainTask(taskRepository.foregroundTask())) {
-            return runPhasedMainTransition(mainSlotIndex)
+            onPhasedMainSlotAnimation != null) {
+            val main = taskRepository.foregroundTask()
+            if (isExchangeableMainTask(main)) {
+                return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)
+            }
         }
         if (transitionInProgress || recentSelectionPending) {
             NeXtepLog.warn("slot_coordinator", "Ignored concurrent transition $label")
