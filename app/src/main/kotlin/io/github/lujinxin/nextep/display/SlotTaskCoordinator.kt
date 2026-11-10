@@ -1520,8 +1520,13 @@ class SlotTaskCoordinator(
                     try {
                         check(slotRecords[slotIndex].state == occupied)
                         startPhasedSwap(slotIndex, occupied, token, expectedMainTaskId) { success ->
-                            complete(success)
-                            finish()
+                            try {
+                                complete(success)
+                            } catch (error: Throwable) {
+                                NeXtepLog.error("slot_coordinator", "Exchange preview completion failed", error)
+                            } finally {
+                                finish()
+                            }
                         }
                     } catch (error: Throwable) {
                         NeXtepLog.error("slot_coordinator", "Exchange preparation failed", error)
