@@ -349,8 +349,8 @@ internal class ControlAreaPager(context: Context, private val functions: TopAppS
                     info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType)
                         .invoke(info, TOUCHABLE_INSETS_REGION)
                     val region = info.javaClass.getField("touchableRegion").get(info) as Region
-                    val status = if (nativeStatusSafe) 0 else
-                        dp(WorkspaceControlMetrics.STATUS_HEIGHT_DP.toFloat()).toInt().coerceIn(0, height)
+                    val status = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.localStatusExclusionDp(nativeStatusSafe).toFloat())
+                        .toInt().coerceIn(0, height)
                     if (landscape) {
                         // Keep the existing physical-top status band mapping after subtree rotation.
                         if (controlOnLeft) region.set(status, 0, height, width)
