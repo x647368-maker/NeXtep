@@ -90,6 +90,8 @@ jobs:
           echo "ATOMIC_KEYSTORE_PASSWORD=$ATOMIC_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ATOMIC_KEY_PASSWORD=$ATOMIC_KEY_PASSWORD" >> "$GITHUB_ENV"
           echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
+      - name: Verify candidate update/signature release contract
+        run: python3 scripts/test-release-contract.py
       - name: Check download retry classification
         run: python3 scripts/test-ci-retry.py
       - name: Check task continuity source boundaries
