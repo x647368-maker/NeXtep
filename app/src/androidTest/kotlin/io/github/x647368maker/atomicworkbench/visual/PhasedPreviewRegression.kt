@@ -31,6 +31,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 isLiveReady = { true },
                 moveAsync = { done -> complete = done; requested.countDown() },
                 canRelease = { releaseAllowed },
+                freezeGeometry = true, // Exercise the new 0.9.16 no-morph rendering path.
                 onFinished = { completionCount++; finished.countDown() })
         }
         check(requested.await(6, TimeUnit.SECONDS)) { "Async exchange did not start" }
@@ -43,12 +44,23 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 }
                 releaseAllowed = true
                 complete(false)
-                check(!animator.isRunning && completionCount == 1)
+            }
+            // The async completion callback is allowed to finish on a posted frame.
+            // Require eventual release instead of crashing the instrumentation target
+            // with a same-main-loop synchronous assertion before that frame can run.
+            check(finished.await(3, TimeUnit.SECONDS)) {
+                "Rollback preview did not settle within 3 seconds"
+            }
+            instrumentation.runOnMainSync {
+                check(!animator.isRunning && completionCount == 1) {
+                    "Failed rollback preview release: running=${animator.isRunning} " +
+                        "completionCount=$completionCount releaseAllowed=$releaseAllowed " +
+                        "sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
+                }
                 check(source.isRecycled && target.isRecycled)
                 animator.cancel()
                 check(completionCount == 1)
             }
-            check(finished.await(2, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync { releaseAllowed = true; animator.cancel() }
         }

@@ -1729,6 +1729,9 @@ class NeXtepWindowController(
                     }
                 },
                 canRelease = canRelease,
+                // Tap swaps should change task ownership, never animate the
+                // physical outline or distort the screenshot as it crosses sizes.
+                freezeGeometry = drag == null,
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.

@@ -46,6 +46,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         isLiveReady: () -> Boolean,
         moveAsync: ((((Boolean) -> Unit) -> Unit))? = null,
         canRelease: () -> Boolean = { true },
+        freezeGeometry: Boolean = false,
         onFinished: () -> Unit,
     ) {
         cancel()
@@ -65,7 +66,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val token = ++generation
         handoff=StageStableHandoff()
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
-            sourceQuad, targetQuad)
+            sourceQuad, targetQuad, freezeGeometry)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -190,6 +191,7 @@ private class SwapPreviewView(
     private val stationaryBackground: Bitmap?,
     private val sourceQuad: FloatArray?,
     private val targetQuad: FloatArray?,
+    private val freezeGeometry: Boolean,
 ) : View(context) {
     var progress = 0f
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -221,8 +223,32 @@ private class SwapPreviewView(
         canvas.restoreToCount(save)
 
         stationaryBackground?.let { canvas.drawBitmap(it, null, sourceBounds, bitmapPaint) }
+        if (freezeGeometry) {
+            // Tap-to-swap: keep both original window frames perfectly stationary.
+            // The real tasks migrate under the preview and appear only at handoff.
+            // Do not interpolate width, height or 3D quad for these live windows.
+            if (target != null) drawFixedFrame(canvas, target, targetBounds)
+            drawFixedFrame(canvas, source, sourceBounds)
+            return
+        }
         if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)
         drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)
+    }
+
+    private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {
+        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,
+            bounds.left, bounds.top, bounds.right, bounds.bottom)
+        destination.set(fit.left, fit.top, fit.right, fit.bottom)
+        outline.reset()
+        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
+            bounds.width(), bounds.height(), resources.displayMetrics.density)
+        outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
+        val save = canvas.save()
+        canvas.clipPath(outline)
+        canvas.drawColor(Color.BLACK)
+        // Uniform scale + letterbox. Never stretch video, faces or text.
+        canvas.drawBitmap(bitmap, null, destination, bitmapPaint)
+        canvas.restoreToCount(save)
     }
 
     private fun drawFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF,
