@@ -26,4 +26,22 @@ internal object StageEmbeddedReleaseNotes {
             caution = "内容自动取自本次 APK 构建时的 RELEASE_NOTES.md。不能仅凭此说明认定所有功能已通过真机验收。"
         )
     }
+    fun archived(versionName: String, raw: String): StageChange? {
+        if (versionName.isBlank() || raw.length !in 12..32768) return null
+        val matchingName = Regex("(?<![A-Za-z0-9.])${Regex.escape(versionName)}(?![A-Za-z0-9.-])")
+        if (!matchingName.containsMatchIn(raw.take(500))) return null
+        val paragraphs = raw.replace("\r\n", "\n").trim()
+            .split(Regex("\n[ \t]*\n"))
+            .map { it.trim().replace(Regex("[ \t]*\n[ \t]*"), " ") }
+            .filter { it.isNotEmpty() }
+        if (paragraphs.isEmpty()) return null
+        return StageChange(
+            version = versionName,
+            title = "历史构建说明（自动归档）",
+            status = "历史发布说明 · 当时的验收状态见正文",
+            highlights = paragraphs,
+            caution = "本条来自该版本在 GitHub 提交时的说明，不能代表之后所有问题已修复。"
+        )
+    }
+
 }
