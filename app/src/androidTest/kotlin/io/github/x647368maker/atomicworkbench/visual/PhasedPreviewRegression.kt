@@ -43,11 +43,20 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                     "Pending exchange lost its preview protection"
                 }
                 releaseAllowed = true
+                fun state(): String = runCatching {
+                    fun prop(name: String): Any? = animator.javaClass.getDeclaredField(name)
+                        .apply { isAccessible = true }.get(animator)
+                    @Suppress("UNCHECKED_CAST")
+                    val guard = (prop("releaseAllowed") as () -> Boolean).invoke()
+                    "generation=${prop("generation")} cancelRequested=${prop("cancelRequested")} " +
+                        "storedGuard=$guard completionSet=${prop("completion") != null}"
+                }.getOrElse { "reflection=${it.javaClass.simpleName}" }
+                val beforeComplete = state()
                 complete(false)
                 check(!animator.isRunning && completionCount == 1) {
-                    "Failed rollback preview release: running=${animator.isRunning} " +
-                        "completionCount=$completionCount releaseAllowed=$releaseAllowed " +
-                        "sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
+                    "Failed rollback preview release: before=$beforeComplete after=${state()} " +
+                        "running=${animator.isRunning} completionCount=$completionCount " +
+                        "releaseAllowed=$releaseAllowed sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
                 }
                 check(source.isRecycled && target.isRecycled)
                 animator.cancel()
