@@ -18,8 +18,8 @@ spec.loader.exec_module(release)
 class ReleaseContract(unittest.TestCase):
     def version(self):
         gradle = BUILD.read_text()
-        name = re.search(r'versionName\\s*=\\s*"([^"]+)"', gradle)
-        code = re.search(r'versionCode\\s*=\\s*(\\d+)', gradle)
+        name = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)
+        code = re.search(r'versionCode\s*=\s*(\d+)', gradle)
         self.assertIsNotNone(name, "Gradle versionName is missing")
         self.assertIsNotNone(code, "Gradle versionCode is missing")
         return name.group(1), int(code.group(1))
