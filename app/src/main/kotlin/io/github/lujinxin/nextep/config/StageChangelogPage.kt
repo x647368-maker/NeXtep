@@ -31,7 +31,24 @@ internal object StageChangelogPage {
             12f, true
         ).apply { setPadding(dp(14), 0, dp(14), dp(14)) })
 
-        StageChangeHistory.entries.forEachIndexed { index, entry ->
+        // The version in an installed APK shows the notes bundled at its own build time.
+        // Older versions remain available offline from the curated history below.
+        val currentVersion = runCatching { UpdateCoordinator.installed(activity) }.getOrNull()
+        val packagedNotes = runCatching {
+            activity.assets.open("current-release.md")
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }.getOrNull()
+        val currentEntry = if (currentVersion != null && packagedNotes != null) {
+            StageEmbeddedReleaseNotes.parse(
+                currentVersion.versionName.orEmpty(),
+                currentVersion.longVersionCode,
+                packagedNotes
+            )
+        } else null
+        val shownEntries = if (currentEntry == null) StageChangeHistory.entries else
+            listOf(currentEntry) + StageChangeHistory.entries.filterNot { it.version == currentEntry.version }
+
+        shownEntries.forEachIndexed { index, entry ->
             val card = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 background = cardBackground()
