@@ -24,17 +24,16 @@ data class WorkspaceGeometry(
 ) {
     val isLandscape: Boolean get() = screenWidth > screenHeight
     /**
-     * A wide, high-resolution display whose rotation 0/2 is landscape has the
-     * natural axes of a tablet, not a phone rotated 90 degrees. Use a native
+     * A wide, high-resolution display may report rotation 0/2 or 1/3 under
+     * a ported phone ROM. Use the physical wide canvas to choose a native
      * horizontal rail here; keep near-square foldables and compact phones on
      * their verified legacy geometry. No manufacturer/ROM identity is involved.
      *
      * Use only display pixels/rotation because this geometry crosses SystemUI
      * and system_server through the existing recorded v18 wire format.
      */
-    val isNativeLandscapeRail: Boolean get() = !railAtTop && isLandscape &&
-        displayRotation % 2 == 0 && minOf(screenWidth, screenHeight) >= 1300 &&
-        maxOf(screenWidth, screenHeight).toFloat() / minOf(screenWidth, screenHeight) >= 1.45f
+    val isNativeLandscapeRail: Boolean get() =
+        !railAtTop && StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)
     // Surface rotations are quarter turns from the phone's natural portrait axes.
     // Keep controls at the physical phone top while the main app follows the display.
     val isControlOnLeft: Boolean get() = isLandscape && displayRotation == 1
@@ -43,7 +42,8 @@ data class WorkspaceGeometry(
     // Rotation never changes the selected layout or the diagram in panel axes.
     val panelSidebarSide: SidebarSide get() = SidebarButtonLayout.sideInPanel(sidebarSide)
     val isSidebarAtTop: Boolean get() =
-        SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)
+        if (isNativeLandscapeRail) sidebarSide == SidebarSide.LEFT
+        else SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)
 
     // Insets constrain the DESTINATION only. Source task coordinates always start
     // at (0,0) and include the complete physical fullscreen task, including edges.
@@ -165,8 +165,7 @@ data class WorkspaceGeometry(
             val controlThickness = (64 * density).roundToInt().coerceIn(1, longSide - 1)
             // A native-landscape tablet can afford a readable horizontal card row.
             // Do not change phone or near-square foldable thicknesses.
-            val nativeTablet = landscape && displayRotation % 2 == 0 && shortSide >= 1300 &&
-                longSide.toFloat() / shortSide >= 1.45f
+            val nativeTablet = StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)
             val railThickness = (shortSide * if (nativeTablet) 0.33f else 0.25f)
                 .roundToInt().coerceIn(gap + 1, shortSide - 1)
             return WorkspaceGeometry(
