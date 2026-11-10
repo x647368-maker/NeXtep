@@ -28,6 +28,7 @@ Tests: completion listener throws, verifies exactly one notification and no repe
 ## Validation carried out without Android SDK / Work mode
 
 - Local host: JDK 21 + Kotlin CLI 1.9; **12 original JUnit-style test methods passed, 0 failed**, using a deliberately minimal local JUnit assertion/annotation shim (not a replacement for full Gradle/JUnit).
+- Deterministic randomized stress on the pure exchange session: **5,000 scenarios passed** covering task moves, Binder-then-throw, cancel, timeouts, missing tasks, recovery refusal and completion callback exceptions. The modeled driver is not ColorOS.
 - Before adding patch B, an additional standalone state machine harness passed 10/10 scenarios.
 - Both protected `SlotTaskCoordinator.kt` edits are registered as exact reversible fragments in `scripts/reviewed-session-hardening.json`. Verified that reversing the two fragments reproduces the stopped Work branch file byte-for-byte.
 - `scripts/verify-state-continuity.py` loads the new exact review manifest **ahead of** prior review manifests; it still checks the entire frozen baseline.
