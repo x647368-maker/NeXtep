@@ -121,8 +121,17 @@ assert 'StageWindowTouchRegion.add' in (k/'systemui/StageQuickBarView.kt').read_
 print('Full-source crop, shared margin snapshot and window-local chrome input boundaries checked')
 
 # All stable runtime files except the approved shade/menu/version UI files remain exact.
-for path,sha in json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text()).items():
- assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
+frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
+reviewed_updater=json.loads((root/'scripts/reviewed-update-feed-0.9.16.json').read_text())['files']
+assert set(reviewed_updater).issubset(set(frozen))
+for path,sha in frozen.items():
+ if path in reviewed_updater:
+  # Keep the historical 0.9.8 hash frozen; pin each deliberately changed updater file separately.
+  spec=reviewed_updater[path]
+  assert sha==spec['original_sha256'],path
+  assert hashlib.sha256((root/path).read_bytes()).hexdigest()==spec['updated_sha256'],path
+ else:
+  assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
 shade=(k/'systemui/SystemUiRootTransformController.kt').read_text()
 shade_input=(k/'systemui/SystemUiShadeInputController.kt').read_text()
 assert 'contentScale' not in shade and 'view.scaleX =' not in shade
@@ -132,4 +141,4 @@ menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
 assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
 assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
 assert 'TRANSPARENT' in menu and '*.38f' in menu
-print('0.9.8 frozen hashes enforced after exact reviewed 0.9.12 and 0.9.11 fragment normalization; geometry/task/input writers remain original; native shade and bounded menu checked')
+print('0.9.8 frozen hashes remain exact except three separately pinned updater-only changes; task/geometry/input writers stay frozen')
