@@ -49,8 +49,17 @@ internal class ExchangeSession<L>(
             if (token != generation || phase != expected || settled) return@postTurn
             if ((cancelled || now() >= deadline) && phase != Phase.ROLLBACK_PENDING) {
                 if (phase == Phase.PREPARED) {
-                    phase = Phase.RESTORED
-                    notifyComplete()
+                    // No mutation was requested by this session, but another actor may
+                    // have moved either task while the preview was being prepared.
+                    // Never release a task-owning display without verifying origins.
+                    try {
+                        driver.restoreAndVerify()
+                        phase = Phase.RESTORED
+                        notifyComplete()
+                    } catch (error: Throwable) {
+                        failure = error
+                        phase = Phase.RECOVERY_REQUIRED
+                    }
                     return@postTurn
                 }
                 phase = Phase.ROLLBACK_PENDING
@@ -92,7 +101,13 @@ internal class ExchangeSession<L>(
     private fun notifyComplete() {
         if (notified) return
         notified = true
-        completed(phase == Phase.COMMITTED)
+        // UI/animation listeners are external to the transaction. A callback
+        // failure must not crash the owning SystemUI Looper or restart a move.
+        try {
+            completed(phase == Phase.COMMITTED)
+        } catch (error: Throwable) {
+            failure = error
+        }
     }
 
     private fun checkThread() {

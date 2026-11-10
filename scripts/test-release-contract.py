@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Fast offline contract checks; fail before spending CI time on SDK downloads."""
+from pathlib import Path
+import importlib.util
+import re
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "prepare-update.py"
+BUILD = ROOT / "app" / "build.gradle.kts"
+POLICY = ROOT / "app" / "src" / "main" / "kotlin" / "io" / "github" / "lujinxin" / "nextep" / "config" / "UpdatePolicy.kt"
+NOTES = ROOT / "RELEASE_NOTES.md"
+spec = importlib.util.spec_from_file_location("atomic_prepare_update", SCRIPT)
+release = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release)
+
+
+class ReleaseContract(unittest.TestCase):
+    def version(self):
+        gradle = BUILD.read_text()
+        name = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)
+        code = re.search(r'versionCode\s*=\s*(\d+)', gradle)
+        self.assertIsNotNone(name, "Gradle versionName is missing")
+        self.assertIsNotNone(code, "Gradle versionCode is missing")
+        return name.group(1), int(code.group(1))
+
+    def test_candidate_build_is_a_new_development_version(self):
+        name, code = self.version()
+        self.assertEqual("0.9.15-dev", name)
+        self.assertGreater(code, 29)
+        self.assertEqual("dev", release.release_channel(name))
+
+    def test_app_updater_recognizes_dev_but_not_candidate_suffix(self):
+        policy = POLICY.read_text()
+        self.assertIn('enum class Channel { DEV, STABLE }', policy)
+        self.assertIn('(-dev(?:-[A-Za-z0-9]+)?)?', policy)
+        self.assertEqual("dev", release.release_channel("0.9.15-dev"))
+        with self.assertRaises(ValueError):
+            release.release_channel("0.9.15-candidate")
+
+    def test_stable_release_is_not_labeled_development(self):
+        self.assertEqual("stable", release.release_channel("0.9.15"))
+        for value in ("0.9.15-candidate", "0.9.15-dev-rc1", "0.9.x", ""):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                release.release_channel(value)
+
+    def test_signing_identity_is_not_changed(self):
+        policy = POLICY.read_text()
+        self.assertIn(release.CERT, policy)
+        self.assertIn("io.github.x647368maker.atomicworkbench", policy)
+        self.assertIn("io.github.x647368maker.atomicworkbench", BUILD.read_text())
+
+    def test_notes_identify_same_unverified_candidate(self):
+        name, code = self.version()
+        notes = NOTES.read_text()
+        self.assertIn(name, notes)
+        self.assertIn(str(code), notes)
+        self.assertIn("真机", notes)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

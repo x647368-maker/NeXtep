@@ -16,6 +16,7 @@ class ExchangeSessionTest {
         var failPromotionAfterMove = false
         var failRestore = false
         var disappear = false
+        var failCompletion = false
         val session = ExchangeSession(
             3, 100L,
             ExchangeSession.Origin(11, 0, "main token", 0, "main layout"),
@@ -34,11 +35,16 @@ class ExchangeSessionTest {
                 }
                 override fun restoreAndVerify() {
                     check(!failRestore && !disappear)
+                    if (promotions == 0) {
+                        // Pre-mutation abort must verify, never silently reset ownership.
+                        check(mainDisplay == 0 && slotDisplay == 7)
+                        return
+                    }
                     mainDisplay = 0
                     slotDisplay = 7
                 }
             },
-            { completions++; result = it },
+            { completions++; result = it; if (failCompletion) error("UI completion failed") },
         )
         fun tick() = queue.removeFirst().invoke()
         fun drain() { repeat(8) { if (queue.isNotEmpty()) tick() }; check(queue.isEmpty()) }
@@ -83,6 +89,34 @@ class ExchangeSessionTest {
         assertEquals(false, f.result)
     }
 
+    @Test fun externalMoveBeforeCancellationCannotBeFalselyRestored() {
+        val f = Fixture()
+        f.session.start()
+        f.mainDisplay = 5 // System move occurred independently of this session
+        f.session.cancel()
+        f.drain()
+        assertEquals(ExchangeSession.Phase.RECOVERY_REQUIRED, f.session.phase)
+        assertFalse(f.session.settled)
+        assertEquals(0, f.completions)
+        assertEquals(0, f.promotions)
+        f.mainDisplay = 0
+        f.session.cancel()
+        f.drain()
+        assertEquals(ExchangeSession.Phase.RESTORED, f.session.phase)
+        assertEquals(false, f.result)
+        assertEquals(1, f.completions)
+    }
+
+    @Test fun deadlineBeforeMutationRequiresVerifiedOrigins() {
+        val f = Fixture()
+        f.session.start()
+        f.clock = 101
+        f.slotDisplay = 0
+        f.drain()
+        assertEquals(ExchangeSession.Phase.RECOVERY_REQUIRED, f.session.phase)
+        assertNull(f.result)
+    }
+
     @Test fun timeoutAfterPromotionRestoresIdentity() {
         val f = Fixture()
         f.session.start(); f.tick(); f.clock = 101; f.drain()
@@ -115,6 +149,19 @@ class ExchangeSessionTest {
         assertEquals(1, f.promotions)
         assertEquals(1, f.completions)
         assertEquals(false, f.result)
+    }
+
+    @Test fun completionFailureDoesNotCrashOrRepeatMigrations() {
+        val f = Fixture()
+        f.failCompletion = true
+        f.session.start(); f.drain()
+        assertEquals(ExchangeSession.Phase.COMMITTED, f.session.phase)
+        assertEquals(1, f.completions)
+        assertEquals(1, f.promotions)
+        assertEquals(7, f.mainDisplay)
+        assertTrue(f.session.failure != null)
+        f.session.start(); f.session.cancel(); f.drain()
+        assertEquals(1, f.completions)
     }
 
     @Test fun completionCannotBeNotifiedTwice() {
