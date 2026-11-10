@@ -11,6 +11,13 @@ class SizeCompatDisplayInsetsHooker : XposedInterface.Hooker {
         if (SystemServerWorkspaceBridge.activePhysicalAspectRatio(context) == null) {
             return chain.proceed()
         }
+        val activity = if (chain.thisObject?.javaClass?.name == ACTIVITY_RECORD_CLASS) {
+            chain.thisObject
+        } else {
+            readField(chain.thisObject, "mActivityRecord")
+        }
+        val snapshot = StageOrientationHookScope.snapshot(activity)
+        if (!StageOrientationHookScope.shouldBypassSizeCompat(snapshot)) return chain.proceed()
         return false
     }
 
@@ -29,10 +36,11 @@ class SizeCompatDisplayInsetsHooker : XposedInterface.Hooker {
     private fun readField(target: Any?, name: String): Any? {
         var type: Class<*>? = target?.javaClass
         while (type != null && type != Any::class.java) {
+            val current = type
             runCatching {
-                return type.getDeclaredField(name).apply { isAccessible = true }.get(target)
+                return current.getDeclaredField(name).apply { isAccessible = true }.get(target)
             }
-            type = type.superclass
+            type = current.superclass
         }
         return null
     }

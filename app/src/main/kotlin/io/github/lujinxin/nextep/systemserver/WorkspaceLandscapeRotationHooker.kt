@@ -16,7 +16,7 @@ class WorkspaceLandscapeRotationHooker : XposedInterface.Hooker {
             val display = field(target, "mDisplayContent") ?: return@runCatching false
             if (field(display, "mDisplayId") != Display.DEFAULT_DISPLAY) return@runCatching false
             val context = field(target, "mContext") as? Context ?: return@runCatching false
-            SystemServerWorkspaceBridge.isWorkspaceActive(context)
+            SystemServerWorkspaceBridge.isWorkspaceActive(context) && safeMainRotation(display)
         }.getOrDefault(false)
         // Let Android choose between landscape/seascape using its sensors, docks
         // and user lock policy, instead of hardcoding a result for fixed players.
@@ -32,6 +32,7 @@ class WorkspaceLandscapeRotationHooker : XposedInterface.Hooker {
             if (field(display, "mDisplayId") != Display.DEFAULT_DISPLAY) return@runCatching original
             val context = field(target, "mContext") as? Context ?: return@runCatching original
             if (!SystemServerWorkspaceBridge.isWorkspaceActive(context)) return@runCatching original
+            if (!safeMainRotation(display)) return@runCatching original
             val orientation = chain.getArg(0) as? Int ?: return@runCatching original
             if (orientation !in setOf(
                     ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
@@ -68,6 +69,12 @@ class WorkspaceLandscapeRotationHooker : XposedInterface.Hooker {
             NeXtepLog.warn("workspace_landscape_rotation", "Rotation policy unavailable; keeping system result", it)
         }.getOrDefault(original)
     }
+
+    /** Games and ColorOS native multi-window tasks retain their own rotation policy. */
+    private fun safeMainRotation(display: Any): Boolean = runCatching {
+        val focused = field(display, "mFocusedApp") ?: return@runCatching false
+        StageOrientationHookScope.canRewriteMainLandscape(StageOrientationHookScope.snapshot(focused))
+    }.getOrDefault(false)
 
     private fun field(target: Any, name: String): Any? =
         generateSequence(target.javaClass as Class<*>?) { it.superclass }
