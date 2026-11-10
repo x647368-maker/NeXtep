@@ -30,10 +30,20 @@ class WorkspaceLayoutProfileTest {
                         assertEquals(message, slot.width / positioned.canvas.width.toFloat() * transform.scaleX,
                             slot.height / positioned.canvas.height.toFloat() * transform.scaleY, .000001f)
                     }
-                    val end = positioned.slots.last().top + positioned.slots.last().height
-                    assertTrue(end <= positioned.geometry.sidebarLogicalHeight)
-                    assertTrue(kotlin.math.abs(positioned.slots.first().top - (positioned.geometry.sidebarLogicalHeight - end)) <= 1)
-                    assertTrue(positioned.slots.first().width + positioned.gapPixels <= positioned.geometry.sidebarWidth)
+                    if (positioned.geometry.isNativeLandscapeRail) {
+                        // This is a horizontal row: center in physical X, not
+                        // the phone's portrait logical Y stack.
+                        val cards = positioned.slots
+                        assertTrue(cards.zipWithNext().all { (a, b) -> a.left + a.width <= b.left })
+                        assertTrue(cards.first().left >= 0)
+                        assertTrue(cards.last().left + cards.last().width <= positioned.geometry.sidebarPhysicalWidth)
+                        assertTrue(cards.all { it.top >= 0 && it.top + it.height <= positioned.geometry.sidebarPhysicalHeight })
+                    } else {
+                        val end = positioned.slots.last().top + positioned.slots.last().height
+                        assertTrue(end <= positioned.geometry.sidebarLogicalHeight)
+                        assertTrue(kotlin.math.abs(positioned.slots.first().top - (positioned.geometry.sidebarLogicalHeight - end)) <= 1)
+                        assertTrue(positioned.slots.first().width + positioned.gapPixels <= positioned.geometry.sidebarWidth)
+                    }
                 }
             }
         }
