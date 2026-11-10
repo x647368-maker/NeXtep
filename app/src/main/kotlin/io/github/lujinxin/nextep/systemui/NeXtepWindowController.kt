@@ -1521,6 +1521,9 @@ class NeXtepWindowController(
                 geometryProvider = ::geometry,
                 onSwapAnimation = ::animateDragSwap,
                 onMainSlotAnimation = ::animateMainSlotSwap,
+                onPhasedMainSlotAnimation = { index, move, canRelease, finished ->
+                    animateSwap(index, null, null, { true }, finished, move, canRelease)
+                },
                 onInternalSlotDrag = { source, drag ->
                     internalDrag.start(source, WorkspaceInternalDragController.Payload.Slot(drag))
                 },
@@ -1582,6 +1585,11 @@ class NeXtepWindowController(
         }
     }
 
+    fun isExchangePending(): Boolean = slotCoordinator?.isExchangePending() == true
+
+    fun deferExchangeExit(action: () -> Unit): Boolean =
+        slotCoordinator?.deferUntilExchangeSettled(action) == true
+
     private fun animateMainSlotSwap(slotIndex: Int, move: () -> Boolean, onFinished: () -> Unit) {
         animateSwap(slotIndex, null, null, move, onFinished)
     }
@@ -1598,17 +1606,19 @@ class NeXtepWindowController(
     private fun animateSwap(
         sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?,
         move: () -> Boolean, onFinished: () -> Unit,
+        asyncMove: (((Boolean) -> Unit) -> Unit)? = null,
+        canRelease: () -> Boolean = { true },
     ) {
         val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null);return
+            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
         }
         val capturedGeometry=geometry()
         val states=slotCoordinator?.slotStates().orEmpty().toList()
         swapCapture.request(
             load={TaskSurfaceCompat.capturePreview(task,Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))},
             valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
-            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it)},
+            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)},
             onCancel=onFinished,
         )
     }
@@ -1620,10 +1630,13 @@ class NeXtepWindowController(
         move: () -> Boolean,
         onFinished: () -> Unit,
         capturedMainPreview: Bitmap?,
+        asyncMove: (((Boolean) -> Unit) -> Unit)? = null,
+        canRelease: () -> Boolean = { true },
     ) {
         fun withoutPreview() {
             if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()
-            try { move() } finally { onFinished(); scheduleStageFocus() }
+            if (asyncMove != null) asyncMove { onFinished(); scheduleStageFocus() }
+            else try { move() } finally { onFinished(); scheduleStageFocus() }
         }
         if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             withoutPreview()
@@ -1706,6 +1719,16 @@ class NeXtepWindowController(
                 returningHome = parkingMain,
                 sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),
                 targetQuad = if (parkingMain) sourceSlot.view.screenQuad() else targetSlot?.view?.screenQuad(),
+                moveAsync = asyncMove?.let { startMove ->
+                    { done: (Boolean) -> Unit ->
+                        startMove { success ->
+                            sourceFrame = sourceSlot.contentFrameSequence
+                            targetFrame = targetSlot?.contentFrameSequence ?: 0L
+                            done(success)
+                        }
+                    }
+                },
+                canRelease = canRelease,
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.

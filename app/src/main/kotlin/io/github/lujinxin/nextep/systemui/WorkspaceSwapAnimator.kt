@@ -26,6 +26,8 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
     private var overlay: SwapPreviewView? = null
     private var animator: ValueAnimator? = null
     private var completion: (() -> Unit)? = null
+    private var releaseAllowed: () -> Boolean = { true }
+    private var cancelRequested = false
     private var generation = 0
     private var handoff=StageStableHandoff()
 
@@ -42,16 +44,22 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         sourceQuad: FloatArray?, targetQuad: FloatArray?,
         move: () -> Boolean,
         isLiveReady: () -> Boolean,
+        moveAsync: ((((Boolean) -> Unit) -> Unit))? = null,
+        canRelease: () -> Boolean = { true },
         onFinished: () -> Unit,
     ) {
         cancel()
+        check(overlay == null) { "Previous exchange still owns its preview" }
+        releaseAllowed = canRelease
+        cancelRequested = false
         if (!host.isAttachedToWindow || !host.isHardwareAccelerated || source == null || start.isEmpty ||
             sourceBounds.isEmpty || targetBounds.isEmpty
         ) {
             source?.recycle()
             if (target !== source) target?.recycle()
             stationaryBackground?.recycle()
-            try { move() } finally { onFinished() }
+            if (moveAsync != null) moveAsync { onFinished() }
+            else try { move() } finally { onFinished() }
             return
         }
         val token = ++generation
@@ -69,7 +77,8 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }.isSuccess
         if (!added) {
             preview.release()
-            try { move() } finally { onFinished() }
+            if (moveAsync != null) moveAsync { onFinished() }
+            else try { move() } finally { onFinished() }
             return
         }
         overlay = preview
@@ -92,13 +101,16 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                     fun commitMove() {
                         if (generation != token || moveRequested) return
                         moveRequested = true
-                        val moved = runCatching(move).onFailure {
+                        fun completed(moved: Boolean) {
+                            if (generation != token) return
+                            if (!moved || cancelRequested) { cancel(); return }
+                            val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
+                            awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), delay, isLiveReady)
+                        }
+                        if (moveAsync != null) moveAsync(::completed)
+                        else completed(runCatching(move).onFailure {
                             NeXtepLog.warn("workspace_swap", "Exchange callback failed", it)
-                        }.getOrDefault(false)
-                        if (generation != token) return
-                        if (!moved) { cancel(); return }
-                        val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
-                        awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), delay, isLiveReady)
+                        }.getOrDefault(false))
                     }
                     runCatching {
                         preview.viewTreeObserver.registerFrameCommitCallback {
@@ -140,6 +152,11 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
     }
 
     fun cancel() {
+        if (!releaseAllowed()) {
+            cancelRequested = true
+            return
+        }
+        releaseAllowed = { true }
         generation += 1
         animator?.cancel()
         animator = null

@@ -33,6 +33,7 @@ class SlotTaskCoordinator(
         { _, _, move, finished -> try { move() } finally { finished() } },
     private val onMainSlotAnimation: (Int, () -> Boolean, () -> Unit) -> Unit =
         { _, move, finished -> try { move() } finally { finished() } },
+    private val onPhasedMainSlotAnimation: ((Int, ((Boolean) -> Unit) -> Unit, () -> Boolean, () -> Unit) -> Unit)? = null,
     private val onInternalSlotDrag: (TaskSwitcherView, SlotTaskDrag) -> Boolean = { _, _ -> false },
     private val onInternalDragTouch: (android.view.View, android.view.MotionEvent) -> Boolean = { _, _ -> false },
     private val onSlotStatesChanged: () -> Unit = {},
@@ -67,6 +68,21 @@ class SlotTaskCoordinator(
     )
     private val handler = Handler(Looper.getMainLooper())
     private val slotRecords = MutableList(slots.size) { SlotRecord() }
+    private val exchangeHandler = Handler(Looper.getMainLooper())
+    private var exchangeSession: ExchangeSession<TaskLayout>? = null
+    private val exchangeEndActions = mutableListOf<() -> Unit>()
+
+    fun isExchangePending(): Boolean = exchangeSession?.settled == false
+
+    fun deferUntilExchangeSettled(action: () -> Unit): Boolean {
+        ensureMainThread()
+        val session = exchangeSession ?: return false
+        if (session.settled) return false
+        exchangeEndActions.add(action)
+        session.cancel()
+        return true
+    }
+
     private var active = false
     private var suspended = false
     private var transitionInProgress = false
@@ -151,6 +167,10 @@ class SlotTaskCoordinator(
     fun deactivate() {
         ensureMainThread()
         if (!active) return
+        if (deferUntilExchangeSettled { deactivate() }) {
+            suspended = true
+            return
+        }
         // Never destroy a display while a task failed to leave it.
         try {
             parkTasksBeforeExit()
@@ -252,6 +272,9 @@ class SlotTaskCoordinator(
     fun setSuspended(value: Boolean) {
         ensureMainThread()
         if (!active || suspended == value) return
+        if (!value && exchangeSession?.phase == ExchangeSession.Phase.RECOVERY_REQUIRED) {
+            exchangeSession?.cancel()
+        }
         if (value) {
             suspended = true
             cancelPendingExchange()
@@ -260,7 +283,7 @@ class SlotTaskCoordinator(
             recentSelectionPending = false
             handler.removeCallbacksAndMessages(null)
             reconciliationAt = 0L
-            transitionInProgress = false
+            transitionInProgress = exchangeSession?.settled == false
             pendingSelection = null
             mainSelectionGeneration += 1
             clearPromotedTaskRecovery()
@@ -724,6 +747,7 @@ class SlotTaskCoordinator(
     override fun onDisplayReady(slotIndex: Int, displayId: Int) {
         ensureMainThread()
         if (!active) return
+        if (deferUntilExchangeSettled { onDisplayReady(slotIndex, displayId) }) return
         validateExitedTasks()
         setState(slotIndex, SlotState.Ready(displayId), "display ready")
         handler.post { completePendingAdd() }
@@ -776,11 +800,16 @@ class SlotTaskCoordinator(
 
     override fun onDisplayReleased(slotIndex: Int, displayId: Int?, reason: String) {
         ensureMainThread()
+        exchangeSession?.takeUnless { it.settled }?.let {
+            it.cancel()
+            return
+        }
         setState(slotIndex, SlotState.Empty, "display released id=$displayId reason=$reason")
     }
 
     override fun onDisplayFailed(slotIndex: Int, message: String) {
         ensureMainThread()
+        if (deferUntilExchangeSettled { onDisplayFailed(slotIndex, message) }) return
         setState(slotIndex, SlotState.Failed(message), "display failed")
     }
 
@@ -1012,6 +1041,7 @@ class SlotTaskCoordinator(
     }
 
     fun cancelPendingExchange() {
+        exchangeSession?.takeUnless { it.settled }?.let { it.cancel(); return }
         if (!visualTransitionPending) return
         transitionGeneration += 1
         visualTransitionPending = false
@@ -1451,12 +1481,206 @@ class SlotTaskCoordinator(
         }
     }
 
+    private fun runPhasedMainTransition(slotIndex: Int, expectedMainTaskId: Int): Result<Unit> {
+        if (!active || suspended || transitionInProgress || recentSelectionPending) {
+            return Result.failure(IllegalStateException("Another transition is settling"))
+        }
+        val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
+            ?: return Result.failure(IllegalStateException("Slot changed"))
+        val token = ++transitionGeneration
+        transitionInProgress = true
+        visualTransitionPending = true
+        pendingSelection = null
+        clearPromotedTaskRecovery()
+        slots.forEach { it.view.setBusy(true) }
+        var moveRequested = false
+        var animationFinished = false
+        fun finish() {
+            if (token != transitionGeneration) return
+            if (exchangeSession?.settled == false) return
+            if (!animationFinished) return
+            exchangeSession = null
+            visualTransitionPending = false
+            transitionInProgress = false
+            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
+            val actions = exchangeEndActions.toList()
+            exchangeEndActions.clear()
+            actions.forEach { exchangeHandler.post(it) }
+            if (active && !suspended) {
+                handler.post { reconcile("phased exchange settled") }
+                dispatchPendingSelection()
+            }
+        }
+        return runCatching {
+            checkNotNull(onPhasedMainSlotAnimation).invoke(slotIndex, { complete ->
+                if (moveRequested || token != transitionGeneration || !active || suspended) {
+                    complete(false)
+                } else {
+                    moveRequested = true
+                    try {
+                        check(slotRecords[slotIndex].state == occupied)
+                        startPhasedSwap(slotIndex, occupied, token, expectedMainTaskId) { success ->
+                            complete(success)
+                            finish()
+                        }
+                    } catch (error: Throwable) {
+                        NeXtepLog.error("slot_coordinator", "Exchange preparation failed", error)
+                        complete(false)
+                    }
+                }
+            }, { exchangeSession?.settled != false }, {
+                animationFinished = true
+                finish()
+            })
+        }.onFailure {
+            animationFinished = true
+            exchangeSession?.cancel()
+            finish()
+        }
+    }
+
+    private fun startPhasedSwap(slotIndex: Int, occupied: SlotState.Occupied, token: Int, expectedMainTaskId: Int?, complete: (Boolean) -> Unit) {
+        val initialTasks = taskRepository.runningTasks()
+        val slotTask = initialTasks.firstOrNull { it.taskId == occupied.taskId } ?: error("Slot task exited")
+        val mainTask = initialTasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY } ?: error("Main task exited")
+        check(mainTask.taskId == expectedMainTaskId) { "Main task changed during preview" }
+        check(isExchangeableMainTask(mainTask) && mainTask.taskId != slotTask.taskId)
+        checkNotNull(slotTask.token)
+        checkNotNull(mainTask.token)
+        val record = slotRecords[slotIndex]
+        val slotLayout = record.originalLayout ?: defaultMainLayout(slotTask.resizeMode)
+        val mainLayout = mainTask.toLayout()
+        val exchangeGeometry = geometryProvider()
+
+        var mutationStarted = false
+        fun current(expected: TaskRepository.TaskSnapshot, tasks: List<TaskRepository.TaskSnapshot>): TaskRepository.TaskSnapshot {
+            val task = tasks.firstOrNull { it.taskId == expected.taskId } ?: error("Exchange task disappeared")
+            check(task.userId == expected.userId && task.token == expected.token) { "Exchange identity changed" }
+            return task
+        }
+
+        val session = ExchangeSession(
+            token, SystemClock.uptimeMillis() + 4_000L,
+            ExchangeSession.Origin(mainTask.taskId, mainTask.userId, mainTask.token, mainTask.displayId, mainLayout),
+            ExchangeSession.Origin(slotTask.taskId, slotTask.userId, slotTask.token, occupied.displayId, slotLayout),
+            SystemClock::uptimeMillis,
+            { action -> exchangeHandler.post(action) },
+            object : ExchangeSession.Driver {
+                override fun promote() {
+                    check(token == transitionGeneration && active && !suspended)
+                    check(geometryProvider() == exchangeGeometry)
+                    val before = taskRepository.runningTasks()
+                    check(current(slotTask, before).displayId == occupied.displayId)
+                    check(before.firstOrNull { it.displayId == occupied.displayId }?.taskId == slotTask.taskId)
+                    check(current(mainTask, before).displayId == Display.DEFAULT_DISPLAY)
+                    check(before.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == mainTask.taskId)
+                    check(current(mainTask, before).toLayout() == mainLayout)
+                    mutationStarted = true
+                    if (mainTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE) {
+                        ActivityTaskManagerCompat.setTaskResizeable(mainTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                    }
+                    if (slotTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE) {
+                        ActivityTaskManagerCompat.setTaskResizeable(slotTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                    }
+                    moveTaskToDisplayAndWait(slotTask.taskId, Display.DEFAULT_DISPLAY)
+                    restoreTaskLayout(slotTask, slotLayout, restoreResizeMode = false)
+                    taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()
+                }
+
+                override fun demoteAndVerify() {
+                    check(token == transitionGeneration && active && !suspended)
+                    check(geometryProvider() == exchangeGeometry)
+                    check(slots[slotIndex].displayId() == occupied.displayId)
+                    val promoted = taskRepository.runningTasks()
+                    check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)
+                    check(current(mainTask, promoted).displayId == Display.DEFAULT_DISPLAY)
+                    check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
+                    moveTaskToDisplayAndWait(mainTask.taskId, occupied.displayId)
+                    mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
+                    ensureSlotLayout(slotIndex, mainTask, mainLayout)
+                    mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
+                    val committed = taskRepository.runningTasks()
+                    check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
+                    check(current(mainTask, committed).displayId == occupied.displayId)
+                    record.originalLayout = mainLayout
+                    record.retainedTaskId = mainTask.taskId
+                    record.migrationRecoveryComponent = null
+                    record.migrationRecoveryDeadline = 0L
+                    record.migrationRecoveryAttempts = 0
+                    setState(slotIndex, SlotState.Occupied(occupied.displayId, mainTask.taskId, mainTask.component),
+                        "phased exchange committed")
+                    promotedRecoveryTaskId = slotTask.taskId
+                    promotedRecoveryUserId = slotTask.userId
+                    promotedRecoveryComponent = slotTask.component
+                    promotedRecoveryDeadline = SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
+                    promotedRecoveryAttempts = 0
+                    schedulePromotedTaskRecovery()
+                }
+
+                override fun restoreAndVerify() {
+                    if (!mutationStarted) return
+                    fun remaining(expected: TaskRepository.TaskSnapshot): TaskRepository.TaskSnapshot? {
+                        val live = taskRepository.findTask(expected.taskId)
+                        if (live != null) {
+                            check(live.userId == expected.userId && live.token == expected.token)
+                            return live
+                        }
+                        val recent = taskRepository.recentTasks(checkNotNull(expected.userId)).getOrThrow()
+                        check(recent.none { it.taskId == expected.taskId }) { "Task ownership cannot yet be verified" }
+                        return null
+                    }
+                    val slotNow = remaining(slotTask)
+                    val mainNow = remaining(mainTask)
+                    check(slots[slotIndex].displayId() == occupied.displayId)
+                    clearPromotedTaskRecovery()
+                    mainTaskPresenter.restoreForMove(slotTask.taskId).getOrThrow()
+                    if (slotNow != null) {
+                        check(slotNow.displayId == 0 || slotNow.displayId == occupied.displayId)
+                        if (slotNow.displayId != occupied.displayId) {
+                            moveTaskToDisplayAndWait(slotTask.taskId, occupied.displayId)
+                        }
+                        ensureSlotLayout(slotIndex, slotTask, slotLayout)
+                    }
+                    if (mainNow != null) {
+                        check(mainNow.displayId == 0 || mainNow.displayId == occupied.displayId)
+                        if (mainNow.displayId != Display.DEFAULT_DISPLAY) {
+                            moveTaskToDisplayAndWait(mainTask.taskId, Display.DEFAULT_DISPLAY)
+                        }
+                        restoreTaskLayout(mainTask, mainLayout)
+                        if (!suspended) mainTaskPresenter.presentTask(mainTask.taskId, geometryProvider()).getOrThrow()
+                    }
+                    val restored = taskRepository.runningTasks()
+                    if (slotNow != null) check(current(slotTask, restored).displayId == occupied.displayId)
+                    if (mainNow != null) check(current(mainTask, restored).displayId == Display.DEFAULT_DISPLAY)
+                    record.retainedTaskId = slotNow?.taskId
+                    record.originalLayout = if (slotNow != null) slotLayout else null
+                    record.migrationRecoveryComponent = null
+                    record.migrationRecoveryDeadline = 0L
+                    record.migrationRecoveryAttempts = 0
+                    setState(slotIndex, if (slotNow != null) occupied else SlotState.Ready(occupied.displayId),
+                        "phased exchange restored")
+
+                }
+            },
+            complete,
+        )
+        exchangeSession = session
+        session.start()
+    }
+
     private fun runTransition(
         label: String,
         animation: Pair<SlotTaskDrag, Int?>? = null,
         mainSlotIndex: Int? = null,
         operation: () -> Unit,
     ): Result<Unit> {
+        if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&
+            onPhasedMainSlotAnimation != null) {
+            val main = taskRepository.foregroundTask()
+            if (isExchangeableMainTask(main)) {
+                return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)
+            }
+        }
         if (transitionInProgress || recentSelectionPending) {
             NeXtepLog.warn("slot_coordinator", "Ignored concurrent transition $label")
             return Result.failure(IllegalStateException("Another slot transition is settling"))
@@ -1550,6 +1774,7 @@ class SlotTaskCoordinator(
     }
 
     private fun reconcile(reason: String) {
+        if (exchangeSession?.settled == false) return
         ensureMainThread()
         if (!active || suspended || transitionInProgress) return
         val tasks = taskRepository.runningTasks()
@@ -1775,6 +2000,7 @@ class SlotTaskCoordinator(
     }
 
     private fun reconcileForeground(reason: String) {
+        if (isExchangePending()) return
         val tasks = taskRepository.runningTasks()
         val foreground = tasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY } ?: return
         val promotedSlot = slotRecords.indexOfFirst { record ->

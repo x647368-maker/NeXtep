@@ -135,7 +135,7 @@ class WorkspaceController(
             val rotationOnly = requested.isRotationOf(previous.geometry)
             val geometry = windowController.reconfigure(rotationOnly).getOrThrow()
             SystemUiRootTransformController.setGeometry(geometry)
-            if (!deferMainPresentation) mainTaskPresenter.reconcileForeground(geometry).onFailure {
+            if (!deferMainPresentation && !windowController.isExchangePending()) mainTaskPresenter.reconcileForeground(geometry).onFailure {
                 // A momentarily unavailable foreground task must not hide every panel.
                 // SlotTaskCoordinator's foreground observer retries presentation.
                 NeXtepLog.warn("workspace_configuration", "Main task settling during reconfigure; presentation will retry", it)
@@ -200,6 +200,7 @@ class WorkspaceController(
     private fun exit(): Boolean {
         if (state is WorkspaceState.Disabled) return true
         if (state is WorkspaceState.Entering || state is WorkspaceState.Exiting) return false
+        if (windowController.deferExchangeExit { exit() }) return true
         state = WorkspaceState.Exiting
         return try {
             SystemServerWorkspaceBridge.publish(applicationContext, false)
