@@ -12,6 +12,14 @@ internal object StageDisplayPolicy {
             }.getOrNull()
         }
     }
+    /** The ROM can report rotation 0 or 1 for the same native-landscape
+     * Lenovo panel. Use the *physical* wide canvas, never its spoofed model
+     * name or the Android orientation enum. Compact phones and near-square
+     * foldables do not qualify.
+     */
+    fun wideLandscapeTablet(width: Int, height: Int): Boolean =
+        width > height && height >= 1300 && width.toFloat() / height >= 1.45f
+
     fun expanded(width: Int, height: Int, dpi: Int): Boolean {
         require(width>1 && height>1 && dpi>0)
         return minOf(width,height)*160f/dpi >= 600f
@@ -21,7 +29,10 @@ internal object StageDisplayPolicy {
     fun initial(width: Int, height: Int, dpi: Int, migrated: Boolean,
         legacyTop: Boolean?, legacySide: SidebarSide): Choice {
         if(!migrated && legacyTop!=null) return Choice(legacyTop,legacySide)
-        return Choice(!expanded(width,height,dpi),SidebarSide.LEFT)
+        // A rooted tablet port may inflate DPI so that a true 2560x1600
+        // landscape tablet incorrectly appears "compact" in dp. Start it in
+        // the native horizontal top/bottom rail, but keep saved choices.
+        return Choice(!expanded(width,height,dpi) && !wideLandscapeTablet(width,height),SidebarSide.LEFT)
     }
     fun layoutKey(scope: String?, field: String): String {
         require(field in setOf("main_priority","adaptive"))
