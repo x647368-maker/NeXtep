@@ -1,5 +1,5 @@
 {
-  "purpose": "Y700 native-landscape horizontal rail, exact reversible change proof against 0.9.17 frozen core",
+  "purpose": "Y700 native-landscape toolbar, horizontal rail and touch controls; exact reversible change proof against 0.9.17 frozen core",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt": [
       {
@@ -67,16 +67,56 @@
         "after": "                val x = if (!occupied[index]) 0 else if (geometry.railAtTop || geometry.isNativeLandscapeRail) box.left else (profile.geometry.sidebarWidth - box.width) / 2"
       },
       {
+        "before": "            \"左侧排列\" to { changeStageLayout(false,SidebarSide.LEFT) },\n            \"右侧排列\" to { changeStageLayout(false,SidebarSide.RIGHT) },",
+        "after": "            (if (geometry().isNativeLandscapeRail) \"小窗排列在上方\" else \"左侧排列\") to { changeStageLayout(false,SidebarSide.LEFT) },\n            (if (geometry().isNativeLandscapeRail) \"小窗排列在下方\" else \"右侧排列\") to { changeStageLayout(false,SidebarSide.RIGHT) },"
+      },
+      {
         "before": "        if (refreshControls) {\n            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)",
-        "after": "        if (refreshControls) {\n            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft)"
+        "after": "        if (refreshControls) {\n            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)"
+      },
+      {
+        "before": "        cancelDragVisuals()\n        records.forEach { record ->",
+        "after": "        cancelDragVisuals()\n        // Pixel-based, scoped to this display; original phone/fold UI stays frozen.\n        topAppStrip?.setNativeLandscapeTablet(geometry.isNativeLandscapeRail)\n        records.forEach { record ->"
       },
       {
         "before": "            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft, refreshHost = false)",
-        "after": "            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false)"
+        "after": "            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false, nativeStatusSafe = geometry.isNativeLandscapeRail)"
       },
       {
         "before": "                controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)",
-        "after": "                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft)"
+        "after": "                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/TopAppStripView.kt": [
+      {
+        "before": "        leftButton.contentDescription = AppLanguage.string(context, R.string.window_side_left)\n        rightButton.contentDescription = AppLanguage.string(context, R.string.window_side_right)",
+        "after": "        leftButton.contentDescription = if (nativeLandscapeTablet) \"小窗排列在屏幕上方\"\n            else AppLanguage.string(context, R.string.window_side_left)\n        rightButton.contentDescription = if (nativeLandscapeTablet) \"小窗排列在屏幕下方\"\n            else AppLanguage.string(context, R.string.window_side_right)"
+      },
+      {
+        "before": "                    \"侧栏放左边\" to { onSidebarSideRequested(SidebarSide.LEFT) },\n                    \"侧栏放右边\" to { onSidebarSideRequested(SidebarSide.RIGHT) },",
+        "after": "                    (if (nativeLandscapeTablet) \"小窗排列在上方\" else \"侧栏放左边\") to { onSidebarSideRequested(SidebarSide.LEFT) },\n                    (if (nativeLandscapeTablet) \"小窗排列在下方\" else \"侧栏放右边\") to { onSidebarSideRequested(SidebarSide.RIGHT) },"
+      },
+      {
+        "before": "    private var sidebarSide = initialSidebarSide",
+        "after": "    private var sidebarSide = initialSidebarSide\n    private var nativeLandscapeTablet = false\n\n    /** A tablet toolbar already starts below the system status inset.\n     * Keep the 52dp control row wholly inside its 56dp frame, while leaving\n     * separate corner targets for the main handle, quick bar and rail handle.\n     * All phone and folded-device coordinates remain unchanged.\n     */\n    fun setNativeLandscapeTablet(enabled: Boolean) {\n        if (nativeLandscapeTablet == enabled) return\n        nativeLandscapeTablet = enabled\n        val row = getChildAt(0) ?: return\n        val params = row.layoutParams as? FrameLayout.LayoutParams ?: return\n        params.topMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarTopDp(enabled))\n        params.leftMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarLeftDp(enabled))\n        params.rightMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarRightDp(enabled))\n        row.layoutParams = params\n        leftButton.contentDescription = if (enabled) \"小窗排列在屏幕上方\"\n            else AppLanguage.string(context, R.string.window_side_left)\n        rightButton.contentDescription = if (enabled) \"小窗排列在屏幕下方\"\n            else AppLanguage.string(context, R.string.window_side_right)\n        requestLayout()\n    }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/ControlAreaPager.kt": [
+      {
+        "before": "                    val status = dp(WorkspaceControlMetrics.STATUS_HEIGHT_DP.toFloat()).toInt().coerceIn(0, height)",
+        "after": "                    val status = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.localStatusExclusionDp(nativeStatusSafe).toFloat())\n                        .toInt().coerceIn(0, height)"
+      },
+      {
+        "before": "        controlOnLeft = isControlOnLeft",
+        "after": "        controlOnLeft = isControlOnLeft\n        this.nativeStatusSafe = nativeStatusSafe"
+      },
+      {
+        "before": "    fun setLandscape(value: Boolean, isControlOnLeft: Boolean, refreshHost: Boolean = true) {\n        if (landscape == value && controlOnLeft == isControlOnLeft) return",
+        "after": "    fun setLandscape(value: Boolean, isControlOnLeft: Boolean, refreshHost: Boolean = true,\n        nativeStatusSafe: Boolean = false) {\n        if (landscape == value && controlOnLeft == isControlOnLeft &&\n            this.nativeStatusSafe == nativeStatusSafe) return"
+      },
+      {
+        "before": "    private var controlOnLeft = false",
+        "after": "    private var controlOnLeft = false\n    // Native tablet top controls begin *below* WindowInsets.statusBars;\n    // do not subtract the old phone status band a second time from touches.\n    private var nativeStatusSafe = false"
       }
     ]
   }
