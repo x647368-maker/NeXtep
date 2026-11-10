@@ -23,10 +23,13 @@ to use with a status bar in the same area.
 1. Only screen coordinates, rotation and wide high-resolution aspect class
    select the native horizontal-rail policy. Do not check `Build.BRAND`,
    `Build.MANUFACTURER` or `Build.MODEL`; these can be spoofed by the port.
-2. Trigger only when the screen is physically landscape (rotation 0/2),
-   aspect ratio >= 1.45 and short side >= 1300 pixels; ordinary phone
-   portrait and reverse landscape, and near-square foldable displays,
-   remain on the current tested geometry.
+2. Trigger when the default screen has physical landscape metrics
+   (long side / short side >= 1.45 and short side >= 1300 pixels), including
+   ColorOS ports that report the 2560x1600 landscape orientation as rotation
+   1/3 instead of 0/2. The chosen top/bottom rail is independent of this
+   reported rotation. Ordinary phone landscape (Ace 7 Pro short side 1140),
+   portrait and near-square foldables (Find N5) retain legacy geometry.
+   Deliberately preserve old layout choices and scoped preference storage.
 3. Native-landscape LEFT/RIGHT correspond to a physically upright
    **top/bottom** rail. The control strip is horizontal across the safe
    top; its visible buttons are below reported status/cutout insets.
@@ -39,8 +42,9 @@ to use with a status bar in the same area.
 
 ## Regression matrix
 
-- Lenovo Y700: 2560x1600 at rotation 0 and 2; top and bottom rails;
-  1, 2, 3 and 4 occupied slots; 1600x2560 portrait rotation.
+- Lenovo Y700: 2560x1600 with reported rotation 0, 1, 2 or 3;
+  top and bottom rails; 1, 2, 3, 4 occupied slots; physical 1600x2560
+  portrait orientation; high spoofed DPI and original saved layouts.
 - OnePlus Ace 7 Pro (phone): 1140x2616 portrait, 2616x1140 landscape.
 - OPPO Find N5 expanded (near-square fold): 2248x2480 portrait,
   2480x2248 landscape. Existing phone/fold rotation policy unchanged.
@@ -71,3 +75,27 @@ these exact changes only after resolving the upstream differences and
 running unit + actual-device regression. GitHub Actions artifacts are
 not automatically a signed/installable release; never create a new
 certificate or publish an unsigned APK as a user-facing build.
+
+## 2026-11-10 second-pass review (do not treat as a stable release)
+
+- Removed speculative fixes to `TopAppStripView` and `ControlAreaPager`:
+  those legacy views are not instantiated in the current five-window
+  `NeXtepWindowController`. The active quick bar and clickable main/rail
+  handles already occupy separate physical rects calculated from insets.
+  Changing unused classes would add regression risk without improving Y700.
+- The actual native-landscape geometry is now explicitly independent of
+  `Display.rotation` parity, since ColorOS phone framework can be ported
+  to Lenovo hardware. LEFT means top, RIGHT bottom in every Y700 reported
+  landscape rotation. Initial layout uses the horizontal rail even when
+  spoofed display DPI would otherwise classify a wide tablet as compact.
+- Existing baseline 0.9.17 emulator visual check fails
+  `Rollback preview did not settle within 3 seconds`. This branch's
+  previous CI failed in the same place; unresolved baseline issue.
+  JVM/Android build success is not the same as real device success.
+- **Still missing** an on-device Y700 build run / touch hit-region check,
+  post-rotation slot content checks, bottom/top rails on ColorOS 16 port,
+  physical-status-bar correctness, external-input/gestures, main↔mini
+  switching, and Ace 7 Pro / Find N5 regression runs.
+- **Future updates** must cherry-pick/rebase the PR onto the latest
+  verified mainline; an APK signed directly from this PR is a tablet
+  **test candidate**, not a guaranteed cross-device stable release.
