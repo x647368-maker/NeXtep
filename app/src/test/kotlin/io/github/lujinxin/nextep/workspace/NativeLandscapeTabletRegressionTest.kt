@@ -63,6 +63,26 @@ class NativeLandscapeTabletRegressionTest {
         }
     }
 
+    @Test fun portedPhoneRomMayReportTabletLandscapeAsRotationOneOrThree() {
+        for (rotation in 0..3) for (side in SidebarSide.entries) {
+            val g = WorkspaceGeometry.forDisplay(
+                2560, 1600, side, density = 3.25f,
+                navigationInsets = WorkspaceNavigationInsets(top = 74, bottom = 48),
+                displayRotation = rotation)
+            assertTrue("rotation=$rotation side=$side", g.isNativeLandscapeRail)
+            assertEquals(0f, g.panelRotationDegrees, 0f)
+            assertEquals(side == SidebarSide.LEFT, g.isSidebarAtTop)
+            assertEquals(g.availableWidth, g.controlWidth)
+            assertEquals(g.availableWidth, g.sidebarPhysicalWidth)
+            assertTrue(g.contentTop >= g.controlTop + g.controlHeight)
+            if (side == SidebarSide.LEFT)
+                assertTrue(g.contentTop >= g.sidebarTop + g.sidebarPhysicalHeight)
+            else assertTrue(g.contentBottom <= g.sidebarTop)
+            assertTrue(g.contentRight <= g.availableRight)
+            assertTrue(g.contentBottom <= g.availableBottom)
+        }
+    }
+
     @Test fun portraitAndOppositeTabletRotationDoNotReuseWrongAxes() {
         val original = tablet()
         val reverse = original.rotatedTo(2)
