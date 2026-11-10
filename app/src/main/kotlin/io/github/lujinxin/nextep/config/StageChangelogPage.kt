@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
 
 /** Built only when opened. No network, polling, background work or workspace hooks. */
 internal object StageChangelogPage {
@@ -45,8 +46,27 @@ internal object StageChangelogPage {
                 packagedNotes
             )
         } else null
-        val shownEntries = if (currentEntry == null) StageChangeHistory.entries else
-            listOf(currentEntry) + StageChangeHistory.entries.filterNot { it.version == currentEntry.version }
+        // Historical entries from previous RELEASE_NOTES.md commits are packaged
+        // at build time. The curated, explicitly reviewed history takes precedence.
+        val archiveEntries = runCatching {
+            val json = activity.assets.open("release-history.json")
+                .bufferedReader(Charsets.UTF_8).use { JSONArray(it.readText()) }
+            (0 until json.length()).mapNotNull { index ->
+                val record = json.optJSONObject(index) ?: return@mapNotNull null
+                StageEmbeddedReleaseNotes.archived(
+                    record.optString("version"), record.optString("notes")
+                )
+            }
+        }.getOrDefault(emptyList())
+        val curatedVersions = StageChangeHistory.entries.map { it.version }.toSet()
+        val shownEntries = buildList {
+            val seen = mutableSetOf<String>()
+            currentEntry?.let { if (seen.add(it.version)) add(it) }
+            archiveEntries.filterNot { it.version in curatedVersions }.forEach {
+                if (seen.add(it.version)) add(it)
+            }
+            StageChangeHistory.entries.forEach { if (seen.add(it.version)) add(it) }
+        }
 
         shownEntries.forEachIndexed { index, entry ->
             val card = LinearLayout(activity).apply {
