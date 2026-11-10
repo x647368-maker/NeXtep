@@ -19,7 +19,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
 
 android {
     namespace = "io.github.x647368maker.atomicworkbench"
-    sourceSets.getByName("main").assets.srcDir(embeddedNotesDir)
+    sourceSets.getByName("main").assets.srcDir(embeddedNotesDir.get().asFile)
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
