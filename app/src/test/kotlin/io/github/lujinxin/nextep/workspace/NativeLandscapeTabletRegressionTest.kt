@@ -63,6 +63,22 @@ class NativeLandscapeTabletRegressionTest {
         }
     }
 
+    @Test fun nativeSmartRailReopenButtonStaysInsideTheTopOrBottomRail() {
+        for (side in SidebarSide.entries) for (rotation in 0..3) {
+            val g = WorkspaceGeometry.forDisplay(2560, 1600, side,
+                density = 2.5f, navigationInsets = WorkspaceNavigationInsets(top = 64, bottom = 42),
+                displayRotation = rotation)
+            val hit = NativeLandscapeHandlePlacement.hidden(g, 2.5f)
+            assertTrue(hit.left >= g.sidebarLeft)
+            assertTrue(hit.right <= g.sidebarLeft + g.sidebarPhysicalWidth)
+            assertTrue(hit.top >= g.sidebarTop)
+            assertTrue(hit.bottom <= g.sidebarTop + g.sidebarPhysicalHeight)
+            // No virtual status/navigation bar overlap, independent of ROM rotation.
+            assertTrue(hit.top >= g.availableTop)
+            assertTrue(hit.bottom <= g.availableBottom)
+        }
+    }
+
     @Test fun portedPhoneRomMayReportTabletLandscapeAsRotationOneOrThree() {
         for (rotation in 0..3) for (side in SidebarSide.entries) {
             val g = WorkspaceGeometry.forDisplay(
