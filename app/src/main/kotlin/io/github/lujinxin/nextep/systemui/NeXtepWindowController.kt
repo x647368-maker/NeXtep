@@ -278,7 +278,7 @@ class NeXtepWindowController(
                 NeXtepLog.warn("workspace_unlock", "Top controls resume pending", it)
             }
             runCatching {
-                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)
+                controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)
                 controlAreaPager?.setWorkspaceState(workspaceVisible, locked = false)
                 controlAreaPager?.refreshHost()
             }.onFailure {
@@ -496,7 +496,7 @@ class NeXtepWindowController(
             // Only project the existing windows into the new display coordinates.
             // Their logical content, slot buffers and wallpaper frame stay intact.
             backdropGeneration.incrementAndGet()
-            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false, nativeStatusSafe = geometry.isNativeLandscapeRail)
+            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft, refreshHost = false)
         } else {
             sidebarView?.let { applySlotLayout(it, geometry) }
             slotCoordinator?.onTasksChanged()
@@ -796,15 +796,13 @@ class NeXtepWindowController(
 
     private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {
         cancelDragVisuals()
-        // Pixel-based, scoped to this display; original phone/fold UI stays frozen.
-        topAppStrip?.setNativeLandscapeTablet(geometry.isNativeLandscapeRail)
         records.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry)
             windowManager.updateViewLayout(record.view, params)
         }
         if (refreshControls) {
-            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)
+            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)
             controlAreaPager?.refreshHost()
         }
     }
