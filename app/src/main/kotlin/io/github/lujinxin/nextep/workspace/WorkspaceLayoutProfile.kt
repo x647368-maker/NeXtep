@@ -31,6 +31,25 @@ data class WorkspaceLayoutProfile(
     val source = Source(0, 0, canvas.width, canvas.height)
     val slots: List<Slot> = run {
         val count = activeCount.coerceAtLeast(1)
+        if (geometry.isNativeLandscapeRail) {
+            // Portrait producer buffers remain unchanged, but the natural-landscape
+            // tablet presents them upright in a genuine horizontal row. Side LEFT
+            // selects the upper row; RIGHT selects the lower row.
+            val density = densityDpi / 160f
+            val maxWidth = ((geometry.sidebarPhysicalWidth - (count + 1) * gapPixels) / count).coerceAtLeast(1)
+            val heightBudget = (geometry.sidebarPhysicalHeight - (56 * density).toInt() - 2 * gapPixels)
+                .coerceAtLeast(1)
+            val height = minOf(heightBudget, (maxWidth.toDouble() * canvas.height / canvas.width).toInt())
+                .coerceAtLeast(1)
+            val width = minOf(maxWidth, (height.toDouble() * canvas.width / canvas.height).toInt())
+                .coerceAtLeast(1)
+            val span = count * width + (count - 1) * gapPixels
+            val start = ((geometry.sidebarPhysicalWidth - span) / 2).coerceAtLeast(0)
+            return@run List(4) { i ->
+                Slot(width, height, gapPixels + (heightBudget - height) / 2,
+                    start + i * (width + gapPixels))
+            }
+        }
         if (geometry.railAtTop) {
             val density = densityDpi / 160f
             val gutter = (8 * density).toInt()
