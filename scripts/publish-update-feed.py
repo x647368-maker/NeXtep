@@ -10,7 +10,7 @@ import pathlib
 import re
 
 PACKAGE = "io.github.x647368maker.atomicworkbench"
-CERT = "b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd"
+CERT = "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe"
 APK_LIMIT = 256 * 1024 * 1024
 TAG = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 APK = re.compile(r"^[A-Za-z0-9._-]+\.apk$")

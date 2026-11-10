@@ -138,13 +138,25 @@ print('Full-source crop, shared margin snapshot and window-local chrome input bo
 
 # All stable runtime files except the approved shade/menu/version UI files remain exact.
 reviewed_updater=json.loads((root/'scripts/reviewed-update-feed-0.9.16.json').read_text())['files']
+rekey_patches=json.loads((root/'scripts/reviewed-rekey-0.9.18.json').read_text())['files']
+assert set(rekey_patches)=={'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt'}
 frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
 assert set(reviewed_updater).issubset(set(frozen))
 for path,sha in frozen.items():
  if path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  assert hashlib.sha256((root/path).read_bytes()).hexdigest()==spec['updated_sha256'],path
+  data=(root/path).read_bytes()
+  if path in rekey_patches:
+   change=rekey_patches[path]
+   assert hashlib.sha256(data).hexdigest()==change['updated_sha256'],path
+   source=data.decode('utf-8')
+   for p in change['patches']:
+    assert source.count(p['after'])==1,path
+    source=source.replace(p['after'],p['before'],1)
+   data=source.encode('utf-8')
+   assert hashlib.sha256(data).hexdigest()==change['baseline_sha256'],path
+  assert hashlib.sha256(data).hexdigest()==spec['updated_sha256'],path
  else:
   assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
 shade=(k/'systemui/SystemUiRootTransformController.kt').read_text()

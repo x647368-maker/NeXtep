@@ -1,0 +1,15 @@
+{
+  "purpose": "Only the public certificate fingerprint pin changes in the Android update policy; retain all HTTPS, package ID, SHA256, version, archive signer checks and frozen task+Surface source",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt": {
+      "baseline_sha256": "15c8a69dcc9a01eefba6d0019d4a384af044c3c876d17f0b3fac42745bf76ddc",
+      "updated_sha256": "aa626d1119ae57593e5241ada4357f9eed0f7ebf98d03487a105aee28d39a483",
+      "patches": [
+        {
+          "before": "b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd",
+          "after": "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe"
+        }
+      ]
+    }
+  }
+}
