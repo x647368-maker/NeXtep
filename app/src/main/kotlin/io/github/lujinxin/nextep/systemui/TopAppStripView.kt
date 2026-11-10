@@ -119,28 +119,6 @@ class TopAppStripView(
         setOnClickListener { onSidebarSideRequested(SidebarSide.RIGHT) }
     }
     private var sidebarSide = initialSidebarSide
-    private var nativeLandscapeTablet = false
-
-    /** A tablet toolbar already starts below the system status inset.
-     * Keep the 52dp control row wholly inside its 56dp frame, while leaving
-     * separate corner targets for the main handle, quick bar and rail handle.
-     * All phone and folded-device coordinates remain unchanged.
-     */
-    fun setNativeLandscapeTablet(enabled: Boolean) {
-        if (nativeLandscapeTablet == enabled) return
-        nativeLandscapeTablet = enabled
-        val row = getChildAt(0) ?: return
-        val params = row.layoutParams as? FrameLayout.LayoutParams ?: return
-        params.topMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarTopDp(enabled))
-        params.leftMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarLeftDp(enabled))
-        params.rightMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarRightDp(enabled))
-        row.layoutParams = params
-        leftButton.contentDescription = if (enabled) "小窗排列在屏幕上方"
-            else AppLanguage.string(context, R.string.window_side_left)
-        rightButton.contentDescription = if (enabled) "小窗排列在屏幕下方"
-            else AppLanguage.string(context, R.string.window_side_right)
-        requestLayout()
-    }
     private val exitButton = ExitButton(context).apply {
         contentDescription = AppLanguage.string(context, R.string.window_exit)
         setOnClickListener { onExitRequested() }
@@ -209,8 +187,8 @@ class TopAppStripView(
                 AtomicPopupMenu.show(context, anchor, listOf(
                     "保存当前工作组" to { saveGroup?.invoke() },
                     "另存为新工作组" to { newGroup?.invoke() },
-                    (if (nativeLandscapeTablet) "小窗排列在上方" else "侧栏放左边") to { onSidebarSideRequested(SidebarSide.LEFT) },
-                    (if (nativeLandscapeTablet) "小窗排列在下方" else "侧栏放右边") to { onSidebarSideRequested(SidebarSide.RIGHT) },
+                    "侧栏放左边" to { onSidebarSideRequested(SidebarSide.LEFT) },
+                    "侧栏放右边" to { onSidebarSideRequested(SidebarSide.RIGHT) },
                     "设置" to { onSettingsRequested() },
                     "退出工作区" to { onExitRequested() },
                     "基于 NeXtep · lujinxin / JensenLu" to {
@@ -271,10 +249,8 @@ class TopAppStripView(
     }
 
     private fun updateTitle() {
-        leftButton.contentDescription = if (nativeLandscapeTablet) "小窗排列在屏幕上方"
-            else AppLanguage.string(context, R.string.window_side_left)
-        rightButton.contentDescription = if (nativeLandscapeTablet) "小窗排列在屏幕下方"
-            else AppLanguage.string(context, R.string.window_side_right)
+        leftButton.contentDescription = AppLanguage.string(context, R.string.window_side_left)
+        rightButton.contentDescription = AppLanguage.string(context, R.string.window_side_right)
         exitButton.contentDescription = AppLanguage.string(context, R.string.window_exit)
         settingsButton.contentDescription = AppLanguage.string(context, R.string.open_settings)
         updateVideoActionDescription()
