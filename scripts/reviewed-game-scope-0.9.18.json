@@ -1,0 +1,17 @@
+{
+  "purpose": "Explicitly allow only the 2026-11-11 reviewed assistant1 game/ColorOS native multiwindow safety hook changes. All other previously frozen files remain byte-identical.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/FixedOrientationAspectRatioHooker.kt": {
+      "original_sha256": "e84c9f204766647f4a8bd7476f76729ad3c56db348d954757ffc2ad657a02936",
+      "reviewed_blob_sha1": "2b9875509105430030a82314cebe156648b99ab8"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/SizeCompatDisplayInsetsHooker.kt": {
+      "original_sha256": "dcdb297d59b3c91ad590bef9d99c3666429c8f49435c63cebef84bf788a3b30a",
+      "reviewed_blob_sha1": "07592e31236c6af2bba00c83810b580f73901b64"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/WorkspaceLandscapeRotationHooker.kt": {
+      "original_sha256": "cc41625620b4e11a6fb87c19bbe03ba435b55aff828c506b8ba88d68373dcbc2",
+      "reviewed_blob_sha1": "461612749f3c83b6382f476772b953d7c803c340"
+    }
+  }
+}

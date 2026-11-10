@@ -10,22 +10,16 @@ class FixedOrientationAspectRatioHooker : XposedInterface.Hooker {
         val context = findContext(chain.thisObject) ?: return chain.proceed()
         val physicalAspect = SystemServerWorkspaceBridge.activePhysicalAspectRatio(context)
             ?: return chain.proceed()
-        val compactSlot = runCatching {
-            if (SystemServerWorkspaceBridge.observedActiveGeometry()?.railAtTop != true) return@runCatching false
-            val activity = readField(chain.thisObject, "mActivityRecord") ?: return@runCatching false
-            val display = call(activity, "getDisplayContent") ?: return@runCatching false
-            val info = call(display, "getDisplayInfo") ?: return@runCatching false
-            (readField(info, "name") as? String).orEmpty().startsWith("NeXtep-slot-")
-        }.getOrDefault(false)
-        val aspectRatio = if (compactSlot) 1120f / 720f else physicalAspect
-        NeXtepLog.info("fixed_orientation_aspect", "Using recorded usable aspectRatio=$aspectRatio")
+        val activity = readField(chain.thisObject, "mActivityRecord")
+        val snapshot = StageOrientationHookScope.snapshot(activity)
+        val aspectRatio = StageOrientationHookScope.aspectOverride(
+            snapshot,
+            topRail = SystemServerWorkspaceBridge.observedActiveGeometry()?.railAtTop == true,
+            physicalAspect = physicalAspect,
+        ) ?: return chain.proceed()
+        NeXtepLog.info("fixed_orientation_aspect", "Scoped aspectRatio=$aspectRatio target=${snapshot.target}")
         return aspectRatio
     }
-
-    private fun call(target: Any, name: String): Any? =
-        generateSequence(target.javaClass as Class<*>?) { it.superclass }
-            .flatMap { it.declaredMethods.asSequence() }.firstOrNull { it.name == name && it.parameterCount == 0 }
-            ?.apply { isAccessible = true }?.invoke(target)
 
     private fun findContext(target: Any?): Context? = runCatching {
         val activityRecord = readField(target, "mActivityRecord") ?: return@runCatching null
@@ -38,10 +32,11 @@ class FixedOrientationAspectRatioHooker : XposedInterface.Hooker {
     private fun readField(target: Any?, name: String): Any? {
         var type: Class<*>? = target?.javaClass
         while (type != null && type != Any::class.java) {
+            val current = type
             runCatching {
-                return type.getDeclaredField(name).apply { isAccessible = true }.get(target)
+                return current.getDeclaredField(name).apply { isAccessible = true }.get(target)
             }
-            type = type.superclass
+            type = current.superclass
         }
         return null
     }
