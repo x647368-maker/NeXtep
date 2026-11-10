@@ -20,6 +20,15 @@
 - `app/src/test/kotlin/io/github/lujinxin/nextep/config/StageChangeHistoryTest.kt`：里程碑范围、无重号、状态提示检查。
 - 本交接文档。
 
+## 自动同步规则（新增）
+- **构建时自动同步**：`app/build.gradle.kts` 通过 `embedCurrentReleaseNotes` 从仓库唯一的 `RELEASE_NOTES.md` 生成 `assets/current-release.md`，APK 中可直接离线读出，无需再同步修改 Kotlin 版本列表。
+- `StageEmbeddedReleaseNotes.parse` 按实际已安装 APK 的版本名、版本码匹配内容；不匹配则拒绝展示错误版本的发布说明，回退本地核实过的历史版本。
+- CI 在编译后检查 APK 中的 assets 与 `RELEASE_NOTES.md` 字节一致，原有签名/版本/源码保护检查不变。
+- **其他开发窗口完成代码不等于版本完成**：只有新改动汇入确定的构建分支、`RELEASE_NOTES.md` 如实描述重大变化、版本号与版本码通过校验、生成新 APK 并安装后，本机才能看到新条目。工作模式在准备每个版本时应同步维护这一份权威发布说明，不要求用户手动复制到更新日志页。
+- 已安装的旧 APK 仍展示其打包时的本地内容；不会因为其他分支有新 commit 而静默联网或重写界面。没有后台联网、推送、轮询或跨会话实时消息监听。
+- 对更早版本，目前仍以人工审核过的本地 0.8.0～0.9.16 历史记录为基础；**未来较旧的新版本若需长期保留完整全文**，须另建立不可篡改的归档/正式 GitHub Release 历史，当前机制只保证“当前新版本发布说明”自动装入 APK，绝不冒称跨版本无限历史自动归档。
+- 禁止由 Git commit 文字自动宣称真机测试通过或“彻底修复”。
+
 ## 测试与整合规则
 - 分支触发隔离 GitHub Actions，须检查 `scripts/verify-state-continuity.py`、`scripts/test-release-contract.py`、API 101/102 Kotlin 编译/JUnit；只有真机能最终验收页面与交换。
 - 变更记录不证明耗电 0 增加；按需创建的文本页理论上无常驻开销，体积仅随文字代码增加。
