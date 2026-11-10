@@ -26,17 +26,23 @@ def manifest(apk):
      attrs[key]=strings[raw] if raw!=0xffffffff else strings[value] if typ==3 else value
   offset+=size
  return attrs
+def release_channel(name):
+ if not re.fullmatch(r'\\d+\\.\\d+\\.\\d+(?:-dev)?',name):
+  raise ValueError('Unsupported versionName for signed update metadata: '+repr(name))
+ return 'dev' if name.endswith('-dev') else 'stable'
+
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--apk',required=True);p.add_argument('--apksigner',required=True);p.add_argument('--notes',required=True);p.add_argument('--out',required=True);a=p.parse_args()
  apk=pathlib.Path(a.apk);out=pathlib.Path(a.out);out.mkdir(parents=True,exist_ok=True)
  identity=manifest(apk)
  assert identity['package']=='io.github.x647368maker.atomicworkbench'
- assert identity['versionCode']>0 and re.fullmatch(r'\d+\.\d+\.\d+(?:-dev)?',identity['versionName'])
+ assert identity['versionCode']>0
+ channel=release_channel(identity['versionName'])
  signature=subprocess.run(['java','-jar',a.apksigner,'verify','--min-sdk-version','35','--print-certs',str(apk)],check=True,capture_output=True,text=True).stdout
  assert 'Signer #1 certificate SHA-256 digest: '+CERT in signature
  assert re.fullmatch(r'[A-Za-z0-9._-]+\.apk',apk.name)
  sha=hashlib.sha256(apk.read_bytes()).hexdigest();notes=pathlib.Path(a.notes).read_text()
- meta=dict(schemaVersion=1,applicationId=identity['package'],versionName=identity['versionName'],versionCode=identity['versionCode'],channel='dev' if identity['versionName'].endswith('-dev') else 'stable',apkAsset=apk.name,sha256=sha,size=apk.stat().st_size,certificateSha256=CERT,releaseNotes=notes,deviceNotes='主要适配 PMS110 / ColorOS 17；本次实机验收尚未完成，其他机型未验证')
+ meta=dict(schemaVersion=1,applicationId=identity['package'],versionName=identity['versionName'],versionCode=identity['versionCode'],channel=channel,apkAsset=apk.name,sha256=sha,size=apk.stat().st_size,certificateSha256=CERT,releaseNotes=notes,deviceNotes='主要适配 PMS110 / ColorOS 17；本次实机验收尚未完成，其他机型未验证')
  if apk.resolve()!=(out/apk.name).resolve():shutil.copyfile(apk,out/apk.name)
  (out/'atomic-update.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2))
  (out/(apk.name+'.sha256')).write_text(sha+'  '+apk.name+'\n')
