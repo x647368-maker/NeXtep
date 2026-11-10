@@ -34,6 +34,11 @@ class ExchangeSessionTest {
                 }
                 override fun restoreAndVerify() {
                     check(!failRestore && !disappear)
+                    if (promotions == 0) {
+                        // Pre-mutation abort must verify, never silently reset ownership.
+                        check(mainDisplay == 0 && slotDisplay == 7)
+                        return
+                    }
                     mainDisplay = 0
                     slotDisplay = 7
                 }
@@ -81,6 +86,34 @@ class ExchangeSessionTest {
         f.session.start(); f.session.cancel(); f.drain()
         assertEquals(0, f.promotions)
         assertEquals(false, f.result)
+    }
+
+    @Test fun externalMoveBeforeCancellationCannotBeFalselyRestored() {
+        val f = Fixture()
+        f.session.start()
+        f.mainDisplay = 5 // System move occurred independently of this session
+        f.session.cancel()
+        f.drain()
+        assertEquals(ExchangeSession.Phase.RECOVERY_REQUIRED, f.session.phase)
+        assertFalse(f.session.settled)
+        assertEquals(0, f.completions)
+        assertEquals(0, f.promotions)
+        f.mainDisplay = 0
+        f.session.cancel()
+        f.drain()
+        assertEquals(ExchangeSession.Phase.RESTORED, f.session.phase)
+        assertEquals(false, f.result)
+        assertEquals(1, f.completions)
+    }
+
+    @Test fun deadlineBeforeMutationRequiresVerifiedOrigins() {
+        val f = Fixture()
+        f.session.start()
+        f.clock = 101
+        f.slotDisplay = 0
+        f.drain()
+        assertEquals(ExchangeSession.Phase.RECOVERY_REQUIRED, f.session.phase)
+        assertNull(f.result)
     }
 
     @Test fun timeoutAfterPromotionRestoresIdentity() {
