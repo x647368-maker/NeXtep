@@ -27,7 +27,7 @@ class ReleaseContract(unittest.TestCase):
 
     def test_version_is_monotonic_and_channel_is_explicit(self):
         name, code = self.version()
-        self.assertRegex(name, r"^\\d+\\.\\d+\\.\\d+(?:-dev)?$")
+        self.assertRegex(name, r"^\d+\.\d+\.\d+(?:-dev)?$")
         self.assertGreaterEqual(code, 31)
         self.assertEqual("dev" if name.endswith("-dev") else "stable", release.release_channel(name))
 
