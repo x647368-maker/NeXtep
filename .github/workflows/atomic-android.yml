@@ -92,6 +92,8 @@ jobs:
           echo "ATOMIC_KEYSTORE_PASSWORD=$ATOMIC_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ATOMIC_KEY_PASSWORD=$ATOMIC_KEY_PASSWORD" >> "$GITHUB_ENV"
           echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
+      - name: Verify rekeyed signing identity consistency (public fingerprint only)
+        run: python3 scripts/test-rekey-contract.py
       - name: Verify candidate update/signature release contract
         run: python3 scripts/test-release-contract.py
       - name: Verify changelog history parser
@@ -134,7 +136,7 @@ jobs:
           unzip -p "$apk" META-INF/xposed/java_init.list | grep -Fx 'io.github.x647368maker.atomicworkbench.xposed.NeXtepHookEntry'
           if [ "$ATOMIC_SIGNING_READY" = 'true' ]; then
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | tee /tmp/atomic-apk-signature.txt
-            grep -F 'Signer #1 certificate SHA-256 digest: b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd' /tmp/atomic-apk-signature.txt
+            grep -F 'Signer #1 certificate SHA-256 digest: 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe' /tmp/atomic-apk-signature.txt
           else
             echo '::notice::APK is UNSIGNED, for build verification only; it cannot be installed.'
           fi

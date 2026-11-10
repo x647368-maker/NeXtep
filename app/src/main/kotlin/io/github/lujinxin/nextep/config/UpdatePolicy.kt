@@ -6,7 +6,7 @@ import java.io.File
 
 internal object UpdatePolicy {
     const val APP = "io.github.x647368maker.atomicworkbench"
-    const val CERT = "b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd"
+    const val CERT = "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe"
     const val REPO = "https://github.com/x647368-maker/NeXtep"
     const val MAX_APK = 256L * 1024 * 1024
     enum class Channel { DEV, STABLE }

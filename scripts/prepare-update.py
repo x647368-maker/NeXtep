@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prepare a signed, verified release bundle. Never uploads or publishes anything."""
 import argparse,hashlib,json,pathlib,re,shutil,struct,subprocess,zipfile
-CERT='b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd'
+CERT='3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe'
 def manifest(apk):
  with zipfile.ZipFile(apk) as z:data=z.read('AndroidManifest.xml')
  u16=lambda at:struct.unpack_from('<H',data,at)[0];u32=lambda at:struct.unpack_from('<I',data,at)[0]
