@@ -27,21 +27,21 @@ class ReleaseContract(unittest.TestCase):
 
     def test_candidate_build_is_a_new_development_version(self):
         name, code = self.version()
-        self.assertEqual("0.9.16-dev", name)
-        self.assertGreater(code, 30)
+        self.assertEqual("0.9.17-dev", name)
+        self.assertGreater(code, 31)
         self.assertEqual("dev", release.release_channel(name))
 
     def test_app_updater_recognizes_dev_but_not_candidate_suffix(self):
         policy = POLICY.read_text()
         self.assertIn('enum class Channel { DEV, STABLE }', policy)
         self.assertIn('(-dev(?:-[A-Za-z0-9]+)?)?', policy)
-        self.assertEqual("dev", release.release_channel("0.9.16-dev"))
+        self.assertEqual("dev", release.release_channel("0.9.17-dev"))
         with self.assertRaises(ValueError):
             release.release_channel("0.9.15-candidate")
 
     def test_stable_release_is_not_labeled_development(self):
-        self.assertEqual("stable", release.release_channel("0.9.16"))
-        for value in ("0.9.16-candidate", "0.9.16-dev-rc1", "0.9.x", ""):
+        self.assertEqual("stable", release.release_channel("0.9.17"))
+        for value in ("0.9.17-candidate", "0.9.17-dev-rc1", "0.9.x", ""):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 release.release_channel(value)
 

@@ -85,7 +85,11 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         overlay = preview
         completion = onFinished
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = WorkspaceConfigContract.normalizeSwapAnimationDurationMs(durationMs).toLong()
+            // Static tap previews have no animation to play. Start task migration
+            // after the existing render-commit callback instead of wasting the
+            // configured 200ms on repeated identical frames. Keep HOME and drag
+            // animation durations, live-frame handoff and rollback untouched.
+            duration = StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)
             interpolator = PathInterpolator(0.22f, 0f, 0.12f, 1f)
             addUpdateListener {
                 preview.progress = it.animatedValue as Float
