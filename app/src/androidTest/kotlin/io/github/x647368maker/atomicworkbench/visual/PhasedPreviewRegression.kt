@@ -31,6 +31,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 isLiveReady = { true },
                 moveAsync = { done -> complete = done; requested.countDown() },
                 canRelease = { releaseAllowed },
+                freezeGeometry = true, // Exercise the new 0.9.16 no-morph rendering path.
                 onFinished = { completionCount++; finished.countDown() })
         }
         check(requested.await(6, TimeUnit.SECONDS)) { "Async exchange did not start" }
@@ -43,7 +44,11 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 }
                 releaseAllowed = true
                 complete(false)
-                check(!animator.isRunning && completionCount == 1)
+                check(!animator.isRunning && completionCount == 1) {
+                    "Failed rollback preview release: running=${animator.isRunning} " +
+                        "completionCount=$completionCount releaseAllowed=$releaseAllowed " +
+                        "sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
+                }
                 check(source.isRecycled && target.isRecycled)
                 animator.cancel()
                 check(completionCount == 1)
