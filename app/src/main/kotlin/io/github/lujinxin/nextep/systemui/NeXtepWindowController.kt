@@ -891,7 +891,14 @@ class NeXtepWindowController(
             "AtomicSidebarHandle" -> {
                 params.width=dp(48).toInt();params.height=dp(48).toInt()
                 params.x=geometry.availableRight-dp(56).toInt();params.y=geometry.availableTop+dp(4).toInt()
-                if (smartRail.hidden && !geometry.railAtTop) {
+                if (smartRail.hidden && geometry.isNativeLandscapeRail) {
+                    // On native tablets the rail lives at the top or bottom.
+                    // Its tiny reopen handle must not jump to a phone's left/right edge.
+                    val box=io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeHandlePlacement
+                        .hidden(geometry,context.resources.displayMetrics.density)
+                    params.width=box.width;params.height=box.height
+                    params.x=box.left;params.y=box.top
+                } else if (smartRail.hidden && !geometry.railAtTop) {
                     // Inset from the back-gesture edge; no gesture exclusion or global listener.
                     params.width=dp(24).toInt();params.height=dp(48).toInt()
                     params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()
