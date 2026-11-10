@@ -17,4 +17,4 @@ jobs:
         run: |
           python3 -m py_compile scripts/publish-update-feed.py scripts/test-update-feed.py
           python3 scripts/test-update-feed.py
-          sha256sum app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateTransport.kt
+          sha256sum app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateTransport.kt app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateCoordinator.kt app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt
