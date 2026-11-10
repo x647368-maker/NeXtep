@@ -1,0 +1,123 @@
+name: Build verified 0.9.15-dev candidate APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atomic-candidate-manual
+  cancel-in-progress: false
+
+jobs:
+  candidate-build:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5ae207279e7efc668ce0cda45624b76594f73f68
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Restore fixed development signing key
+        env:
+          ATOMIC_KEYSTORE_BASE64: ${{ secrets.ATOMIC_KEYSTORE_BASE64 }}
+          ATOMIC_KEYSTORE_PASSWORD: ${{ secrets.ATOMIC_KEYSTORE_PASSWORD }}
+          ATOMIC_KEY_PASSWORD: ${{ secrets.ATOMIC_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$ATOMIC_KEYSTORE_BASE64" ]; then
+            echo '::notice::Signing secret not configured: compiling an UNSIGNED APK for verification only. No installable release will be published.'
+            echo 'ATOMIC_SIGNING_READY=false' >> "$GITHUB_ENV"
+            exit 0
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/.atomic-signing"
+          printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          chmod 600 "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          test -s "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          test -n "$ATOMIC_KEYSTORE_PASSWORD" && test -n "$ATOMIC_KEY_PASSWORD"
+          echo "ATOMIC_KEYSTORE_PASSWORD=$ATOMIC_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ATOMIC_KEY_PASSWORD=$ATOMIC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
+      - name: Verify candidate update/signature release contract
+        run: python3 scripts/test-release-contract.py
+      - name: Check download retry classification
+        run: python3 scripts/test-ci-retry.py
+      - name: Check task continuity source boundaries
+        run: python3 scripts/verify-state-continuity.py
+      - name: Verify real API 101 source and JVM contracts
+        run: |
+          bash scripts/ci-android-build.sh :app:testDebugUnitTest -PatomicXposedApi=101.0.0
+          mkdir -p api101-unit-results
+          cp -R app/build/test-results/testDebugUnitTest/. api101-unit-results/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-api101-unit-results
+          path: api101-unit-results/
+      - name: Build and test; retry only transient dependency downloads
+        run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+      - name: Verify compiled launch resources and aliases
+        run: python3 scripts/verify-startup-package.py --apk "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)" --aapt2 "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+      - name: Check independent APK identity and module entry
+        shell: bash
+        run: |
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -n "$apk"
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test "$("$analyzer" manifest application-id "$apk")" = 'io.github.x647368maker.atomicworkbench'
+          unzip -p "$apk" META-INF/xposed/java_init.list | grep -Fx 'io.github.x647368maker.atomicworkbench.xposed.NeXtepHookEntry'
+          if [ "$ATOMIC_SIGNING_READY" = 'true' ]; then
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" | tee /tmp/atomic-apk-signature.txt
+            grep -F 'Signer #1 certificate SHA-256 digest: b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd' /tmp/atomic-apk-signature.txt
+          else
+            echo '::notice::APK is UNSIGNED, for build verification only; it cannot be installed.'
+          fi
+      - run: sha256sum app/build/outputs/apk/debug/*.apk > development-apk.sha256
+      - name: Bundle official SDK signer for private offline signing
+        if: env.ATOMIC_SIGNING_READY != 'true'
+        shell: bash
+        run: |
+          cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" app/build/outputs/apk/debug/apksigner.jar
+          sha256sum app/build/outputs/apk/debug/apksigner.jar > offline-signer.sha256
+      - name: Prepare verified files for manual Release publication
+        if: env.ATOMIC_SIGNING_READY == 'true'
+        shell: bash
+        run: |
+          python3 scripts/prepare-update.py --apk "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)" --apksigner "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" --notes RELEASE_NOTES.md --out release-ready
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atomic-workbench-0.9.15-dev-${{ env.ATOMIC_SIGNING_READY == 'true' && 'signed' || 'unsigned' }}
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            development-apk.sha256
+            app/build/outputs/apk/debug/apksigner.jar
+            offline-signer.sha256
+            release-ready/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-unit-test-results
+          path: app/build/test-results/testDebugUnitTest/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atomic-visual-test-inputs
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/androidTest/debug/*.apk
+      # Publishing is deliberately manual. Build success never creates a public Release.
+
