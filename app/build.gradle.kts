@@ -15,7 +15,7 @@ android {
         minSdk = 35
         targetSdk = 36
         versionCode = 30
-        versionName = "0.9.15-candidate"
+        versionName = "0.9.15-dev"
         testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
 
     }
