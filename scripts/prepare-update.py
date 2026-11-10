@@ -27,7 +27,7 @@ def manifest(apk):
   offset+=size
  return attrs
 def release_channel(name):
- if not re.fullmatch(r'\\d+\\.\\d+\\.\\d+(?:-dev)?',name):
+ if not re.fullmatch(r'\d+\.\d+\.\d+(?:-dev)?',name):
   raise ValueError('Unsupported versionName for signed update metadata: '+repr(name))
  return 'dev' if name.endswith('-dev') else 'stable'
 
