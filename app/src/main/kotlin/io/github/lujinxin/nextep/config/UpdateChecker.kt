@@ -19,8 +19,9 @@ internal object UpdateChecker {
     }
 
     fun check(channel: UpdatePolicy.Channel, installedCode: Long): Release? {
-        // An available, valid feed is authoritative, including when there are no new releases.
-        // On network/feed failure, retain the existing API source as a fallback.
+        // A populated, validated feed is authoritative for the selected channel.
+        // An empty or channel-inapplicable feed MUST fall back to Releases API
+        // rather than reporting a false "already latest" result.
         val feed = runCatching { checkFeed(channel, installedCode) }
         if (feed.isSuccess) return feed.getOrThrow()
         val api = runCatching { checkReleasesApi(channel, installedCode) }
@@ -37,8 +38,9 @@ internal object UpdateChecker {
         val root = JSONObject(UpdateTransport.bytes(FEED_URL, 128 * 1024).toString(Charsets.UTF_8))
         require(root.getInt("schemaVersion") == 1) { "更新索引格式不支持" }
         val entries = root.getJSONArray("releases")
-        require(entries.length() <= 40) { "更新索引过大" }
+        require(UpdateFeedAuthority.validSize(entries.length())) { "更新索引为空或过大，改用 Releases API" }
         val eligible = mutableListOf<Release>()
+        var applicable = 0
         for (i in 0 until entries.length()) {
             val json = entries.getJSONObject(i)
             val meta = metadata(json)
@@ -46,10 +48,12 @@ internal object UpdateChecker {
             require(Regex("^[A-Za-z0-9._-]{1,128}$").matches(tag)) { "更新标签无效" }
             val page = "$RELEASES_URL/tag/$tag"
             val apk = UpdatePolicy.asset("$RELEASES_URL/download/$tag/${meta.apkName}")
+            if (channel == UpdatePolicy.Channel.DEV || meta.channel == UpdatePolicy.Channel.STABLE) applicable++
             if (UpdatePolicy.eligible(meta, installedCode, channel)) {
                 eligible += Release(meta, json.optString("releaseNotes").take(16000), apk, page)
             }
         }
+        require(UpdateFeedAuthority.hasApplicableRecords(entries.length(), applicable)) { "更新索引没有当前渠道的有效发布记录，改用 Releases API" }
         return eligible.maxByOrNull { it.metadata.versionCode }
     }
 
