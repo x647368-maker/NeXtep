@@ -1,0 +1,19 @@
+name: Atomic updater fast offline checks
+
+on:
+  push:
+    branches:
+      - atomic-workbench/assistant3-update-feed
+
+permissions:
+  contents: read
+
+jobs:
+  test-feed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify publisher logic without Android SDK or signing keys
+        run: |
+          python3 -m py_compile scripts/publish-update-feed.py scripts/test-update-feed.py
+          python3 scripts/test-update-feed.py
