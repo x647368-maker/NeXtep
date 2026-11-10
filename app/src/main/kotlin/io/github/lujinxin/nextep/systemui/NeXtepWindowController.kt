@@ -278,7 +278,7 @@ class NeXtepWindowController(
                 NeXtepLog.warn("workspace_unlock", "Top controls resume pending", it)
             }
             runCatching {
-                controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)
+                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft)
                 controlAreaPager?.setWorkspaceState(workspaceVisible, locked = false)
                 controlAreaPager?.refreshHost()
             }.onFailure {
@@ -496,7 +496,7 @@ class NeXtepWindowController(
             // Only project the existing windows into the new display coordinates.
             // Their logical content, slot buffers and wallpaper frame stay intact.
             backdropGeneration.incrementAndGet()
-            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft, refreshHost = false)
+            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false)
         } else {
             sidebarView?.let { applySlotLayout(it, geometry) }
             slotCoordinator?.onTasksChanged()
@@ -802,7 +802,7 @@ class NeXtepWindowController(
             windowManager.updateViewLayout(record.view, params)
         }
         if (refreshControls) {
-            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)
+            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft)
             controlAreaPager?.refreshHost()
         }
     }
@@ -1859,7 +1859,7 @@ class NeXtepWindowController(
             slot.setLayoutProfile(profile)
             val box = if (occupied[index]) bounds[index] else io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile.Slot(1, 1, 0, 0)
             if (cinemaSlot == null) {
-                val x = if (!occupied[index]) 0 else if (geometry.railAtTop) box.left else (profile.geometry.sidebarWidth - box.width) / 2
+                val x = if (!occupied[index]) 0 else if (geometry.railAtTop || geometry.isNativeLandscapeRail) box.left else (profile.geometry.sidebarWidth - box.width) / 2
                 val old = slot.view.layoutParams as? FrameLayout.LayoutParams
                 if (old == null || old.width != box.width || old.height != box.height || old.marginStart != x || old.topMargin != box.top) {
                     slot.view.layoutParams = FrameLayout.LayoutParams(box.width, box.height, Gravity.TOP).apply { marginStart = x; topMargin = box.top }
@@ -1876,7 +1876,7 @@ class NeXtepWindowController(
         sidebarAddButton?.apply {
             visibility = if (shownWindowCount < WORKSPACE_SLOT_COUNT) View.VISIBLE else View.GONE
             layoutParams = FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(),
-                if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0 }
+                if (geometry.railAtTop || geometry.isNativeLandscapeRail) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop || geometry.isNativeLandscapeRail) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop || geometry.isNativeLandscapeRail) dp(10).toInt() else 0 }
         }
         slotWindows.forEachIndexed { index, slot ->
             val media = cinemaSlot
