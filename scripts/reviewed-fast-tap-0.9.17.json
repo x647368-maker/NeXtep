@@ -1,0 +1,25 @@
+{
+  "purpose": "Precisely reversible deletion of useless fixed-preview animation delay in 0.9.17; preserve all original task, Surface, geometry, rollback and frame-commit mechanisms",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "baseline_sha256": "3707203bbc20e950805c2a0a0fda6b835853b7f51a7c7c9bbde2b27d4e7e88cc",
+      "updated_sha256": "45ee131c5eba71875fdd82fa474f341ca7c3d781710410ce0b0c7261075f7da7",
+      "patches": [
+        {
+          "before": "            duration = WorkspaceConfigContract.normalizeSwapAnimationDurationMs(durationMs).toLong()",
+          "after": "            // Static tap previews have no animation to play. Start task migration\n            // after the existing render-commit callback instead of wasting the\n            // configured 200ms on repeated identical frames. Keep HOME and drag\n            // animation durations, live-frame handoff and rollback untouched.\n            duration = StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt": {
+      "baseline_sha256": "e5f6d8e4c0846ff9c77ae932f3763e10478fd19ec15d1e878eded435004b6756",
+      "updated_sha256": "6557c51995985b3e19ab25642ce3e4927a15fcc3e453e06159395400825a2d46",
+      "patches": [
+        {
+          "before": "    const val BUILD = \"0.9.16/31-fixed-geometry\"",
+          "after": "    const val BUILD = \"0.9.17/32-fast-fixed-tap\""
+        }
+      ]
+    }
+  }
+}
