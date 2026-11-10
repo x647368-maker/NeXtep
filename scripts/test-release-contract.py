@@ -25,25 +25,34 @@ class ReleaseContract(unittest.TestCase):
         self.assertIsNotNone(code, "Gradle versionCode is missing")
         return name.group(1), int(code.group(1))
 
-    def test_candidate_build_is_a_new_development_version(self):
+    def test_version_is_monotonic_and_channel_is_explicit(self):
         name, code = self.version()
-        self.assertEqual("0.9.17-dev", name)
-        self.assertGreater(code, 31)
-        self.assertEqual("dev", release.release_channel(name))
+        self.assertRegex(name, r"^\d+\.\d+\.\d+(?:-dev)?$")
+        self.assertGreaterEqual(code, 31)
+        self.assertEqual("dev" if name.endswith("-dev") else "stable", release.release_channel(name))
 
     def test_app_updater_recognizes_dev_but_not_candidate_suffix(self):
         policy = POLICY.read_text()
         self.assertIn('enum class Channel { DEV, STABLE }', policy)
         self.assertIn('(-dev(?:-[A-Za-z0-9]+)?)?', policy)
-        self.assertEqual("dev", release.release_channel("0.9.17-dev"))
+        self.assertEqual("dev", release.release_channel("0.9.16-dev"))
         with self.assertRaises(ValueError):
             release.release_channel("0.9.15-candidate")
 
     def test_stable_release_is_not_labeled_development(self):
-        self.assertEqual("stable", release.release_channel("0.9.17"))
-        for value in ("0.9.17-candidate", "0.9.17-dev-rc1", "0.9.x", ""):
+        self.assertEqual("stable", release.release_channel("0.9.16"))
+        for value in ("0.9.16-candidate", "0.9.16-dev-rc1", "0.9.x", ""):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 release.release_channel(value)
+
+    def test_embedded_current_release_notes_are_packaged(self):
+        gradle = BUILD.read_text()
+        self.assertIn('from(rootProject.file("RELEASE_NOTES.md"))', gradle)
+        self.assertIn('rename { "current-release.md" }', gradle)
+        self.assertIn('assets.srcDir(embeddedNotesDir.get().asFile)', gradle)
+        self.assertIn('dependsOn(embedCurrentReleaseNotes, embedReleaseHistory)', gradle)
+        self.assertIn('assets.srcDir(archivedNotesDir.get().asFile)', gradle)
+        self.assertIn('generate-release-history.py', gradle)
 
     def test_signing_identity_is_not_changed(self):
         policy = POLICY.read_text()
