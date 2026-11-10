@@ -10,6 +10,7 @@ SCRIPT = ROOT / "scripts" / "prepare-update.py"
 BUILD = ROOT / "app" / "build.gradle.kts"
 POLICY = ROOT / "app" / "src" / "main" / "kotlin" / "io" / "github" / "lujinxin" / "nextep" / "config" / "UpdatePolicy.kt"
 NOTES = ROOT / "RELEASE_NOTES.md"
+MODULE = ROOT / "app" / "src" / "main" / "resources" / "META-INF" / "xposed" / "module.prop"
 spec = importlib.util.spec_from_file_location("atomic_prepare_update", SCRIPT)
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
@@ -26,21 +27,21 @@ class ReleaseContract(unittest.TestCase):
 
     def test_candidate_build_is_a_new_development_version(self):
         name, code = self.version()
-        self.assertEqual("0.9.15-dev", name)
-        self.assertGreater(code, 29)
+        self.assertEqual("0.9.16-dev", name)
+        self.assertGreater(code, 30)
         self.assertEqual("dev", release.release_channel(name))
 
     def test_app_updater_recognizes_dev_but_not_candidate_suffix(self):
         policy = POLICY.read_text()
         self.assertIn('enum class Channel { DEV, STABLE }', policy)
         self.assertIn('(-dev(?:-[A-Za-z0-9]+)?)?', policy)
-        self.assertEqual("dev", release.release_channel("0.9.15-dev"))
+        self.assertEqual("dev", release.release_channel("0.9.16-dev"))
         with self.assertRaises(ValueError):
             release.release_channel("0.9.15-candidate")
 
     def test_stable_release_is_not_labeled_development(self):
-        self.assertEqual("stable", release.release_channel("0.9.15"))
-        for value in ("0.9.15-candidate", "0.9.15-dev-rc1", "0.9.x", ""):
+        self.assertEqual("stable", release.release_channel("0.9.16"))
+        for value in ("0.9.16-candidate", "0.9.16-dev-rc1", "0.9.x", ""):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 release.release_channel(value)
 
@@ -49,6 +50,13 @@ class ReleaseContract(unittest.TestCase):
         self.assertIn(release.CERT, policy)
         self.assertIn("io.github.x647368maker.atomicworkbench", policy)
         self.assertIn("io.github.x647368maker.atomicworkbench", BUILD.read_text())
+
+    def test_xposed_metadata_matches_installed_app(self):
+        name, code = self.version()
+        fields = dict(line.split("=", 1) for line in MODULE.read_text().splitlines()
+                      if "=" in line and not line.lstrip().startswith("#"))
+        self.assertEqual(name, fields.get("version"))
+        self.assertEqual(str(code), fields.get("versionCode"))
 
     def test_notes_identify_same_unverified_candidate(self):
         name, code = self.version()

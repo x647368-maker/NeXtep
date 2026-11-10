@@ -1,0 +1,47 @@
+{
+  "purpose": "Precise reversible non-distorting tap-to-swap overlay and runtime marker changes; preserve existing stable geometry/task logic",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "baseline_sha256": "822133af657808c900204398aeb2e01e5910ac0c585f5a96d0f14d8fcd0be8b9",
+      "updated_sha256": "3707203bbc20e950805c2a0a0fda6b835853b7f51a7c7c9bbde2b27d4e7e88cc",
+      "patches": [
+        {
+          "before": "        canRelease: () -> Boolean = { true },\n        onFinished: () -> Unit,",
+          "after": "        canRelease: () -> Boolean = { true },\n        freezeGeometry: Boolean = false,\n        onFinished: () -> Unit,"
+        },
+        {
+          "before": "            sourceQuad, targetQuad)\n",
+          "after": "            sourceQuad, targetQuad, freezeGeometry)\n"
+        },
+        {
+          "before": "    private val sourceQuad: FloatArray?,\n    private val targetQuad: FloatArray?,\n) : View(context) {",
+          "after": "    private val sourceQuad: FloatArray?,\n    private val targetQuad: FloatArray?,\n    private val freezeGeometry: Boolean,\n) : View(context) {"
+        },
+        {
+          "before": "        stationaryBackground?.let { canvas.drawBitmap(it, null, sourceBounds, bitmapPaint) }\n        if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)\n        drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)\n    }\n\n    private fun drawFrame(",
+          "after": "        stationaryBackground?.let { canvas.drawBitmap(it, null, sourceBounds, bitmapPaint) }\n        if (freezeGeometry) {\n            // Tap-to-swap: keep both original window frames perfectly stationary.\n            // The real tasks migrate under the preview and appear only at handoff.\n            // Do not interpolate width, height or 3D quad for these live windows.\n            if (target != null) drawFixedFrame(canvas, target, targetBounds)\n            drawFixedFrame(canvas, source, sourceBounds)\n            return\n        }\n        if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)\n        drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)\n    }\n\n    private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {\n        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,\n            bounds.left, bounds.top, bounds.right, bounds.bottom)\n        destination.set(fit.left, fit.top, fit.right, fit.bottom)\n        outline.reset()\n        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n            bounds.width(), bounds.height(), resources.displayMetrics.density)\n        outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)\n        val save = canvas.save()\n        canvas.clipPath(outline)\n        canvas.drawColor(Color.BLACK)\n        // Uniform scale + letterbox. Never stretch video, faces or text.\n        canvas.drawBitmap(bitmap, null, destination, bitmapPaint)\n        canvas.restoreToCount(save)\n    }\n\n    private fun drawFrame("
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "baseline_sha256": "1cb62a5d3153f7cc73ceab882170ef7de0737425b1d35b1ff712e97208e2cf09",
+      "updated_sha256": "c2bda6b0b273616add5e804a2609292dec08e2bf53cce35431a95816e0c4b52b",
+      "patches": [
+        {
+          "before": "                canRelease = canRelease,\n                move = {",
+          "after": "                canRelease = canRelease,\n                // Tap swaps should change task ownership, never animate the\n                // physical outline or distort the screenshot as it crosses sizes.\n                freezeGeometry = drag == null,\n                move = {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt": {
+      "baseline_sha256": "a956348093c071b4c4d33ebc3ded7e6a6e3833cacd83872d5fb96f2ab1244618",
+      "updated_sha256": "e5f6d8e4c0846ff9c77ae932f3763e10478fd19ec15d1e878eded435004b6756",
+      "patches": [
+        {
+          "before": "    const val BUILD = \"0.9.15/30-phased-exchange\"",
+          "after": "    const val BUILD = \"0.9.16/31-fixed-geometry\""
+        }
+      ]
+    }
+  }
+}
