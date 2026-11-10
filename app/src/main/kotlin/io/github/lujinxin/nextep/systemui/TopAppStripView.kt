@@ -131,9 +131,9 @@ class TopAppStripView(
         nativeLandscapeTablet = enabled
         val row = getChildAt(0) ?: return
         val params = row.layoutParams as? FrameLayout.LayoutParams ?: return
-        params.topMargin = dp(if (enabled) 2 else 40)
-        params.leftMargin = dp(if (enabled) 64 else 8)
-        params.rightMargin = dp(if (enabled) 124 else 8)
+        params.topMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarTopDp(enabled))
+        params.leftMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarLeftDp(enabled))
+        params.rightMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarRightDp(enabled))
         row.layoutParams = params
         leftButton.contentDescription = if (enabled) "小窗排列在屏幕上方"
             else AppLanguage.string(context, R.string.window_side_left)
