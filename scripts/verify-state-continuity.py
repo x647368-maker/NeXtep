@@ -140,10 +140,25 @@ print('Full-source crop, shared margin snapshot and window-local chrome input bo
 reviewed_updater=json.loads((root/'scripts/reviewed-update-feed-0.9.16.json').read_text())['files']
 rekey_patches=json.loads((root/'scripts/reviewed-rekey-0.9.18.json').read_text())['files']
 assert set(rekey_patches)=={'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt'}
+reviewed_game=json.loads((root/'scripts/reviewed-game-scope-0.9.18.json').read_text())['files']
+reviewed_game_paths={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/FixedOrientationAspectRatioHooker.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/SizeCompatDisplayInsetsHooker.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/WorkspaceLandscapeRotationHooker.kt',
+}
+assert set(reviewed_game)==reviewed_game_paths
 frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
 assert set(reviewed_updater).issubset(set(frozen))
+assert reviewed_game_paths.issubset(set(frozen))
 for path,sha in frozen.items():
- if path in reviewed_updater:
+ if path in reviewed_game:
+  spec=reviewed_game[path]
+  assert sha==spec['original_sha256'],path
+  data=(root/path).read_bytes()
+  # The exact Git blob SHA-1 pins the reviewed hook's entire contents.
+  git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+  assert git_blob==spec['reviewed_blob_sha1'],path
+ elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
   data=(root/path).read_bytes()
