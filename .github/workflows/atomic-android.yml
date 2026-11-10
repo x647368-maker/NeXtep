@@ -58,6 +58,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for offline history archiving from committed notes.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -92,6 +94,8 @@ jobs:
           echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
       - name: Verify candidate update/signature release contract
         run: python3 scripts/test-release-contract.py
+      - name: Verify changelog history parser
+        run: python3 scripts/generate-release-history.py --self-test
       - name: Check download retry classification
         run: python3 scripts/test-ci-retry.py
       - name: Check task continuity source boundaries
@@ -114,6 +118,8 @@ jobs:
           apk=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
           test -n "$apk"
           unzip -p "$apk" assets/current-release.md | cmp - RELEASE_NOTES.md
+          unzip -p "$apk" assets/release-history.json | python3 -c 'import json,sys; a=json.load(sys.stdin); assert a and all("version" in item and "notes" in item for item in a)'
+
       - name: Verify compiled launch resources and aliases
         run: python3 scripts/verify-startup-package.py --apk "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)" --aapt2 "$ANDROID_HOME/build-tools/36.0.0/aapt2"
       - name: Check independent APK identity and module entry
