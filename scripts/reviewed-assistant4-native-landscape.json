@@ -1,10 +1,10 @@
 {
-  "purpose": "Y700 native-landscape toolbar, horizontal rail and touch controls; exact reversible change proof against 0.9.17 frozen core",
+  "purpose": "Y700 native-landscape horizontal rail on ColorOS port (rotation 0-3); exact reversible patch against base 0.9.17 stable frozen source",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt": [
       {
         "before": "            val railThickness = (shortSide * 0.25f).roundToInt().coerceIn(gap + 1, shortSide - 1)",
-        "after": "            // A native-landscape tablet can afford a readable horizontal card row.\n            // Do not change phone or near-square foldable thicknesses.\n            val nativeTablet = landscape && displayRotation % 2 == 0 && shortSide >= 1300 &&\n                longSide.toFloat() / shortSide >= 1.45f\n            val railThickness = (shortSide * if (nativeTablet) 0.33f else 0.25f)\n                .roundToInt().coerceIn(gap + 1, shortSide - 1)"
+        "after": "            // A native-landscape tablet can afford a readable horizontal card row.\n            // Do not change phone or near-square foldable thicknesses.\n            val nativeTablet = StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)\n            val railThickness = (shortSide * if (nativeTablet) 0.33f else 0.25f)\n                .roundToInt().coerceIn(gap + 1, shortSide - 1)"
       },
       {
         "before": "        (regionWidth - contentWidth + if (!railAtTop && isLandscape && !isControlOnLeft) 1 else 0) / 2",
@@ -43,12 +43,26 @@
         "after": "    val controlWidth: Int get() = if (isLandscape && !railAtTop && !isNativeLandscapeRail) topHeight else availableWidth\n    val controlHeight: Int get() = if (isLandscape && !railAtTop && !isNativeLandscapeRail) availableHeight else topHeight\n    val controlLeft: Int get() = if (isLandscape && !railAtTop && !isNativeLandscapeRail && !isControlOnLeft) availableRight - topHeight else availableLeft"
       },
       {
+        "before": "        SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)",
+        "after": "        if (isNativeLandscapeRail) sidebarSide == SidebarSide.LEFT\n        else SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)"
+      },
+      {
         "before": "    val panelRotationDegrees: Float get() = if (railAtTop || !isLandscape) 0f else if (isControlOnLeft) -90f else 90f",
         "after": "    val panelRotationDegrees: Float get() = if (railAtTop || !isLandscape || isNativeLandscapeRail) 0f else if (isControlOnLeft) -90f else 90f"
       },
       {
         "before": "    val isLandscape: Boolean get() = screenWidth > screenHeight",
-        "after": "    val isLandscape: Boolean get() = screenWidth > screenHeight\n    /**\n     * A wide, high-resolution display whose rotation 0/2 is landscape has the\n     * natural axes of a tablet, not a phone rotated 90 degrees. Use a native\n     * horizontal rail here; keep near-square foldables and compact phones on\n     * their verified legacy geometry. No manufacturer/ROM identity is involved.\n     *\n     * Use only display pixels/rotation because this geometry crosses SystemUI\n     * and system_server through the existing recorded v18 wire format.\n     */\n    val isNativeLandscapeRail: Boolean get() = !railAtTop && isLandscape &&\n        displayRotation % 2 == 0 && minOf(screenWidth, screenHeight) >= 1300 &&\n        maxOf(screenWidth, screenHeight).toFloat() / minOf(screenWidth, screenHeight) >= 1.45f"
+        "after": "    val isLandscape: Boolean get() = screenWidth > screenHeight\n    /**\n     * A wide, high-resolution display may report rotation 0/2 or 1/3 under\n     * a ported phone ROM. Use the physical wide canvas to choose a native\n     * horizontal rail here; keep near-square foldables and compact phones on\n     * their verified legacy geometry. No manufacturer/ROM identity is involved.\n     *\n     * Use only display pixels/rotation because this geometry crosses SystemUI\n     * and system_server through the existing recorded v18 wire format.\n     */\n    val isNativeLandscapeRail: Boolean get() =\n        !railAtTop && StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt": [
+      {
+        "before": "        return Choice(!expanded(width,height,dpi),SidebarSide.LEFT)",
+        "after": "        // A rooted tablet port may inflate DPI so that a true 2560x1600\n        // landscape tablet incorrectly appears \"compact\" in dp. Start it in\n        // the native horizontal top/bottom rail, but keep saved choices.\n        return Choice(!expanded(width,height,dpi) && !wideLandscapeTablet(width,height),SidebarSide.LEFT)"
+      },
+      {
+        "before": "    }\n    fun expanded(width: Int, height: Int, dpi: Int): Boolean {",
+        "after": "    }\n    /** The ROM can report rotation 0 or 1 for the same native-landscape\n     * Lenovo panel. Use the *physical* wide canvas, never its spoofed model\n     * name or the Android orientation enum. Compact phones and near-square\n     * foldables do not qualify.\n     */\n    fun wideLandscapeTablet(width: Int, height: Int): Boolean =\n        width > height && height >= 1300 && width.toFloat() / height >= 1.45f\n\n    fun expanded(width: Int, height: Int, dpi: Int): Boolean {"
       }
     ],
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt": [
@@ -68,55 +82,11 @@
       },
       {
         "before": "            \"左侧排列\" to { changeStageLayout(false,SidebarSide.LEFT) },\n            \"右侧排列\" to { changeStageLayout(false,SidebarSide.RIGHT) },",
-        "after": "            (if (geometry().isNativeLandscapeRail) \"小窗排列在上方\" else \"左侧排列\") to { changeStageLayout(false,SidebarSide.LEFT) },\n            (if (geometry().isNativeLandscapeRail) \"小窗排列在下方\" else \"右侧排列\") to { changeStageLayout(false,SidebarSide.RIGHT) },"
+        "after": "            (if (nativeTablet) \"小窗排列在上方\" else \"左侧排列\") to { changeStageLayout(false,SidebarSide.LEFT) },\n            (if (nativeTablet) \"小窗排列在下方\" else \"右侧排列\") to { changeStageLayout(false,SidebarSide.RIGHT) },"
       },
       {
-        "before": "        if (refreshControls) {\n            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)",
-        "after": "        if (refreshControls) {\n            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)"
-      },
-      {
-        "before": "        cancelDragVisuals()\n        records.forEach { record ->",
-        "after": "        cancelDragVisuals()\n        // Pixel-based, scoped to this display; original phone/fold UI stays frozen.\n        topAppStrip?.setNativeLandscapeTablet(geometry.isNativeLandscapeRail)\n        records.forEach { record ->"
-      },
-      {
-        "before": "            controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft, refreshHost = false)",
-        "after": "            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false, nativeStatusSafe = geometry.isNativeLandscapeRail)"
-      },
-      {
-        "before": "                controlAreaPager?.setLandscape(geometry.isLandscape, geometry.isControlOnLeft)",
-        "after": "                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)"
-      }
-    ],
-    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/TopAppStripView.kt": [
-      {
-        "before": "        leftButton.contentDescription = AppLanguage.string(context, R.string.window_side_left)\n        rightButton.contentDescription = AppLanguage.string(context, R.string.window_side_right)",
-        "after": "        leftButton.contentDescription = if (nativeLandscapeTablet) \"小窗排列在屏幕上方\"\n            else AppLanguage.string(context, R.string.window_side_left)\n        rightButton.contentDescription = if (nativeLandscapeTablet) \"小窗排列在屏幕下方\"\n            else AppLanguage.string(context, R.string.window_side_right)"
-      },
-      {
-        "before": "                    \"侧栏放左边\" to { onSidebarSideRequested(SidebarSide.LEFT) },\n                    \"侧栏放右边\" to { onSidebarSideRequested(SidebarSide.RIGHT) },",
-        "after": "                    (if (nativeLandscapeTablet) \"小窗排列在上方\" else \"侧栏放左边\") to { onSidebarSideRequested(SidebarSide.LEFT) },\n                    (if (nativeLandscapeTablet) \"小窗排列在下方\" else \"侧栏放右边\") to { onSidebarSideRequested(SidebarSide.RIGHT) },"
-      },
-      {
-        "before": "    private var sidebarSide = initialSidebarSide",
-        "after": "    private var sidebarSide = initialSidebarSide\n    private var nativeLandscapeTablet = false\n\n    /** A tablet toolbar already starts below the system status inset.\n     * Keep the 52dp control row wholly inside its 56dp frame, while leaving\n     * separate corner targets for the main handle, quick bar and rail handle.\n     * All phone and folded-device coordinates remain unchanged.\n     */\n    fun setNativeLandscapeTablet(enabled: Boolean) {\n        if (nativeLandscapeTablet == enabled) return\n        nativeLandscapeTablet = enabled\n        val row = getChildAt(0) ?: return\n        val params = row.layoutParams as? FrameLayout.LayoutParams ?: return\n        params.topMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarTopDp(enabled))\n        params.leftMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarLeftDp(enabled))\n        params.rightMargin = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.toolbarRightDp(enabled))\n        row.layoutParams = params\n        leftButton.contentDescription = if (enabled) \"小窗排列在屏幕上方\"\n            else AppLanguage.string(context, R.string.window_side_left)\n        rightButton.contentDescription = if (enabled) \"小窗排列在屏幕下方\"\n            else AppLanguage.string(context, R.string.window_side_right)\n        requestLayout()\n    }"
-      }
-    ],
-    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/ControlAreaPager.kt": [
-      {
-        "before": "                    val status = dp(WorkspaceControlMetrics.STATUS_HEIGHT_DP.toFloat()).toInt().coerceIn(0, height)",
-        "after": "                    val status = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.localStatusExclusionDp(nativeStatusSafe).toFloat())\n                        .toInt().coerceIn(0, height)"
-      },
-      {
-        "before": "        controlOnLeft = isControlOnLeft",
-        "after": "        controlOnLeft = isControlOnLeft\n        this.nativeStatusSafe = nativeStatusSafe"
-      },
-      {
-        "before": "    fun setLandscape(value: Boolean, isControlOnLeft: Boolean, refreshHost: Boolean = true) {\n        if (landscape == value && controlOnLeft == isControlOnLeft) return",
-        "after": "    fun setLandscape(value: Boolean, isControlOnLeft: Boolean, refreshHost: Boolean = true,\n        nativeStatusSafe: Boolean = false) {\n        if (landscape == value && controlOnLeft == isControlOnLeft &&\n            this.nativeStatusSafe == nativeStatusSafe) return"
-      },
-      {
-        "before": "    private var controlOnLeft = false",
-        "after": "    private var controlOnLeft = false\n    // Native tablet top controls begin *below* WindowInsets.statusBars;\n    // do not subtract the old phone status band a second time from touches.\n    private var nativeStatusSafe = false"
+        "before": "        val anchor = records.firstOrNull { it.title == \"StageMainHandle\" }?.view ?: return",
+        "after": "        val anchor = records.firstOrNull { it.title == \"StageMainHandle\" }?.view ?: return\n        val current = geometry()\n        val nativeTablet = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n            .wideLandscapeTablet(current.screenWidth, current.screenHeight)"
       }
     ]
   }
