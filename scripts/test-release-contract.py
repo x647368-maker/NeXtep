@@ -49,7 +49,7 @@ class ReleaseContract(unittest.TestCase):
         gradle = BUILD.read_text()
         self.assertIn('from(rootProject.file("RELEASE_NOTES.md"))', gradle)
         self.assertIn('rename { "current-release.md" }', gradle)
-        self.assertIn('assets.srcDir(embeddedNotesDir)', gradle)
+        self.assertIn('assets.srcDir(embeddedNotesDir.get().asFile)', gradle)
         self.assertIn('dependsOn(embedCurrentReleaseNotes)', gradle)
 
     def test_signing_identity_is_not_changed(self):
