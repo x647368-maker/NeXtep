@@ -2,8 +2,24 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+
+// Single authoritative release note for each build; generated into build/ and
+// packaged as an asset, never written back into the source tree.
+val embeddedNotesDir = layout.buildDirectory.dir("generated/atomic-release-assets")
+val embedCurrentReleaseNotes by tasks.registering(Copy::class) {
+    from(rootProject.file("RELEASE_NOTES.md"))
+    into(embeddedNotesDir)
+    rename { "current-release.md" }
+}
+
+// Android's asset merger must finish the Copy task before reading generated assets.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(embedCurrentReleaseNotes)
+}
+
 android {
     namespace = "io.github.x647368maker.atomicworkbench"
+    sourceSets.getByName("main").assets.srcDir(embeddedNotesDir)
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
