@@ -39,7 +39,7 @@ internal object UpdateSection {
                     activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),72)
             }
         })
-        val status=label("首次开启后，启动 App 时按频率检查；不是实时推送。拒绝通知仍可在应用内查看。仅接收本项目校验完整的正式发布。")
+        val status=label("默认开启低频检查（正常每12小时一次），可手动关闭；仅打开 App 时检查，不常驻后台。即使拒绝通知仍可在应用内查看更新。")
         root.addView(status)
         var release=UpdateCoordinator.available(activity)
         var disposed=false

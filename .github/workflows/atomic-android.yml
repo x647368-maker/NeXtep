@@ -96,6 +96,8 @@ jobs:
         run: python3 scripts/test-release-contract.py
       - name: Verify changelog history parser
         run: python3 scripts/generate-release-history.py --self-test
+      - name: Verify online feed fallback and publisher contract
+        run: python3 scripts/test-update-feed.py
       - name: Check download retry classification
         run: python3 scripts/test-ci-retry.py
       - name: Check task continuity source boundaries

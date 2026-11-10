@@ -137,8 +137,16 @@ assert 'StageWindowTouchRegion.add' in (k/'systemui/StageQuickBarView.kt').read_
 print('Full-source crop, shared margin snapshot and window-local chrome input boundaries checked')
 
 # All stable runtime files except the approved shade/menu/version UI files remain exact.
-for path,sha in json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text()).items():
- assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
+reviewed_updater=json.loads((root/'scripts/reviewed-update-feed-0.9.16.json').read_text())['files']
+frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
+assert set(reviewed_updater).issubset(set(frozen))
+for path,sha in frozen.items():
+ if path in reviewed_updater:
+  spec=reviewed_updater[path]
+  assert sha==spec['original_sha256'],path
+  assert hashlib.sha256((root/path).read_bytes()).hexdigest()==spec['updated_sha256'],path
+ else:
+  assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
 shade=(k/'systemui/SystemUiRootTransformController.kt').read_text()
 shade_input=(k/'systemui/SystemUiShadeInputController.kt').read_text()
 assert 'contentScale' not in shade and 'view.scaleX =' not in shade

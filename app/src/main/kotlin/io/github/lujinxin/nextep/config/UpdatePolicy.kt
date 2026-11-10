@@ -32,7 +32,10 @@ internal object UpdatePolicy {
     fun secure(address: String): String {
         val u = URI(address)
         require(u.scheme == "https" && u.userInfo == null && u.fragment == null && (u.port == -1 || u.port == 443)) { "更新仅支持安全 HTTPS" }
-        require(u.host in setOf("github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com")) { "更新来源不受信任" }
+        require(u.host in setOf("github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "raw.githubusercontent.com")) { "更新来源不受信任" }
+        if (u.host == "raw.githubusercontent.com") {
+            require(u.path.startsWith("/x647368-maker/NeXtep/atomic-update-feed/") && ".." !in u.path.split('/')) { "不是本项目更新索引" }
+        }
         return address
     }
     fun asset(address: String): String {
