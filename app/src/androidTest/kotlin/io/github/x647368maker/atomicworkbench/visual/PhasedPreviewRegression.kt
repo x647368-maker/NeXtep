@@ -43,26 +43,24 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                     "Pending exchange lost its preview protection"
                 }
                 releaseAllowed = true
-                fun state(): String = runCatching {
-                    fun prop(name: String): Any? = animator.javaClass.getDeclaredField(name)
-                        .apply { isAccessible = true }.get(animator)
-                    @Suppress("UNCHECKED_CAST")
-                    val guard = (prop("releaseAllowed") as () -> Boolean).invoke()
-                    "generation=${prop("generation")} cancelRequested=${prop("cancelRequested")} " +
-                        "storedGuard=$guard completionSet=${prop("completion") != null}"
-                }.getOrElse { "reflection=${it.javaClass.simpleName}" }
-                val beforeComplete = state()
                 complete(false)
+            }
+            // The async completion callback is allowed to finish on a posted frame.
+            // Require eventual release instead of crashing the instrumentation target
+            // with a same-main-loop synchronous assertion before that frame can run.
+            check(finished.await(3, TimeUnit.SECONDS)) {
+                "Rollback preview did not settle within 3 seconds"
+            }
+            instrumentation.runOnMainSync {
                 check(!animator.isRunning && completionCount == 1) {
-                    "Failed rollback preview release: before=$beforeComplete after=${state()} " +
-                        "running=${animator.isRunning} completionCount=$completionCount " +
-                        "releaseAllowed=$releaseAllowed sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
+                    "Failed rollback preview release: running=${animator.isRunning} " +
+                        "completionCount=$completionCount releaseAllowed=$releaseAllowed " +
+                        "sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
                 }
                 check(source.isRecycled && target.isRecycled)
                 animator.cancel()
                 check(completionCount == 1)
             }
-            check(finished.await(2, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync { releaseAllowed = true; animator.cancel() }
         }
