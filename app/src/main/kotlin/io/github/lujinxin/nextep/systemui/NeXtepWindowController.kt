@@ -278,7 +278,7 @@ class NeXtepWindowController(
                 NeXtepLog.warn("workspace_unlock", "Top controls resume pending", it)
             }
             runCatching {
-                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft)
+                controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)
                 controlAreaPager?.setWorkspaceState(workspaceVisible, locked = false)
                 controlAreaPager?.refreshHost()
             }.onFailure {
@@ -496,7 +496,7 @@ class NeXtepWindowController(
             // Only project the existing windows into the new display coordinates.
             // Their logical content, slot buffers and wallpaper frame stay intact.
             backdropGeneration.incrementAndGet()
-            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false)
+            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, refreshHost = false, nativeStatusSafe = geometry.isNativeLandscapeRail)
         } else {
             sidebarView?.let { applySlotLayout(it, geometry) }
             slotCoordinator?.onTasksChanged()
@@ -796,13 +796,15 @@ class NeXtepWindowController(
 
     private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {
         cancelDragVisuals()
+        // Pixel-based, scoped to this display; original phone/fold UI stays frozen.
+        topAppStrip?.setNativeLandscapeTablet(geometry.isNativeLandscapeRail)
         records.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry)
             windowManager.updateViewLayout(record.view, params)
         }
         if (refreshControls) {
-            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft)
+            controlAreaPager?.setLandscape(geometry.isLandscape && !geometry.isNativeLandscapeRail, geometry.isControlOnLeft, nativeStatusSafe = geometry.isNativeLandscapeRail)
             controlAreaPager?.refreshHost()
         }
     }
@@ -1191,8 +1193,8 @@ class NeXtepWindowController(
         AtomicPopupMenu.show(context, anchor, listOf(
             "切换全屏（保留工作区）" to { onExitRequested() },
             "顶部横排" to { changeStageLayout(true) },
-            "左侧排列" to { changeStageLayout(false,SidebarSide.LEFT) },
-            "右侧排列" to { changeStageLayout(false,SidebarSide.RIGHT) },
+            (if (geometry().isNativeLandscapeRail) "小窗排列在上方" else "左侧排列") to { changeStageLayout(false,SidebarSide.LEFT) },
+            (if (geometry().isNativeLandscapeRail) "小窗排列在下方" else "右侧排列") to { changeStageLayout(false,SidebarSide.RIGHT) },
             (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
