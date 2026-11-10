@@ -35,6 +35,17 @@ class StageEmbeddedReleaseNotesTest {
         assertNull(StageEmbeddedReleaseNotes.parse("0.9.16-dev", 31, "0.9.16-dev 31 " + "A".repeat(32769)))
     }
 
+    @Test fun archivedBuildNotesRemainAvailableWithoutInstalledVersion() {
+        val archived = StageEmbeddedReleaseNotes.archived(
+            "0.9.17-dev", "台前调度 0.9.17-dev / 32\\n\\n新增稳定性测试，真机待验收。"
+        )
+        assertNotNull(archived)
+        assertEquals("0.9.17-dev", archived!!.version)
+        assertTrue(archived.status.contains("历史"))
+        assertTrue(archived.caution.contains("不能代表"))
+        assertNull(StageEmbeddedReleaseNotes.archived("0.9.18-dev", "台前调度 0.9.17-dev / 32"))
+    }
+
     @Test fun stableBuildCannotBeMislabeledAsDevelopment() {
         val stable = StageEmbeddedReleaseNotes.parse("0.9.16", 31, "台前调度 0.9.16 / 31 发布说明\n\n支持更新日志。")
         assertNotNull(stable)
