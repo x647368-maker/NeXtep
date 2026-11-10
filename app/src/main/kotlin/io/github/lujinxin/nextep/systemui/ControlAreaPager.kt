@@ -80,9 +80,6 @@ internal class ControlAreaPager(context: Context, private val functions: TopAppS
     private var velocity: VelocityTracker? = null
     private var landscape = false
     private var controlOnLeft = false
-    // Native tablet top controls begin *below* WindowInsets.statusBars;
-    // do not subtract the old phone status band a second time from touches.
-    private var nativeStatusSafe = false
     private var insetsListener: Any? = null
     private var insetsObserver: ViewTreeObserver? = null
 
@@ -103,13 +100,10 @@ internal class ControlAreaPager(context: Context, private val functions: TopAppS
         updatePagePositions()
     }
 
-    fun setLandscape(value: Boolean, isControlOnLeft: Boolean, refreshHost: Boolean = true,
-        nativeStatusSafe: Boolean = false) {
-        if (landscape == value && controlOnLeft == isControlOnLeft &&
-            this.nativeStatusSafe == nativeStatusSafe) return
+    fun setLandscape(value: Boolean, isControlOnLeft: Boolean, refreshHost: Boolean = true) {
+        if (landscape == value && controlOnLeft == isControlOnLeft) return
         landscape = value
         controlOnLeft = isControlOnLeft
-        this.nativeStatusSafe = nativeStatusSafe
         if (refreshHost) video.refreshHost()
         requestLayout()
     }
@@ -349,8 +343,7 @@ internal class ControlAreaPager(context: Context, private val functions: TopAppS
                     info.javaClass.getMethod("setTouchableInsets", Int::class.javaPrimitiveType)
                         .invoke(info, TOUCHABLE_INSETS_REGION)
                     val region = info.javaClass.getField("touchableRegion").get(info) as Region
-                    val status = dp(io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeTabletChrome.localStatusExclusionDp(nativeStatusSafe).toFloat())
-                        .toInt().coerceIn(0, height)
+                    val status = dp(WorkspaceControlMetrics.STATUS_HEIGHT_DP.toFloat()).toInt().coerceIn(0, height)
                     if (landscape) {
                         // Keep the existing physical-top status band mapping after subtree rotation.
                         if (controlOnLeft) region.set(status, 0, height, width)
