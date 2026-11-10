@@ -19,3 +19,9 @@ kotlinc \
   -classpath "$TMP/stubs" -include-runtime -d "$TMP/tests.jar"
 javac -classpath "$TMP/stubs:$TMP/tests.jar" -d "$TMP/runner" "$ROOT/scripts/test-support/TestRunner.java"
 java -classpath "$TMP/stubs:$TMP/tests.jar:$TMP/runner" TestRunner
+
+kotlinc \
+  "$ROOT/app/src/main/kotlin/io/github/lujinxin/nextep/display/ExchangeSession.kt" \
+  "$ROOT/scripts/test-support/ExchangeSessionStress.kt" \
+  -include-runtime -d "$TMP/stress.jar"
+java -jar "$TMP/stress.jar"
