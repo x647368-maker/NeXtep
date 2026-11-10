@@ -1618,7 +1618,18 @@ class SlotTaskCoordinator(
                 }
 
                 override fun restoreAndVerify() {
-                    if (!mutationStarted) return
+                    if (!mutationStarted) {
+                        // Cancellation before our first Binder mutation is not proof that
+                        // another actor has left both tasks at the captured origins.
+                        val untouched = taskRepository.runningTasks()
+                        check(slots[slotIndex].displayId() == occupied.displayId &&
+                            current(slotTask, untouched).displayId == occupied.displayId &&
+                            current(mainTask, untouched).displayId == Display.DEFAULT_DISPLAY &&
+                            untouched.firstOrNull { it.displayId == occupied.displayId }?.taskId == slotTask.taskId &&
+                            untouched.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == mainTask.taskId
+                        ) { "Exchange origins changed before promotion; keep display reserved" }
+                        return
+                    }
                     fun remaining(expected: TaskRepository.TaskSnapshot): TaskRepository.TaskSnapshot? {
                         val live = taskRepository.findTask(expected.taskId)
                         if (live != null) {
