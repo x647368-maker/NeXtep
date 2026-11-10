@@ -200,6 +200,7 @@ class WorkspaceController(
     private fun exit(): Boolean {
         if (state is WorkspaceState.Disabled) return true
         if (state is WorkspaceState.Entering || state is WorkspaceState.Exiting) return false
+        if (windowController.deferExchangeExit { exit() }) return true
         state = WorkspaceState.Exiting
         return try {
             SystemServerWorkspaceBridge.publish(applicationContext, false)

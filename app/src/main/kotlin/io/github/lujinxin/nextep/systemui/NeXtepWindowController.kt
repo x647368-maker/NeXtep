@@ -1521,6 +1521,11 @@ class NeXtepWindowController(
                 geometryProvider = ::geometry,
                 onSwapAnimation = ::animateDragSwap,
                 onMainSlotAnimation = ::animateMainSlotSwap,
+                onPhasedMainSlotAnimation = { index, move, canRelease, finished ->
+                    phasedMove = move
+                    phasedCanRelease = canRelease
+                    animateMainSlotSwap(index, { true }, finished)
+                },
                 onInternalSlotDrag = { source, drag ->
                     internalDrag.start(source, WorkspaceInternalDragController.Payload.Slot(drag))
                 },
@@ -1582,6 +1587,12 @@ class NeXtepWindowController(
         }
     }
 
+    private var phasedMove: ((((Boolean) -> Unit) -> Unit))? = null
+    private var phasedCanRelease: (() -> Boolean)? = null
+
+    fun deferExchangeExit(action: () -> Unit): Boolean =
+        slotCoordinator?.deferUntilExchangeSettled(action) == true
+
     private fun animateMainSlotSwap(slotIndex: Int, move: () -> Boolean, onFinished: () -> Unit) {
         animateSwap(slotIndex, null, null, move, onFinished)
     }
@@ -1623,7 +1634,11 @@ class NeXtepWindowController(
     ) {
         fun withoutPreview() {
             if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()
-            try { move() } finally { onFinished(); scheduleStageFocus() }
+            val asynchronous = phasedMove
+            phasedMove = null
+            phasedCanRelease = null
+            if (asynchronous != null) asynchronous { onFinished(); scheduleStageFocus() }
+            else try { move() } finally { onFinished(); scheduleStageFocus() }
         }
         if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             withoutPreview()
@@ -1706,6 +1721,16 @@ class NeXtepWindowController(
                 returningHome = parkingMain,
                 sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),
                 targetQuad = if (parkingMain) sourceSlot.view.screenQuad() else targetSlot?.view?.screenQuad(),
+                moveAsync = phasedMove?.let { startMove ->
+                    { done: (Boolean) -> Unit ->
+                        startMove { success ->
+                            sourceFrame = sourceSlot.contentFrameSequence
+                            targetFrame = targetSlot?.contentFrameSequence ?: 0L
+                            done(success)
+                        }
+                    }
+                }.also { phasedMove = null },
+                canRelease = phasedCanRelease.also { phasedCanRelease = null } ?: { true },
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.
