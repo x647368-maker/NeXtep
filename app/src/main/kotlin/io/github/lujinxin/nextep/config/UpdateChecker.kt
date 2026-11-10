@@ -9,6 +9,16 @@ import java.io.IOException
  * This avoids shared-IP API rate limits (HTTP 403) on client devices.
  * Every offered APK still goes through the fixed package, signer, size and digest checks.
  */
+/**
+ * An empty or irrelevant feed is not evidence that the installed app is current.
+ * Keep this decision pure so we can exercise the failover without network calls.
+ */
+internal object UpdateFeedAuthority {
+    fun validSize(total: Int) = total in 1..40
+    fun hasApplicableRecords(total: Int, applicable: Int) =
+        validSize(total) && applicable in 1..total
+}
+
 internal object UpdateChecker {
     const val RELEASES_URL = UpdatePolicy.REPO + "/releases"
     const val FEED_URL = "https://raw.githubusercontent.com/x647368-maker/NeXtep/atomic-update-feed/index.json"
