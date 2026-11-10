@@ -12,14 +12,25 @@ val embedCurrentReleaseNotes by tasks.registering(Copy::class) {
     rename { "current-release.md" }
 }
 
+// Older version notes are recovered from git history at build time and archived
+// in a second small asset. In source-only ZIPs, the generator keeps current notes.
+val archivedNotesDir = layout.buildDirectory.dir("generated/atomic-history-assets")
+val embedReleaseHistory by tasks.registering(Exec::class) {
+    commandLine("python3", rootProject.file("scripts/generate-release-history.py").absolutePath,
+        "--output", archivedNotesDir.get().file("release-history.json").asFile.absolutePath)
+    inputs.file(rootProject.file("RELEASE_NOTES.md"))
+    outputs.file(archivedNotesDir.get().file("release-history.json").asFile)
+}
+
 // Android's asset merger must finish the Copy task before reading generated assets.
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
-    dependsOn(embedCurrentReleaseNotes)
+    dependsOn(embedCurrentReleaseNotes, embedReleaseHistory)
 }
 
 android {
     namespace = "io.github.x647368maker.atomicworkbench"
     sourceSets.getByName("main").assets.srcDir(embeddedNotesDir.get().asFile)
+    sourceSets.getByName("main").assets.srcDir(archivedNotesDir.get().asFile)
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
