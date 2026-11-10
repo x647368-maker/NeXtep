@@ -16,7 +16,7 @@ class StageFixedFrameGeometryTest {
             intArrayOf(1080,2400,1272,2772,0,0),
         )
         for (v in shapes) {
-            val (bw,bh,fw,fh,ox,oy) = v.toList()
+            val bw = v[0]; val bh = v[1]; val fw = v[2]; val fh = v[3]; val ox = v[4]; val oy = v[5]
             val fit = StageFixedFrameGeometry.fit(bw,bh,ox.toFloat(),oy.toFloat(),(ox+fw).toFloat(),(oy+fh).toFloat())
             assertEquals(fit.width/bw, fit.height/bh, 0.001f)
             assertTrue(fit.left >= ox - .001f && fit.right <= ox + fw + .001f)
