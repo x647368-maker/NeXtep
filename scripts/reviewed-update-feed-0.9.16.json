@@ -1,5 +1,5 @@
 {
-  "scope": "Only update discovery and HTTPS transport were deliberately reviewed. No task, SystemUI, input, layout, rendering or saved-workgroup source was changed.",
+  "scope": "Exactly five updater-only sources reviewed: discovery, URL policy, transport, default-on scheduling and updater settings UI. Task/SystemUI/geometry/rendering/workgroups untouched.",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt": {
       "original_sha256": "b2be0903c650e61c1171e584954253e62672473843eb7a1c2a4b9ff542cb4565",
@@ -12,6 +12,14 @@
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateTransport.kt": {
       "original_sha256": "220093868bbfa13da6bdbcbef7685b19747607f21a403b20673ad52871917ce7",
       "updated_sha256": "686c3cec57cb64350941d5aa242d5fe1ec1653383cb8511bd107bb8fdfcb3290"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateCoordinator.kt": {
+      "original_sha256": "1d00c6ff05dc9b4d8ee2fa1c0a6e7ddea6118cc4e6d8d8d7974abaae4dad703b",
+      "updated_sha256": "391b1a80d2259cb6afbc263eef30afc5c0f83b7989d3a8cb6767764f9b166191"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt": {
+      "original_sha256": "bceb5af636e1891fa12c5e5f66831f5c66bba16e2001c8665961a6815c2732db",
+      "updated_sha256": "79925d4bd26ab13d87e4036edbca75d1dbd92852d8b167d474f8c3bd193d6f93"
     }
   }
 }
