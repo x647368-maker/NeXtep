@@ -16,6 +16,7 @@ class ExchangeSessionTest {
         var failPromotionAfterMove = false
         var failRestore = false
         var disappear = false
+        var failCompletion = false
         val session = ExchangeSession(
             3, 100L,
             ExchangeSession.Origin(11, 0, "main token", 0, "main layout"),
@@ -43,7 +44,7 @@ class ExchangeSessionTest {
                     slotDisplay = 7
                 }
             },
-            { completions++; result = it },
+            { completions++; result = it; if (failCompletion) error("UI completion failed") },
         )
         fun tick() = queue.removeFirst().invoke()
         fun drain() { repeat(8) { if (queue.isNotEmpty()) tick() }; check(queue.isEmpty()) }
@@ -148,6 +149,19 @@ class ExchangeSessionTest {
         assertEquals(1, f.promotions)
         assertEquals(1, f.completions)
         assertEquals(false, f.result)
+    }
+
+    @Test fun completionFailureDoesNotCrashOrRepeatMigrations() {
+        val f = Fixture()
+        f.failCompletion = true
+        f.session.start(); f.drain()
+        assertEquals(ExchangeSession.Phase.COMMITTED, f.session.phase)
+        assertEquals(1, f.completions)
+        assertEquals(1, f.promotions)
+        assertEquals(7, f.mainDisplay)
+        assertTrue(f.session.failure != null)
+        f.session.start(); f.session.cancel(); f.drain()
+        assertEquals(1, f.completions)
     }
 
     @Test fun completionCannotBeNotifiedTwice() {
