@@ -943,6 +943,11 @@ class NeXtepWindowController(
         params.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         params.gravity = Gravity.TOP or Gravity.LEFT
+        if (record.title == "StageMainHandle") {
+            (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(
+                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                    .wideTablet(geometry.screenWidth, geometry.screenHeight))
+        }
         setWindowBounds(record.title, params, geometry)
         if (record.title == "NeXtepTopBar") renderQuickChrome()
         if (record.title == "AtomicSidebarHandle") (record.view as? android.widget.TextView)?.apply {
@@ -995,9 +1000,6 @@ class NeXtepWindowController(
         val geometry = requested
         when (title) {
             "StageMainHandle" -> {
-                (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(
-                    io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
-                        .wideTablet(geometry.screenWidth, geometry.screenHeight))
                 val box=io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.mainHandle(geometry,context.resources.displayMetrics.density)
                 params.width=box.width;params.height=box.height;params.x=box.left;params.y=box.top
             }
