@@ -39,6 +39,27 @@ internal object StageSparseRailReflowPolicy {
             !StageDisplayPolicy.unfoldedNearSquare(now.screenWidth, now.screenHeight)
 
     /**
+     * Capture the real on-screen rectangle of a card *before* cancelling a
+     * running compositor animation. On rapid 2->3->4 changes the nominal old
+     * layout is not the same as the card's rendered position.
+     *
+     * This math does not alter the virtual-display producer, the live buffer,
+     * touch mapping or the underlying View layout.
+     */
+    fun visibleBounds(layout: Bounds, scaleX: Float, scaleY: Float,
+        offsetX: Float, offsetY: Float): Bounds? {
+        if (!layout.valid() ||
+            !listOf(scaleX, scaleY, offsetX, offsetY).all { it.isFinite() } ||
+            scaleX <= 0f || scaleY <= 0f || abs(scaleX - scaleY) > .045f) return null
+        val visibleWidth = layout.width * scaleX
+        val visibleHeight = layout.height * scaleY
+        val centerX = layout.cx + offsetX
+        val centerY = layout.cy + offsetY
+        return Bounds(centerX - visibleWidth / 2f, centerY - visibleHeight / 2f,
+            visibleWidth, visibleHeight).takeIf { it.valid() }
+    }
+
+    /**
      * Existing cards retain their exact screen-space centres at frame zero.
      * A single scale always applies to X and Y, avoiding stretch/distortion.
      * Additions fade in at the final location, never slide over menu/add.
