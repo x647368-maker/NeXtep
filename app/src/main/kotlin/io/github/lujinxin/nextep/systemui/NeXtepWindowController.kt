@@ -421,8 +421,16 @@ class NeXtepWindowController(
     /** Called while the native app is still foreground, before opening diagnostics. */
     private fun observeN5ParallelForeground() {
         if (!workspaceVisible || suspended) return
+        // Skip Binder task queries on phone and native landscape tablet profiles.
+        // Only the near-square expanded physical canvas needs this diagnostic.
+        val g = currentGeometry()
+        val shortSide = minOf(g.screenWidth, g.screenHeight)
+        val dpi = context.resources.displayMetrics.densityDpi
+        if (shortSide <= 1 || dpi <= 0 ||
+            shortSide * 160f / dpi < 600f ||
+            maxOf(g.screenWidth, g.screenHeight).toFloat() / shortSide > 1.35f) return
+        if (SystemClock.uptimeMillis() - lastN5ParallelObservedMs < 800L) return
         val scene = runCatching { nativeParallelScene() }.getOrNull() ?: return
-        if (!StageNativeParallelDiagnostics.nearSquareExpanded(scene)) return
         val foreground = scene.tasks.firstOrNull { it.display == 0 } ?: return
         if (foreground.app == "com.android.systemui" ||
             foreground.app == "io.github.x647368maker.atomicworkbench") return
