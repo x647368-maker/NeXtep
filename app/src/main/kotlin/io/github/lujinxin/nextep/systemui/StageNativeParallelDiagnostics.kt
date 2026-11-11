@@ -14,6 +14,7 @@ internal object StageNativeParallelDiagnostics {
         val mode: Int,
         val vendorWindowed: Boolean,
         val bounds: String,
+        val activities: Int = -1,
     )
 
     data class Scene(
@@ -67,6 +68,7 @@ internal object StageNativeParallelDiagnostics {
             append(" mode=").append(task.mode)
             append(" oplusWindowed=").append(task.vendorWindowed)
             append(" bounds=").append(task.bounds)
+            append(" activities=").append(task.activities)
             append(" app=").append(task.app)
         }
         append("\nNOTE: ColorOS native parallel panes may still report fullscreen; this probe does not assume two panes were detected.")

@@ -625,6 +625,8 @@ class NeXtepWindowController(
     fun slotStatesDescription(): String {
         val g = currentGeometry()
         val tasks = runCatching { taskRepository.runningTasks() }.getOrDefault(emptyList())
+        val activityCounts = runCatching { context.getSystemService(android.app.ActivityManager::class.java)
+            ?.getRunningTasks(8).orEmpty().associate { it.taskId to it.numActivities } }.getOrDefault(emptyMap())
         val scene = StageNativeParallelDiagnostics.Scene(
             screenWidth = g.screenWidth,
             screenHeight = g.screenHeight,
@@ -646,6 +648,7 @@ class NeXtepWindowController(
                     mode = task.windowingMode,
                     vendorWindowed = task.vendorWindowed,
                     bounds = task.bounds.flattenToString(),
+                    activities = activityCounts[task.taskId] ?: -1,
                 )
             },
         )
