@@ -1,8 +1,6 @@
 package io.github.x647368maker.atomicworkbench.config
 
 import android.Manifest
-import android.app.NotificationManager
-import android.provider.Settings
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -43,31 +41,6 @@ internal object UpdateSection {
         })
         val status=label("默认开启低频检查（正常每12小时一次），可手动关闭；仅打开 App 时检查，不常驻后台。即使拒绝通知仍可在应用内查看更新。")
         root.addView(status)
-        // An available Release is required before any update notification can be sent.
-        // Distinguish OS permission/channel restrictions from an empty update feed.
-        val notifications=label("")
-        fun refreshNotificationStatus() {
-            val manager=activity.getSystemService(NotificationManager::class.java)
-            val permission=activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED
-            val enabled=manager?.areNotificationsEnabled()!=false
-            val channel=manager?.getNotificationChannel("atomic_updates")
-            val channelEnabled=channel?.importance!=NotificationManager.IMPORTANCE_NONE
-            notifications.text=when {
-                !permission || !enabled || !channelEnabled -> "更新通知：当前受系统权限或通知渠道限制；手动检查仍可使用。"
-                else -> "更新通知：系统允许（仅发现已发布、已验证的新版本时才提示）。"
-            }
-        }
-        refreshNotificationStatus()
-        root.addView(notifications)
-        root.addView(Button(activity).apply {
-            text="管理系统更新通知权限"
-            setOnClickListener {
-                runCatching {
-                    activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE,activity.packageName))
-                }.onFailure {Toast.makeText(activity,"无法打开系统通知设置",Toast.LENGTH_SHORT).show()}
-            }
-        },LinearLayout.LayoutParams(-1,dp(48)))
         var release=UpdateCoordinator.available(activity)
         var disposed=false
         val worker=Executors.newSingleThreadExecutor()
