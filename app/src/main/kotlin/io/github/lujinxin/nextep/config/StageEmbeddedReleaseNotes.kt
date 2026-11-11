@@ -18,11 +18,12 @@ internal object StageEmbeddedReleaseNotes {
         if (paragraphs.isEmpty()) return null
         val status = if ("-dev" in versionName) "当前安装开发版 · 真机验收以实际测试为准"
                      else "当前安装版 · 来自发布说明"
+        val headline = source.lineSequence().first().substringAfter('｜', "").trim().take(50)
         return StageChange(
             version = versionName,
-            title = "本次版本说明（构建时自动同步）",
+            title = headline.ifEmpty { "本次版本说明（来自安装包）" },
             status = status,
-            highlights = paragraphs,
+            highlights = paragraphs.drop(1).ifEmpty { paragraphs },
             caution = "内容自动取自本次 APK 构建时的 RELEASE_NOTES.md。不能仅凭此说明认定所有功能已通过真机验收。"
         )
     }

@@ -46,6 +46,14 @@ class StageEmbeddedReleaseNotesTest {
         assertNull(StageEmbeddedReleaseNotes.archived("0.9.18-dev", "台前调度 0.9.17-dev / 32"))
     }
 
+    @Test fun specificReleaseHeadlineAppearsInsteadOfGenericBuildLabel() {
+        val note = "台前调度 0.9.19-dev（版本号 34）｜三机统一集成与日志修正\n\nN5 和 Y700 最新候选功能。\n\n原生平行视窗仍待真机修复。"
+        val parsed = StageEmbeddedReleaseNotes.parse("0.9.19-dev", 34, note)
+        assertNotNull(parsed)
+        assertEquals("三机统一集成与日志修正", parsed!!.title)
+        assertTrue(parsed.highlights.any { it.contains("仍待真机修复") })
+    }
+
     @Test fun stableBuildCannotBeMislabeledAsDevelopment() {
         val stable = StageEmbeddedReleaseNotes.parse("0.9.16", 31, "台前调度 0.9.16 / 31 发布说明\n\n支持更新日志。")
         assertNotNull(stable)
