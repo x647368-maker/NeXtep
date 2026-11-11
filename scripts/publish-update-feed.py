@@ -8,9 +8,10 @@ import argparse
 import json
 import pathlib
 import re
+import hashlib
 
 PACKAGE = "io.github.x647368maker.atomicworkbench"
-CERT = "b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd"
+CERT = "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe"
 APK_LIMIT = 256 * 1024 * 1024
 TAG = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 APK = re.compile(r"^[A-Za-z0-9._-]+\.apk$")
@@ -66,6 +67,22 @@ def validate_release(item, release):
         raise ValueError("release APK digest does not match metadata")
 
 
+def verify_apk_file(metadata, apk_path):
+    """Read the actual owner-published binary, never trust JSON alone."""
+    if apk_path is None:
+        raise ValueError("published APK bytes are required for feed sync")
+    if apk_path.name != metadata["apkAsset"]:
+        raise ValueError("downloaded APK filename differs from manifest")
+    if not apk_path.is_file() or apk_path.stat().st_size != metadata["size"]:
+        raise ValueError("downloaded APK size differs from manifest")
+    digest = hashlib.sha256()
+    with apk_path.open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != metadata["sha256"]:
+        raise ValueError("downloaded APK digest differs from manifest")
+
+
 def publish(manifest, current, tag, release=None):
     candidate = dict(manifest)
     candidate["releaseTag"] = tag
@@ -93,6 +110,7 @@ def publish(manifest, current, tag, release=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
+    parser.add_argument("--apk", type=pathlib.Path, required=True)
     parser.add_argument("--feed", type=pathlib.Path, required=True)
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--tag", required=True)
@@ -101,6 +119,9 @@ def main():
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     feed = json.loads(args.feed.read_text(encoding="utf-8"))
     release = json.loads(args.release_json.read_text(encoding="utf-8")) if args.release_json else None
+    candidate = dict(manifest, releaseTag=args.tag)
+    validate(candidate)
+    verify_apk_file(candidate, args.apk)
     updated = publish(manifest, feed, args.tag, release)
     args.out.write_text(json.dumps(updated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("Feed prepared for verified published", args.tag, "versionCode", manifest["versionCode"])
