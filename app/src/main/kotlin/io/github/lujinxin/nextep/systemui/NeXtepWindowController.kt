@@ -415,7 +415,25 @@ class NeXtepWindowController(
             ?: Result.failure(IllegalStateException("VirtualDisplay slot unavailable"))
     }
 
+    private var lastN5ParallelScene: StageNativeParallelDiagnostics.Scene? = null
+    private var lastN5ParallelObservedMs: Long = 0L
+
+    /** Called while the native app is still foreground, before opening diagnostics. */
+    private fun observeN5ParallelForeground() {
+        if (!workspaceVisible || suspended) return
+        val scene = runCatching { nativeParallelScene() }.getOrNull() ?: return
+        if (!StageNativeParallelDiagnostics.nearSquareExpanded(scene)) return
+        val foreground = scene.tasks.firstOrNull { it.display == 0 } ?: return
+        if (foreground.app == "com.android.systemui" ||
+            foreground.app == "io.github.x647368maker.atomicworkbench") return
+        // A native side-by-side layout can still report mode=1. Activity count is
+        // a hint only; recording makes no change to system surfaces or tasks.
+        lastN5ParallelScene = scene
+        lastN5ParallelObservedMs = SystemClock.uptimeMillis()
+    }
+
     fun onTasksChanged() {
+        observeN5ParallelForeground()
         slotCoordinator?.onTasksChanged()
         scheduleCinemaCheck()
         scheduleStageFocus()
@@ -621,13 +639,13 @@ class NeXtepWindowController(
         putBoolean("ok", false); putString("message", it.message ?: "操作失败")
     } }
 
-    /** Read-only scope diagnostic for native two-pane scenes; never moves a task. */
-    fun slotStatesDescription(): String {
+    /** Read-only scene details; only called on task changes / explicit diagnostics. */
+    private fun nativeParallelScene(): StageNativeParallelDiagnostics.Scene {
         val g = currentGeometry()
         val tasks = runCatching { taskRepository.runningTasks() }.getOrDefault(emptyList())
         val activityCounts = runCatching { context.getSystemService(android.app.ActivityManager::class.java)
             ?.getRunningTasks(8).orEmpty().associate { it.taskId to it.numActivities } }.getOrDefault(emptyMap())
-        val scene = StageNativeParallelDiagnostics.Scene(
+        return StageNativeParallelDiagnostics.Scene(
             screenWidth = g.screenWidth,
             screenHeight = g.screenHeight,
             densityDpi = context.resources.displayMetrics.densityDpi,
@@ -652,9 +670,19 @@ class NeXtepWindowController(
                 )
             },
         )
-        return "screen=${g.screenWidth}x${g.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
-            (slotCoordinator?.slotDiagnostics() ?: "unavailable") + "\n" +
-            StageNativeParallelDiagnostics.report(scene)
+    }
+
+    /** Prefer the last foreground observation; opening Settings changes foreground task. */
+    fun slotStatesDescription(): String {
+        val live = nativeParallelScene()
+        val remembered = lastN5ParallelScene?.takeIf { StageNativeParallelDiagnostics.nearSquareExpanded(live) }
+        val selected = remembered ?: live
+        val msAgo = if (remembered == null) -1 else
+            (SystemClock.uptimeMillis() - lastN5ParallelObservedMs).coerceAtLeast(0L)
+        return "screen=${live.screenWidth}x${live.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
+            (slotCoordinator?.slotDiagnostics() ?: "unavailable") +
+            "\\nparallelSceneCached=${remembered != null} ageMs=$msAgo\n" +
+            StageNativeParallelDiagnostics.report(selected)
     }
 
     internal fun visibleSlotTaskIds(): Set<Int> = if (!workspaceVisible || suspended) emptySet() else {
