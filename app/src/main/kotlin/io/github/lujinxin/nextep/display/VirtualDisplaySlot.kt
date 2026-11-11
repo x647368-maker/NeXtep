@@ -62,7 +62,12 @@ class VirtualDisplaySlot(
         return cinema == enabled
     }
     private fun canvas(): SlotGeometry {
-        val requested = checkNotNull(layoutProfile).canvas
+        val profile = checkNotNull(layoutProfile)
+        // Only a *new* virtual display on a native-landscape tablet takes a
+        // horizontal producer canvas. Existing task-owning displays retain
+        // their recorded geometry across rotations and main/slot exchanges.
+        val requested = io.github.x647368maker.atomicworkbench.workspace.StageTabletCanvasPolicy
+            .proposed(profile, activeGeometry)
         val fixed = TaskContinuityPolicy.canvas(activeGeometry?.let { TaskContinuityPolicy.Canvas(it.width, it.height, it.densityDpi) },
             TaskContinuityPolicy.Canvas(requested.width, requested.height, requested.densityDpi))
         return SlotGeometry(fixed.width, fixed.height, fixed.density)
