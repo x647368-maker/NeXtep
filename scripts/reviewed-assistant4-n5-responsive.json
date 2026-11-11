@@ -1,5 +1,5 @@
 {
-  "purpose": "Assistant4 N5: responsive quickbar fixed visible plus, unfolded side-rail auto-hide, top preview cap; exact reversible patch over protected Y700 branch",
+  "purpose": "Assistant4 N5: fold-reactive quickbar fixed visible plus, unfolded side-rail auto-hide, top preview cap; exact reversible patch over protected Y700 branch",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt": [
       {
@@ -49,6 +49,10 @@
       {
         "before": "                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()",
         "after": "                    val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                        .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)\n                    params.x=if (foldEdge)\n                        io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy\n                            .edgeHandleX(geometry, context.resources.displayMetrics.density)\n                        else if (geometry.sidebarSide==SidebarSide.LEFT)\n                            geometry.availableLeft+dp(32).toInt()"
+      },
+      {
+        "before": "        cancelDragVisuals()\n        records.forEach { record ->",
+        "after": "        cancelDragVisuals()\n        // Folding is a display-geometry event. Switch dock vs inline '+' in\n        // place, even when no new usage query or task callback arrives.\n        quickBar?.setWideActions(\n            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                .quickBarCapacity(geometry.screenWidth, geometry.screenHeight) > 5)\n        records.forEach { record ->"
       },
       {
         "before": "                    { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })",
@@ -133,12 +137,8 @@
     ],
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageQuickBarView.kt": [
       {
-        "before": "            contentDescription = \"选择应用，长按可固定\"; setOnClickListener { add(this) }",
-        "after": "            contentDescription = \"添加常用应用到快捷栏\"; setOnClickListener { add(this) }"
-      },
-      {
-        "before": "        row.addView(TextView(context).apply {",
-        "after": "        if (!wideActions) row.addView(TextView(context).apply {"
+        "before": "        row.addView(TextView(context).apply {\n            text = \"+\"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)\n            contentDescription = \"选择应用，长按可固定\"; setOnClickListener { add(this) }\n        }, LayoutParams(dp(48), dp(48)))",
+        "after": "        // Both targets are reusable. During a live fold/unfold the layout may\n        // change before usage data reloads; switching their visibility keeps\n        // exactly one clickable '+' without rebuilding the entire app row.\n        row.addView(inlineAdd, LayoutParams(dp(48), dp(48)))"
       },
       {
         "before": "        }, LayoutParams(0, dp(52), 1f))",
@@ -146,11 +146,11 @@
       },
       {
         "before": "    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()",
-        "after": "    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()\n    /** On tablet / unfolded fold only, reserve a real, always-reachable '+'\n     * hit target outside the scrolling app list. The compact phone row keeps\n     * its existing layout unchanged.\n     */\n    fun setWideActions(enabled: Boolean) {\n        if (wideActions == enabled) return\n        wideActions = enabled\n        pinnedAdd.visibility = if (wideActions) View.VISIBLE else View.GONE\n    }"
+        "after": "    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()\n    /** On tablet / unfolded fold only, reserve a real, always-reachable '+'\n     * hit target outside the scrolling app list. The compact phone row keeps\n     * its existing layout unchanged.\n     */\n    fun setWideActions(enabled: Boolean) {\n        if (wideActions == enabled) return\n        wideActions = enabled\n        pinnedAdd.visibility = if (wideActions) View.VISIBLE else View.GONE\n        inlineAdd.visibility = if (wideActions) View.GONE else View.VISIBLE\n    }"
       },
       {
         "before": "    private val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }",
-        "after": "    private val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }\n    private var wideActions = false\n    private val pinnedAdd = TextView(context).apply {\n        text = \"+\"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)\n        contentDescription = \"添加常用应用到快捷栏\"\n        setOnClickListener { add(this) }\n        visibility = View.GONE\n    }"
+        "after": "    private val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }\n    private var wideActions = false\n    private val pinnedAdd = TextView(context).apply {\n        text = \"+\"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)\n        contentDescription = \"添加常用应用到快捷栏\"\n        setOnClickListener { add(this) }\n        visibility = View.GONE\n    }\n    private val inlineAdd = TextView(context).apply {\n        text = \"+\"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)\n        contentDescription = \"添加常用应用到快捷栏\"\n        setOnClickListener { add(this) }\n    }"
       }
     ]
   }
