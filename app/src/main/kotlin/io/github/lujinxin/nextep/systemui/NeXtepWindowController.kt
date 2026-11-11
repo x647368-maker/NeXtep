@@ -73,6 +73,7 @@ class NeXtepWindowController(
     private var cinemaApplying = false
     private val cinemaCheck = Runnable { evaluateCinema() }
     private var windowPickerGeneration = 0
+    private var tabletLayoutMotionGeneration = 0
     private var windowRefreshQueued = false
     private fun scheduleWindowRefresh() {
         if (windowRefreshQueued) return
@@ -1298,12 +1299,40 @@ class NeXtepWindowController(
         runCatching {
             viewport.setSidebarSide(side);sidebarSide=side;topAppStrip?.setSidebarSide(side)
             viewport.setTopRail(top)
-            if (workspaceVisible && !suspended) onViewportChanged()
+            if (workspaceVisible && !suspended) {
+                onViewportChanged()
+                // Animate only the live panel entering its *new* tablet layout.
+                // The task surface and click projection are still updated by
+                // the normal geometry owner; no frozen image or VD recreation.
+                animateTabletLayoutSelection()
+            }
         }.onFailure {
             viewport.setSidebarSide(previousSide);sidebarSide=previousSide;topAppStrip?.setSidebarSide(previousSide)
             viewport.setTopRail(previous)
             if (workspaceVisible && !suspended) onViewportChanged()
             throw it
+        }
+    }
+
+    private fun animateTabletLayoutSelection() {
+        val g = geometry()
+        val entry = io.github.x647368maker.atomicworkbench.workspace.StageTabletLayoutMotionPolicy
+            .entry(g, context.resources.displayMetrics.density) ?: return
+        val panel = records.firstOrNull { it.title == "NeXtepSidebar" }?.view ?: return
+        val generation = ++tabletLayoutMotionGeneration
+        panel.post {
+            if (generation != tabletLayoutMotionGeneration || !workspaceVisible || suspended)
+                return@post
+            val actual = geometry()
+            if (actual.railAtTop != g.railAtTop || actual.sidebarSide != g.sidebarSide ||
+                !actual.isLandscape) return@post
+            panel.animate().cancel()
+            panel.alpha = 0.86f
+            panel.translationX = entry.dx
+            panel.translationY = entry.dy
+            panel.animate().alpha(1f).translationX(0f).translationY(0f)
+                .setDuration(entry.durationMs)
+                .setInterpolator(transitionInterpolator).start()
         }
     }
 
