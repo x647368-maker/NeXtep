@@ -8,8 +8,10 @@ class StageFrequentAppPolicyTest {
     @Test fun realUsageRanksRecentFrequentAppsAndCapsQuickRowAtFive() {
         val keys = (0..8).map { "0:app$it" }
         val usage = keys.mapIndexed { i,k -> StageFrequentAppPolicy.Usage(k,now - i * 3600000L, selections = if (i==3) 50 else 0) }
-        val chosen = StageFrequentAppPolicy.select(keys,usage,now)
+        val chosen = StageFrequentAppPolicy.select(keys,usage,now,limit=5)
         assertEquals(5,chosen.size); assertEquals("0:app3",chosen.first())
+        val expanded = StageFrequentAppPolicy.select(keys,usage,now,limit=12)
+        assertEquals(9,expanded.size); assertEquals("0:app3",expanded.first())
         assertTrue(chosen.indexOf("0:app0") < chosen.indexOf("0:app4"))
     }
     @Test fun removedAppsAreExcludedAndProfilesAreSeparateAndDuplicatesDoNotInflateUsage() {
