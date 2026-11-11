@@ -5,17 +5,32 @@ name: Atomic Workbench verified release feed
 on:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - 'scripts/publish-update-feed.py'
+      - 'scripts/test-update-feed.py'
+      - '.github/workflows/atomic-update-feed.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: atomic-update-feed
   cancel-in-progress: false
 
 jobs:
+  verify-publisher:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify offline release feed security contract
+        run: python3 scripts/test-update-feed.py
+
   sync-feed:
-    if: ${{ !github.event.release.draft && startsWith(github.event.release.tag_name, 'atomic-') }}
+    if: ${{ github.event_name == 'release' && !github.event.release.draft && startsWith(github.event.release.tag_name, 'atomic-') }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout publisher from default branch
@@ -38,12 +53,27 @@ jobs:
           mkdir -p release
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern atomic-update.json --dir release
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release/release.json
+          # Download the exact matching APK: do not trust a JSON digest or an
+          # optional GitHub asset digest as proof the binary was uploaded intact.
+          apk_name=$(python3 - <<'PY'
+          import json, re
+          with open('release/atomic-update.json', encoding='utf-8') as f:
+              name=json.load(f).get('apkAsset', '')
+          if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9._-]+\\.apk', name):
+              raise SystemExit('Unsafe or missing release apkAsset')
+          print(name)
+          PY
+          )
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$apk_name" --dir release
+          test -s "release/$apk_name"
+          echo "ATOMIC_APK_NAME=$apk_name" >> "$GITHUB_ENV"
       - name: Validate manifest, matching APK asset and monotonic version
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           python3 publisher/scripts/publish-update-feed.py \
             --manifest release/atomic-update.json \
+            --apk "release/$ATOMIC_APK_NAME" \
             --release-json release/release.json \
             --feed feed/index.json \
             --out feed/index.json \
