@@ -5,11 +5,13 @@ package io.github.x647368maker.atomicworkbench.config
  * not from a remote page or a background update job.
  */
 internal object StageEmbeddedReleaseNotes {
+    // Accept both historical headings without v and the newer v0.9.25-dev form.
+    // Reject adjacent alphanumerics so a longer version cannot collide.
     fun parse(versionName: String, versionCode: Long, raw: String): StageChange? {
         val source = raw.replace("\r\n", "\n").trim()
         if (versionName.isBlank() || versionCode <= 0 || source.length !in 12..32768) return null
         // Fail closed for stale or mismatched notes; don't show another build's features.
-        val matchingName = Regex("(?<![A-Za-z0-9.])${Regex.escape(versionName)}(?![A-Za-z0-9.-])")
+        val matchingName = Regex("(?<![A-Za-z0-9.])(?:[vV])?${Regex.escape(versionName)}(?![A-Za-z0-9.-])")
         val matchingCode = Regex("(?<![0-9])${versionCode}(?![0-9])")
         if (!matchingName.containsMatchIn(source) || !matchingCode.containsMatchIn(source)) return null
         val paragraphs = source.split(Regex("\n[ \t]*\n"))
@@ -29,7 +31,7 @@ internal object StageEmbeddedReleaseNotes {
     }
     fun archived(versionName: String, raw: String): StageChange? {
         if (versionName.isBlank() || raw.length !in 12..32768) return null
-        val matchingName = Regex("(?<![A-Za-z0-9.])${Regex.escape(versionName)}(?![A-Za-z0-9.-])")
+        val matchingName = Regex("(?<![A-Za-z0-9.])(?:[vV])?${Regex.escape(versionName)}(?![A-Za-z0-9.-])")
         if (!matchingName.containsMatchIn(raw.take(500))) return null
         val paragraphs = raw.replace("\r\n", "\n").trim()
             .split(Regex("\n[ \t]*\n"))
