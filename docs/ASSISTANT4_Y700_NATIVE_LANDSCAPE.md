@@ -1,101 +1,55 @@
-# Assistant 4 — native-landscape Lenovo Y700 compatibility (isolated)
+# 备用4：Lenovo Y700 (TB324ZC) ColorOS 16 port — layout correction
 
-## Branch / ownership
+## Scope and non-regression contract
 
-- Branch: `atomic-workbench/assistant4-y700-native-landscape-0.9.17`
-- Created from: `atomic-workbench/fast-tap-0.9.17`
-- **Do not merge automatically**. The primary `接管安卓项目` developer retains priority.
-- No app ID, versionCode, signing material, update feed, task identities or existing group storage is changed.
-- Future releases should carry this set of changes forward *after* mainline regression review.
+Branch: `atomic-workbench/assistant4-y700-native-landscape-0.9.17`.
+Base: `atomic-workbench/fast-tap-0.9.17`.
+Review: draft PR #9. **Do not merge or release as stable without physical device tests.**
 
-## Evidence and problem
+The owner supplied real screenshots after installing the signed Y700 test build:
+- Portrait is generally usable, **but overlay buttons overlap the status bar and cannot be clicked**.
+- Landscape menu **顶部横排** did not produce a distinct working top-row layout.
+- Landscape left/right must be **physical left and right VERTICAL rails**, not top/bottom.
+These observations supersede the earlier assistant's mistaken left=top/right=bottom design.
 
-User video and screenshots (Nov 10, 2026) show a Lenovo Legion Y700
-(TB324ZC, 2560 x 1600 pixels) running a rooted ColorOS 16 port.
-The ROM branding / spoofable model props do **not** indicate an actual OPPO
-device. On the native-landscape tablet, the existing phone-only
-`WorkspaceGeometry.panelRotationDegrees` rotates the bottom/top preview
-rail 90 degrees; several live cards are sideways and controls are difficult
-to use with a status bar in the same area.
+The tablet is physically Lenovo Y700, model TB324ZC, resolution 2560x1600, with a rooted ColorOS 16 phone-ROM port that identifies itself as OPPO OPD2515 in software. **Never classify by `Build.MODEL`, manufacturer, or ColorOS name.**
 
-## Isolated implementation
+## Three truly independent, user-selected layouts
 
-1. Only screen coordinates, rotation and wide high-resolution aspect class
-   select the native horizontal-rail policy. Do not check `Build.BRAND`,
-   `Build.MANUFACTURER` or `Build.MODEL`; these can be spoofed by the port.
-2. Trigger when the default screen has physical landscape metrics
-   (long side / short side >= 1.45 and short side >= 1300 pixels), including
-   ColorOS ports that report the 2560x1600 landscape orientation as rotation
-   1/3 instead of 0/2. The chosen top/bottom rail is independent of this
-   reported rotation. Ordinary phone landscape (Ace 7 Pro short side 1140),
-   portrait and near-square foldables (Find N5) retain legacy geometry.
-   Deliberately preserve old layout choices and scoped preference storage.
-3. Native-landscape LEFT/RIGHT correspond to a physically upright
-   **top/bottom** rail. The control strip is horizontal across the safe
-   top; its visible buttons are below reported status/cutout insets.
-4. Live card X coordinates are computed across a physical horizontal row,
-   not the portrait Y stack. TextureView and virtual-display source
-   aspect are preserved; there is no per-switch resize, destructive
-   display recreation or blanket Android orientation override.
-5. Status bar is **not** globally hidden. Inset-aware safe areas and
-   non-overlapping control/rail/main rectangles are verified by tests.
+| Screen | Selected control | Expected |
+|---|---|---|
+| 1600x2560 portrait | Left or right | Existing usable vertical rail/main layout, with status-safe accessible buttons |
+| 2560x1600 landscape | 顶部横排 | Upright 1–4 cards in one horizontal row at the top; main content below, with >=~50% of usable display height |
+| 2560x1600 landscape | 左侧排列 | Upright 1–4 cards vertically stacked on the LEFT; main content to the right |
+| 2560x1600 landscape | 右侧排列 | Upright 1–4 cards vertically stacked on the RIGHT; main content to the left |
 
-## Regression matrix
+The wide-tablet side-rail policy never rotates whole app preview panes 90°. `railAtTop` remains the **separate** explicit top mode. The physical display dimensions choose the wide-tablet behavior irrespective of rotation value 0/1/2/3 from the ported ROM.
 
-- Lenovo Y700: 2560x1600 with reported rotation 0, 1, 2 or 3;
-  top and bottom rails; 1, 2, 3, 4 occupied slots; physical 1600x2560
-  portrait orientation; high spoofed DPI and original saved layouts.
-- OnePlus Ace 7 Pro (phone): 1140x2616 portrait, 2616x1140 landscape.
-- OPPO Find N5 expanded (near-square fold): 2248x2480 portrait,
-  2480x2248 landscape. Existing phone/fold rotation policy unchanged.
-- Report status insets, nav-button mode, touchable control areas,
-  app input projection, main/slot exchanges and repeated rotations.
+The display class requires short side >= 1300 physical px and aspect ratio >= 1.45, and the tablet-only status safe inset is at least 48 physical dp. This safely excludes the OnePlus Ace 7 Pro (1140x2616) and the OPPO Find N5 expanded near-square screen (2248x2480).
 
-## Must check on actual device before claiming perfect compatibility
+## Changes and checks
 
-- Confirm `displayRotation` and pixel size in `slotStatesDescription()`
-  and distinguish 0/2 naturally-landscape tablet from a 1/3 phone rotation.
-- Try LEFT and RIGHT configurations in Y700 landscape and in portrait.
-  Ensure all previews are upright, card order remains correct, and tap,
-  drag, expand/collapse/add remain accessible.
-- Confirm status shade can be swiped down and back, no unsafe overlap.
-- Switch main and mini tasks repeatedly without shape-changing
-  transitions, lost contents, black frames or broken touch coordinates.
-- Verify Ace 7 Pro and Find N5 folding/rotation and video fullscreen.
-- A vendor ROM may override WindowMetrics or rotation reporting. If
-  reported rotation differs from the standard mapping, collect real
-  non-sensitive geometry/rotation logs and refine the isolated policy,
-  rather than blindly broadening its trigger to every ColorOS device.
+- `WorkspaceGeometry`: physically left/right unrotated side rails, correct safe main bounds and separate top layout.
+- `StageLiveCardLayout`: uses the existing portrait-independent VERTICAL stacking for side rails and existing horizontal fit for top rails.
+- `NeXtepWindowController`: left/right menu options, centered side cards and side-specific add/smart-rail handles.
+- `StageTopLayoutMetrics`: cap wide-tablet top-row height to 32% of usable height to prevent an overlarge row crushing the main task.
+- `WorkspaceViewport` + `StageDisplayPolicy`: repair undersized/zero status-bar top inset for wide-tablet layouts on a ported ROM, including cached profiles, without editing the recorded original.
+- Tests cover real physical left/right positions, portrait 48dp status safety, distinct top-row geometry, 1–4 cards, spoofed rotations, and exclusion of primary phone/fold devices.
+- Frozen source integrity is retained; changes are whitelisted only as exact reversible differences from the v0.9.17 base, never by disabling general checks.
+- No changes to task move operations, virtual display recreation, signing identity, update feed, APK package ID, or mainline branches.
 
-## Merge/release guard
+## Important limitations
 
-A draft PR should target the `fast-tap-0.9.17` base (not `main`).
-If main developer advances to a newer release, **rebase/cherry-pick**
-these exact changes only after resolving the upstream differences and
-running unit + actual-device regression. GitHub Actions artifacts are
-not automatically a signed/installable release; never create a new
-certificate or publish an unsigned APK as a user-facing build.
+These are source-level adjustments informed by **failed** real Y700 screenshots. The new changes still require another physical Y700 installation and interaction test to establish that they solve the three reports. Device-resolved system insets, vendor input interception, top-menu event dispatch, and actual multiwindow task behavior may differ from JVM tests.
 
-## 2026-11-10 second-pass review (do not treat as a stable release)
+A separate pre-existing v0.9.17 Android emulator visual test fails with `Rollback preview did not settle within 3 seconds`. This is not solved here and is not evidence that every visual scenario passes.
 
-- Removed speculative fixes to `TopAppStripView` and `ControlAreaPager`:
-  those legacy views are not instantiated in the current five-window
-  `NeXtepWindowController`. The active quick bar and clickable main/rail
-  handles already occupy separate physical rects calculated from insets.
-  Changing unused classes would add regression risk without improving Y700.
-- The actual native-landscape geometry is now explicitly independent of
-  `Display.rotation` parity, since ColorOS phone framework can be ported
-  to Lenovo hardware. LEFT means top, RIGHT bottom in every Y700 reported
-  landscape rotation. Initial layout uses the horizontal rail even when
-  spoofed display DPI would otherwise classify a wide tablet as compact.
-- Existing baseline 0.9.17 emulator visual check fails
-  `Rollback preview did not settle within 3 seconds`. This branch's
-  previous CI failed in the same place; unresolved baseline issue.
-  JVM/Android build success is not the same as real device success.
-- **Still missing** an on-device Y700 build run / touch hit-region check,
-  post-rotation slot content checks, bottom/top rails on ColorOS 16 port,
-  physical-status-bar correctness, external-input/gestures, main↔mini
-  switching, and Ace 7 Pro / Find N5 regression runs.
-- **Future updates** must cherry-pick/rebase the PR onto the latest
-  verified mainline; an APK signed directly from this PR is a tablet
-  **test candidate**, not a guaranteed cross-device stable release.
+### Device acceptance (ask user for only one new 20–40s recording)
+
+1. Portrait: main handle and quick/accessibility buttons no longer overlap status bar and are all clickable; notification shade still expands/collapses normally.
+2. Landscape: switch **顶部横排 → 左侧排列 → 右侧排列 → 顶部横排**, verifying visibly distinct placement of all live apps.
+3. Move/swipe/click each live card, add fourth app, main↔mini swaps, collapse and reopen the side rail; no sideways view or click-through to status bar.
+4. Physical OnePlus Ace 7 Pro portrait/landscape + OPPO Find N5 folded/unfolded checks prior to release.
+5. Maintain original signing certificate (SHA-256 `b25ba1046d53510a1378b3404160d27a222a3ec9993b0a722b8f61304ac4abdd`) and version identity. CI unsigned APK only a test candidate, not a public stable release.
+
+Do not use this branch as the shared stable baseline for backup 1/2/3 until main branch integration and verified regression tests.
