@@ -7,9 +7,25 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# The tablet branch is independently reviewed as exact reverse patches.
+# Normalize only these known fragments before applying the existing frozen
+# v0.9.17 -> v0.9.8 source chain. An unrelated edit still fails its hash.
+tablet_review=json.loads((root/'scripts/reviewed-assistant4-native-landscape.json').read_text())['files']
+assert set(tablet_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceViewport.kt',
+}
 reviewed_chain=[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
+ if path in tablet_review:
+  text=data.decode()
+  for patch in tablet_review[path]:
+   assert text.count(patch['after'])==1,path
+   text=text.replace(patch['after'],patch['before'],1)
+  data=text.encode()
  for reviewed in reviewed_chain:
   if path not in reviewed:continue
   spec=reviewed[path]

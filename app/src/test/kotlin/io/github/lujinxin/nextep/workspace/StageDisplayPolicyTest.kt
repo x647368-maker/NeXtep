@@ -4,6 +4,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageDisplayPolicyTest {
+    @Test fun rootPortedTabletIsDetectedAcrossDpiWithoutMisclassifyingPhones() {
+        for (dpi in listOf(280, 320, 480, 560)) {
+            assertTrue(StageDisplayPolicy.wideLandscapeTablet(2560, 1600))
+            assertEquals(StageDisplayPolicy.Choice(false, SidebarSide.LEFT),
+                StageDisplayPolicy.initial(2560, 1600, dpi, true, null, SidebarSide.RIGHT))
+        }
+        assertFalse(StageDisplayPolicy.wideLandscapeTablet(2616, 1140))
+        assertFalse(StageDisplayPolicy.wideLandscapeTablet(2480, 2248))
+        assertFalse(StageDisplayPolicy.wideLandscapeTablet(1600, 2560))
+        assertTrue(StageDisplayPolicy.wideTablet(1600, 2560))
+        assertTrue(StageDisplayPolicy.wideTablet(2560, 1600))
+        assertFalse(StageDisplayPolicy.wideTablet(1140, 2616))
+        assertFalse(StageDisplayPolicy.wideTablet(2480, 2248))
+        assertEquals(144, StageDisplayPolicy.safeTabletTopInset(2560, 1600, 3f, 0))
+        assertEquals(192, StageDisplayPolicy.safeTabletTopInset(1600, 2560, 3f, 192))
+        // Migrated users' explicit top/side choices are left untouched.
+        assertEquals(StageDisplayPolicy.Choice(true, SidebarSide.RIGHT),
+            StageDisplayPolicy.initial(2560, 1600, 560, false, true, SidebarSide.RIGHT))
+    }
+
     @Test fun displayClassUsesRealSizeAndLogicalDensityNotModelName() {
         assertFalse(StageDisplayPolicy.expanded(1264,2780,512))
         assertFalse(StageDisplayPolicy.expanded(1140,2616,480))
