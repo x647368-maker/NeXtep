@@ -79,7 +79,12 @@ internal object SystemUiPanelMonitor {
     }
     fun changed() {
         val next=state()
-        if(next!=lastState){lastState=next;io.github.x647368maker.atomicworkbench.logging.NeXtepLog.info("shade_state","$next ${diagnostic()}")}
+        if(next==lastState)return
+        lastState=next
+        io.github.x647368maker.atomicworkbench.logging.NeXtepLog.info("shade_state","$next ${diagnostic()}")
+        // The native root can draw 60–120 times each second. The popup gate
+        // only needs real state transitions (including UNKNOWN), never a
+        // repeated dismiss/state scan on every pre-draw of the same state.
         AtomicPopupMenu.onPanelChanged()
     }
 }
