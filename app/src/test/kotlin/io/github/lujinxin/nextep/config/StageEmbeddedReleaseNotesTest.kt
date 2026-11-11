@@ -59,4 +59,28 @@ class StageEmbeddedReleaseNotesTest {
         assertNotNull(stable)
         assertFalse(stable!!.status.contains("开发版"))
     }
+
+    @Test fun installedV026AndArchivedV025MustBeVisibleWithPrefixedHeadings() {
+        val current = StageEmbeddedReleaseNotes.parse(
+            "0.9.26-dev", 41, "台前调度 v0.9.26-dev（versionCode 41）｜一加内测\n\n仍需真机验收。"
+        )
+        val old = StageEmbeddedReleaseNotes.archived(
+            "0.9.25-dev", "台前调度 v0.9.25-dev（versionCode 40）｜Y700 专项\n\n历史测试记录。"
+        )
+        assertNotNull("Installed v-prefixed release must be parsed", current)
+        assertNotNull("Archived v-prefixed release must be parsed", old)
+        assertTrue(current!!.status.contains("开发版"))
+        val merged = StageChangelogOrdering.merge(current, listOfNotNull(old), StageChangeHistory.entries)
+        assertEquals(listOf("0.9.26-dev", "0.9.25-dev"), merged.take(2).map { it.version })
+    }
+
+    @Test fun prefixedHeadingMustNeverMatchWrongCodeOrAdjacentVersion() {
+        val notes = "台前调度 v0.9.26-dev（versionCode 41）｜候选\n\n没有宣称验收通过。"
+        assertNull(StageEmbeddedReleaseNotes.parse("0.9.25-dev", 41, notes))
+        assertNull(StageEmbeddedReleaseNotes.parse("0.9.26-dev", 40, notes))
+        assertNull(StageEmbeddedReleaseNotes.archived("0.9.25-dev", notes))
+        assertNull(StageEmbeddedReleaseNotes.parse(
+            "0.9.26-dev", 41, "台前调度 v0.9.260-dev（versionCode 41）｜错误\n\n不能误认"
+        ))
+    }
 }
