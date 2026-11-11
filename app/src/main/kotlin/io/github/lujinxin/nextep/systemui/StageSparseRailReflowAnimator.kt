@@ -2,6 +2,7 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.os.Build
 import android.os.PowerManager
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -52,6 +53,7 @@ internal class StageSparseRailReflowAnimator(context: Context) {
         enabled: Boolean,
     ) {
         val allowed = enabled &&
+            StageSparseRailReflowPolicy.trialModel(Build.MODEL) &&
             StageSparseRailReflowPolicy.supported(oldGeometry, newGeometry, oldCount, newCount) &&
             ValueAnimator.areAnimatorsEnabled() &&
             power?.isPowerSaveMode != true
