@@ -24,6 +24,9 @@ internal object WorkspaceEnergyContract {
         val slotFrames: Long,
         val taskQueries: Long,
         val previewCaptures: Long,
+        // Measured only when the user requests a snapshot on the SystemUI
+        // main handler; never sampled in a background loop.
+        val mainThreadCpuMs: Long = -1L,
     )
 
     fun register(context: Context, handler: Handler, snapshot: () -> Bundle) {
@@ -53,7 +56,8 @@ internal object WorkspaceEnergyContract {
                 val value = if (resultCode == RESULT_SNAPSHOT && data?.getInt("version") == 1) {
                     Snapshot(data.getInt("pid"), data.getLong("elapsed_ms"), data.getLong("cpu_ms"),
                         data.getBoolean("active"), data.getBoolean("suspended"), data.getInt("slot_count"),
-                        data.getLong("slot_frames"), data.getLong("task_queries"), data.getLong("preview_captures"))
+                        data.getLong("slot_frames"), data.getLong("task_queries"), data.getLong("preview_captures"),
+                        data.getLong("main_cpu_ms", -1L))
                 } else null
                 complete(value)
             }
