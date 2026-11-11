@@ -25,7 +25,7 @@ class StageSparseSideCardPolicyTest {
             val initial = listOf(g.contentLeft, g.contentTop, g.contentWidth,
                 g.contentHeight, g.sidebarWidth, g.topHeight, g.sidebarLeft, g.sidebarTop)
             val bounds = StageLiveCardLayout.bounds(
-                profile, List(4) { profile.canvas }, occupied, (0..3).toList())
+                profile, List(4) { profile.canvas }, occupied, (0..3).toList(), allowPhoneSparse = true)
             val shown = bounds.take(count)
             assertTrue(StageSparseSideCardPolicy.enabled(g, count))
             val oldMaxWidth = g.sidebarWidth - 2 * (8 * profile.densityDpi / 160f).roundToInt()
@@ -54,7 +54,7 @@ class StageSparseSideCardPolicyTest {
         for (count in 1..3) {
             val p = phone(count)
             val occupied = List(4) { it < count }
-            val bounds = StageLiveCardLayout.bounds(p, sources, occupied, listOf(2, 0, 3, 1))
+            val bounds = StageLiveCardLayout.bounds(p, sources, occupied, listOf(2, 0, 3, 1), allowPhoneSparse = true)
             val presented = listOf(2, 0, 3, 1).filter { occupied[it] }
             presented.forEach { index ->
                 val card = bounds[index]
@@ -71,6 +71,20 @@ class StageSparseSideCardPolicyTest {
                 bounds[a].top + bounds[a].height < bounds[b].top
             })
         }
+    }
+
+    @Test fun defaultPolicyPreservesOrdinaryPhonesAndN5OuterScreenUntilValidation() {
+        val p = phone(2)
+        val occupied = listOf(true,true,false,false)
+        val default = StageLiveCardLayout.bounds(p,List(4){p.canvas},occupied,listOf(0,1,2,3))
+        val optedIn = StageLiveCardLayout.bounds(p,List(4){p.canvas},occupied,listOf(0,1,2,3),allowPhoneSparse=true)
+        assertTrue(optedIn[0].width > default[0].width)
+        assertTrue(optedIn[1].width > default[1].width)
+        val n5Outer = WorkspaceGeometry.forDisplay(1140,2520,SidebarSide.LEFT,density=3f)
+        val n5p = p.copy(geometry = StageAdaptiveLayout.rail(n5Outer,2,3f))
+        val n5Default = StageLiveCardLayout.bounds(n5p,List(4){n5p.canvas},occupied,listOf(0,1,2,3))
+        assertTrue(n5Default[0].width <= n5p.geometry.sidebarWidth - 2*(8*3))
+        assertFalse(StageSparseRailReflowPolicy.trialModel("PKH110"))
     }
 
     @Test fun fourCardsTopRailLandscapeAndN5StayOnExistingRules() {
@@ -100,7 +114,7 @@ class StageSparseSideCardPolicyTest {
             val bounds = StageLiveCardLayout.bounds(
                 p, List(4) { p.canvas }, occupied, (0..3).toList())
             val shown = bounds.take(count)
-            val horizontalInset = (if (count <= 2) 4 else if (count == 3) 5 else 8) * 2
+            val horizontalInset = 8 * 2
             assertTrue(shown.all { it.width <= g.sidebarPhysicalWidth - 2 * horizontalInset })
             if (count < 4) {
                 val addTop = StageTabletRailVisualPolicy.addTop(g, bounds, occupied, 88, 16)
