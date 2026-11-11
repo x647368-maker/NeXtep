@@ -39,6 +39,7 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
         val geo=WorkspaceGeometry.forDisplay(1272,2772,SidebarSide.LEFT,density=3.2f)
         val old=listOf(Pose(32,120,180,300),Pose(32,440,180,300),
             Pose(32,760,180,300),Pose(32,1080,180,300))
+        val single=listOf(Pose(30,118,200,334))
         val triple=listOf(Pose(36,110,160,267),Pose(36,397,160,267),
             Pose(36,684,160,267))
         val four=listOf(Pose(38,114,154,256),Pose(38,387,154,256),
@@ -108,6 +109,10 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                     check(abs(cards[newCount-1].translationY)<.001f) {
                         "Added card must appear in its final location, not fly across controls"
                     }
+                } else if (newCount < oldCount) {
+                    check(abs(cards[oldCount-1].alpha)<.01f) {
+                        "Removing a task must not briefly flash the old card"
+                    }
                 }
             }
             Thread.sleep(settleMs)
@@ -136,7 +141,9 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
             applyChange(old,triple,2,3,settleMs=60L)
             applyChange(triple,four,3,4)
             applyChange(four,triple,4,3,settleMs=60L)
-            applyChange(triple,old.take(2),3,2)
+            applyChange(triple,old.take(2),3,2,settleMs=60L)
+            applyChange(old.take(2),single,2,1)
+            applyChange(single,old.take(2),1,2,settleMs=60L)
             applyChange(old.take(2),triple,2,3,settleMs=60L)
             applyChange(triple,four,3,4)
             instrumentation.runOnMainSync {
@@ -178,6 +185,6 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                 surfaces.forEach { it.release() }
             }
         }
-        return "PASS real HWUI 2->3->4->3->2->3->4 rapid interruption-safe uniform motion, preserved live buffers, no stale transform or flying add card"
+        return "PASS real HWUI 2->3->4->3->2->1->2->3->4 rapid interruption-safe uniform motion, preserved live buffers, no stale transform or flying add card"
     }
 }
