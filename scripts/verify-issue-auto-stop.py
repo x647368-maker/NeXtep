@@ -22,5 +22,14 @@ assert "while (true)" not in (activity + session + alarm)
 assert "ScheduledExecutorService" not in (activity + session + alarm)
 assert "WakeLock" not in (activity + session + alarm)
 assert ".registerReceiver(" not in (activity + session + alarm)
+event = (app / "StageIssueEventObserver.kt").read_text()
+assert "Intent.ACTION_SCREEN_OFF" in event and "Intent.ACTION_SCREEN_ON" in event
+assert "Intent.ACTION_USER_PRESENT" in event
+assert "Application.ActivityLifecycleCallbacks" in event
+assert "RECEIVER_NOT_EXPORTED" in event
+assert "unregisterReceiver" in event and "unregisterActivityLifecycleCallbacks" in event
+assert "while (true)" not in event
+assert ".postDelayed(" not in event
+assert "WakeLock" not in event
 assert "query(this)" in activity and "query(context.applicationContext)" in alarm
 print("PASS: opt-in diagnostics use one non-wakeup alarm, a UI callback, no background poller or exported receiver")
