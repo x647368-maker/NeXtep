@@ -1,9 +1,9 @@
 {
-  "purpose": "Permit ONLY read-only N5 parallel-window diagnostics appended to the existing SystemUI runtime screen. No geometry, task transformation, window or input control changes are authorized.",
+  "purpose": "Read-only N5 native parallel diagnostics + imported reviewed PR9/PR13 responsive source, pinned to exact merged controller blob; not a native Parallel View fix.",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
       "original_sha256": "3cfb9229dac65a0d1e3a4628e9b975cd61b316574a54259f35e3cf449f197e1e",
-      "reviewed_blob_sha1": "e2290e6ea83e66e3f19c2a0e841ca36abe480894"
+      "reviewed_blob_sha1": "881d32436bee3322f897bd6a6322a34a798549e8"
     }
   }
 }
