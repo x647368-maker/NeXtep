@@ -13,6 +13,7 @@ import android.os.UserManager
 import io.github.x647368maker.atomicworkbench.R
 import io.github.x647368maker.atomicworkbench.config.AppLanguage
 import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 /** Shared by SystemUI's app strip and the module's manual-order catalogue. */
 class LauncherAppRepository(private val context: Context) {
@@ -38,27 +39,37 @@ class LauncherAppRepository(private val context: Context) {
 
     fun load(includeProfiles: Boolean = true): List<AppEntry> {
         val entries = linkedMapOf<String, AppEntry>()
-        val primary = query(packageManager)
+        // OEM SystemUI hosts can reject PackageManager's MATCH_ALL query.
+        // An empty/denied primary query must not make the small-window picker unusable.
+        val primary = runCatching { query(packageManager) }.getOrElse { error ->
+            NeXtepLog.warn("app_catalog", "Primary launcher query failed; trying LauncherApps", error)
+            emptyList()
+        }
         primary.forEach { info ->
             entry(info, packageManager, currentUserId, false, null)?.let { entries[it.key] = it }
         }
-        if (!includeProfiles) return entries.values.toList()
-        val multiApp = MultiAppAccess.create()
+        val launcherApps = context.getSystemService(LauncherApps::class.java)
+        val profiles = runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList())
+        val scanUsers = if (primary.isEmpty()) (listOf(Process.myUserHandle()) + profiles).distinct() else profiles
+        // Do not query clone APIs during a primary-user recovery; the user can
+        // still add normal apps when an OEM clone service is unavailable.
+        val multiApp = if (includeProfiles) MultiAppAccess.create() else null
         val clones = multiApp?.createdPackages().orEmpty()
         val cloneLabels = clones.keys.sorted().mapIndexed { index, userId ->
             userId to if (clones.size == 1) AppLanguage.string(context, R.string.app_clone) else AppLanguage.string(context, R.string.app_clone_number, index + 1)
         }.toMap()
-        val launcherApps = context.getSystemService(LauncherApps::class.java)
-        // Standard profiles are queried independently: one inaccessible profile
-        // must not discard the primary catalogue or other clone users.
-        runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList()).forEach { user ->
+        // Standard profiles are queried independently. If the primary query
+        // failed or returned nothing, include the current user via LauncherApps.
+        // A denied work/clone profile is never allowed to discard other apps.
+        scanUsers.forEach { user ->
+            if (!includeProfiles && user != Process.myUserHandle()) return@forEach
             runCatching { launcherApps?.getActivityList(null, user).orEmpty() }
                 .getOrDefault(emptyList()).forEach profileActivity@ { activity ->
                     runCatching {
                         val info = activity.activityInfo
                         val userId = info.applicationInfo.uid / PER_USER_RANGE
-                        if (userId == currentUserId || !info.exported || !info.enabled ||
-                            info.packageName == "com.android.stk"
+                        if ((userId == currentUserId && primary.isNotEmpty()) ||
+                            !info.exported || !info.enabled || info.packageName == "com.android.stk"
                         ) return@profileActivity
                         val isClone = userId in clones
                         val component = activity.componentName
@@ -71,6 +82,7 @@ class LauncherAppRepository(private val context: Context) {
                     }
                 }
         }
+        if (!includeProfiles) return entries.values.toList()
         // ColorOS can omit clone users from LauncherApps.getProfiles(). Its
         // created-package list is the authority; never list merely clonable apps.
         clones.forEach { (userId, packages) ->
