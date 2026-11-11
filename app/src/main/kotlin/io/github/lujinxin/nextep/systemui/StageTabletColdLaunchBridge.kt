@@ -55,8 +55,7 @@ internal object StageTabletColdLaunchBridge {
     fun onTaskAppeared(info: ActivityManager.RunningTaskInfo) {
         val state = TaskInfoCompat.readWindowState(info) ?: return
         val user = TaskInfoCompat.readUserId(info)
-        val pkg = info.baseActivity?.packageName ?: info.realActivity?.packageName
-            ?: info.topActivity?.packageName
+        val pkg = info.baseActivity?.packageName ?: info.topActivity?.packageName
         val now = SystemClock.uptimeMillis()
         val ticket = synchronized(this) {
             val current = pending ?: return
