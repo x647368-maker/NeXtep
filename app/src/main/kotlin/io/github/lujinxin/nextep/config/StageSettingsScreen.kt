@@ -161,6 +161,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val root = body ?: return; root.removeAllViews()
         if (UpdateCoordinator.available(activity) != null)
             row(group(root), "发现台前调度新版本", icon = "info") { open("about") }
+        row(group(root), "故障测试与报告", "手动开启 · 标记问题 · 自行导出，平时不监控", "diagnostics") {
+            activity.startActivity(Intent(activity, StageIssueDiagnosticActivity::class.java))
+        }
         for (section in StageHomeLayout.sections) {
             root.addView(label(section.title, 12f, secondary).apply {
                 setPadding(dp(16), dp(StageHomeLayout.SECTION_TOP_DP), dp(16), 0)
