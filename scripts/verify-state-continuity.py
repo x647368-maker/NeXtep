@@ -248,6 +248,9 @@ print('Full-source crop, shared margin snapshot and window-local chrome input bo
 
 # All stable runtime files except the approved shade/menu/version UI files remain exact.
 reviewed_updater=json.loads((root/'scripts/reviewed-update-feed-0.9.16.json').read_text())['files']
+stale_feed_path='app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt'
+stale_feed_review=json.loads((root/'scripts/reviewed-stale-feed-failover-0.9.26.json').read_text())['files']
+assert set(stale_feed_review)=={stale_feed_path}
 rekey_patches=json.loads((root/'scripts/reviewed-rekey-0.9.18.json').read_text())['files']
 assert set(rekey_patches)=={'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt'}
 reviewed_game=json.loads((root/'scripts/reviewed-game-scope-0.9.18.json').read_text())['files']
@@ -295,6 +298,17 @@ for path,sha in frozen.items():
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
   data=(root/path).read_bytes()
+  if path in stale_feed_review:
+   review=stale_feed_review[path]
+   blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+   assert blob==review['reviewed_blob_sha1'],path
+   text=data.decode('utf-8')
+   for patch in review['patches']:
+    assert text.count(patch['after'])==1,path
+    text=text.replace(patch['after'],patch['before'],1)
+   data=text.encode('utf-8')
+   oldblob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+   assert oldblob==review['previous_blob_sha1'],path
   if path in rekey_patches:
    change=rekey_patches[path]
    assert hashlib.sha256(data).hexdigest()==change['updated_sha256'],path
