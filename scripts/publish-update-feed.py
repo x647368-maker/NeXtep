@@ -83,6 +83,14 @@ def verify_apk_file(metadata, apk_path):
         raise ValueError("downloaded APK digest differs from manifest")
 
 
+def verify_apk_identity(metadata, package_id, version_name, version_code):
+    """Verify actual AndroidManifest identity, independently of release JSON."""
+    if (package_id != metadata["applicationId"] or
+            version_name != metadata["versionName"] or
+            version_code != metadata["versionCode"]):
+        raise ValueError("actual APK package/version identity differs from release manifest")
+
+
 def publish(manifest, current, tag, release=None):
     candidate = dict(manifest)
     candidate["releaseTag"] = tag
@@ -111,6 +119,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
     parser.add_argument("--apk", type=pathlib.Path, required=True)
+    parser.add_argument("--apk-package-id", required=True)
+    parser.add_argument("--apk-version-name", required=True)
+    parser.add_argument("--apk-version-code", type=int, required=True)
     parser.add_argument("--feed", type=pathlib.Path, required=True)
     parser.add_argument("--out", type=pathlib.Path, required=True)
     parser.add_argument("--tag", required=True)
@@ -122,6 +133,8 @@ def main():
     candidate = dict(manifest, releaseTag=args.tag)
     validate(candidate)
     verify_apk_file(candidate, args.apk)
+    verify_apk_identity(candidate, args.apk_package_id,
+                        args.apk_version_name, args.apk_version_code)
     updated = publish(manifest, feed, args.tag, release)
     args.out.write_text(json.dumps(updated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("Feed prepared for verified published", args.tag, "versionCode", manifest["versionCode"])
