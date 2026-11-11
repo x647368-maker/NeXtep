@@ -6,8 +6,10 @@ import org.junit.Test
 class StageIssueStateLabelsTest {
     @Test fun screenAndLockAreSeparateFacts() {
         assertEquals("息屏", StageIssueStateLabels.screen(false, true, 1))
-        assertEquals("息屏", StageIssueStateLabels.screen(false, false, 2))
+        assertEquals("亮屏但不可交互（状态切换中）", StageIssueStateLabels.screen(false, false, 2))
         assertEquals("息屏显示或低功耗显示",StageIssueStateLabels.screen(null,null,3))
+        assertEquals("息屏显示或低功耗显示",StageIssueStateLabels.screen(false,true,4))
+        assertEquals("不可交互（物理屏状态未知）",StageIssueStateLabels.screen(false,null,null))
         assertEquals("亮屏但锁屏",StageIssueStateLabels.screen(true,true,2))
         assertEquals("亮屏已解锁",StageIssueStateLabels.screen(true,false,2))
         assertEquals("状态未知",StageIssueStateLabels.screen(null,null,null))

@@ -61,8 +61,8 @@ internal object StageIssueEventObserver {
         val listener = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent?) {
                 val change = when (intent?.action) {
-                    Intent.ACTION_SCREEN_OFF -> "系统通知：屏幕关闭"
-                    Intent.ACTION_SCREEN_ON -> "系统通知：屏幕打开（不代表已解锁）"
+                    Intent.ACTION_SCREEN_OFF -> "系统通知：退出交互（通常息屏，仍以物理屏状态为准）"
+                    Intent.ACTION_SCREEN_ON -> "系统通知：进入交互（不代表已解锁）"
                     Intent.ACTION_USER_PRESENT -> "系统通知：用户解锁"
                     else -> return
                 }
