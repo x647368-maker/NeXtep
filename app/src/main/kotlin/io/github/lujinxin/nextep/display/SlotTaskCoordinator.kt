@@ -12,6 +12,7 @@ import io.github.x647368maker.atomicworkbench.R
 import io.github.x647368maker.atomicworkbench.config.AppLanguage
 import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.StageTabletColdLaunch
 import io.github.x647368maker.atomicworkbench.framework.UserTargetedActivityLauncher
 import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
@@ -22,6 +23,7 @@ import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelection
 import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelectionContract
 import io.github.x647368maker.atomicworkbench.workspace.SelectedRecentTask
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.workspace.StageY700WechatTaskPolicy
 
 class SlotTaskCoordinator(
     context: Context,
@@ -183,6 +185,7 @@ class SlotTaskCoordinator(
             throw error
         }
         active = false
+        StageTabletColdLaunch.clearAll()
         cancelPendingAdd("工作区已退出")
         cancelPendingExchange()
         onSlotDragEnded()
@@ -277,6 +280,7 @@ class SlotTaskCoordinator(
         }
         if (value) {
             suspended = true
+            StageTabletColdLaunch.clearAll()
             cancelPendingExchange()
             onSlotDragEnded()
             recentSelectionGeneration += 1
@@ -525,7 +529,21 @@ class SlotTaskCoordinator(
             } else {
                 check(TaskContinuityPolicy.canLaunch(TaskContinuityPolicy.Origin.USER_LAUNCH, existingTask = false))
                 NeXtepLog.info("task_continuity", "explicit_user_launch package=${component.packageName} user=${normalized.targetUser()} reason=no_existing_task")
-                UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()
+                // On physical wide Y700 only, reserve the real task's native
+                // first-frame transform before ActivityTaskManager starts it.
+                // The ShellTaskOrganizer appeared callback consumes this on its
+                // existing transaction. Fallback remains the old delayed fit.
+                val launchUser = io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat
+                    .userIdentifier(normalized.targetUser() ?: android.os.Process.myUserHandle())
+                val armed = launchUser?.let {
+                    StageTabletColdLaunch.arm(component.packageName,it,geometryProvider())
+                } == true
+                try {
+                    UserTargetedActivityLauncher.start(applicationContext,normalized).getOrThrow()
+                } catch (error: Throwable) {
+                    if (armed) StageTabletColdLaunch.cancel(component.packageName)
+                    throw error
+                }
                 minimizePreviousMain()
                 val generation = mainSelectionGeneration
                 handler.postDelayed({
@@ -1126,6 +1144,21 @@ class SlotTaskCoordinator(
         } ?: findLaunchTask(component, normalized.targetUser())
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
 
+        // Y700 ported ColorOS 16 can assign WeChat to a vendor-owned dual
+        // window. Reparenting such a task by force may destroy its live state.
+        // Preserve the original task and let the user leave the native mode
+        // first; do not mutate WeChat's process, resize flag, or private APIs.
+        if (existing != null && existing.displayId != targetDisplayId) {
+            val g=geometryProvider()
+            if (StageY700WechatTaskPolicy.nativeTaskMustStayOwned(
+                    g.screenWidth,g.screenHeight,existing.component.packageName,
+                    existing.vendorWindowed,existing.windowingMode)) {
+                NeXtepLog.info("wechat_y700_compat",
+                    "Protected vendor dual-window task=${existing.taskId} display=${existing.displayId} mode=${existing.windowingMode}; no migration")
+                return Result.failure(IllegalStateException(
+                    "微信正在由系统双窗模式管理，已保留原任务，请先退出系统双窗再加入小窗"))
+            }
+        }
         if (existing?.displayId == targetDisplayId) {
             slotRecords[slotIndex].retainedTaskId = existing.taskId
             val layoutResult = runCatching { ensureSlotLayout(slotIndex, existing) }

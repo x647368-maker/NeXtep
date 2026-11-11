@@ -33,13 +33,13 @@ internal class StageChangelogRegression(private val inst: Instrumentation) {
         val labels=mutableListOf<String>()
         inst.runOnMainSync { texts(page,labels) }
         val names=labels.filter { it.startsWith("v0.9.") && it.contains(" · ") }
-        check(names.count { it.startsWith("v0.9.27-dev · ") } == 1) {
+        check(names.count { it.startsWith("v0.9.28-dev · ") } == 1) {
             "Installed 0.9.27-dev entry missing or duplicated: ${names.take(5)}"
         }
-        check(names.count { it.startsWith("v0.9.26-dev · ") } == 1) {
+        check(names.count { it.startsWith("v0.9.27-dev · ") } == 1) {
             "Archived 0.9.25-dev entry missing or duplicated: ${names.take(5)}"
         }
-        check(names[0].startsWith("v0.9.27-dev") && names[1].startsWith("v0.9.26-dev")) {
+        check(names[0].startsWith("v0.9.28-dev") && names[1].startsWith("v0.9.27-dev")) {
             "Version sorting is wrong: ${names.take(5)}"
         }
         inst.runOnMainSync {
@@ -51,12 +51,12 @@ internal class StageChangelogRegression(private val inst: Instrumentation) {
         }
         inst.waitForIdleSync()
         inst.uiAutomation.takeScreenshot()?.let { frame ->
-            File(output,"changelog-v26-v27.png").outputStream().use {
+            File(output,"changelog-v27-v28.png").outputStream().use {
                 frame.compress(Bitmap.CompressFormat.PNG,100,it)
             }
             frame.recycle()
         }
         inst.runOnMainSync { root.removeView(page) }
-        return "PASS real Android changelog page: current v0.9.27 and archived v0.9.26 visible exactly once in correct order"
+        return "PASS real Android changelog page: current v0.9.28 and archived v0.9.27 visible exactly once in correct order"
     }
 }

@@ -99,7 +99,13 @@ object TaskSurfaceCompat {
 
     fun observeTaskInfo(info: ActivityManager.RunningTaskInfo, leash: Any? = null) {
         TaskInfoCompat.readWindowState(info)?.let { observeTaskState(info.taskId, it) }
-        if (leash != null) observedLeashes[info.taskId] = leash
+        if (leash != null) {
+            observedLeashes[info.taskId] = leash
+            // The Shell callback arrives before its first native commit.
+            // A matching, expiring Y700 user launch can stage the transform
+            // in that same transaction; never touch a nonmatching task.
+            StageTabletColdLaunch.onTaskAppeared(info,leash)
+        }
     }
 
     fun observeTaskState(taskId: Int, state: TaskInfoCompat.WindowState) {

@@ -1,0 +1,45 @@
+{
+  "scope": "Y700 cold launch first-frame and native WeChat safety only, reversible before original full-blob freeze",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt": {
+      "previous_blob_sha1": "7e9c17d019734ff238e195b6e7e368a486473b06",
+      "reviewed_blob_sha1": "f192db72e1aedb16b3ae663e0d9c278e638c8ff9",
+      "patches": [
+        {
+          "before": "        if (leash != null) observedLeashes[info.taskId] = leash\n",
+          "after": "        if (leash != null) {\n            observedLeashes[info.taskId] = leash\n            // The Shell callback arrives before its first native commit.\n            // A matching, expiring Y700 user launch can stage the transform\n            // in that same transaction; never touch a nonmatching task.\n            StageTabletColdLaunch.onTaskAppeared(info,leash)\n        }\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "previous_blob_sha1": "5a0de900858b48a2d80ca7968d98ebe1086df659",
+      "reviewed_blob_sha1": "a8fa6ed41619144ba1c0e9c6675d000a846662cc",
+      "patches": [
+        {
+          "before": "",
+          "after": "import io.github.x647368maker.atomicworkbench.framework.StageTabletColdLaunch\n"
+        },
+        {
+          "before": "",
+          "after": "import io.github.x647368maker.atomicworkbench.workspace.StageY700WechatTaskPolicy\n"
+        },
+        {
+          "before": "        active = false\n",
+          "after": "        active = false\n        StageTabletColdLaunch.clearAll()\n"
+        },
+        {
+          "before": "            suspended = true\n",
+          "after": "            suspended = true\n            StageTabletColdLaunch.clearAll()\n"
+        },
+        {
+          "before": "                UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()\n",
+          "after": "                // On physical wide Y700 only, reserve the real task's native\n                // first-frame transform before ActivityTaskManager starts it.\n                // The ShellTaskOrganizer appeared callback consumes this on its\n                // existing transaction. Fallback remains the old delayed fit.\n                val launchUser = io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat\n                    .userIdentifier(normalized.targetUser() ?: android.os.Process.myUserHandle())\n                val armed = launchUser?.let {\n                    StageTabletColdLaunch.arm(component.packageName,it,geometryProvider())\n                } == true\n                try {\n                    UserTargetedActivityLauncher.start(applicationContext,normalized).getOrThrow()\n                } catch (error: Throwable) {\n                    if (armed) StageTabletColdLaunch.cancel(component.packageName)\n                    throw error\n                }\n"
+        },
+        {
+          "before": "",
+          "after": "        // Y700 ported ColorOS 16 can assign WeChat to a vendor-owned dual\n        // window. Reparenting such a task by force may destroy its live state.\n        // Preserve the original task and let the user leave the native mode\n        // first; do not mutate WeChat's process, resize flag, or private APIs.\n        if (existing != null && existing.displayId != targetDisplayId) {\n            val g=geometryProvider()\n            if (StageY700WechatTaskPolicy.nativeTaskMustStayOwned(\n                    g.screenWidth,g.screenHeight,existing.component.packageName,\n                    existing.vendorWindowed,existing.windowingMode)) {\n                NeXtepLog.info(\"wechat_y700_compat\",\n                    \"Protected vendor dual-window task=${existing.taskId} display=${existing.displayId} mode=${existing.windowingMode}; no migration\")\n                return Result.failure(IllegalStateException(\n                    \"微信正在由系统双窗模式管理，已保留原任务，请先退出系统双窗再加入小窗\"))\n            }\n        }\n"
+        }
+      ]
+    }
+  }
+}
