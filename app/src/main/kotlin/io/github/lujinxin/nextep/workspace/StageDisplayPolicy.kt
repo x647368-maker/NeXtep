@@ -26,6 +26,17 @@ internal object StageDisplayPolicy {
     fun wideLandscapeTablet(width: Int, height: Int): Boolean =
         width > height && wideTablet(width, height)
 
+    /** Near-square unfolded foldable class: scoped to the large inner display,
+     * not the ordinary tall phone or Lenovo Y700's wide landscape canvas.
+     * In particular OPPO Find N5 2248x2480 qualifies, Ace7Pro 1140x2616
+     * and Y700 2560x1600 never qualify.
+     */
+    fun unfoldedNearSquare(width: Int, height: Int): Boolean {
+        val short = minOf(width, height)
+        val long = maxOf(width, height)
+        return short >= 1800 && long.toFloat() / short <= 1.25f
+    }
+
     /** ColorOS phone-ROM ports may report zero/insufficient status insets on
      * a tablet. Reserve 48dp in both orientations, only for wide tablet panels.
      * Respect a larger accurate OS inset and never change phone/fold layouts.
