@@ -21,6 +21,7 @@ assert set(unified_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
 }
 # The tablet branch is independently reviewed as exact reverse patches.
 # Normalize only these known fragments before applying the existing frozen
