@@ -55,6 +55,18 @@ class StageY700UxRegressionTest {
         assertEquals(0,StagePresentationPolicy.apply(top,true,true).geometry.mainInset)
     }
 
+    @Test fun centerHandleTogglesFavoritesOnlyOnWideTablet() {
+        for ((w,h) in listOf(2560 to 1600,1600 to 2560)) {
+            assertEquals(StageTabletMainGripPolicy.Tap.QUICK_BAR,
+                StageTabletMainGripPolicy.tap(w,h))
+        }
+        for ((w,h) in listOf(1140 to 2616,2616 to 1140,
+            2248 to 2480,2480 to 2248)) {
+            assertEquals(StageTabletMainGripPolicy.Tap.MENU,
+                StageTabletMainGripPolicy.tap(w,h))
+        }
+    }
+
     @Test fun onlyPhysicalWideY700GetsShortLivePanelEntryMotion() {
         for (rotation in 0..3) {
             val left=tablet(SidebarSide.LEFT,rotation=rotation).geometry
