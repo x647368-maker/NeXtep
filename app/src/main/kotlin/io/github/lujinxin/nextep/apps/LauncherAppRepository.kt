@@ -48,7 +48,7 @@ class LauncherAppRepository(private val context: Context) {
         primary.forEach { info ->
             entry(info, packageManager, currentUserId, false, null)?.let { entries[it.key] = it }
         }
-        val launcherApps = context.getSystemService(LauncherApps::class.java)
+        val launcherApps = runCatching { context.getSystemService(LauncherApps::class.java) }.getOrNull()
         val profiles = runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList())
         val scanUsers = if (entries.isEmpty()) (listOf(Process.myUserHandle()) + profiles).distinct() else profiles
         // Do not query clone APIs during a primary-user recovery; the user can
