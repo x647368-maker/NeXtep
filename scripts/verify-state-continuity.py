@@ -166,8 +166,27 @@ def undo_swap_rollback_fix(path,data):
  assert old==spec['previous_blob_sha1'],path
  return previous
 
+# App-list resilience is a scoped 0.9.29 exception for two catalog sources.
+# Pin the complete new blobs, recover their complete old source bytes, then
+# leave every original 0.9.8 freeze hash and reviewer chain untouched.
+catalog_review=json.loads((root/'scripts/reviewed-app-catalog-files-0.9.29.json').read_text())['files']
+assert set(catalog_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/apps/LauncherAppRepository.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageAppCatalog.kt',
+}
+def undo_catalog_files(path,data):
+ if path not in catalog_review:return data
+ spec=catalog_review[path]
+ current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert current==spec['reviewed_blob_sha1'],path
+ original=spec['previous_content'].encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(original)).encode()+bytes([0])+original).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return original
+
 def protected_bytes(path):
- data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,(root/path).read_bytes()))))
+ data=undo_catalog_files(path,(root/path).read_bytes())
+ data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
   for patch in screen_review[path]:
