@@ -1,5 +1,5 @@
 {
-  "purpose": "Assistant4 N5: per-device top preview cap, live smart-rail geometry/idle, quick favorites and explicit plus, exact reversible patch over Y700 PR9",
+  "purpose": "Assistant4 N5: responsive quickbar fixed visible plus, unfolded side-rail auto-hide, top preview cap; exact reversible patch over protected Y700 branch",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt": [
       {
@@ -44,7 +44,7 @@
       },
       {
         "before": "                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, byKey.keys)",
-        "after": "                val g = currentGeometry()\n                val capacity = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                    .quickBarCapacity(g.screenWidth, g.screenHeight)\n                val available = byKey.keys - core.hiddenApps\n                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, available, capacity)"
+        "after": "                val g = currentGeometry()\n                val capacity = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                    .quickBarCapacity(g.screenWidth, g.screenHeight)\n                // On wide displays keep '+' clickable even when 10–12 icons\n                // overflow horizontally; do not change the compact phone bar.\n                quickBar?.setWideActions(capacity > 5)\n                val available = byKey.keys - core.hiddenApps\n                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, available, capacity)"
       },
       {
         "before": "                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()",
@@ -135,6 +135,22 @@
       {
         "before": "            contentDescription = \"选择应用，长按可固定\"; setOnClickListener { add(this) }",
         "after": "            contentDescription = \"添加常用应用到快捷栏\"; setOnClickListener { add(this) }"
+      },
+      {
+        "before": "        row.addView(TextView(context).apply {",
+        "after": "        if (!wideActions) row.addView(TextView(context).apply {"
+      },
+      {
+        "before": "        }, LayoutParams(0, dp(52), 1f))",
+        "after": "        }, LayoutParams(0, dp(52), 1f))\n        addView(pinnedAdd, LayoutParams(dp(48), dp(48)))"
+      },
+      {
+        "before": "    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()",
+        "after": "    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()\n    /** On tablet / unfolded fold only, reserve a real, always-reachable '+'\n     * hit target outside the scrolling app list. The compact phone row keeps\n     * its existing layout unchanged.\n     */\n    fun setWideActions(enabled: Boolean) {\n        if (wideActions == enabled) return\n        wideActions = enabled\n        pinnedAdd.visibility = if (wideActions) View.VISIBLE else View.GONE\n    }"
+      },
+      {
+        "before": "    private val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }",
+        "after": "    private val row = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }\n    private var wideActions = false\n    private val pinnedAdd = TextView(context).apply {\n        text = \"+\"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)\n        contentDescription = \"添加常用应用到快捷栏\"\n        setOnClickListener { add(this) }\n        visibility = View.GONE\n    }"
       }
     ]
   }
