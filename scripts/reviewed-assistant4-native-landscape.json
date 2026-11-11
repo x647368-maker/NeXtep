@@ -1,10 +1,10 @@
 {
-  "purpose": "Y700 native-landscape horizontal rail on ColorOS port (rotation 0-3), safe smart-rail hit target; exact reversible patch against base 0.9.17 stable frozen source",
+  "purpose": "Y700 TB324ZC real-device correction: top/left/right distinct, status-safe portrait; exact reversible patches against frozen fast-tap-0.9.17 base",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt": [
       {
         "before": "            val railThickness = (shortSide * 0.25f).roundToInt().coerceIn(gap + 1, shortSide - 1)",
-        "after": "            // A native-landscape tablet can afford a readable horizontal card row.\n            // Do not change phone or near-square foldable thicknesses.\n            val nativeTablet = StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)\n            val railThickness = (shortSide * if (nativeTablet) 0.33f else 0.25f)\n                .roundToInt().coerceIn(gap + 1, shortSide - 1)"
+        "after": "            // A wide tablet can afford a readable vertical side rail.\n            // Do not change compact phone or near-square foldable thicknesses.\n            val nativeTablet = StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)\n            val railThickness = (shortSide * if (nativeTablet) 0.33f else 0.25f)\n                .roundToInt().coerceIn(gap + 1, shortSide - 1)"
       },
       {
         "before": "        (regionWidth - contentWidth + if (!railAtTop && isLandscape && !isControlOnLeft) 1 else 0) / 2",
@@ -12,31 +12,31 @@
       },
       {
         "before": "    val contentLeft: Int get() = availableLeft + mainInset + (if (railAtTop) 0 else if (isLandscape) {",
-        "after": "    val contentLeft: Int get() = availableLeft + mainInset + (if (railAtTop || isNativeLandscapeRail) 0 else if (isLandscape) {"
+        "after": "    val contentLeft: Int get() = availableLeft + mainInset + (if (railAtTop) 0 else if (isNativeLandscapeRail) {\n        if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0\n    } else if (isLandscape) {"
       },
       {
         "before": "    val contentTop: Int get() = availableTop + mainInset + (if (railAtTop) topHeight + sidebarWidth - effectiveMainOverlap else if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +",
-        "after": "    val contentTop: Int get() = availableTop + mainInset + (if (railAtTop) topHeight + sidebarWidth - effectiveMainOverlap\n        else if (isNativeLandscapeRail) topHeight + if (isSidebarAtTop) sidebarWidth else 0\n        else if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +"
+        "after": "    val contentTop: Int get() = availableTop + mainInset + (if (railAtTop) topHeight + sidebarWidth - effectiveMainOverlap\n        else if (isNativeLandscapeRail) topHeight\n        else if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +"
       },
       {
         "before": "    private val regionHeight: Int get() = (if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap else availableHeight - if (isLandscape) sidebarWidth else topHeight) - 2 * mainInset",
-        "after": "    private val regionHeight: Int get() = (if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap\n        else if (isNativeLandscapeRail) availableHeight - topHeight - sidebarWidth\n        else availableHeight - if (isLandscape) sidebarWidth else topHeight) - 2 * mainInset"
+        "after": "    private val regionHeight: Int get() = (if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap\n        else if (isNativeLandscapeRail) availableHeight - topHeight\n        else availableHeight - if (isLandscape) sidebarWidth else topHeight) - 2 * mainInset"
       },
       {
         "before": "    private val regionWidth: Int get() = (if (railAtTop) availableWidth else availableWidth - if (isLandscape) topHeight else sidebarWidth) - 2 * mainInset",
-        "after": "    private val regionWidth: Int get() = (if (railAtTop || isNativeLandscapeRail) availableWidth else availableWidth - if (isLandscape) topHeight else sidebarWidth) - 2 * mainInset"
+        "after": "    private val regionWidth: Int get() = (if (railAtTop) availableWidth else availableWidth - if (isNativeLandscapeRail) sidebarWidth else if (isLandscape) topHeight else sidebarWidth) - 2 * mainInset"
       },
       {
-        "before": "    val sidebarPhysicalWidth: Int get() = if (railAtTop) availableWidth else if (isLandscape) availableWidth - topHeight else sidebarWidth",
-        "after": "    val sidebarPhysicalWidth: Int get() = if (railAtTop || isNativeLandscapeRail) availableWidth else if (isLandscape) availableWidth - topHeight else sidebarWidth"
+        "before": "    val sidebarPhysicalWidth: Int get() = if (railAtTop) availableWidth else if (isLandscape) availableWidth - topHeight else sidebarWidth\n    val sidebarPhysicalHeight: Int get() = if (railAtTop || isLandscape) sidebarWidth else availableHeight - topHeight\n    val sidebarLogicalHeight: Int get() = if (railAtTop) sidebarPhysicalHeight else if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight",
+        "after": "    val sidebarPhysicalWidth: Int get() = if (railAtTop) availableWidth else if (isNativeLandscapeRail) sidebarWidth else if (isLandscape) availableWidth - topHeight else sidebarWidth\n    val sidebarPhysicalHeight: Int get() = if (railAtTop) sidebarWidth else if (isNativeLandscapeRail) availableHeight - topHeight else if (isLandscape) sidebarWidth else availableHeight - topHeight\n    val sidebarLogicalHeight: Int get() = if (railAtTop || isNativeLandscapeRail) sidebarPhysicalHeight else if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight"
       },
       {
         "before": "    val sidebarTop: Int get() = if (railAtTop || !isLandscape) availableTop + topHeight else",
-        "after": "    val sidebarTop: Int get() = if (railAtTop || !isLandscape || isNativeLandscapeRail && isSidebarAtTop) availableTop + topHeight else"
+        "after": "    val sidebarTop: Int get() = if (railAtTop || isNativeLandscapeRail || !isLandscape) availableTop + topHeight else"
       },
       {
         "before": "    val sidebarLeft: Int get() = if (railAtTop) availableLeft else if (isLandscape) availableLeft + (if (isControlOnLeft) topHeight else 0)",
-        "after": "    val sidebarLeft: Int get() = if (railAtTop || isNativeLandscapeRail) availableLeft else if (isLandscape) availableLeft + (if (isControlOnLeft) topHeight else 0)"
+        "after": "    val sidebarLeft: Int get() = if (railAtTop) availableLeft\n        else if (isNativeLandscapeRail) if (sidebarSide == SidebarSide.LEFT) availableLeft else availableRight - sidebarWidth\n        else if (isLandscape) availableLeft + (if (isControlOnLeft) topHeight else 0)"
       },
       {
         "before": "    val controlWidth: Int get() = if (isLandscape && !railAtTop) topHeight else availableWidth\n    val controlHeight: Int get() = if (isLandscape && !railAtTop) availableHeight else topHeight\n    val controlLeft: Int get() = if (isLandscape && !railAtTop && !isControlOnLeft) availableRight - topHeight else availableLeft",
@@ -44,7 +44,7 @@
       },
       {
         "before": "        SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)",
-        "after": "        if (isNativeLandscapeRail) sidebarSide == SidebarSide.LEFT\n        else SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)"
+        "after": "        if (isNativeLandscapeRail) false\n        else SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)"
       },
       {
         "before": "    val panelRotationDegrees: Float get() = if (railAtTop || !isLandscape) 0f else if (isControlOnLeft) -90f else 90f",
@@ -52,7 +52,7 @@
       },
       {
         "before": "    val isLandscape: Boolean get() = screenWidth > screenHeight",
-        "after": "    val isLandscape: Boolean get() = screenWidth > screenHeight\n    /**\n     * A wide, high-resolution display may report rotation 0/2 or 1/3 under\n     * a ported phone ROM. Use the physical wide canvas to choose a native\n     * horizontal rail here; keep near-square foldables and compact phones on\n     * their verified legacy geometry. No manufacturer/ROM identity is involved.\n     *\n     * Use only display pixels/rotation because this geometry crosses SystemUI\n     * and system_server through the existing recorded v18 wire format.\n     */\n    val isNativeLandscapeRail: Boolean get() =\n        !railAtTop && StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)"
+        "after": "    val isLandscape: Boolean get() = screenWidth > screenHeight\n    /**\n     * A wide, high-resolution display may report rotation 0/2 or 1/3 under\n     * a ported phone ROM. Use physical dimensions, not ROM brand/rotation,\n     * to keep tablet panels upright. This does NOT force side rails into\n     * top/bottom rails: railAtTop is a separate explicit user choice.\n     * Existing source/bridge records (v18) remain unchanged.\n     */\n    val isNativeLandscapeRail: Boolean get() =\n        !railAtTop && StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)"
       }
     ],
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt": [
@@ -62,36 +62,29 @@
       },
       {
         "before": "    }\n    fun expanded(width: Int, height: Int, dpi: Int): Boolean {",
-        "after": "    }\n    /** The ROM can report rotation 0 or 1 for the same native-landscape\n     * Lenovo panel. Use the *physical* wide canvas, never its spoofed model\n     * name or the Android orientation enum. Compact phones and near-square\n     * foldables do not qualify.\n     */\n    fun wideLandscapeTablet(width: Int, height: Int): Boolean =\n        width > height && height >= 1300 && width.toFloat() / height >= 1.45f\n\n    fun expanded(width: Int, height: Int, dpi: Int): Boolean {"
+        "after": "    }\n    /** The ROM can report rotation 0 or 1 for the same native-landscape\n     * Lenovo panel. Use the *physical* wide canvas, never its spoofed model\n     * name or the Android orientation enum. Compact phones and near-square\n     * foldables do not qualify.\n     */\n    fun wideTablet(width: Int, height: Int): Boolean {\n        val short = minOf(width, height)\n        val long = maxOf(width, height)\n        return short >= 1300 && long.toFloat() / short >= 1.45f\n    }\n\n    fun wideLandscapeTablet(width: Int, height: Int): Boolean =\n        width > height && wideTablet(width, height)\n\n    /** ColorOS phone-ROM ports may report zero/insufficient status insets on\n     * a tablet. Reserve 48dp in both orientations, only for wide tablet panels.\n     * Respect a larger accurate OS inset and never change phone/fold layouts.\n     */\n    fun safeTabletTopInset(width: Int, height: Int, density: Float, reportedTop: Int): Int {\n        require(density > 0f && density.isFinite() && reportedTop >= 0)\n        return if (wideTablet(width, height))\n            maxOf(reportedTop, (48 * density).toInt())\n        else reportedTop\n    }\n\n    fun expanded(width: Int, height: Int, dpi: Int): Boolean {"
       }
     ],
-    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt": [
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt": [
       {
-        "before": "        if (shown.isEmpty()) return base",
-        "after": "        if (shown.isEmpty()) return base\n        if (g.isNativeLandscapeRail) {\n            // On a native-landscape tablet the physical panel is NOT rotated.\n            // A side selection maps to a top/bottom band, both with upright cards.\n            val cardHeight = (g.sidebarPhysicalHeight - (56 * density).roundToInt() - 2 * gap)\n                .coerceAtLeast(1)\n            val cardWidth = ((g.sidebarPhysicalWidth - (shown.size + 1) * gap) / shown.size)\n                .coerceAtLeast(1)\n            val fitted = shown.associateWith { i ->\n                val canvas = canvases[i] ?: profile.canvas\n                val scale = minOf(cardWidth.toFloat() / canvas.width,\n                    cardHeight.toFloat() / canvas.height)\n                val width = (canvas.width * scale).roundToInt().coerceIn(1, cardWidth)\n                val height = (canvas.height * scale).roundToInt().coerceIn(1, cardHeight)\n                WorkspaceLayoutProfile.Slot(width, height, gap + (cardHeight - height) / 2)\n            }\n            val total = shown.sumOf { fitted.getValue(it).width } + (shown.size - 1) * gap\n            var x = ((g.sidebarPhysicalWidth - total) / 2).coerceAtLeast(0)\n            return base.toMutableList().also { result ->\n                shown.forEach { i ->\n                    result[i] = fitted.getValue(i).copy(left = x)\n                    x += result[i].width + gap\n                }\n            }\n        }"
+        "before": "        return desired.coerceIn(2, limit)",
+        "after": "        // Only an explicitly selected TOP rail on a wide tablet gets this\n        // height limit. Otherwise portrait-phone preview proportions can\n        // consume most of the landscape canvas and make the top choice look\n        // unusable. Leave phone and near-square foldable results unchanged.\n        val tabletCap = if (StageDisplayPolicy.wideLandscapeTablet(g.screenWidth, g.screenHeight))\n            (g.availableHeight * .32f).roundToInt().coerceAtLeast(2)\n        else limit\n        return desired.coerceIn(2, minOf(limit, tabletCap))"
       }
     ],
-    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": [
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceViewport.kt": [
       {
-        "before": "                if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0 }",
-        "after": "                if (geometry.railAtTop || geometry.isNativeLandscapeRail) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop || geometry.isNativeLandscapeRail) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop || geometry.isNativeLandscapeRail) dp(10).toInt() else 0 }"
+        "before": "        val base = profile.copy(geometry = profile.geometry.copy(topHeight = thickness))",
+        "after": "        val base = profile.copy(geometry = safeGeometry.copy(topHeight = thickness))"
       },
       {
-        "before": "                val x = if (!occupied[index]) 0 else if (geometry.railAtTop) box.left else (profile.geometry.sidebarWidth - box.width) / 2",
-        "after": "                val x = if (!occupied[index]) 0 else if (geometry.railAtTop || geometry.isNativeLandscapeRail) box.left else (profile.geometry.sidebarWidth - box.width) / 2"
+        "before": "        val length = if (profile.geometry.isLandscape) profile.geometry.availableWidth else profile.geometry.availableHeight",
+        "after": "        val length = if (safeGeometry.isLandscape) safeGeometry.availableWidth else safeGeometry.availableHeight"
       },
       {
-        "before": "            \"左侧排列\" to { changeStageLayout(false,SidebarSide.LEFT) },\n            \"右侧排列\" to { changeStageLayout(false,SidebarSide.RIGHT) },",
-        "after": "            (if (nativeTablet) \"小窗排列在上方\" else \"左侧排列\") to { changeStageLayout(false,SidebarSide.LEFT) },\n            (if (nativeTablet) \"小窗排列在下方\" else \"右侧排列\") to { changeStageLayout(false,SidebarSide.RIGHT) },"
-      },
-      {
-        "before": "        val anchor = records.firstOrNull { it.title == \"StageMainHandle\" }?.view ?: return",
-        "after": "        val anchor = records.firstOrNull { it.title == \"StageMainHandle\" }?.view ?: return\n        val current = geometry()\n        val nativeTablet = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n            .wideLandscapeTablet(current.screenWidth, current.screenHeight)"
-      },
-      {
-        "before": "                if (smartRail.hidden && !geometry.railAtTop) {",
-        "after": "                if (smartRail.hidden && geometry.isNativeLandscapeRail) {\n                    // On native tablets the rail lives at the top or bottom.\n                    // Its tiny reopen handle must not jump to a phone's left/right edge.\n                    val box=io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeHandlePlacement\n                        .hidden(geometry,context.resources.displayMetrics.density)\n                    params.width=box.width;params.height=box.height\n                    params.x=box.left;params.y=box.top\n                } else if (smartRail.hidden && !geometry.railAtTop) {"
+        "before": "        val density = profile.densityDpi / 160f",
+        "after": "        val density = profile.densityDpi / 160f\n        // The Lenovo Y700's ported phone-ROM can report an empty status bar\n        // inset even with system icons visible. Repair the *presentation*\n        // geometry on this wide-tablet display only, including cached layouts;\n        // never rewrite the recorded profile or existing phone/fold choices.\n        val original = profile.geometry\n        val safeTop = StageDisplayPolicy.safeTabletTopInset(\n            original.screenWidth, original.screenHeight, density, original.navigationInsets.top)\n        val safeGeometry = if (safeTop == original.navigationInsets.top) original\n            else original.copy(navigationInsets = original.navigationInsets.copy(top = safeTop))"
       }
-    ]
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": []
   }
 }
