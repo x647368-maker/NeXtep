@@ -59,7 +59,7 @@ jobs:
           import json, re
           with open('release/atomic-update.json', encoding='utf-8') as f:
               name=json.load(f).get('apkAsset', '')
-          if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9._-]+\\.apk', name):
+          if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9._-]+\.apk', name):
               raise SystemExit('Unsafe or missing release apkAsset')
           print(name)
           PY
