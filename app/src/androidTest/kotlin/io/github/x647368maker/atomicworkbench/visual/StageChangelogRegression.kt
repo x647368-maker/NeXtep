@@ -42,6 +42,14 @@ internal class StageChangelogRegression(private val inst: Instrumentation) {
         check(names[0].startsWith("v0.9.26-dev") && names[1].startsWith("v0.9.25-dev")) {
             "Version sorting is wrong: ${names.take(5)}"
         }
+        inst.runOnMainSync {
+            // The current long release entry starts expanded. Close only its
+            // *real* accordion header so the archived v25 card is on screen.
+            val firstCard=(page as ViewGroup).getChildAt(2) as ViewGroup
+            check(firstCard.getChildAt(0).performClick()) { "Cannot collapse current changelog entry" }
+            check(firstCard.getChildAt(1).visibility==View.GONE) { "Changelog accordion did not close" }
+        }
+        inst.waitForIdleSync()
         inst.uiAutomation.takeScreenshot()?.let { frame ->
             File(output,"changelog-v25-v26.png").outputStream().use {
                 frame.compress(Bitmap.CompressFormat.PNG,100,it)
