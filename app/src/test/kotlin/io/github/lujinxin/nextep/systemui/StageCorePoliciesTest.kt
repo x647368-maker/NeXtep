@@ -5,21 +5,33 @@ import org.junit.Test
 
 class StageCorePoliciesTest {
     @Test fun fixedPinsAreUniqueLimitedAndOrdered() {
-        assertEquals(listOf("a", "b", "c", "d", "e", "f"), StageQuickPolicy.normalize(listOf("a", "", "a", "b", "c", "d", "e", "f", "g")))
+        assertEquals(listOf("a", "b", "c", "d", "e", "f", "g"), StageQuickPolicy.normalize(listOf("a", "", "a", "b", "c", "d", "e", "f", "g")))
     }
     @Test fun unpinRetainsRemainingOrder() {
         assertEquals(listOf("a", "c"), StageQuickPolicy.toggle(listOf("a", "b", "c"), "b"))
     }
-    @Test fun pinDoesNotEvictExistingSix() {
-        assertEquals((1..6).map { "$it" }, StageQuickPolicy.toggle((1..6).map { "$it" }, "7"))
+    @Test fun foldedLargeScreenCanKeepMoreThanSixPinnedWithoutEvicting() {
+        assertEquals((1..7).map { "$it" }, StageQuickPolicy.toggle((1..6).map { "$it" }, "7"))
+        assertEquals(12, StageQuickPolicy.normalize((1..16).map { "$it" }).size)
     }
     @Test fun pinSortingClampsAtBothEnds() {
         assertEquals(listOf("b", "a", "c"), StageQuickPolicy.move(listOf("a", "b", "c"), "b", -1))
         assertEquals(listOf("a", "c", "b"), StageQuickPolicy.move(listOf("a", "b", "c"), "b", 9))
         assertEquals(listOf("a"), StageQuickPolicy.move(listOf("a"), "missing", 1))
     }
-    @Test fun autoShowsFiveRealAvailableApps() {
-        assertEquals(listOf("a", "b", "c", "d", "e"), StageQuickPolicy.select(false, listOf("f"), listOf("a", "b", "c", "d", "e", "f"), ('a'..'f').map { "$it" }.toSet()))
+    @Test fun autoPrioritizesExplicitPinnedThenRealRecentAppsWithCompactFiveLimit() {
+        assertEquals(listOf("f", "a", "b", "c", "d"), StageQuickPolicy.select(false, listOf("f"), listOf("a", "b", "c", "d", "e", "f"), ('a'..'f').map { "$it" }.toSet()))
+    }
+
+    @Test fun unfoldedN5AndY700ShowMoreButDoNotInventEntries() {
+        val available = (1..12).map { "$it" }.toSet()
+        assertEquals((1..10).map { "$it" },
+            StageQuickPolicy.select(false, listOf("1", "2"), (3..12).map { "$it" }, available, capacity = 10))
+        assertEquals((1..12).map { "$it" },
+            StageQuickPolicy.select(false, listOf("1", "2"), (3..12).map { "$it" }, available, capacity = 12))
+        assertEquals((1..6).map { "$it" },
+            StageQuickPolicy.select(true, (1..7).map { "$it" }, emptyList(), available, capacity = 5))
+        assertEquals(listOf("2", "4"), StageQuickPolicy.select(false, listOf("2"), listOf("4", "gone"), setOf("2", "4"), capacity = 10))
     }
     @Test fun fixedModeFiltersUninstalledWithoutChangingStoredPins() {
         val pins = listOf("gone", "b", "a")
