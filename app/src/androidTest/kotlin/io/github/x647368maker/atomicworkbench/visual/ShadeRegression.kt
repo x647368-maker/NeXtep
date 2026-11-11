@@ -138,7 +138,13 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             val m=activity.resources.displayMetrics;val x=m.widthPixels*.5f;val down=SystemClock.uptimeMillis()
             for(i in 0..24){val y=m.heightPixels*(from+(to-from)*i/24f);val action=when(i){0->MotionEvent.ACTION_DOWN;24->MotionEvent.ACTION_UP;else->MotionEvent.ACTION_MOVE};val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);e.source=android.view.InputDevice.SOURCE_TOUCHSCREEN;check(inst.uiAutomation.injectInputEvent(e,true));e.recycle();Thread.sleep(10)}
         }
-        fun swipeUp()=swipe(.88f,.03f)
+        // AOSP baseline: start inside native shade content. Bottom 98% of
+        // this Android 15 emulator's gesture area navigates HOME (observed
+        // NexusLauncher focus), rather than closing QS. That OEM behavior
+        // must be assessed separately on ColorOS / Vector hardware.
+        // Neither gesture below invokes collapsePanels(), BACK or HOME.
+        fun swipeUpInsideShade()=swipe(.80f,.08f)
+        fun swipeUpShadeFallback()=swipe(.68f,.06f)
         for((action,name)in listOf(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS to "notifications",AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS to "quick settings",0 to "raw pull-down notifications")) {
             var secondSwipe=0
             repeat(20){cycle->
@@ -147,15 +153,15 @@ internal class ShadeRegression(private val inst:Instrumentation) {
                 val opened=waitFocus(true)
                 if(cycle==0 || !opened)evidence("${action}-${cycle}-open")
                 check(opened){"Native $name did not open; focus=${focus()}; see shade diagnostics"}
-                Thread.sleep(220);swipeUp()
+                Thread.sleep(220);swipeUpInsideShade()
                 if(!waitFocus(false,10)) {
-                    secondSwipe++;swipeUp()
+                    secondSwipe++;swipeUpShadeFallback()
                     val closed=waitFocus(false)
                     if(!closed)evidence("${action}-${cycle}-close-failed")
-                    check(closed){"Native $name cycle=$cycle did not close after two swipes; focus=${focus()}"}
+                    check(closed){"Native $name cycle=$cycle did not close after two in-shade swipes; focus=${focus()}"} 
                 }
             }
-            record("PASS 20 actual AOSP $name ${if(action==0) "raw-swipe-open" else "accessibility-open"}/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
+            record("PASS 20 actual AOSP native-shade-content $name ${if(action==0) "raw-swipe-open" else "accessibility-open"}/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
         }
         File(out,"shade-results.txt").writeText(lines.joinToString("\n")+"\n")
         return lines

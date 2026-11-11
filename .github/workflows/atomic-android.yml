@@ -98,6 +98,10 @@ jobs:
         run: python3 scripts/test-release-contract.py
       - name: Verify changelog history parser
         run: python3 scripts/generate-release-history.py --self-test
+      - name: Verify release-note heading, APK version and versionCode are identical
+        run: |
+          python3 scripts/verify-release-notes-version.py --self-test
+          python3 scripts/verify-release-notes-version.py
       - name: Verify online feed fallback and publisher contract
         run: python3 scripts/test-update-feed.py
       - name: Check download retry classification

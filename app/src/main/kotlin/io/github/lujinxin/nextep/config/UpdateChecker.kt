@@ -17,6 +17,11 @@ internal object UpdateFeedAuthority {
     fun validSize(total: Int) = total in 1..40
     fun hasApplicableRecords(total: Int, applicable: Int) =
         validSize(total) && applicable in 1..total
+
+    // A well-formed index can be stale just after a new Release is published.
+    // Never treat a null result as authoritative; confirm with Releases API.
+    fun hasConfirmedUpgrade(feedSucceeded: Boolean, updateFound: Boolean) =
+        feedSucceeded && updateFound
 }
 
 internal object UpdateChecker {
@@ -33,7 +38,8 @@ internal object UpdateChecker {
         // An empty or channel-inapplicable feed MUST fall back to Releases API
         // rather than reporting a false "already latest" result.
         val feed = runCatching { checkFeed(channel, installedCode) }
-        if (feed.isSuccess) return feed.getOrThrow()
+        if (UpdateFeedAuthority.hasConfirmedUpgrade(feed.isSuccess, feed.getOrNull() != null))
+            return feed.getOrThrow()
         val api = runCatching { checkReleasesApi(channel, installedCode) }
         if (api.isSuccess) return api.getOrThrow()
         throw IOException(
