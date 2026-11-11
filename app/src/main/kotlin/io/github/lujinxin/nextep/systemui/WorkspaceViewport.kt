@@ -108,10 +108,19 @@ internal class WorkspaceViewport(
     var cinemaPortrait = false
     private fun selected(profile: WorkspaceLayoutProfile): WorkspaceLayoutProfile {
         val density = profile.densityDpi / 160f
+        // The Lenovo Y700's ported phone-ROM can report an empty status bar
+        // inset even with system icons visible. Repair the *presentation*
+        // geometry on this wide-tablet display only, including cached layouts;
+        // never rewrite the recorded profile or existing phone/fold choices.
+        val original = profile.geometry
+        val safeTop = StageDisplayPolicy.safeTabletTopInset(
+            original.screenWidth, original.screenHeight, density, original.navigationInsets.top)
+        val safeGeometry = if (safeTop == original.navigationInsets.top) original
+            else original.copy(navigationInsets = original.navigationInsets.copy(top = safeTop))
         // Reserve the 48dp reopen target below the status/cutout band, never over an app.
-        val length = if (profile.geometry.isLandscape) profile.geometry.availableWidth else profile.geometry.availableHeight
+        val length = if (safeGeometry.isLandscape) safeGeometry.availableWidth else safeGeometry.availableHeight
         val thickness = (io.github.x647368maker.atomicworkbench.workspace.StagePresentationPolicy.toolbarDp(mainPriority,quickExpanded) * density).toInt().coerceAtMost(length / 4)
-        val base = profile.copy(geometry = profile.geometry.copy(topHeight = thickness))
+        val base = profile.copy(geometry = safeGeometry.copy(topHeight = thickness))
         val selected = selectedRail(base)
         val g = selected.geometry
         return when {
