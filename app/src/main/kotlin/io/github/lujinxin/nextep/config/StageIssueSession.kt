@@ -167,7 +167,7 @@ internal class StageIssueSession(context: Context) {
             appendLine("结束设备状态：${StageIssueSceneSnapshot.read(app)}")
             appendLine("开始工作台：${preferences.getString("start_runtime","无法读取")}")
             appendLine("结束工作台：${runtimeLine(snapshot)}")
-            appendLine("自动屏幕及测试App前后台事件：${autoEventCount()}条（最多$maxAutoEvents条）")
+            appendLine("自动屏幕及测试App前后台事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
             for (event in 0 until autoEventCount()) {
                 appendLine("状态事件#${event+1}：${preferences.getString("auto_event_$event","不可用")}")
             }
