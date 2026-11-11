@@ -88,7 +88,8 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
             "The visual test must enable actual animations, not silently bypass the new reflow"
         }
 
-        fun applyChange(from: List<Pose>, to: List<Pose>, oldCount: Int, newCount: Int) {
+        fun applyChange(from: List<Pose>, to: List<Pose>,
+            oldCount: Int, newCount: Int, settleMs: Long = 380L) {
             instrumentation.runOnMainSync {
                 val before=(0 until oldCount).associate { i -> cards[i] as View to from[i].bounds() }
                 to.forEachIndexed { i,p ->
@@ -96,28 +97,47 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                         leftMargin=p.x;topMargin=p.y
                     }
                 }
+                // Occupancy removal hides its live card without releasing the
+                // TextureView/producer; readdition reuses the same Surface.
+                for(i in newCount until oldCount) cards[i].alpha=0f
                 val after=(0 until newCount).associate { i -> cards[i] as View to to[i].bounds() }
                 motion.animate(geo,geo,oldCount,newCount,before,after,enabled=true)
                 check(motion.isAnimating(cards[0]))
                 check(abs(cards[0].scaleX-cards[0].scaleY)<.0001f)
-                check(abs(cards[newCount-1].translationY)<.001f) {
-                    "Added card must appear in its final location, not fly across controls"
+                if (newCount > oldCount) {
+                    check(abs(cards[newCount-1].translationY)<.001f) {
+                        "Added card must appear in its final location, not fly across controls"
+                    }
                 }
             }
-            Thread.sleep(380)
+            Thread.sleep(settleMs)
             instrumentation.runOnMainSync {
                 for(i in 0 until newCount) {
                     val view=cards[i]
-                    check(!motion.isAnimating(view)) {"Reflow did not settle by 380ms"}
-                    check(abs(view.scaleX-1f)<.002f && abs(view.scaleY-1f)<.002f)
-                    check(abs(view.translationX)<.002f && abs(view.translationY)<.002f)
-                    check(abs(view.alpha-1f)<.002f)
+                    if(settleMs < StageSparseRailReflowPolicy.DURATION_MS) {
+                        // Keep a transition active so the next call tests
+                        // continuity rather than an already settled card.
+                        if(i==0) check(motion.isAnimating(view)) {
+                            "Expected a live transition during rapid changes"
+                        }
+                    } else {
+                        check(!motion.isAnimating(view)) {"Reflow did not settle by 380ms"}
+                        check(abs(view.scaleX-1f)<.002f && abs(view.scaleY-1f)<.002f)
+                        check(abs(view.translationX)<.002f && abs(view.translationY)<.002f)
+                        check(abs(view.alpha-1f)<.002f)
+                    }
                 }
             }
         }
 
         try {
-            applyChange(old,triple,2,3)
+            // Rapid 2->3->4 must not snap back to nominal layout between
+            // one-shot animations. Reverse 4->3->2 and immediately add again.
+            applyChange(old,triple,2,3,settleMs=60L)
+            applyChange(triple,four,3,4)
+            applyChange(four,triple,4,3,settleMs=60L)
+            applyChange(triple,old.take(2),3,2)
+            applyChange(old.take(2),triple,2,3,settleMs=60L)
             applyChange(triple,four,3,4)
             instrumentation.runOnMainSync {
                 check(created.get()==4) {
@@ -158,6 +178,6 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                 surfaces.forEach { it.release() }
             }
         }
-        return "PASS real HWUI live-buffer side rail 2->3->4 completes 190ms uniform motion with no extra displays, distortion or flying add card"
+        return "PASS real HWUI 2->3->4->3->2->3->4 rapid interruption-safe uniform motion, preserved live buffers, no stale transform or flying add card"
     }
 }
