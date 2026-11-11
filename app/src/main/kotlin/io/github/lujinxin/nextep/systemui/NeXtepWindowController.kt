@@ -2033,7 +2033,9 @@ class NeXtepWindowController(
         val occupied = List(WORKSPACE_SLOT_COUNT) { states.getOrNull(it) is SlotState.Occupied }
         val profile = selectedProfile
         val bounds = io.github.x647368maker.atomicworkbench.workspace.StageLiveCardLayout.bounds(
-            profile, slotWindows.map { it.geometry() }, occupied, stageOrder)
+            profile, slotWindows.map { it.geometry() }, occupied, stageOrder,
+            allowPhoneSparse = io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy
+                .trialModel(android.os.Build.MODEL))
         slotWindows.forEachIndexed { index, slot ->
             slot.setLayoutProfile(profile)
             val box = if (occupied[index]) bounds[index] else io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile.Slot(1, 1, 0, 0)
