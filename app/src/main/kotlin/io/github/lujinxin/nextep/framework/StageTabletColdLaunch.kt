@@ -39,6 +39,9 @@ internal object StageTabletColdLaunch {
             if (pending?.targetPackage==packageName) pending=null
         }
     }
+    fun clearAll() {
+        synchronized(this) { pending=null }
+    }
 
     fun onTaskAppeared(info: ActivityManager.RunningTaskInfo, leash: Any?) {
         if (leash==null) return
