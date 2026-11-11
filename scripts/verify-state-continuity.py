@@ -43,13 +43,32 @@ def undo_y700_ux(path,data):
   assert text.count(patch['after'])==1,path
   text=text.replace(patch['after'],patch['before'],1)
  return text.encode('utf-8')
+# The 0.9.29 picker retry is a limited UI-only change in a frozen file.
+# Verify its complete new blob, reverse the one exact fragment, and verify
+# the original full blob BEFORE any existing historical freeze normalization.
+picker_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'
+picker_review=json.loads((root/'scripts/reviewed-app-catalog-picker-0.9.29.json').read_text())['files']
+assert set(picker_review)=={picker_path}
+def undo_picker_retry(path,data):
+ if path!=picker_path:return data
+ spec=picker_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
 # Reviewed compositor-only reflow; normalize exact new controller blob
 # back to its previous code before every pre-existing freeze hash check.
 reflow_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'
 reflow_review=json.loads((root/'scripts/reviewed-sparse-side-reflow-0.9.26.json').read_text())['files']
 assert set(reflow_review)=={reflow_path}
 def undo_reflow(path,data):
- data=undo_y700_ux(path,undo_y700_cold(path,data))
+ data=undo_y700_ux(path,undo_y700_cold(path,undo_picker_retry(path,data)))
  if path!=reflow_path:return data
  spec=reflow_review[path]
  current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
