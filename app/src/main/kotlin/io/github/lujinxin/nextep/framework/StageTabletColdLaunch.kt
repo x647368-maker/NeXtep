@@ -52,6 +52,7 @@ internal object StageTabletColdLaunch {
         val packages = listOfNotNull(info.topActivity?.packageName,
             info.baseActivity?.packageName,info.baseIntent?.component?.packageName)
         val now=SystemClock.uptimeMillis()
+        val observedUser=TaskInfoCompat.readUserId(info) ?: return
         val reservation = synchronized(this) {
             val p=pending ?: return@synchronized null
             if (now < p.startedAt || now-p.startedAt > StageTabletColdLaunchPolicy.WINDOW_MS) {
