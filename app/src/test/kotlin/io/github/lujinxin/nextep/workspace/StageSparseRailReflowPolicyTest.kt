@@ -74,4 +74,29 @@ class StageSparseRailReflowPolicyTest {
         assertNull(StageSparseRailReflowPolicy.start(
             StageSparseRailReflowPolicy.Bounds(0f,0f,700f,1400f),target))
     }
+
+    @Test fun interruptedCardReflowContinuesFromActualRenderedBounds() {
+        val layout=StageSparseRailReflowPolicy.Bounds(30f,250f,150f,300f)
+        val visual=StageSparseRailReflowPolicy.visibleBounds(
+            layout, .9f,.9f,10f,-15f)!!
+        assertEquals(40f + 75f, visual.cx, .001f)
+        assertEquals(400f - 15f, visual.cy, .001f)
+        assertEquals(135f,visual.width,.001f)
+        assertEquals(270f,visual.height,.001f)
+        val next=StageSparseRailReflowPolicy.Bounds(50f,320f,180f,360f)
+        val start=StageSparseRailReflowPolicy.start(visual,next)!!
+        assertEquals(visual.cx,next.cx+start.offsetX,.001f)
+        assertEquals(visual.cy,next.cy+start.offsetY,.001f)
+        assertEquals(visual.width/next.width,start.uniformScale,.001f)
+        assertEquals(visual.height/next.height,start.uniformScale,.001f)
+    }
+
+    @Test fun interruptedReflowRejectsDistortedOrInvalidCompositorState() {
+        val layout=StageSparseRailReflowPolicy.Bounds(30f,250f,150f,300f)
+        assertNull(StageSparseRailReflowPolicy.visibleBounds(layout,.8f,1.1f,0f,0f))
+        assertNull(StageSparseRailReflowPolicy.visibleBounds(layout,Float.NaN,1f,0f,0f))
+        assertNull(StageSparseRailReflowPolicy.visibleBounds(layout,1f,1f,
+            Float.POSITIVE_INFINITY,0f))
+        assertNull(StageSparseRailReflowPolicy.visibleBounds(layout,0f,0f,0f,0f))
+    }
 }
