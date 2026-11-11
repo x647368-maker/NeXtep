@@ -45,6 +45,17 @@
             android:exported="true"
             android:label="@string/app_name" />
 
+        <!-- Internal only. A one-shot, non-wakeup alarm can finish a user-armed
+             test after the UI closes, without a background service. -->
+        <receiver
+            android:name=".config.StageIssueTimeoutReceiver"
+            android:exported="false" />
+
+        <activity
+            android:name=".config.StageIssueDiagnosticActivity"
+            android:exported="false"
+            android:label="故障测试与报告" />
+
         <activity
             android:name=".config.EnergyMonitorActivity"
             android:exported="false"
