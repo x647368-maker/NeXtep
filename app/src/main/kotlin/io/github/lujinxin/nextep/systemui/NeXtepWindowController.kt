@@ -73,6 +73,7 @@ class NeXtepWindowController(
     private var cinemaApplying = false
     private val cinemaCheck = Runnable { evaluateCinema() }
     private var windowPickerGeneration = 0
+    private var tabletLayoutMotionGeneration = 0
     private var windowRefreshQueued = false
     private fun scheduleWindowRefresh() {
         if (windowRefreshQueued) return
@@ -817,7 +818,19 @@ class NeXtepWindowController(
             touchable = true, windowType = windowType,
         )
         addWindow(
-            title = "StageMainHandle", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow),
+            title = "StageMainHandle", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow, {
+                // Only on a wide Y700-like tablet: quick tap toggles the
+                // favorites row. Long press still opens the complete main menu.
+                // Compact phones and near-square foldables keep click=menu.
+                val g = geometry()
+                if (io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy
+                        .tap(g.screenWidth, g.screenHeight) !=
+                    io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy.Tap.QUICK_BAR) false
+                else {
+                    setQuickExpanded(!(core.enabled && core.expanded))
+                    true
+                }
+            }),
             width = dp(48).toInt(), height = dp(48).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
             touchable = true, windowType = windowType,
         )
@@ -930,6 +943,11 @@ class NeXtepWindowController(
         params.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         params.gravity = Gravity.TOP or Gravity.LEFT
+        if (record.title == "StageMainHandle") {
+            (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(
+                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                    .wideTablet(geometry.screenWidth, geometry.screenHeight))
+        }
         setWindowBounds(record.title, params, geometry)
         if (record.title == "NeXtepTopBar") renderQuickChrome()
         if (record.title == "AtomicSidebarHandle") (record.view as? android.widget.TextView)?.apply {
@@ -1298,12 +1316,40 @@ class NeXtepWindowController(
         runCatching {
             viewport.setSidebarSide(side);sidebarSide=side;topAppStrip?.setSidebarSide(side)
             viewport.setTopRail(top)
-            if (workspaceVisible && !suspended) onViewportChanged()
+            if (workspaceVisible && !suspended) {
+                onViewportChanged()
+                // Animate only the live panel entering its *new* tablet layout.
+                // The task surface and click projection are still updated by
+                // the normal geometry owner; no frozen image or VD recreation.
+                animateTabletLayoutSelection()
+            }
         }.onFailure {
             viewport.setSidebarSide(previousSide);sidebarSide=previousSide;topAppStrip?.setSidebarSide(previousSide)
             viewport.setTopRail(previous)
             if (workspaceVisible && !suspended) onViewportChanged()
             throw it
+        }
+    }
+
+    private fun animateTabletLayoutSelection() {
+        val g = geometry()
+        val entry = io.github.x647368maker.atomicworkbench.workspace.StageTabletLayoutMotionPolicy
+            .entry(g, context.resources.displayMetrics.density) ?: return
+        val panel = records.firstOrNull { it.title == "NeXtepSidebar" }?.view ?: return
+        val generation = ++tabletLayoutMotionGeneration
+        panel.post {
+            if (generation != tabletLayoutMotionGeneration || !workspaceVisible || suspended)
+                return@post
+            val actual = geometry()
+            if (actual.railAtTop != g.railAtTop || actual.sidebarSide != g.sidebarSide ||
+                !actual.isLandscape) return@post
+            panel.animate().cancel()
+            panel.alpha = 0.86f
+            panel.translationX = entry.dx
+            panel.translationY = entry.dy
+            panel.animate().alpha(1f).translationX(0f).translationY(0f)
+                .setDuration(entry.durationMs)
+                .setInterpolator(transitionInterpolator).start()
         }
     }
 
