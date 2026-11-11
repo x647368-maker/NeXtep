@@ -23,6 +23,10 @@ assert set(unified_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
 }
+# Lock output mitigation must match an exact reviewed SystemUI runtime blob.
+# Restore the audited baseline only in memory, then run original frozen checks.
+energy_review=json.loads((root/'scripts/reviewed-energy-lock-0.9.19.json').read_text())['files']
+assert set(energy_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt'}
 # The tablet branch is independently reviewed as exact reverse patches.
 # Normalize only these known fragments before applying the existing frozen
 # v0.9.17 -> v0.9.8 source chain. An unrelated edit still fails its hash.
@@ -36,6 +40,15 @@ assert set(tablet_review)=={
 reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
+ if path in energy_review:
+  spec=energy_review[path]
+  new_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+  assert new_blob==spec['reviewed_blob_sha1'],path
+  previous=spec['base_content'].encode('utf-8')
+  old_blob=hashlib.sha1(b'blob '+str(len(previous)).encode()+b'\0'+previous).hexdigest()
+  assert old_blob==spec['base_blob_sha1'],path
+  assert hashlib.sha256(previous).hexdigest()==spec['base_sha256'],path
+  data=previous
  if path in unified_review:
   spec=unified_review[path]
   blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
@@ -221,4 +234,9 @@ menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
 assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
 assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
 assert 'TRANSPARENT' in menu and '*.38f' in menu
+runtime=(k/'systemui/SystemUiRuntime.kt').read_text()
+assert runtime.count('StageLockPowerPolicy.allowSuspendedOutput(')==2
+assert 'StageLockPowerPolicy.observationIntervalMs(ready, locked)' in runtime
+assert 'StageLockPowerPolicy.resumeRetryMs(screenReady, locked)' in runtime
+assert 'updateSuspendedOutputs(screenReady)' not in runtime
 print('0.9.8 frozen hashes enforced after exact reviewed 0.9.12 and 0.9.11 fragment normalization; geometry/task/input writers remain original; native shade and bounded menu checked')
