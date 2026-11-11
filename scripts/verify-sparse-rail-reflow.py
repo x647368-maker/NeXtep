@@ -16,6 +16,11 @@ assert 'withEndAction' in animator and 'active.remove(view)' in animator
 assert 'sparseRailMotion.cancel()' in host
 assert 'sparseRailMotion.isAnimating(this)' in host
 assert 'if (countChanged)' in host and 'sparseRailMotion.animate(' in host
+assert 'allowPhoneSparse = io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy' in host
+assert '.trialModel(android.os.Build.MODEL)' in host
+live=(files/'workspace/StageLiveCardLayout.kt').read_text()
+assert 'allowPhoneSparse: Boolean = false' in live
+assert 'if (allowPhoneSparse) StageSparseSideCardPolicy.fit' in live
 for bad in ['setRepeating(', 'setExact(', 'WakeLock', 'Thread.sleep(', 'HandlerThread',
             'SurfaceControl.Transaction', 'capturePreview(', 'setSurface(', '.resize(',
             'updateViewLayout(', 'postDelayed(', 'ValueAnimator.of', 'addUpdateListener(']:
