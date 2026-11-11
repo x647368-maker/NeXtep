@@ -20,6 +20,11 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
         setOnClickListener { add(this) }
         visibility = View.GONE
     }
+    private val inlineAdd = TextView(context).apply {
+        text = "+"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+        contentDescription = "添加常用应用到快捷栏"
+        setOnClickListener { add(this) }
+    }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     /** On tablet / unfolded fold only, reserve a real, always-reachable '+'
      * hit target outside the scrolling app list. The compact phone row keeps
@@ -29,6 +34,7 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
         if (wideActions == enabled) return
         wideActions = enabled
         pinnedAdd.visibility = if (wideActions) View.VISIBLE else View.GONE
+        inlineAdd.visibility = if (wideActions) View.GONE else View.VISIBLE
     }
     init {
         gravity = Gravity.CENTER_VERTICAL
@@ -55,10 +61,10 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
             }
             row.addView(icon, LayoutParams(dp(48), dp(48)))
         }
-        if (!wideActions) row.addView(TextView(context).apply {
-            text = "+"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            contentDescription = "添加常用应用到快捷栏"; setOnClickListener { add(this) }
-        }, LayoutParams(dp(48), dp(48)))
+        // Both targets are reusable. During a live fold/unfold the layout may
+        // change before usage data reloads; switching their visibility keeps
+        // exactly one clickable '+' without rebuilding the entire app row.
+        row.addView(inlineAdd, LayoutParams(dp(48), dp(48)))
     }
 }
 
