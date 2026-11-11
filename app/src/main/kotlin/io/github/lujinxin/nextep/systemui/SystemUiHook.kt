@@ -46,6 +46,13 @@ object SystemUiHook {
                                 io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat.observeTaskInfo(
                                     info, if (method.name == "onTaskAppeared") chain.args.getOrNull(1) else null,
                                 )
+                                if (method.name == "onTaskAppeared") {
+                                    // Y700 only: put the live task leash at main
+                                    // geometry BEFORE Shell submits the native
+                                    // appearance transaction. Other devices are
+                                    // unchanged; OEM windows fail open.
+                                    StageTabletColdLaunchBridge.onTaskAppeared(info)
+                                }
                             }
                         }
                         val result = chain.proceed()

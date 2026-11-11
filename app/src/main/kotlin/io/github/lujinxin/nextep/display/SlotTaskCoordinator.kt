@@ -183,6 +183,7 @@ class SlotTaskCoordinator(
             throw error
         }
         active = false
+        io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.reset()
         cancelPendingAdd("工作区已退出")
         cancelPendingExchange()
         onSlotDragEnded()
@@ -277,6 +278,7 @@ class SlotTaskCoordinator(
         }
         if (value) {
             suspended = true
+            io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.reset()
             cancelPendingExchange()
             onSlotDragEnded()
             recentSelectionGeneration += 1
@@ -519,13 +521,37 @@ class SlotTaskCoordinator(
                         "top app promoted from slot",
                     )
                 }
-                if (currentMain?.taskId != existing.taskId) taskRepository.bringTaskToFront(existing.taskId).getOrThrow()
-                minimizePreviousMain()
-                mainTaskPresenter.presentTask(existing.taskId, geometryProvider()).getOrThrow()
+                // For a *retained* Y700 task already on display 0, prepare
+                // the actual task leash before Shell brings it to the front.
+                // Leave vendor dual-window, freeform, slot tasks, phones and
+                // foldables on the original task-preserving route.
+                val g=geometryProvider()
+                val earlyFit = sourceSlot < 0 &&
+                    existing.displayId == Display.DEFAULT_DISPLAY &&
+                    existing.windowingMode == fullscreenWindowingMode() &&
+                    !existing.vendorWindowed && currentMain?.taskId != existing.taskId &&
+                    io.github.x647368maker.atomicworkbench.workspace.StageTabletColdLaunchPolicy.arm(
+                        g.screenWidth,g.screenHeight,component.packageName,existing.userId ?: -1) &&
+                    TaskSurfaceCompat.preparePromotion(existing.taskId,g).isSuccess
+                try {
+                    if (currentMain?.taskId != existing.taskId) taskRepository.bringTaskToFront(existing.taskId).getOrThrow()
+                    minimizePreviousMain()
+                    mainTaskPresenter.presentTask(existing.taskId, geometryProvider()).getOrThrow()
+                } finally {
+                    if (earlyFit) TaskSurfaceCompat.cancelPreparedPromotion(existing.taskId)
+                }
             } else {
                 check(TaskContinuityPolicy.canLaunch(TaskContinuityPolicy.Origin.USER_LAUNCH, existingTask = false))
                 NeXtepLog.info("task_continuity", "explicit_user_launch package=${component.packageName} user=${normalized.targetUser()} reason=no_existing_task")
-                UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()
+                // Y700 native first-frame handoff. The Shell onTaskAppeared
+                // callback consumes this one-shot only if exact app/user,
+                // actual fullscreen windowing and physical display match.
+                val earlyLaunch=io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.arm(
+                    component,normalized.targetUser(),geometryProvider())
+                UserTargetedActivityLauncher.start(applicationContext, normalized)
+                    .onFailure {
+                        io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.cancel(earlyLaunch)
+                    }.getOrThrow()
                 minimizePreviousMain()
                 val generation = mainSelectionGeneration
                 handler.postDelayed({
@@ -1125,6 +1151,20 @@ class SlotTaskCoordinator(
                 it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
         } ?: findLaunchTask(component, normalized.targetUser())
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
+
+        // The ported Y700 ROM may own a WeChat task as a native dual-pane
+        // window even while reporting display 0/fullscreen. Never coerce
+        // that real task into a synthetic slot or rewrite resize metadata.
+        val physical=geometryProvider()
+        if (existing != null &&
+            io.github.x647368maker.atomicworkbench.workspace.StageTabletWeChatPolicy
+                .nativeWindowMustRemainUntouched(physical.screenWidth,physical.screenHeight,
+                    existing.component.packageName,existing.windowingMode,existing.vendorWindowed)) {
+            NeXtepLog.warn("y700_wechat",
+                "Preserving native WeChat task id=${existing.taskId} display=${existing.displayId} mode=${existing.windowingMode} vendor=${existing.vendorWindowed}")
+            return Result.failure(IllegalStateException(
+                "Y700 微信处于系统双窗模式：已保留原微信任务，不强制拉伸或迁移；请先在主窗使用"))
+        }
 
         if (existing?.displayId == targetDisplayId) {
             slotRecords[slotIndex].retainedTaskId = existing.taskId
@@ -1904,6 +1944,32 @@ class SlotTaskCoordinator(
                 }
                 shouldRecoverMigratedTask(record) -> {
                     recoverMigratedTask(index, record)
+                }
+                // ColorOS 16 phone-ROM port can redirect WeChat's NEW slot
+                // launch to its own native display-0 dual-pane window. Reuse
+                // that exact task; never retry by package (which might open a
+                // second WeChat task) or force a new resize/migration.
+                record.pendingComponent != null &&
+                    tasks.any { task ->
+                        io.github.x647368maker.atomicworkbench.workspace.StageTabletWeChatPolicy
+                            .nativeMainRedirect(geometryProvider().screenWidth,
+                                geometryProvider().screenHeight,
+                                record.pendingComponent?.packageName,
+                                task.component.packageName,task.displayId)
+                    } -> {
+                    record.pendingComponent=null
+                    record.pendingAttempts=0
+                    record.retainedTaskId=null
+                    record.originalLayout=null
+                    setState(index, SlotState.Ready(displayId),
+                        "$reason: Y700 WeChat kept native main task")
+                    NeXtepLog.info("y700_wechat",
+                        "ColorOS redirected WeChat slot request to native main; preserved existing task")
+                    mainTaskPresenter.reconcileForeground(geometryProvider(),tasks)
+                        .onFailure { error ->
+                            NeXtepLog.warn("y700_wechat", "Native main presentation unavailable",error)
+                        }
+                    mainReconciled=true
                 }
                 slotRecords[index].pendingComponent != null &&
                     slotRecords[index].pendingAttempts < MAX_PENDING_POLLS -> {

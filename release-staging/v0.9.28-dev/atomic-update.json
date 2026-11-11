@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "io.github.x647368maker.atomicworkbench",
+  "versionName": "0.9.28-dev",
+  "versionCode": 43,
+  "channel": "dev",
+  "apkAsset": "AtomicWorkbench-v0.9.28-dev-43-PREVIEW.apk",
+  "sha256": "7598b0cae07102badd1d0d2c747b0332c2a469a0a820cc1393963e38b499d8da",
+  "size": 31948002,
+  "certificateSha256": "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe",
+  "releaseTag": "atomic-v0.9.28-dev",
+  "releaseNotes": "统一内测候选：Y700 横屏画布、侧栏过渡、常用 App 启动首帧候选修复及微信原生任务保护；一加与 N5 保留原布局。尚未完成 ColorOS 三机真机验收，不是稳定版。"
+}
