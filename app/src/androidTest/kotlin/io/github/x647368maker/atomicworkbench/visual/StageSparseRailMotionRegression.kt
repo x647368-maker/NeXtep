@@ -92,6 +92,13 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
         fun applyChange(from: List<Pose>, to: List<Pose>,
             oldCount: Int, newCount: Int, settleMs: Long = 380L) {
             instrumentation.runOnMainSync {
+                val wasInFlight=motion.isAnimating(cards[0])
+                val oldPose=from[0]
+                val oldCenterX=oldPose.x+oldPose.w/2f+cards[0].translationX
+                val oldCenterY=oldPose.y+oldPose.h/2f+cards[0].translationY
+                val oldVisibleWidth=oldPose.w*cards[0].scaleX
+                val oldVisibleHeight=oldPose.h*cards[0].scaleY
+                val oldAlpha=cards[0].alpha
                 val before=(0 until oldCount).associate { i -> cards[i] as View to from[i].bounds() }
                 to.forEachIndexed { i,p ->
                     cards[i].layoutParams=FrameLayout.LayoutParams(p.w,p.h).apply {
@@ -103,6 +110,25 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                 for(i in newCount until oldCount) cards[i].alpha=0f
                 val after=(0 until newCount).associate { i -> cards[i] as View to to[i].bounds() }
                 motion.animate(geo,geo,oldCount,newCount,before,after,enabled=true)
+                if(wasInFlight) {
+                    // This is the regression that caught abrupt 2->3->4
+                    // snaps: the *rendered* rectangle must be continuous at
+                    // the exact instant an old animation is interrupted.
+                    val toPose=to[0]
+                    val newCenterX=toPose.x+toPose.w/2f+cards[0].translationX
+                    val newCenterY=toPose.y+toPose.h/2f+cards[0].translationY
+                    check(abs(newCenterX-oldCenterX)<1.5f &&
+                        abs(newCenterY-oldCenterY)<1.5f) {
+                        "Rapid reflow teleported the live card center"
+                    }
+                    check(abs(toPose.w*cards[0].scaleX-oldVisibleWidth)<2.5f &&
+                        abs(toPose.h*cards[0].scaleY-oldVisibleHeight)<2.5f) {
+                        "Rapid reflow jumped the live card scale"
+                    }
+                    check(abs(cards[0].alpha-oldAlpha)<.04f) {
+                        "Rapid reflow flashed alpha on an existing live task"
+                    }
+                }
                 check(motion.isAnimating(cards[0]))
                 check(abs(cards[0].scaleX-cards[0].scaleY)<.0001f)
                 if (newCount > oldCount) {
