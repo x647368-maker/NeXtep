@@ -104,6 +104,7 @@ internal class StageIssueSession(context: Context) {
         if (snapshot != null) {
             edit.putInt("start_pid", snapshot.processId)
                 .putLong("start_cpu", snapshot.cpuMs)
+                .putLong("start_runtime_elapsed", snapshot.elapsedMs)
                 .putLong("start_task", snapshot.taskQueries)
                 .putLong("start_frames", snapshot.slotFrames)
                 .putLong("start_captures", snapshot.previewCaptures)
@@ -184,7 +185,7 @@ internal class StageIssueSession(context: Context) {
             appendLine("App进程线索：${if(originalPid == android.os.Process.myPid()) "目前进程号相同，不能排除曾发生异常" else "进程号有变化或不可用，不能据此认定闪退"}")
             appendLine("用户说明：")
             appendLine(StageIssueReportPolicy.note(finalNote))
-            appendLine("注意：电量/温度属于整机，CPU计数包含系统界面进程；这些数值无法直接归因模块独占耗电。")
+            appendLine("注意：电量/温度属于整机，CPU计数来自整个SystemUI进程。接电测试不能用电量增长证明省电；判断模块独立增量须在相同条件下做断电、工作台关闭/开启对照。")
             appendLine("隐私：不含系统完整日志/私有聊天/应用列表；分享前请检查自行填写的内容。")
         }.take(StageIssueReportPolicy.MAX_REPORT_CHARS)
         preferences.edit().putBoolean("active", false).putString("report_core",report).apply()
@@ -196,10 +197,26 @@ internal class StageIssueSession(context: Context) {
     private fun markers(): List<Long> = preferences.getString("markers", null)
         .orEmpty().split(",").mapNotNull { it.toLongOrNull() }.take(StageIssueReportPolicy.MAX_MARKERS)
 
-    private fun batteryLine(s: BatterySample): String =
-        "电量=${s.levelPercent?.let { "%.1f%%".format(Locale.US,it) } ?: "未知"} " +
-        "温度=${s.temperatureC?.let { "%.1f°C".format(Locale.US,it) } ?: "未知"} " +
-        "充电状态=${s.plugged ?: "未知"}"
+    private fun batteryLine(s: BatterySample): String {
+        // EXTRA_PLUGGED is a *connection type*, not BATTERY_STATUS_CHARGING.
+        val supply = when (s.plugged) {
+            0 -> "未接电源"
+            android.os.BatteryManager.BATTERY_PLUGGED_AC -> "AC电源"
+            android.os.BatteryManager.BATTERY_PLUGGED_USB -> "USB电源"
+            android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS -> "无线电源"
+            else -> "类型未知(${s.plugged ?: "无数据"})"
+        }
+        val state = when (s.status) {
+            android.os.BatteryManager.BATTERY_STATUS_CHARGING -> "正在充电"
+            android.os.BatteryManager.BATTERY_STATUS_DISCHARGING -> "正在放电"
+            android.os.BatteryManager.BATTERY_STATUS_FULL -> "已充满"
+            android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "未充电"
+            else -> "状态未知"
+        }
+        return "电量=${s.levelPercent?.let { "%.1f%%".format(Locale.US,it) } ?: "未知"} " +
+            "温度=${s.temperatureC?.let { "%.1f°C".format(Locale.US,it) } ?: "未知"} " +
+            "外部电源=$supply 电池状态=$state"
+    }
 
     private fun runtimeLine(s: WorkspaceEnergyContract.Snapshot?): String = if (s==null)
         "系统界面进程未响应（状态不可用）"
@@ -212,9 +229,15 @@ internal class StageIssueSession(context: Context) {
             return "不可比较（系统界面进程不同或数据缺失）"
         fun diff(v: Long,key:String)=(v-preferences.getLong(key,v))
             .takeIf{it>=0}?.toString()?:"不可用"
+        val effective = StageCpuEvidence.averageCoreEquivalents(
+            preferences.getLong("start_cpu",-1L),end.cpuMs,
+            preferences.getLong("start_runtime_elapsed",-1L),end.elapsedMs)
+        val normalized = effective?.let {
+            "，平均约${String.format(Locale.US,"%.2f",it)}个CPU核心的累计忙碌时间"
+        } ?: ""
         return "任务查询+${diff(end.taskQueries,"start_task")} " +
             "截取+${diff(end.previewCaptures,"start_captures")} " +
             "帧+${diff(end.slotFrames,"start_frames")} " +
-            "系统界面进程CPU+${diff(end.cpuMs,"start_cpu")}ms（并非模块独占）"
+            "整个SystemUI进程CPU+${diff(end.cpuMs,"start_cpu")}ms$normalized（包含系统界面，不能归因模块独占）"
     }
 }
