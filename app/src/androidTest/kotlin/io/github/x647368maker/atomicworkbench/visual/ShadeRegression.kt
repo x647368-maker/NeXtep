@@ -138,7 +138,12 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             val m=activity.resources.displayMetrics;val x=m.widthPixels*.5f;val down=SystemClock.uptimeMillis()
             for(i in 0..24){val y=m.heightPixels*(from+(to-from)*i/24f);val action=when(i){0->MotionEvent.ACTION_DOWN;24->MotionEvent.ACTION_UP;else->MotionEvent.ACTION_MOVE};val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0);e.source=android.view.InputDevice.SOURCE_TOUCHSCREEN;check(inst.uiAutomation.injectInputEvent(e,true));e.recycle();Thread.sleep(10)}
         }
-        fun swipeUp()=swipe(.88f,.03f)
+        // Start at the bottom system-gesture strip first (the user's reported
+        // failure), rather than always swiping from 88% of the shade content.
+        // The second fallback uses a swipe inside the native shade; neither
+        // invokes collapsePanels()/BACK nor alters app or native panel behavior.
+        fun swipeUpFromGestureBar()=swipe(.98f,.03f)
+        fun swipeUpInsideShade()=swipe(.88f,.03f)
         for((action,name)in listOf(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS to "notifications",AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS to "quick settings",0 to "raw pull-down notifications")) {
             var secondSwipe=0
             repeat(20){cycle->
@@ -147,15 +152,15 @@ internal class ShadeRegression(private val inst:Instrumentation) {
                 val opened=waitFocus(true)
                 if(cycle==0 || !opened)evidence("${action}-${cycle}-open")
                 check(opened){"Native $name did not open; focus=${focus()}; see shade diagnostics"}
-                Thread.sleep(220);swipeUp()
+                Thread.sleep(220);swipeUpFromGestureBar()
                 if(!waitFocus(false,10)) {
-                    secondSwipe++;swipeUp()
+                    secondSwipe++;swipeUpInsideShade()
                     val closed=waitFocus(false)
                     if(!closed)evidence("${action}-${cycle}-close-failed")
                     check(closed){"Native $name cycle=$cycle did not close after two swipes; focus=${focus()}"}
                 }
             }
-            record("PASS 20 actual AOSP $name ${if(action==0) "raw-swipe-open" else "accessibility-open"}/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
+            record("PASS 20 actual AOSP bottom-gesture-first $name ${if(action==0) "raw-swipe-open" else "accessibility-open"}/raw-swipe-up-close cycles; at most two swipes, secondSwipe=$secondSwipe; WindowManager confirms native shade input focus then activity input focus returned")
         }
         File(out,"shade-results.txt").writeText(lines.joinToString("\n")+"\n")
         return lines
