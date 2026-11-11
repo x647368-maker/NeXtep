@@ -43,13 +43,32 @@ def undo_y700_ux(path,data):
   assert text.count(patch['after'])==1,path
   text=text.replace(patch['after'],patch['before'],1)
  return text.encode('utf-8')
+# The 0.9.29 picker retry is a limited UI-only change in a frozen file.
+# Verify its complete new blob, reverse the one exact fragment, and verify
+# the original full blob BEFORE any existing historical freeze normalization.
+picker_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'
+picker_review=json.loads((root/'scripts/reviewed-app-catalog-picker-0.9.29.json').read_text())['files']
+assert set(picker_review)=={picker_path}
+def undo_picker_retry(path,data):
+ if path!=picker_path:return data
+ spec=picker_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
 # Reviewed compositor-only reflow; normalize exact new controller blob
 # back to its previous code before every pre-existing freeze hash check.
 reflow_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'
 reflow_review=json.loads((root/'scripts/reviewed-sparse-side-reflow-0.9.26.json').read_text())['files']
 assert set(reflow_review)=={reflow_path}
 def undo_reflow(path,data):
- data=undo_y700_ux(path,undo_y700_cold(path,data))
+ data=undo_y700_ux(path,undo_y700_cold(path,undo_picker_retry(path,data)))
  if path!=reflow_path:return data
  spec=reflow_review[path]
  current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
@@ -147,8 +166,27 @@ def undo_swap_rollback_fix(path,data):
  assert old==spec['previous_blob_sha1'],path
  return previous
 
+# App-list resilience is a scoped 0.9.29 exception for two catalog sources.
+# Pin the complete new blobs, recover their complete old source bytes, then
+# leave every original 0.9.8 freeze hash and reviewer chain untouched.
+catalog_review=json.loads((root/'scripts/reviewed-app-catalog-files-0.9.29.json').read_text())['files']
+assert set(catalog_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/apps/LauncherAppRepository.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageAppCatalog.kt',
+}
+def undo_catalog_files(path,data):
+ if path not in catalog_review:return data
+ spec=catalog_review[path]
+ current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert current==spec['reviewed_blob_sha1'],path
+ original=spec['previous_content'].encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(original)).encode()+bytes([0])+original).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return original
+
 def protected_bytes(path):
- data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,(root/path).read_bytes()))))
+ data=undo_catalog_files(path,(root/path).read_bytes())
+ data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
   for patch in screen_review[path]:

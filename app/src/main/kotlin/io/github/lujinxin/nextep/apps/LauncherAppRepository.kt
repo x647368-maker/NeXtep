@@ -13,6 +13,7 @@ import android.os.UserManager
 import io.github.x647368maker.atomicworkbench.R
 import io.github.x647368maker.atomicworkbench.config.AppLanguage
 import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 
 /** Shared by SystemUI's app strip and the module's manual-order catalogue. */
 class LauncherAppRepository(private val context: Context) {
@@ -38,39 +39,53 @@ class LauncherAppRepository(private val context: Context) {
 
     fun load(includeProfiles: Boolean = true): List<AppEntry> {
         val entries = linkedMapOf<String, AppEntry>()
-        val primary = query(packageManager)
+        // OEM SystemUI hosts can reject PackageManager's MATCH_ALL query.
+        // An empty/denied primary query must not make the small-window picker unusable.
+        val primary = runCatching { query(packageManager) }.getOrElse { error ->
+            NeXtepLog.warn("app_catalog", "Primary launcher query failed; trying LauncherApps", error)
+            emptyList()
+        }
         primary.forEach { info ->
             entry(info, packageManager, currentUserId, false, null)?.let { entries[it.key] = it }
         }
-        if (!includeProfiles) return entries.values.toList()
-        val multiApp = MultiAppAccess.create()
+        val launcherApps = runCatching { context.getSystemService(LauncherApps::class.java) }.getOrNull()
+        val profiles = runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList())
+        // A package-visible subset can be nonempty yet omit most installed apps.
+        // Merge the current user's LauncherApps results even in that case, without
+        // reloading icons for entries already obtained from PackageManager.
+        val scanUsers = (listOf(Process.myUserHandle()) + profiles).distinct()
+        // Do not query clone APIs during a primary-user recovery; the user can
+        // still add normal apps when an OEM clone service is unavailable.
+        val multiApp = if (includeProfiles) MultiAppAccess.create() else null
         val clones = multiApp?.createdPackages().orEmpty()
         val cloneLabels = clones.keys.sorted().mapIndexed { index, userId ->
             userId to if (clones.size == 1) AppLanguage.string(context, R.string.app_clone) else AppLanguage.string(context, R.string.app_clone_number, index + 1)
         }.toMap()
-        val launcherApps = context.getSystemService(LauncherApps::class.java)
-        // Standard profiles are queried independently: one inaccessible profile
-        // must not discard the primary catalogue or other clone users.
-        runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList()).forEach { user ->
+        // Standard profiles are queried independently. If the primary query
+        // failed or returned nothing, include the current user via LauncherApps.
+        // A denied work/clone profile is never allowed to discard other apps.
+        scanUsers.forEach { user ->
+            if (!includeProfiles && user != Process.myUserHandle()) return@forEach
             runCatching { launcherApps?.getActivityList(null, user).orEmpty() }
                 .getOrDefault(emptyList()).forEach profileActivity@ { activity ->
                     runCatching {
                         val info = activity.activityInfo
                         val userId = info.applicationInfo.uid / PER_USER_RANGE
-                        if (userId == currentUserId || !info.exported || !info.enabled ||
-                            info.packageName == "com.android.stk"
-                        ) return@profileActivity
-                        val isClone = userId in clones
+                        if (!info.exported || !info.enabled || info.packageName == "com.android.stk")
+                            return@profileActivity
                         val component = activity.componentName
+                        val key = appKey(component, userId)
+                        if (key in entries) return@profileActivity
+                        val isClone = userId in clones
                         val label = displayLabel(activity.label.toString(), userId, isClone,
                             multiApp?.alias(component.packageName, userId), cloneLabels[userId])
                         val icon = runCatching { activity.getBadgedIcon(0) }
                             .getOrElse { userBadgedIcon(activity.getIcon(0), packageManager, userId) }
-                        val key = appKey(component, userId)
                         entries[key] = AppEntry(key, component, userId, label, icon, isClone)
                     }
                 }
         }
+        if (!includeProfiles) return entries.values.toList()
         // ColorOS can omit clone users from LauncherApps.getProfiles(). Its
         // created-package list is the authority; never list merely clonable apps.
         clones.forEach { (userId, packages) ->
@@ -104,10 +119,16 @@ class LauncherAppRepository(private val context: Context) {
             Int::class.javaPrimitiveType!!).invoke(context, userHandle(userId), 0) as Context
     }.getOrNull()
 
-    private fun query(manager: PackageManager): List<ResolveInfo> = manager.queryIntentActivities(
-        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
-        PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()),
-    )
+    private fun query(manager: PackageManager): List<ResolveInfo> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val all = runCatching {
+            manager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
+        }.getOrNull()
+        // Some ColorOS builds reject MATCH_ALL while allowing an ordinary
+        // visible-launcher query. Avoid throwing away those valid results.
+        if (!all.isNullOrEmpty()) return all
+        return manager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+    }
 
     private fun entry(info: ResolveInfo, manager: PackageManager, userId: Int,
         isClone: Boolean, alias: String?, cloneLabel: String? = null): AppEntry? = runCatching {

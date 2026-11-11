@@ -1565,7 +1565,28 @@ class NeXtepWindowController(
                     override fun afterTextChanged(s: android.text.Editable?) {}
                 })
             }.onFailure {
-                rows.removeAllViews(); rows.addView(windowPicker.label("应用列表读取失败，请关闭后重试"))
+                // Keep a working retry action in the picker instead of a
+                // full-height dead-end sheet. The catalog itself owns logging
+                // and the retry again runs only on its background executor.
+                rows.removeAllViews()
+                // Show only a safe failure *class* for screenshot-based diagnosis.
+                // Never display an exception message, package identifiers or stack traces.
+                val failureType = when (it) {
+                    is SecurityException -> "系统限制"
+                    is IllegalStateException -> "未找到可用应用"
+                    else -> it.javaClass.simpleName.take(32).ifBlank { "未知异常" }
+                }
+                rows.addView(windowPicker.label("应用列表读取失败（$failureType），可重试"))
+                rows.addView(windowPicker.label("重新读取应用列表").apply {
+                    contentDescription = "重新读取应用列表"
+                    background = windowPicker.surface(active = true)
+                    isClickable = true
+                    setOnClickListener {
+                        if (!workspaceVisible || suspended || !anchor.isAttachedToWindow) return@setOnClickListener
+                        windowPicker.dismiss()
+                        chooseWindowApp(anchor, target, expectedTask, main, quickPin)
+                    }
+                }, android.widget.LinearLayout.LayoutParams(-1, dp(52).toInt()))
             }
         }
     }

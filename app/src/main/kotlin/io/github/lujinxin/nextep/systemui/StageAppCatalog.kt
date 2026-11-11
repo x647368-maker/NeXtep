@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
 import java.util.concurrent.Executors
 
@@ -45,9 +46,24 @@ internal class StageAppCatalog(context: Context) {
         loading = true
         val version = generation
         executor.execute {
-            val result = runCatching { LauncherAppRepository(app).load().filter {
-                it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE
-            }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label }) }
+            val result = runCatching {
+                val repository = LauncherAppRepository(app)
+                val entries = StageAppCatalogLoadPolicy.load(
+                    allProfiles = { repository.load() },
+                    currentUser = { repository.load(includeProfiles = false) },
+                    onFullFailure = { error ->
+                        // Clone/profile service failures must not block regular
+                        // app selection on phones or the Y700 custom ROM.
+                        NeXtepLog.error("app_catalog", "All-profile query failed; retrying current user", error)
+                    },
+                )
+                val selectable = entries.filter {
+                    it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE
+                }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+                check(selectable.isNotEmpty()) { "No selectable launcher activities visible in the SystemUI host" }
+                selectable
+            }
+            result.onFailure { NeXtepLog.error("app_catalog", "Could not load picker catalog", it) }
             handler.post {
                 loading = false
                 if (version != generation) { load(); return@post }
