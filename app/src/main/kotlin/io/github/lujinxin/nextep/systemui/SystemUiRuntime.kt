@@ -101,30 +101,37 @@ object SystemUiRuntime {
         override fun run() {
             if (!::workspaceController.isInitialized || !workspaceController.isActive()) return
             val screenReady = isScreenReady()
-            if (!screenReady || isKeyguardLocked(applicationContext)) {
+            val keyguardLocked = isKeyguardLocked(applicationContext)
+            if (!screenReady || keyguardLocked) {
                 if (!workspaceController.isSuspended()) {
                     workspaceController.suspendForLock()
                     publishWorkspaceSurfaceState(false)
                 }
-                // A keyguard-going-away sync can include retained virtual-display
-                // activities. Keeping their outputs OFF until keyguard is gone
-                // makes that sync wait for its five-second draw timeout.
-                // Panels and input remain suspended; only hidden buffers warm up.
-                windowController.updateSuspendedOutputs(screenReady)
+                // Physical screen ON is not equivalent to an unlocked workspace.
+                // Never warm four virtual-display surfaces behind the keyguard;
+                // the same display IDs and tasks remain retained, with surfaces
+                // reattached immediately during an actual unlocked resume.
+                windowController.updateSuspendedOutputs(
+                    StageLockPowerPolicy.allowSuspendedOutput(screenReady, keyguardLocked))
             } else if (workspaceController.isSuspended()) {
                 lifecycleHandler.removeCallbacks(resumeAfterUnlock)
                 resumeAfterUnlock.run()
             }
-            updateLockStateObservation()
+            updateLockStateObservation(screenReady, keyguardLocked)
         }
     }
 
-    private fun updateLockStateObservation() {
+    private fun updateLockStateObservation(screenReady: Boolean? = null, keyguardLocked: Boolean? = null) {
         // State transitions can occur inside an observation callback. Remove any
         // queued copy before scheduling, so there is only one fallback chain.
         lifecycleHandler.removeCallbacks(lockStateObserver)
         if (::workspaceController.isInitialized && workspaceController.isActive()) {
-            lifecycleHandler.postDelayed(lockStateObserver, 500L)
+            // Display/keyguard callbacks and screen broadcasts still trigger an
+            // immediate probe. Slow the safety fallback when nothing is changing.
+            val ready = screenReady ?: isScreenReady()
+            val locked = keyguardLocked ?: isKeyguardLocked(applicationContext)
+            lifecycleHandler.postDelayed(lockStateObserver,
+                StageLockPowerPolicy.observationIntervalMs(ready, locked))
         } else {
             lifecycleHandler.removeCallbacks(resumeAfterUnlock)
         }
@@ -135,11 +142,13 @@ object SystemUiRuntime {
             if (!::workspaceController.isInitialized || !workspaceController.isSuspended()) return
             val locked = isKeyguardLocked(applicationContext)
             val screenReady = isScreenReady()
-            windowController.updateSuspendedOutputs(screenReady)
+            windowController.updateSuspendedOutputs(
+                StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))
             if (locked || !screenReady) {
-                // USER_PRESENT can precede the physical display becoming ready.
-                // Keep this attempt alive instead of waiting for another broadcast.
-                lifecycleHandler.postDelayed(this, if (locked) 500L else UNLOCK_DISPLAY_RETRY_MS)
+                // Await a real unlocked physical display; avoid continuously
+                // warming task surfaces behind the keyguard or while asleep.
+                lifecycleHandler.postDelayed(this,
+                    StageLockPowerPolicy.resumeRetryMs(screenReady, locked))
                 return
             }
             val resumed = workspaceController.resumeAfterLock()
