@@ -68,13 +68,29 @@ internal class StageSparseRailReflowAnimator(
             if (active.isNotEmpty()) cancel()
             return
         }
+        // Layout has advanced to the next count, but any previous FLIP
+        // may still be visible. Capture the actual rendered rectangle/alpha
+        // before cancelling, otherwise fast repeated additions would snap
+        // to the previous target for one frame.
+        val runningBounds = IdentityHashMap<View, StageSparseRailReflowPolicy.Bounds>()
+        val runningAlpha = IdentityHashMap<View, Float>()
+        for ((view, nominal) in before) {
+            if (!active.containsKey(view)) continue
+            StageSparseRailReflowPolicy.visibleBounds(
+                nominal, view.scaleX, view.scaleY,
+                view.translationX, view.translationY
+            )?.let { runningBounds[view] = it }
+            runningAlpha[view] = view.alpha
+        }
         generation++
         val epoch = generation
         active.keys.toList().forEach(::end)
         active.clear()
         for ((view, target) in after) {
             if (!view.isAttachedToWindow || !view.isShown) continue
-            val start = StageSparseRailReflowPolicy.start(before[view], target) ?: continue
+            val start = StageSparseRailReflowPolicy.start(
+                runningBounds[view] ?: before[view], target
+            ) ?: continue
             val nearIdentity = kotlin.math.abs(start.offsetX) < .5f &&
                 kotlin.math.abs(start.offsetY) < .5f &&
                 kotlin.math.abs(start.uniformScale - 1f) < .005f &&
@@ -86,7 +102,7 @@ internal class StageSparseRailReflowAnimator(
             view.translationY = start.offsetY
             view.scaleX = start.uniformScale
             view.scaleY = start.uniformScale
-            view.alpha = start.alpha
+            view.alpha = runningAlpha[view]?.coerceIn(0f, 1f) ?: start.alpha
             active[view] = epoch
             view.animate()
                 .translationX(0f).translationY(0f)
