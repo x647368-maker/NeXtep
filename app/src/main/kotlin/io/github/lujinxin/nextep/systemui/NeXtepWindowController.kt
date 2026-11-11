@@ -130,7 +130,16 @@ class NeXtepWindowController(
             !geometry().railAtTop && !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&
             SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)
     private fun renderSmartRail(hidden: Boolean) {
-        // Display buffers and the frozen main/slot geometry remain untouched.
+        // Unfolded near-square foldables reclaim the side rail's unused physical
+        // width in the main task. Reconfigure the existing task surface through
+        // WorkspaceController, without recreating the four virtual displays.
+        // On phones and Y700 keep the previously verified geometry unchanged.
+        val current = viewport.geometry(sidebarSide)
+        if (workspaceVisible && !suspended &&
+            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
+                current.screenWidth, current.screenHeight) && !current.railAtTop) {
+            onViewportChanged()
+        }
         records.filter { it.title == "NeXtepSidebar" || it.title == "AtomicSidebarHandle" }.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry())
@@ -357,6 +366,7 @@ class NeXtepWindowController(
         // windows. Commit the actual final rail/main geometry before returning.
         applyStageStack(geometry())
         applyWindowGeometry(geometry(), refreshControls = false)
+        smartRail.armWhenReady()
         scheduleStageFocus()
         return geometry()
     }
@@ -417,6 +427,7 @@ class NeXtepWindowController(
 
     fun onTasksChanged() {
         slotCoordinator?.onTasksChanged()
+        smartRail.armWhenReady()
         scheduleCinemaCheck()
         scheduleStageFocus()
     }
@@ -434,6 +445,11 @@ class NeXtepWindowController(
         syncCoreViewport()
         return viewport.geometry(sidebarSide, refreshViewport).let {
             if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
+            else if (smartRail.hidden && !it.railAtTop &&
+                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
+                    it.screenWidth, it.screenHeight))
+                io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy
+                    .reclaim(it, context.resources.displayMetrics.density)
             else if (viewport.activeCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
         }
     }
@@ -655,7 +671,7 @@ class NeXtepWindowController(
                 backdropHandler.post { setQuickExpanded(false); showStageMessage("快捷栏触摸区域不可用，已安全收起") }
             }.apply {
                 quickBar = StageQuickBarView(context, ::quickSelected,
-                    { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })
+                    { chooseWindowApp(it, null, quickPin = true) }, { setQuickExpanded(false) })
                 addView(quickBar, FrameLayout.LayoutParams(-1, dp(52).toInt(), Gravity.BOTTOM).apply {
                     leftMargin = dp(64).toInt(); rightMargin = dp(64).toInt(); bottomMargin = dp(4).toInt()
                 })
@@ -796,6 +812,11 @@ class NeXtepWindowController(
 
     private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {
         cancelDragVisuals()
+        // Folding is a display-geometry event. Switch dock vs inline '+' in
+        // place, even when no new usage query or task callback arrives.
+        quickBar?.setWideActions(
+            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                .quickBarCapacity(geometry.screenWidth, geometry.screenHeight) > 5)
         records.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry)
@@ -894,7 +915,13 @@ class NeXtepWindowController(
                 if (smartRail.hidden && !geometry.railAtTop) {
                     // Inset from the back-gesture edge; no gesture exclusion or global listener.
                     params.width=dp(24).toInt();params.height=dp(48).toInt()
-                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()
+                    val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                        .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)
+                    params.x=if (foldEdge)
+                        io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy
+                            .edgeHandleX(geometry, context.resources.displayMetrics.density)
+                        else if (geometry.sidebarSide==SidebarSide.LEFT)
+                            geometry.availableLeft+dp(32).toInt()
                         else geometry.availableRight-dp(56).toInt()
                     params.y=(geometry.availableTop+geometry.availableBottom-params.height)/2
                 }
@@ -1034,7 +1061,14 @@ class NeXtepWindowController(
             frequentApps.request(entries) recentRow@ { recent ->
                 if (generation != quickGeneration || !workspaceVisible || suspended || !core.expanded) return@recentRow
                 val byKey = entries.associateBy { it.key }
-                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, byKey.keys)
+                val g = currentGeometry()
+                val capacity = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                    .quickBarCapacity(g.screenWidth, g.screenHeight)
+                // On wide displays keep '+' clickable even when 10–12 icons
+                // overflow horizontally; do not change the compact phone bar.
+                quickBar?.setWideActions(capacity > 5)
+                val available = byKey.keys - core.hiddenApps
+                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, available, capacity)
                 quickBar?.render(keys.mapNotNull(byKey::get))
             }
         } }
@@ -1063,9 +1097,22 @@ class NeXtepWindowController(
                 if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId == expected) open(index)
             }
         } }
-        actions += (if (entry.key in core.pins) "取消固定" else "固定到快捷栏（最多六个）") to {
-            if (entry.key !in core.pins && core.pins.size >= 6) showStageMessage("已固定六个，请先取消一个")
-            else { core.pins = StageQuickPolicy.toggle(core.pins, entry.key); refreshQuickBar() }
+        val g = currentGeometry()
+        val pinLimit = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+            .quickBarCapacity(g.screenWidth, g.screenHeight))
+        actions += (if (entry.key in core.pins) "取消固定" else "固定到快捷栏（最多${pinLimit}个）") to {
+            if (entry.key !in core.pins && core.pins.size >= pinLimit)
+                showStageMessage("固定应用已满，请先移除一个")
+            else {
+                core.hiddenApps = core.hiddenApps - entry.key
+                core.pins = StageQuickPolicy.toggle(core.pins, entry.key)
+                refreshQuickBar()
+            }
+        }
+        actions += "从常用应用栏移除" to {
+            core.pins = core.pins.filter { it != entry.key }
+            core.hiddenApps = core.hiddenApps + entry.key
+            refreshQuickBar()
         }
         if (entry.key in core.pins) {
             actions += "向前排序" to { core.pins = StageQuickPolicy.move(core.pins, entry.key, -1); refreshQuickBar() }
@@ -1205,6 +1252,11 @@ class NeXtepWindowController(
             (if (smartRail.pinned) "取消固定侧栏" else "固定侧栏") to { smartRail.setPinned(!smartRail.pinned) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
+            "添加常用应用到快捷栏" to { chooseWindowApp(anchor, null, quickPin = true) },
+            "恢复被隐藏的常用应用" to {
+                core.hiddenApps = emptySet()
+                refreshQuickBar()
+            },
             "关闭主窗（移回后台）" to { closeMainWindow() },
             "退出台前调度" to { onExitRequested() },
         ), avoidBounds = buildList {
@@ -1254,7 +1306,8 @@ class NeXtepWindowController(
         ))
     }
 
-    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null, main: Boolean = false) {
+    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null,
+        main: Boolean = false, quickPin: Boolean = false) {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val generation = ++windowPickerGeneration
         val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
@@ -1266,7 +1319,8 @@ class NeXtepWindowController(
                 it.view.visibility = if (!shown && workspaceVisible && !suspended) View.VISIBLE else View.GONE
             }
         }
-        windowPicker.show(anchor, if (main) "替换主应用" else if (target == null) "添加小窗" else "替换应用", rows, fillContent = true)
+        windowPicker.show(anchor, if (quickPin) "添加到常用应用快捷栏" else if (main) "替换主应用"
+            else if (target == null) "添加小窗" else "替换应用", rows, fillContent = true)
         appCatalog.request { result ->
             if (generation != windowPickerGeneration || !windowPicker.isShowing || !workspaceVisible || suspended) return@request
             result.onSuccess { entries ->
@@ -1310,8 +1364,22 @@ class NeXtepWindowController(
                 grid.adapter = adapter
                 fun chooseEntry(entry: io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository.AppEntry) {
                     windowPicker.dismiss()
-                    val engine = slotCoordinator ?: return
                     if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return
+                    if (quickPin) {
+                        val g = currentGeometry()
+                        val cap = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                            .quickBarCapacity(g.screenWidth, g.screenHeight))
+                        if (entry.key !in core.pins && core.pins.size >= cap) {
+                            showStageMessage("快捷栏固定应用已满，请长按移除一个后再添加")
+                            return
+                        }
+                        core.hiddenApps = core.hiddenApps - entry.key
+                        if (entry.key !in core.pins) core.pins = core.pins + entry.key
+                        refreshQuickBar()
+                        showStageMessage("已添加到常用应用栏：${entry.label}")
+                        return
+                    }
+                    val engine = slotCoordinator ?: return
                     if (main) {
                         engine.openInMain(entry.launchIntent()).onFailure { showStageMessage(it.message ?: "主应用未打开") }
                     } else {
