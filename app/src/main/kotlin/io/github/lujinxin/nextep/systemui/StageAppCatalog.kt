@@ -48,12 +48,15 @@ internal class StageAppCatalog(context: Context) {
         executor.execute {
             val result = runCatching {
                 val repository = LauncherAppRepository(app)
-                val entries = runCatching { repository.load() }.getOrElse { fullError ->
-                    // Clone/profile access failures must not disable all regular
-                    // app selection on OnePlus, Find N5 or custom-ROM tablets.
-                    NeXtepLog.error("app_catalog", "All-profile catalog failed; retrying current user", fullError)
-                    repository.load(includeProfiles = false)
-                }
+                val entries = StageAppCatalogLoadPolicy.load(
+                    allProfiles = { repository.load() },
+                    currentUser = { repository.load(includeProfiles = false) },
+                    onFullFailure = { error ->
+                        // Clone/profile service failures must not block regular
+                        // app selection on phones or the Y700 custom ROM.
+                        NeXtepLog.error("app_catalog", "All-profile query failed; retrying current user", error)
+                    },
+                )
                 check(entries.isNotEmpty()) { "No launcher activities visible in the SystemUI host" }
                 entries.filter {
                     it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE
