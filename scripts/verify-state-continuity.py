@@ -15,6 +15,7 @@ assert set(ux_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletCanvasPolicy.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StagePresentationPolicy.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMainHandle.kt',
 }
 def undo_y700_ux(path,data):
  if path not in ux_review:return data
