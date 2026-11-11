@@ -71,6 +71,17 @@ class PublisherSecurityTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"filename"):
                 feed.verify_apk_file(self.meta,name)
 
+    def test_real_apk_manifest_identity_must_match_metadata(self):
+        feed.verify_apk_identity(self.meta, feed.PACKAGE,
+                                 "0.9.27-dev", 42)
+        for pkg, name, code in (
+            ("io.github.other", "0.9.27-dev", 42),
+            (feed.PACKAGE, "0.9.26-dev", 42),
+            (feed.PACKAGE, "0.9.27-dev", 41),
+        ):
+            with self.assertRaisesRegex(ValueError, "identity"):
+                feed.verify_apk_identity(self.meta, pkg, name, code)
+
     def test_signed_release_metadata_required(self):
         result=feed.publish(self.meta,self.empty,self.tag,release(self.meta,self.tag,True))
         self.assertEqual([42],[x["versionCode"] for x in result["releases"]])
