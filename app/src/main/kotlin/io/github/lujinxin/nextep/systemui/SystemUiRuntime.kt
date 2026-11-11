@@ -258,6 +258,10 @@ object SystemUiRuntime {
                         putInt("pid", android.os.Process.myPid())
                         putLong("elapsed_ms", android.os.SystemClock.elapsedRealtime())
                         putLong("cpu_ms", android.os.Process.getElapsedCpuTime())
+                        // This receiver runs on lifecycleHandler/MainLooper.
+                        // Read only at user-requested start/end/marker snapshots.
+                        val threadNs=android.os.Debug.threadCpuTimeNanos()
+                        putLong("main_cpu_ms", if(threadNs >= 0L) threadNs / 1_000_000L else -1L)
                         putBoolean("active", workspaceController.isActive())
                         putBoolean("suspended", workspaceController.isSuspended())
                         putLong("task_queries", WorkspaceEnergyDiagnostics.taskQueries.get())
