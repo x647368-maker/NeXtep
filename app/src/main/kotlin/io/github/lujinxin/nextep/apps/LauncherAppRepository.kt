@@ -116,10 +116,16 @@ class LauncherAppRepository(private val context: Context) {
             Int::class.javaPrimitiveType!!).invoke(context, userHandle(userId), 0) as Context
     }.getOrNull()
 
-    private fun query(manager: PackageManager): List<ResolveInfo> = manager.queryIntentActivities(
-        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
-        PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()),
-    )
+    private fun query(manager: PackageManager): List<ResolveInfo> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val all = runCatching {
+            manager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
+        }.getOrNull()
+        // Some ColorOS builds reject MATCH_ALL while allowing an ordinary
+        // visible-launcher query. Avoid throwing away those valid results.
+        if (!all.isNullOrEmpty()) return all
+        return manager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+    }
 
     private fun entry(info: ResolveInfo, manager: PackageManager, userId: Int,
         isClone: Boolean, alias: String?, cloneLabel: String? = null): AppEntry? = runCatching {
