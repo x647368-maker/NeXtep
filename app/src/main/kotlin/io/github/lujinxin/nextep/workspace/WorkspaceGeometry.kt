@@ -25,12 +25,10 @@ data class WorkspaceGeometry(
     val isLandscape: Boolean get() = screenWidth > screenHeight
     /**
      * A wide, high-resolution display may report rotation 0/2 or 1/3 under
-     * a ported phone ROM. Use the physical wide canvas to choose a native
-     * horizontal rail here; keep near-square foldables and compact phones on
-     * their verified legacy geometry. No manufacturer/ROM identity is involved.
-     *
-     * Use only display pixels/rotation because this geometry crosses SystemUI
-     * and system_server through the existing recorded v18 wire format.
+     * a ported phone ROM. Use physical dimensions, not ROM brand/rotation,
+     * to keep tablet panels upright. This does NOT force side rails into
+     * top/bottom rails: railAtTop is a separate explicit user choice.
+     * Existing source/bridge records (v18) remain unchanged.
      */
     val isNativeLandscapeRail: Boolean get() =
         !railAtTop && StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)
@@ -42,7 +40,7 @@ data class WorkspaceGeometry(
     // Rotation never changes the selected layout or the diagram in panel axes.
     val panelSidebarSide: SidebarSide get() = SidebarButtonLayout.sideInPanel(sidebarSide)
     val isSidebarAtTop: Boolean get() =
-        if (isNativeLandscapeRail) sidebarSide == SidebarSide.LEFT
+        if (isNativeLandscapeRail) false
         else SidebarButtonLayout.isAtScreenTop(sidebarSide, isLandscape, isControlOnLeft)
 
     // Insets constrain the DESTINATION only. Source task coordinates always start
@@ -78,28 +76,32 @@ data class WorkspaceGeometry(
     val controlTop: Int get() = availableTop
     // The rail and toolbar reserve space; the real main task fits uniformly in
     // the remainder. Extra height becomes wallpaper breathing room, not a tall toolbar.
-    val sidebarLeft: Int get() = if (railAtTop || isNativeLandscapeRail) availableLeft else if (isLandscape) availableLeft + (if (isControlOnLeft) topHeight else 0)
+    val sidebarLeft: Int get() = if (railAtTop) availableLeft
+        else if (isNativeLandscapeRail) if (sidebarSide == SidebarSide.LEFT) availableLeft else availableRight - sidebarWidth
+        else if (isLandscape) availableLeft + (if (isControlOnLeft) topHeight else 0)
         else if (sidebarSide == SidebarSide.LEFT) availableLeft else availableRight - sidebarWidth
-    val sidebarTop: Int get() = if (railAtTop || !isLandscape || isNativeLandscapeRail && isSidebarAtTop) availableTop + topHeight else
+    val sidebarTop: Int get() = if (railAtTop || isNativeLandscapeRail || !isLandscape) availableTop + topHeight else
         if (isSidebarAtTop) availableTop else availableBottom - sidebarWidth
-    val sidebarPhysicalWidth: Int get() = if (railAtTop || isNativeLandscapeRail) availableWidth else if (isLandscape) availableWidth - topHeight else sidebarWidth
-    val sidebarPhysicalHeight: Int get() = if (railAtTop || isLandscape) sidebarWidth else availableHeight - topHeight
-    val sidebarLogicalHeight: Int get() = if (railAtTop) sidebarPhysicalHeight else if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight
+    val sidebarPhysicalWidth: Int get() = if (railAtTop) availableWidth else if (isNativeLandscapeRail) sidebarWidth else if (isLandscape) availableWidth - topHeight else sidebarWidth
+    val sidebarPhysicalHeight: Int get() = if (railAtTop) sidebarWidth else if (isNativeLandscapeRail) availableHeight - topHeight else if (isLandscape) sidebarWidth else availableHeight - topHeight
+    val sidebarLogicalHeight: Int get() = if (railAtTop || isNativeLandscapeRail) sidebarPhysicalHeight else if (isLandscape) sidebarPhysicalWidth else sidebarPhysicalHeight
 
-    private val regionWidth: Int get() = (if (railAtTop || isNativeLandscapeRail) availableWidth else availableWidth - if (isLandscape) topHeight else sidebarWidth) - 2 * mainInset
+    private val regionWidth: Int get() = (if (railAtTop) availableWidth else availableWidth - if (isNativeLandscapeRail) sidebarWidth else if (isLandscape) topHeight else sidebarWidth) - 2 * mainInset
     private val effectiveMainOverlap: Int get() = if (railAtTop) minOf(mainTopOverlap, sidebarWidth - 1) else 0
     private val regionHeight: Int get() = (if (railAtTop) availableHeight - topHeight - sidebarWidth + effectiveMainOverlap
-        else if (isNativeLandscapeRail) availableHeight - topHeight - sidebarWidth
+        else if (isNativeLandscapeRail) availableHeight - topHeight
         else availableHeight - if (isLandscape) sidebarWidth else topHeight) - 2 * mainInset
     val contentScale: Float get() = minOf(regionWidth.toFloat() / screenWidth, regionHeight.toFloat() / screenHeight)
     val contentWidth: Int get() = (screenWidth * contentScale).roundToInt().coerceAtLeast(1)
     val contentHeight: Int get() = (screenHeight * contentScale).roundToInt().coerceAtLeast(1)
     val contentTop: Int get() = availableTop + mainInset + (if (railAtTop) topHeight + sidebarWidth - effectiveMainOverlap
-        else if (isNativeLandscapeRail) topHeight + if (isSidebarAtTop) sidebarWidth else 0
+        else if (isNativeLandscapeRail) topHeight
         else if (!isLandscape) topHeight else if (isSidebarAtTop) sidebarWidth else 0) +
         (regionHeight - contentHeight) / 2
     val contentBottom: Int get() = contentTop + contentHeight
-    val contentLeft: Int get() = availableLeft + mainInset + (if (railAtTop || isNativeLandscapeRail) 0 else if (isLandscape) {
+    val contentLeft: Int get() = availableLeft + mainInset + (if (railAtTop) 0 else if (isNativeLandscapeRail) {
+        if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0
+    } else if (isLandscape) {
         if (isControlOnLeft) topHeight else 0
     } else if (sidebarSide == SidebarSide.LEFT) sidebarWidth else 0) +
         (regionWidth - contentWidth + if (!railAtTop && isLandscape && !isControlOnLeft && !isNativeLandscapeRail) 1 else 0) / 2
@@ -163,8 +165,8 @@ data class WorkspaceGeometry(
             val gap = density.toInt().coerceAtLeast(1)
             // Status-safe band plus a small main-menu grip; no application toolbar.
             val controlThickness = (64 * density).roundToInt().coerceIn(1, longSide - 1)
-            // A native-landscape tablet can afford a readable horizontal card row.
-            // Do not change phone or near-square foldable thicknesses.
+            // A wide tablet can afford a readable vertical side rail.
+            // Do not change compact phone or near-square foldable thicknesses.
             val nativeTablet = StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight)
             val railThickness = (shortSide * if (nativeTablet) 0.33f else 0.25f)
                 .roundToInt().coerceIn(gap + 1, shortSide - 1)
