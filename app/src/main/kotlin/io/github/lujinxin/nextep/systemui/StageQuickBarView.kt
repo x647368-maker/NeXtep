@@ -40,7 +40,7 @@ internal class StageQuickBarView(context: Context, private val choose: (Launcher
         }
         row.addView(TextView(context).apply {
             text = "+"; textSize = 25f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-            contentDescription = "选择应用，长按可固定"; setOnClickListener { add(this) }
+            contentDescription = "添加常用应用到快捷栏"; setOnClickListener { add(this) }
         }, LayoutParams(dp(48), dp(48)))
     }
 }
