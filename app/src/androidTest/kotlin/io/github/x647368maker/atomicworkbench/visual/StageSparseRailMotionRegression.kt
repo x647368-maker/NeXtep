@@ -49,7 +49,8 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
             motion=StageSparseRailReflowAnimator(activity)
             repeat(4) { index ->
                 val card=FrameLayout(activity)
-                card.alpha=if(index<2)1f else 0f
+                // TextureViews must receive a real Surface before simulated occupancy changes.
+                card.alpha=1f
                 val texture=TextureView(activity)
                 texture.surfaceTextureListener=object:TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(st:SurfaceTexture,w:Int,h:Int) {
@@ -77,6 +78,12 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
         }
         check(ready.await(10,TimeUnit.SECONDS)) {"Sparse animation live Surface buffers unavailable"}
         check(created.get()==4)
+        instrumentation.runOnMainSync {
+            // Keep the surface and live buffer attached; only simulate
+            // the unoccupied visual state before the new card fades in.
+            cards[2].alpha=0f
+            cards[3].alpha=0f
+        }
         check(ValueAnimator.areAnimatorsEnabled()) {
             "The visual test must enable actual animations, not silently bypass the new reflow"
         }
