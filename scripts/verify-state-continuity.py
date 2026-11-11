@@ -61,8 +61,28 @@ assert set(tablet_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
 }
 reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
+# The exact rollback fix is an isolated one-line Kotlin receiver correction.
+# The full updated and pre-change Git blobs are pinned before older v0.9.8
+# frozen source verification. This is NOT a relaxation of the freeze hashes.
+rollback_review=json.loads((root/'scripts/reviewed-swap-rollback-release.json').read_text())['files']
+rollback_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt'
+assert set(rollback_review)=={rollback_path}
+def undo_swap_rollback_fix(path,data):
+ if path!=rollback_path:return data
+ spec=rollback_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ text=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert text.count(patch['after'])==1,path
+  text=text.replace(patch['after'],patch['before'],1)
+ previous=text.encode('utf-8')
+ old=hashlib.sha1(b'blob '+str(len(previous)).encode()+bytes([0])+previous).hexdigest()
+ assert old==spec['previous_blob_sha1'],path
+ return previous
+
 def protected_bytes(path):
- data=undo_y700_visual(path,(root/path).read_bytes())
+ data=undo_swap_rollback_fix(path,undo_y700_visual(path,(root/path).read_bytes()))
  if path in screen_review:
   text=data.decode()
   for patch in screen_review[path]:
@@ -123,6 +143,10 @@ assert 'contentDescription = "展开常用应用快捷栏"' in host and 'setOnCl
 assert 'FrameLayout.LayoutParams(dp(48).toInt(), dp(48).toInt()' in host
 print(json.dumps({'passive_paths_send_no_media_commands':True,'exchanges_do_not_launch_apps':True,'layout_does_not_resize_or_recreate_displays':True,'exact_display_move_is_idempotent':True,'home_entry_removed_controls_retained':True,'quick_bar_direct_48dp_entry':True,'device_playback_verified':False}))
 
+swap_source=(k/'systemui/WorkspaceSwapAnimator.kt').read_text()
+assert 'if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }' in swap_source
+assert swap_source.count('this@WorkspaceSwapAnimator.cancel()')==1
+print('Pending rollback explicitly releases the owning WorkspaceSwapAnimator preview after async failure; frozen original blob validated')
 assert 'FullscreenBoundsPolicy()' in (k/'task/MainTaskPresentationCoordinator.kt').read_text()
 assert 'StageVisualOrder.swap' in host
 assert 'getSharedPreferences("atomic_updates_v1"' in (k/'config/UpdateCoordinator.kt').read_text()
