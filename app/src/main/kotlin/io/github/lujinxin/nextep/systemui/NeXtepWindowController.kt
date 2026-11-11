@@ -534,7 +534,9 @@ class NeXtepWindowController(
         val geometry = geometry()
         SystemServerWorkspaceBridge.publishLayout(context, viewport.layout())
         applyWindowGeometry(geometry, refreshControls = !rotationOnly)
-        if (rotationOnly && !geometry.railAtTop) {
+        if (rotationOnly && !geometry.railAtTop &&
+            !io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.wideTablet(
+                geometry.screenWidth, geometry.screenHeight)) {
             // Only project the existing windows into the new display coordinates.
             // Their logical content, slot buffers and wallpaper frame stay intact.
             backdropGeneration.incrementAndGet()
@@ -2125,8 +2127,14 @@ class NeXtepWindowController(
             if (bitmap !== captured) captured?.recycle()
             val fitted = if (bitmap == null && previous != null &&
                 (previous.width != geometry.screenWidth || previous.height != geometry.screenHeight)
-            ) WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)
-            else null
+            ) {
+                // A mismatched old screenshot cannot tile the Y700's new
+                // physical orientation. Let its live system wallpaper show
+                // through until a correctly oriented capture is available.
+                if (io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                        .wideTablet(geometry.screenWidth, geometry.screenHeight)) null
+                else WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)
+            } else null
             backdropHandler.post {
                 if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {
                     bitmap?.recycle()
@@ -2158,23 +2166,33 @@ class NeXtepWindowController(
         }
     }
 
+    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? =
+        wallpaperBitmap?.takeIf {
+            !it.isRecycled &&
+                io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy
+                    .frameMatches(geometry, it.width, it.height, wallpaperRotation)
+        }
+
     private fun applyWallpaperBackdrop(geometry: WorkspaceGeometry, refreshContrast: Boolean = true) {
-        val panel = geometry.rotatedTo(0)
+        // Wide ported tablets use physical panel coordinates; the phone/fold
+        // projection still uses its original portrait drawing axes.
+        val panel = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy.panel(geometry)
+        val frame = matchingWallpaperFrame(geometry)
         (records.firstOrNull { it.title == "NeXtepTopBar" }?.view as? WorkspacePanelHost)?.setPanelBackground(
-            WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.controlLeft, panel.controlTop,
+            WorkspaceWallpaperBackdrop.crop(frame, panel.controlLeft, panel.controlTop,
                 frostStrength, wallpaperRotation, panel.displayRotation),
         )
         if (refreshContrast) {
             topAppStrip?.setMediaWallpaperLight(WorkspaceWallpaperBackdrop.isLight(
-                wallpaperBitmap, panel.controlLeft, panel.controlTop, panel.controlWidth, panel.controlHeight,
+                frame, panel.controlLeft, panel.controlTop, panel.controlWidth, panel.controlHeight,
             ))
         }
         applySidebarBackdrop(geometry)
     }
 
     private fun applySidebarBackdrop(geometry: WorkspaceGeometry) {
-        val panel = geometry.rotatedTo(0)
-        val background = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.sidebarLeft, panel.sidebarTop,
+        val panel = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy.panel(geometry)
+        val background = WorkspaceWallpaperBackdrop.crop(matchingWallpaperFrame(geometry), panel.sidebarLeft, panel.sidebarTop,
             frostStrength, wallpaperRotation, panel.displayRotation)
         val visibleBackground = if (geometry.mainTopOverlap > 0 && geometry.railAtTop)
             MainFooterBackdrop(background, Rect(geometry.contentLeft - geometry.sidebarLeft,

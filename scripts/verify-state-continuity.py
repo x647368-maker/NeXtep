@@ -7,6 +7,17 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Backup4 Y700 post-feedback changes are reversible by exact reviewed
+# before/after fragments. Normalize the latest isolated branch back to the
+# unified N5/Y700 base *before* validating frozen SHA-1/SHA-256 identities.
+# All original checks remain active; unreviewed source mutations still fail.
+screen_review=json.loads((root/'scripts/reviewed-assistant4-y700-screen-fit.json').read_text())['files']
+assert set(screen_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageAdaptiveLayout.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+}
 # PR9/PR13 frozen presentation changes: verify exact new Git blobs, restore
 # the PR14 baseline in memory, then run the original reversible/frozen checks.
 unified_review=json.loads((root/'scripts/reviewed-unified-n5-y700-0.9.18.json').read_text())['files']
@@ -36,6 +47,12 @@ assert set(tablet_review)=={
 reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
+ if path in screen_review:
+  text=data.decode()
+  for patch in screen_review[path]:
+   assert text.count(patch['after'])==1,path
+   text=text.replace(patch['after'],patch['before'],1)
+  data=text.encode()
  if path in unified_review:
   spec=unified_review[path]
   blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
@@ -181,6 +198,15 @@ for path,sha in frozen.items():
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
   data=(root/path).read_bytes()
+  # The frozen controller is also touched by the scoped Y700 wallpaper fix.
+  # Reverse exactly the separately reviewed changes before checking the
+  # original N5 diagnostics blob. Unknown changes are still rejected.
+  if path in screen_review:
+   text=data.decode()
+   for patch in screen_review[path]:
+    assert text.count(patch['after'])==1,path
+    text=text.replace(patch['after'],patch['before'],1)
+   data=text.encode()
   # Only this exact reviewed read-only instrumentation may change the frozen controller.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path

@@ -8,7 +8,16 @@ internal object StageAdaptiveLayout {
         if (count == 0) return if (g.railAtTop) g.copy(sidebarWidth = StageTopLayoutMetrics.depth(g, density, 0)) else g
         if (g.isLandscape) return g
         if (!g.railAtTop) {
-            val fraction = when (count) { 1 -> .215f; 2 -> .235f; else -> .25f }
+            // Y700 portrait no longer reserves a four-window-wide rail when
+            // only one or two previews are visible. Phone and near-square
+            // foldable sizing follows the previously validated ratios.
+            val tabletPortrait = StageDisplayPolicy.wideTablet(g.screenWidth, g.screenHeight)
+            val fraction = if (tabletPortrait) when (count) {
+                1 -> .16f
+                2 -> .18f
+                3 -> .20f
+                else -> .22f
+            } else when (count) { 1 -> .215f; 2 -> .235f; else -> .25f }
             return g.copy(sidebarWidth = (g.availableWidth * fraction).roundToInt().coerceAtLeast(2))
         }
         return g.copy(sidebarWidth = StageTopLayoutMetrics.depth(g, density, count))
