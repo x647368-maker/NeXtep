@@ -7,6 +7,23 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# 0.9.26 Y700 follow-up: narrow exact reversible fragments over the frozen
+# compositor. Restore the previous controller bytes before all historical
+# full-blob checks; source changes outside these reviewed fragments still fail.
+ux_review=json.loads((root/'scripts/reviewed-assistant4-y700-ux-0.9.26.json').read_text())['files']
+assert set(ux_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletCanvasPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StagePresentationPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMainHandle.kt',
+}
+def undo_y700_ux(path,data):
+ if path not in ux_review:return data
+ text=data.decode('utf-8')
+ for patch in ux_review[path]:
+  assert text.count(patch['after'])==1,path
+  text=text.replace(patch['after'],patch['before'],1)
+ return text.encode('utf-8')
 # Reviewed compositor-only reflow; normalize exact new controller blob
 # back to its previous code before every pre-existing freeze hash check.
 reflow_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'
@@ -111,7 +128,7 @@ def undo_swap_rollback_fix(path,data):
  return previous
 
 def protected_bytes(path):
- data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,(root/path).read_bytes()))))
+ data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,undo_y700_ux(path,(root/path).read_bytes())))))
  if path in screen_review:
   text=data.decode()
   for patch in screen_review[path]:
@@ -266,7 +283,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,(root/path).read_bytes()))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_ux(path,(root/path).read_bytes())))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
