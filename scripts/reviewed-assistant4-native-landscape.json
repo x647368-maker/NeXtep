@@ -84,7 +84,6 @@
         "before": "        val density = profile.densityDpi / 160f",
         "after": "        val density = profile.densityDpi / 160f\n        // The Lenovo Y700's ported phone-ROM can report an empty status bar\n        // inset even with system icons visible. Repair the *presentation*\n        // geometry on this wide-tablet display only, including cached layouts;\n        // never rewrite the recorded profile or existing phone/fold choices.\n        val original = profile.geometry\n        val safeTop = StageDisplayPolicy.safeTabletTopInset(\n            original.screenWidth, original.screenHeight, density, original.navigationInsets.top)\n        val safeGeometry = if (safeTop == original.navigationInsets.top) original\n            else original.copy(navigationInsets = original.navigationInsets.copy(top = safeTop))"
       }
-    ],
-    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": []
+    ]
   }
 }
