@@ -44,7 +44,8 @@ internal object StageTabletColdLaunch {
     }
 
     fun onTaskAppeared(info: ActivityManager.RunningTaskInfo, leash: Any?) {
-        if (leash==null) return
+        // Zero extra decoding cost on Ace 7 Pro, N5 or idle Y700.
+        if (leash==null || pending==null) return
         val state = TaskInfoCompat.readWindowState(info) ?: return
         if (state.displayId != Display.DEFAULT_DISPLAY || state.vendorWindowed ||
             state.windowingMode != 1 || info.taskId <= 0) return
