@@ -1,0 +1,141 @@
+{
+  "purpose": "Assistant4 N5: per-device top preview cap, live smart-rail geometry/idle, quick favorites and explicit plus, exact reversible patch over Y700 PR9",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt": [
+      {
+        "before": "\n    /** ColorOS phone-ROM ports may report zero/insufficient status insets on",
+        "after": "\n    /** Near-square unfolded foldable class: scoped to the large inner display,\n     * not the ordinary tall phone or Lenovo Y700's wide landscape canvas.\n     * In particular OPPO Find N5 2248x2480 qualifies, Ace7Pro 1140x2616\n     * and Y700 2560x1600 never qualify.\n     */\n    fun unfoldedNearSquare(width: Int, height: Int): Boolean {\n        val short = minOf(width, height)\n        val long = maxOf(width, height)\n        return short >= 1800 && long.toFloat() / short <= 1.25f\n    }\n\n    /** The bar remains scrollable; these are backed by actual usage/pins rather\n     * than filling empty slots with invented apps. Compact Ace 7 Pro keeps five\n     * automatic choices; N5 inner display uses ten, Y700 tablet up to twelve.\n     */\n    fun quickBarCapacity(width: Int, height: Int): Int = when {\n        wideTablet(width, height) -> 12\n        unfoldedNearSquare(width, height) -> 10\n        else -> 5\n    }\n\n    /** ColorOS phone-ROM ports may report zero/insufficient status insets on"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt": [
+      {
+        "before": "        val tabletCap = if (StageDisplayPolicy.wideLandscapeTablet(g.screenWidth, g.screenHeight))\n            (g.availableHeight * .32f).roundToInt().coerceAtLeast(2)\n        else limit",
+        "after": "        val tabletCap = when {\n            StageDisplayPolicy.unfoldedNearSquare(g.screenWidth, g.screenHeight) ->\n                (g.availableHeight * .24f).roundToInt().coerceAtLeast(2)\n            StageDisplayPolicy.wideLandscapeTablet(g.screenWidth, g.screenHeight) ->\n                (g.availableHeight * .32f).roundToInt().coerceAtLeast(2)\n            else -> limit\n        }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": [
+      {
+        "before": "                    if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return",
+        "after": "                    if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return\n                    if (quickPin) {\n                        val g = currentGeometry()\n                        val cap = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                            .quickBarCapacity(g.screenWidth, g.screenHeight))\n                        if (entry.key !in core.pins && core.pins.size >= cap) {\n                            showStageMessage(\"快捷栏固定应用已满，请长按移除一个后再添加\")\n                            return\n                        }\n                        core.hiddenApps = core.hiddenApps - entry.key\n                        if (entry.key !in core.pins) core.pins = core.pins + entry.key\n                        refreshQuickBar()\n                        showStageMessage(\"已添加到常用应用栏：${entry.label}\")\n                        return\n                    }\n                    val engine = slotCoordinator ?: return"
+      },
+      {
+        "before": "                    windowPicker.dismiss()\n                    val engine = slotCoordinator ?: return",
+        "after": "                    windowPicker.dismiss()"
+      },
+      {
+        "before": "        windowPicker.show(anchor, if (main) \"替换主应用\" else if (target == null) \"添加小窗\" else \"替换应用\", rows, fillContent = true)",
+        "after": "        windowPicker.show(anchor, if (quickPin) \"添加到常用应用快捷栏\" else if (main) \"替换主应用\"\n            else if (target == null) \"添加小窗\" else \"替换应用\", rows, fillContent = true)"
+      },
+      {
+        "before": "    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null, main: Boolean = false) {",
+        "after": "    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null,\n        main: Boolean = false, quickPin: Boolean = false) {"
+      },
+      {
+        "before": "            \"替换主应用\" to { chooseWindowApp(anchor, null, main = true) },",
+        "after": "            \"替换主应用\" to { chooseWindowApp(anchor, null, main = true) },\n            \"添加常用应用到快捷栏\" to { chooseWindowApp(anchor, null, quickPin = true) },\n            \"恢复被隐藏的常用应用\" to {\n                core.hiddenApps = emptySet()\n                refreshQuickBar()\n            },"
+      },
+      {
+        "before": "        }\n        if (entry.key in core.pins) {",
+        "after": "        }\n        actions += \"从常用应用栏移除\" to {\n            core.pins = core.pins.filter { it != entry.key }\n            core.hiddenApps = core.hiddenApps + entry.key\n            refreshQuickBar()\n        }\n        if (entry.key in core.pins) {"
+      },
+      {
+        "before": "        actions += (if (entry.key in core.pins) \"取消固定\" else \"固定到快捷栏（最多六个）\") to {\n            if (entry.key !in core.pins && core.pins.size >= 6) showStageMessage(\"已固定六个，请先取消一个\")\n            else { core.pins = StageQuickPolicy.toggle(core.pins, entry.key); refreshQuickBar() }",
+        "after": "        val g = currentGeometry()\n        val pinLimit = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n            .quickBarCapacity(g.screenWidth, g.screenHeight))\n        actions += (if (entry.key in core.pins) \"取消固定\" else \"固定到快捷栏（最多${pinLimit}个）\") to {\n            if (entry.key !in core.pins && core.pins.size >= pinLimit)\n                showStageMessage(\"固定应用已满，请先移除一个\")\n            else {\n                core.hiddenApps = core.hiddenApps - entry.key\n                core.pins = StageQuickPolicy.toggle(core.pins, entry.key)\n                refreshQuickBar()\n            }"
+      },
+      {
+        "before": "                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, byKey.keys)",
+        "after": "                val g = currentGeometry()\n                val capacity = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                    .quickBarCapacity(g.screenWidth, g.screenHeight)\n                val available = byKey.keys - core.hiddenApps\n                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, available, capacity)"
+      },
+      {
+        "before": "                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()",
+        "after": "                    val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                        .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)\n                    params.x=if (foldEdge)\n                        io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy\n                            .edgeHandleX(geometry, context.resources.displayMetrics.density)\n                        else if (geometry.sidebarSide==SidebarSide.LEFT)\n                            geometry.availableLeft+dp(32).toInt()"
+      },
+      {
+        "before": "                    { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })",
+        "after": "                    { chooseWindowApp(it, null, quickPin = true) }, { setQuickExpanded(false) })"
+      },
+      {
+        "before": "            if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)",
+        "after": "            if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)\n            else if (smartRail.hidden && !it.railAtTop &&\n                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(\n                    it.screenWidth, it.screenHeight))\n                io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy\n                    .reclaim(it, context.resources.displayMetrics.density)"
+      },
+      {
+        "before": "        slotCoordinator?.onTasksChanged()\n        scheduleCinemaCheck()",
+        "after": "        slotCoordinator?.onTasksChanged()\n        smartRail.armWhenReady()\n        scheduleCinemaCheck()"
+      },
+      {
+        "before": "        applyWindowGeometry(geometry(), refreshControls = false)",
+        "after": "        applyWindowGeometry(geometry(), refreshControls = false)\n        smartRail.armWhenReady()"
+      },
+      {
+        "before": "        // Display buffers and the frozen main/slot geometry remain untouched.",
+        "after": "        // Unfolded near-square foldables reclaim the side rail's unused physical\n        // width in the main task. Reconfigure the existing task surface through\n        // WorkspaceController, without recreating the four virtual displays.\n        // On phones and Y700 keep the previously verified geometry unchanged.\n        val current = viewport.geometry(sidebarSide)\n        if (workspaceVisible && !suspended &&\n            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(\n                current.screenWidth, current.screenHeight) && !current.railAtTop) {\n            onViewportChanged()\n        }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmartRail.kt": [
+      {
+        "before": "    fun stop() {\n        handler.removeCallbacks(idle)\n        if (hidden) { hidden = false; render(false) }",
+        "after": "    fun stop() {\n        handler.removeCallbacks(idle)\n        pending = false\n        retries = 0\n        if (hidden) { hidden = false; render(false) }"
+      },
+      {
+        "before": "        if (enabled && !pinned && !hidden && allowed()) { hidden = true; render(true) }",
+        "after": "        pending = false\n        if (!enabled || pinned || hidden) return\n        if (allowed()) {\n            retries = 0\n            hidden = true\n            render(true)\n        } else if (retries < 2) {\n            // Bounded one-shot recovery from a temporary task/popup transition.\n            // A new user/task event can rearm later; never poll indefinitely.\n            retries++\n            pending = true\n            handler.postDelayed(idle, 2000)\n        }"
+      },
+      {
+        "before": "        if (!active) { interact(); return }\n        handler.removeCallbacks(idle)\n        if (hidden) { hidden = false; render(false) }",
+        "after": "        if (!active) { interact(); return }\n        handler.removeCallbacks(idle)\n        pending = false\n        if (hidden) { hidden = false; render(false) }"
+      },
+      {
+        "before": "        if (hidden) { hidden = false; render(false) }\n        if (enabled && !pinned) handler.postDelayed(idle, 3500)",
+        "after": "        if (hidden) { hidden = false; render(false) }\n        arm()"
+      },
+      {
+        "before": "    fun interact() {\n        handler.removeCallbacks(idle)\n        if (hidden) { hidden = false; render(false) }",
+        "after": "    fun interact() {\n        handler.removeCallbacks(idle)\n        pending = false\n        retries = 0\n        if (hidden) { hidden = false; render(false) }"
+      },
+      {
+        "before": "        pinned = value; prefs.edit().putBoolean(\"pinned\", value).apply(); interact()",
+        "after": "        pinned = value; prefs.edit().putBoolean(\"pinned\", value).apply()\n        retries = 0\n        if (value) stop() else interact()"
+      },
+      {
+        "before": "        enabled = value; prefs.edit().putBoolean(\"enabled\", value).apply(); interact()",
+        "after": "        enabled = value; prefs.edit().putBoolean(\"enabled\", value).apply()\n        retries = 0\n        if (!value) stop() else interact()"
+      },
+      {
+        "before": "    private val idle = Runnable { hideNow() }",
+        "after": "    private var retries = 0\n    private var pending = false\n    private val idle = Runnable { pending = false; hideNow() }\n\n    private fun arm() {\n        handler.removeCallbacks(idle)\n        pending = false\n        if (enabled && !pinned && !hidden) {\n            pending = true\n            handler.postDelayed(idle, 3500)\n        }\n    }\n    /** Event-driven rearm after a new foreground task or workspace activation.\n     * A temporary restore/popup transition may leave allowed() false at timeout.\n     * No continuous polling or repeating capture is introduced.\n     */\n    fun armWhenReady() {\n        // A busy app may send many task notifications per second. Those are\n        // not touches and must not indefinitely restart the idle countdown.\n        if (!enabled || pinned || hidden || pending) return\n        retries = 0\n        arm()\n    }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageFrequentAppPolicy.kt": [
+      {
+        "before": "            .take(limit.coerceIn(0, 5)).map { it.key }",
+        "after": "            .take(limit.coerceIn(0, 12)).map { it.key }"
+      },
+      {
+        "before": "    fun select(availableKeys: List<String>, usage: List<Usage>, now: Long, limit: Int = 5): List<String> {",
+        "after": "    fun select(availableKeys: List<String>, usage: List<Usage>, now: Long, limit: Int = 12): List<String> {"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageQuickStore.kt": [
+      {
+        "before": "        set(v) { state = state.copy(pins = StageQuickPolicy.normalize(v)) }",
+        "after": "        set(v) { state = state.copy(pins = StageQuickPolicy.normalize(v)) }\n    /** User/profile qualified keys. Explicitly hidden auto recommendations stay\n     * hidden until added again from '+' or reset, without inventing app data.\n     */\n    var hiddenApps: Set<String>\n        get() = prefs.getStringSet(\"quick_hidden_v1\", emptySet())?.toSet().orEmpty()\n        set(value) { prefs.edit().putStringSet(\"quick_hidden_v1\", value.toSet()).apply() }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageCorePolicies.kt": [
+      {
+        "before": "    fun select(fixed: Boolean, pins: List<String>, recent: List<String>, available: Set<String>) =\n        (if (fixed) normalize(pins) else recent.distinct().take(5)).filter { it in available }",
+        "after": "    fun select(fixed: Boolean, pins: List<String>, recent: List<String>, available: Set<String>,\n        capacity: Int = 5): List<String> {\n        val cap = if (fixed) maxOf(6,capacity) else capacity\n        return (if (fixed) normalize(pins) else normalize(pins) + recent)\n            .distinct().filter { it in available }.take(cap.coerceIn(0,12))\n    }"
+      },
+      {
+        "before": "    fun normalize(pins: List<String>) = pins.filter { it.isNotBlank() }.distinct().take(6)",
+        "after": "    // Persist up to 12 across fold states; compact phone renders only its\n    // original five-auto/six-fixed visible slots, never changes task identities.\n    fun normalize(pins: List<String>) = pins.filter { it.isNotBlank() }.distinct().take(12)"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageQuickBarView.kt": [
+      {
+        "before": "            contentDescription = \"选择应用，长按可固定\"; setOnClickListener { add(this) }",
+        "after": "            contentDescription = \"添加常用应用到快捷栏\"; setOnClickListener { add(this) }"
+      }
+    ]
+  }
+}
