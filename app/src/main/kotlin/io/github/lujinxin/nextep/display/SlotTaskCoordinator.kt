@@ -405,9 +405,12 @@ class SlotTaskCoordinator(
         check(isGroupRestoreReady()) { "工作区正在切换" }
         val state = slotRecords.getOrNull(index)?.state as? SlotState.Occupied ?: error("窗口已关闭")
         val drag = SlotTaskDrag(index, state.taskId, state.displayId)
-        check(onSlotDragStarting(drag)) { "窗口忙碌" }
-        try { check(dismissDraggedSlot(drag)) { "无法关闭小窗" } }
-        finally { onSlotDragEnded() }
+        check(onSlotDragStarting(drag)) { "窗口忙碌或系统任务状态已变化" }
+        try {
+            dismissDraggedSlotResult(drag).getOrThrow()
+        } finally {
+            onSlotDragEnded()
+        }
         // Clear recovery metadata too; a dismissed task must not reopen itself.
         clearSlotAssignment(index)
         slotRecords[index].exitTask = null
@@ -1012,31 +1015,98 @@ class SlotTaskCoordinator(
 
     override fun onSlotBackgroundSwiped(drag: SlotTaskDrag) = dismissDraggedSlot(drag)
 
-    /** Return below existing tasks in one transaction, keeping the main app and
-     * overview visible. This releases slot ownership without closing the task. */
-    fun dismissDraggedSlot(drag: SlotTaskDrag): Boolean {
-        if (activeDrag != drag || !matchesDrag(drag) || !active || suspended || recentSelectionPending) return false
+    /** Keep the swipe gesture's Boolean contract; menu calls keep the cause. */
+    fun dismissDraggedSlot(drag: SlotTaskDrag): Boolean =
+        dismissDraggedSlotResult(drag).isSuccess
+
+    /** Relinquish ONLY the virtual slot; preserve the real task in Recents.
+     * A WCT reparent is asynchronous on ColorOS and must not be judged by an
+     * immediate getRunningTasks() snapshot.
+     */
+    private fun dismissDraggedSlotResult(drag: SlotTaskDrag): Result<Unit> {
+        if (activeDrag != drag || !matchesDrag(drag) || !active || suspended || recentSelectionPending) {
+            return Result.failure(IllegalStateException("小窗任务发生变化或正在切换，请重试"))
+        }
         return runTransition("background slot=${drag.slotIndex} task=${drag.taskId}") {
             val task = checkNotNull(taskRepository.findTask(drag.taskId))
             val record = slotRecords[drag.slotIndex]
             val layout = record.originalLayout ?: defaultMainLayout(task.resizeMode)
+            val foreground = taskRepository.foregroundTask()
+                ?.takeIf { it.taskId != task.taskId && it.displayId == Display.DEFAULT_DISPLAY }
+            var usedBinderFallback = false
             try {
-                WindowContainerTransactionCompat.parkInDefaultDisplay(
-                    checkNotNull(task.token), layout.defaultDisplayBounds(), layout.densityDpi, layout.windowingMode,
-                ).getOrThrow()
-                check(taskRepository.findTask(task.taskId)?.displayId == Display.DEFAULT_DISPLAY)
-                layout.resizeMode?.let { ActivityTaskManagerCompat.setTaskResizeable(task.taskId, it).getOrThrow() }
+                val park = task.token?.let {
+                    WindowContainerTransactionCompat.parkInDefaultDisplay(
+                        it, layout.defaultDisplayBounds(), layout.densityDpi, layout.windowingMode
+                    )
+                } ?: Result.failure(IllegalStateException("没有可用的系统任务令牌"))
+                if (park.isFailure) {
+                    NeXtepLog.warn("slot_close", "WCT parking unavailable task=${task.taskId}; trying native move",park.exceptionOrNull())
+                }
+                // Native Shell WCT is async. Avoid the old immediate-check race.
+                val settled = if (park.isSuccess) waitForSlotDismissDisplay(task.taskId) else false
+                if (!settled && taskRepository.findTask(task.taskId)?.displayId != Display.DEFAULT_DISPLAY) {
+                    // On some ColorOS/Vector builds the default TaskDisplayArea
+                    // hook is unavailable. A real task move is the safe fallback:
+                    // NEVER removeTask(), kill the app, or fake a preview frame.
+                    usedBinderFallback = true
+                    ActivityTaskManagerCompat.moveTaskToDisplay(
+                        task.taskId, Display.DEFAULT_DISPLAY
+                    ).getOrThrow()
+                    check(waitForSlotDismissDisplay(task.taskId)) {
+                        "系统未能将应用移回后台（task=${task.taskId}）"
+                    }
+                }
+                check(taskRepository.findTask(task.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
+                    "关闭等待结束但应用仍留在小窗（task=${task.taskId}）"
+                }
+                // Binder fallback may temporarily raise the moved task; place
+                // the original real main task back on top without relaunching.
+                if (usedBinderFallback && foreground != null &&
+                    taskRepository.findTask(foreground.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
+                    taskRepository.bringTaskToFront(foreground.taskId).getOrThrow()
+                    mainTaskPresenter.reconcileForeground(geometryProvider())
+                        .onFailure { NeXtepLog.warn("slot_close","Main surface reconciliation deferred",it) }
+                }
+                // Failure to restore a private resize flag is NOT a reason to
+                // undo an already completed real task move.
+                layout.resizeMode?.let { mode ->
+                    ActivityTaskManagerCompat.setTaskResizeable(task.taskId, mode)
+                        .onFailure { NeXtepLog.warn("slot_close","Original resize mode restore deferred task=${task.taskId}",it) }
+                }
                 record.exitTask = null
                 updateDraggedSlot(drag.slotIndex, SlotState.Ready(drag.displayId), null)
+                NeXtepLog.info("slot_close",
+                    "Dismissed real task=${task.taskId} slot=${drag.slotIndex} binderFallback=$usedBinderFallback")
                 showMessage(AppLanguage.string(applicationContext, R.string.window_backgrounded))
             } catch (error: Throwable) {
+                // If Shell actually completed the move, never bounce a real
+                // task back to a mini-window just because a post-check failed.
+                if (taskRepository.findTask(task.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
+                    NeXtepLog.warn("slot_close",
+                        "Parking committed despite a nonfatal follow-up error task=${task.taskId}",error)
+                    record.exitTask = null
+                    updateDraggedSlot(drag.slotIndex, SlotState.Ready(drag.displayId), null)
+                    return@runTransition
+                }
                 runCatching {
                     moveTaskToDisplayAndWait(task.taskId, drag.displayId)
                     ensureSlotLayout(drag.slotIndex, task, layout)
                 }.onFailure(error::addSuppressed)
                 throw error
             }
-        }.isSuccess
+        }
+    }
+
+    private fun waitForSlotDismissDisplay(taskId: Int): Boolean {
+        val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
+        var displayId = taskRepository.findTask(taskId)?.displayId
+        while (displayId != Display.DEFAULT_DISPLAY &&
+            SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
+            displayId = taskRepository.findTask(taskId)?.displayId
+        }
+        return displayId == Display.DEFAULT_DISPLAY
     }
 
     override fun onSlotDropped(slotIndex: Int, drag: SlotTaskDrag): Boolean {
