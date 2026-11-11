@@ -60,7 +60,7 @@ internal object StageTabletColdLaunch {
                 return@synchronized null
             }
             if (packages.none {
-                    StageTabletColdLaunchPolicy.matches(it, info.userId,
+                    StageTabletColdLaunchPolicy.matches(it, observedUser,
                         p.targetPackage,p.userId,p.startedAt,now)
                 }) return@synchronized null
             pending=null
