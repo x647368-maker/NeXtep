@@ -105,6 +105,7 @@ internal class StageIssueSession(context: Context) {
             edit.putInt("start_pid", snapshot.processId)
                 .putLong("start_cpu", snapshot.cpuMs)
                 .putLong("start_runtime_elapsed", snapshot.elapsedMs)
+                .putLong("start_main_cpu", snapshot.mainThreadCpuMs)
                 .putLong("start_task", snapshot.taskQueries)
                 .putLong("start_frames", snapshot.slotFrames)
                 .putLong("start_captures", snapshot.previewCaptures)
@@ -235,9 +236,15 @@ internal class StageIssueSession(context: Context) {
         val normalized = effective?.let {
             "，平均约${String.format(Locale.US,"%.2f",it)}个CPU核心的累计忙碌时间"
         } ?: ""
+        val mainBusy = StageCpuEvidence.averageCoreEquivalents(
+            preferences.getLong("start_main_cpu", -1L), end.mainThreadCpuMs,
+            preferences.getLong("start_runtime_elapsed", -1L), end.elapsedMs)
+        val mainNote = mainBusy?.let {
+            "，其中SystemUI主线程平均约${String.format(Locale.US,"%.3f",it)}个CPU核心时间"
+        } ?: "，SystemUI主线程数据不可用"
         return "任务查询+${diff(end.taskQueries,"start_task")} " +
             "截取+${diff(end.previewCaptures,"start_captures")} " +
             "帧+${diff(end.slotFrames,"start_frames")} " +
-            "整个SystemUI进程CPU+${diff(end.cpuMs,"start_cpu")}ms$normalized（包含系统界面，不能归因模块独占）"
+            "整个SystemUI进程CPU+${diff(end.cpuMs,"start_cpu")}ms$normalized$mainNote（均不能归因模块独占）"
     }
 }
