@@ -1059,6 +1059,9 @@ class NeXtepWindowController(
                 val g = currentGeometry()
                 val capacity = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
                     .quickBarCapacity(g.screenWidth, g.screenHeight)
+                // On wide displays keep '+' clickable even when 10–12 icons
+                // overflow horizontally; do not change the compact phone bar.
+                quickBar?.setWideActions(capacity > 5)
                 val available = byKey.keys - core.hiddenApps
                 val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, available, capacity)
                 quickBar?.render(keys.mapNotNull(byKey::get))
