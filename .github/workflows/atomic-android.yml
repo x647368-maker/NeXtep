@@ -3,6 +3,8 @@ name: Atomic Android baseline and development
 on:
   push:
     branches: ['atomic-workbench/**']
+  pull_request:
+    branches: ['atomic-workbench/p0-app-catalog-ci-base-0.9.29']
   workflow_dispatch:
 
 concurrency:
