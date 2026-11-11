@@ -818,7 +818,18 @@ class NeXtepWindowController(
             touchable = true, windowType = windowType,
         )
         addWindow(
-            title = "StageMainHandle", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow),
+            title = "StageMainHandle", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow, {
+                // Only on a wide Y700-like tablet: quick tap toggles the
+                // favorites row. Long press still opens the complete main menu.
+                // Compact phones and near-square foldables keep click=menu.
+                val g = geometry()
+                if (!io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                        .wideTablet(g.screenWidth, g.screenHeight)) false
+                else {
+                    setQuickExpanded(!(core.enabled && core.expanded))
+                    true
+                }
+            }),
             width = dp(48).toInt(), height = dp(48).toInt(), gravity = Gravity.TOP or Gravity.LEFT,
             touchable = true, windowType = windowType,
         )
@@ -983,6 +994,9 @@ class NeXtepWindowController(
         val geometry = requested
         when (title) {
             "StageMainHandle" -> {
+                (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(
+                    io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                        .wideTablet(geometry.screenWidth, geometry.screenHeight))
                 val box=io.github.x647368maker.atomicworkbench.workspace.StageMainWindowMetrics.mainHandle(geometry,context.resources.displayMetrics.density)
                 params.width=box.width;params.height=box.height;params.x=box.left;params.y=box.top
             }
