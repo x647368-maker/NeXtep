@@ -19,7 +19,7 @@ internal object StageIssueEventObserver {
     private var receiver: BroadcastReceiver? = null
     private var lifecycle: Application.ActivityLifecycleCallbacks? = null
     private var token = -1L
-    private var visibleActivities = 0
+    private val activityTracker = StageIssueForegroundTracker()
 
     fun enable(context: Context) {
         val application = context.applicationContext as? Application ?: return
@@ -30,23 +30,24 @@ internal object StageIssueEventObserver {
         disable()
         app = application
         token = current
-        visibleActivities = if (context is Activity) 1 else 0
+        activityTracker.reset()
+        // The registration happens during onResume, after onStart. Seed the
+        // visible page; older already-started activities may stop afterward.
+        // Ignore their unobserved onStop rather than invent a background event.
+        if (context is Activity) activityTracker.seed(context)
         session.recordAutoEvent(current,
-            if (visibleActivities > 0) "测试App前台页面可见" else "测试App前后台状态未知",
+            if (activityTracker.isVisible()) "测试App前台页面可见" else "测试App前后台状态未知",
             StageIssueSceneSnapshot.screenLabel(application))
 
         lifecycle = object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, state: Bundle?) {}
             override fun onActivityStarted(activity: Activity) {
-                val old = visibleActivities
-                visibleActivities++
-                if (old == 0) record("测试App前台页面可见")
+                if (activityTracker.start(activity)) record("测试App前台页面可见")
             }
             override fun onActivityResumed(activity: Activity) {}
             override fun onActivityPaused(activity: Activity) {}
             override fun onActivityStopped(activity: Activity) {
-                visibleActivities = (visibleActivities - 1).coerceAtLeast(0)
-                if (visibleActivities == 0) record("测试App退到后台（无可见页面）")
+                if (activityTracker.stop(activity)) record("测试App退到后台（无可见页面）")
             }
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
             override fun onActivityDestroyed(activity: Activity) {}
@@ -91,7 +92,7 @@ internal object StageIssueEventObserver {
         receiver = null
         lifecycle = null
         token = -1L
-        visibleActivities = 0
+        activityTracker.reset()
         if (owner != null && registered != null)
             runCatching { owner.unregisterReceiver(registered) }
         if (owner != null && callbacks != null)
