@@ -6,7 +6,7 @@ import kotlin.math.ln
 /** Stable identity keys include the user/profile. No invented suggestions without usage evidence. */
 internal object StageFrequentAppPolicy {
     data class Usage(val key: String, val lastUsed: Long, val foregroundMillis: Long = 0, val selections: Int = 0)
-    fun select(availableKeys: List<String>, usage: List<Usage>, now: Long, limit: Int = 5): List<String> {
+    fun select(availableKeys: List<String>, usage: List<Usage>, now: Long, limit: Int = 12): List<String> {
         val allowed = availableKeys.toSet()
         val merged = usage.filter { it.key in allowed && it.lastUsed > 0 }.groupBy { it.key }.map { (key, values) ->
             Usage(key, values.maxOf { it.lastUsed }, values.maxOf { it.foregroundMillis }, values.maxOf { it.selections })
@@ -18,6 +18,6 @@ internal object StageFrequentAppPolicy {
                 2 * ln(1.0 + u.selections.coerceAtLeast(0)))
         }
         return merged.sortedWith(compareByDescending<Usage> { score(it) }.thenByDescending { it.lastUsed }.thenBy { it.key })
-            .take(limit.coerceIn(0, 5)).map { it.key }
+            .take(limit.coerceIn(0, 12)).map { it.key }
     }
 }
