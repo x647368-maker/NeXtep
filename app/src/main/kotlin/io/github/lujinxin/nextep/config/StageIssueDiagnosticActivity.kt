@@ -1,9 +1,7 @@
 package io.github.x647368maker.atomicworkbench.config
 
-import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
-import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -12,6 +10,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.x647368maker.atomicworkbench.monitoring.BatterySample
 import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
 
@@ -40,6 +42,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         val density = resources.displayMetrics.density
         fun dp(n: Int) = (n * density).toInt()
         val body = LinearLayout(this).apply {
@@ -82,13 +85,32 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             isFillViewport = true
             addView(body)
         }
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(safe.left, safe.top, safe.right, maxOf(safe.bottom, ime.bottom))
+            insets
+        }
         setContentView(scroll)
+        ViewCompat.requestApplyInsets(scroll)
         render()
     }
 
     override fun onResume() { super.onResume(); if (::status.isInitialized) render() }
 
     private fun start() {
+        if (pending || session.active()) return
+        if (session.latestReport().isNotBlank()) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("开始新测试？")
+                .setMessage("上一次报告还保存在 App 中。开始新测试会覆盖它；如果还需要，请先导出。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("覆盖并开始") { _, _ -> beginNewSession() }
+                .show()
+        } else beginNewSession()
+    }
+
+    private fun beginNewSession() {
         if (pending || session.active()) return
         val token = session.begin(BatterySample.read(this))
         render()
