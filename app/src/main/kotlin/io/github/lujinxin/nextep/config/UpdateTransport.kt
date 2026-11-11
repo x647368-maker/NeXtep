@@ -23,7 +23,10 @@ internal object UpdateTransport {
             val c = URL(current).openConnection() as HttpsURLConnection
             try {
                 c.connectTimeout = 12000; c.readTimeout = 20000; c.instanceFollowRedirects = false
-                c.setRequestProperty("User-Agent", "AtomicWorkbench-Update"); c.setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream")
+                c.useCaches = false
+                c.setRequestProperty("Cache-Control", "no-cache")
+                c.setRequestProperty("User-Agent", "AtomicWorkbench-Update")
+                c.setRequestProperty("Accept", if (URL(current).host == "raw.githubusercontent.com") "application/json" else "application/vnd.github+json, application/octet-stream")
                 when(val code = c.responseCode) {
                     301, 302, 303, 307, 308 -> current = UpdatePolicy.secure(URL(URL(current), c.getHeaderField("Location") ?: error("更新重定向无效")).toString())
                     200 -> {

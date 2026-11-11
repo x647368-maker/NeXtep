@@ -94,7 +94,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             intArrayOf(blue, if (dark) Color.rgb(75, 77, 81) else Color.rgb(204, 206, 210)))
         setOnCheckedChangeListener { _, value -> if (!settingSwitch) action(value) }
     }
-    fun back(): Boolean { if (page == "home") return false; open("home"); return true }
+    fun back(): Boolean { if (page == "home") return false; open(if (page == "changelog") "about" else "home"); return true }
     fun open(target: String) {
         page = target; body = null; stateText = null; master = null
         view.removeAllViews()
@@ -135,10 +135,10 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f).apply {
-                gravity = Gravity.CENTER; contentDescription = "返回设置"; setOnClickListener { open("home") }
+                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open(if (target == "changelog") "about" else "home") }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
             header.addView(label(titles[target] ?: "设置", 24f).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             column.addView(header)
@@ -152,6 +152,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "diagnostics" -> diagnostics(column)
                 "about" -> about(column)
                 "feedback" -> feedback(column)
+                "changelog" -> column.addView(StageChangelogPage.create(activity), LinearLayout.LayoutParams(-1, -2))
             }
         }
     }
@@ -274,6 +275,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 .setMessage("原作者：lujinxin / JensenLu。保留 NeXtep 的 Apache-2.0 许可证与第三方声明。Android 任务引擎来自原作，本分支增加四侧窗、工作组和新的交互。\n\n交互参考 macOS Stage Manager，非 Apple 官方应用。")
                 .setPositiveButton("知道了", null).show()
         }
+        row(group(root), "更新日志", "离线查看各版本重大变化与验收状态", "info") { open("changelog") }
         row(group(root), "建议与反馈 · 酷安", "ZMW专用 · UID 43881308", "help") { open("feedback") }
         root.addView(UpdateSection.create(activity))
         root.addView(hint("真实任务迁移、点击交换、侧栏收起和工作组切换。新版本的实际安装、注入与交互效果仍需真机验收。"))

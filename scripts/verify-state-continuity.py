@@ -17,7 +17,7 @@ assert set(tablet_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceViewport.kt',
 }
-reviewed_chain=[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
+reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
  if path in tablet_review:
@@ -137,8 +137,16 @@ assert 'StageWindowTouchRegion.add' in (k/'systemui/StageQuickBarView.kt').read_
 print('Full-source crop, shared margin snapshot and window-local chrome input boundaries checked')
 
 # All stable runtime files except the approved shade/menu/version UI files remain exact.
-for path,sha in json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text()).items():
- assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
+reviewed_updater=json.loads((root/'scripts/reviewed-update-feed-0.9.16.json').read_text())['files']
+frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
+assert set(reviewed_updater).issubset(set(frozen))
+for path,sha in frozen.items():
+ if path in reviewed_updater:
+  spec=reviewed_updater[path]
+  assert sha==spec['original_sha256'],path
+  assert hashlib.sha256((root/path).read_bytes()).hexdigest()==spec['updated_sha256'],path
+ else:
+  assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
 shade=(k/'systemui/SystemUiRootTransformController.kt').read_text()
 shade_input=(k/'systemui/SystemUiShadeInputController.kt').read_text()
 assert 'contentScale' not in shade and 'view.scaleX =' not in shade

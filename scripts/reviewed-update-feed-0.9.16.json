@@ -1,0 +1,25 @@
+{
+  "scope": "Only five updater sources intentionally reviewed: valid nonempty/channel-relevant feed with API fallback, URL policy, transport, default-on schedule, settings UI. Pure Kotlin regression tests added; tasks/SystemUI/geometry/workgroups remain frozen.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt": {
+      "original_sha256": "b2be0903c650e61c1171e584954253e62672473843eb7a1c2a4b9ff542cb4565",
+      "updated_sha256": "1965b381e2f93f33c7bf3dacd6e406a04c21af0f8494f64d81afc32c4bcefec4"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdatePolicy.kt": {
+      "original_sha256": "d0a669b76aaef1ac254c8d58377745415b6f943e69717d12081d4c0514f97667",
+      "updated_sha256": "15c8a69dcc9a01eefba6d0019d4a384af044c3c876d17f0b3fac42745bf76ddc"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateTransport.kt": {
+      "original_sha256": "220093868bbfa13da6bdbcbef7685b19747607f21a403b20673ad52871917ce7",
+      "updated_sha256": "686c3cec57cb64350941d5aa242d5fe1ec1653383cb8511bd107bb8fdfcb3290"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateCoordinator.kt": {
+      "original_sha256": "1d00c6ff05dc9b4d8ee2fa1c0a6e7ddea6118cc4e6d8d8d7974abaae4dad703b",
+      "updated_sha256": "391b1a80d2259cb6afbc263eef30afc5c0f83b7989d3a8cb6767764f9b166191"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt": {
+      "original_sha256": "bceb5af636e1891fa12c5e5f66831f5c66bba16e2001c8665961a6815c2732db",
+      "updated_sha256": "79925d4bd26ab13d87e4036edbca75d1dbd92852d8b167d474f8c3bd193d6f93"
+    }
+  }
+}

@@ -2,8 +2,35 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+
+// Single authoritative release note for each build; generated into build/ and
+// packaged as an asset, never written back into the source tree.
+val embeddedNotesDir = layout.buildDirectory.dir("generated/atomic-release-assets")
+val embedCurrentReleaseNotes by tasks.registering(Copy::class) {
+    from(rootProject.file("RELEASE_NOTES.md"))
+    into(embeddedNotesDir)
+    rename { "current-release.md" }
+}
+
+// Older version notes are recovered from git history at build time and archived
+// in a second small asset. In source-only ZIPs, the generator keeps current notes.
+val archivedNotesDir = layout.buildDirectory.dir("generated/atomic-history-assets")
+val embedReleaseHistory by tasks.registering(Exec::class) {
+    commandLine("python3", rootProject.file("scripts/generate-release-history.py").absolutePath,
+        "--output", archivedNotesDir.get().file("release-history.json").asFile.absolutePath)
+    inputs.file(rootProject.file("RELEASE_NOTES.md"))
+    outputs.file(archivedNotesDir.get().file("release-history.json").asFile)
+}
+
+// Android's asset merger must finish the Copy task before reading generated assets.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(embedCurrentReleaseNotes, embedReleaseHistory)
+}
+
 android {
     namespace = "io.github.x647368maker.atomicworkbench"
+    sourceSets.getByName("main").assets.srcDir(embeddedNotesDir.get().asFile)
+    sourceSets.getByName("main").assets.srcDir(archivedNotesDir.get().asFile)
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -14,8 +41,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
-        versionCode = 32
-        versionName = "0.9.17-dev"
+        versionCode = 33
+        versionName = "0.9.18-dev"
         testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
 
     }

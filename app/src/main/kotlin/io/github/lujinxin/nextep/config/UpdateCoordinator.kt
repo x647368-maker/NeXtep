@@ -11,7 +11,7 @@ import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatActivity
 import java.util.concurrent.Executors
 
-/** Opt-in checks on app entry: 12h after success, 1h after failure. No background polling. */
+/** Lightweight default-on checks on app entry: 12h after success, 1h after failure. User can opt out. No background polling. */
 internal object UpdateCoordinator {
     private val worker=Executors.newSingleThreadExecutor()
     @Volatile private var checking=false
@@ -21,7 +21,7 @@ internal object UpdateCoordinator {
         UpdatePolicy.Channel.valueOf(prefs(c).getString("channel",null) ?: if(installed(c).versionName.orEmpty().contains("-dev")) "DEV" else "STABLE")
     }.getOrDefault(UpdatePolicy.Channel.DEV)
     fun setChannel(c: Context,v: UpdatePolicy.Channel) { prefs(c).edit().putString("channel",v.name).putLong("last_check",0).apply() }
-    fun auto(c: Context)=prefs(c).getBoolean("auto",false)
+    fun auto(c: Context)=prefs(c).getBoolean("auto",true)
     fun setAuto(c: Context,v: Boolean) { prefs(c).edit().putBoolean("auto",v).putLong("last_check",0).apply() }
     fun available(c: Context): UpdateChecker.Release? = runCatching {
         val release=UpdateChecker.decode(prefs(c).getString("available",null) ?: return@runCatching null)
