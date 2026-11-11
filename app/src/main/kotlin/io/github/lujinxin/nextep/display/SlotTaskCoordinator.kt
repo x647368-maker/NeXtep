@@ -1051,10 +1051,9 @@ class SlotTaskCoordinator(
                     // hook is unavailable. A real task move is the safe fallback:
                     // NEVER removeTask(), kill the app, or fake a preview frame.
                     usedBinderFallback = true
-                    ActivityTaskManagerCompat.moveTaskToDisplay(
-                        task.taskId, Display.DEFAULT_DISPLAY
-                    ).getOrThrow()
-                    check(waitForSlotDismissDisplay(task.taskId)) {
+                    moveTaskToDisplayAndWait(task.taskId, Display.DEFAULT_DISPLAY)
+                    check(SlotDismissDecisionPolicy.mayPublishVacantSlot(
+                        taskRepository.findTask(task.taskId)?.displayId)) {
                         "系统未能将应用移回后台（task=${task.taskId}）"
                     }
                 }
