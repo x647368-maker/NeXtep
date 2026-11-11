@@ -1,0 +1,36 @@
+{
+  "base": "f59d86225aaf806f70a39258090e0df94983ef13",
+  "purpose": "Y700 layout-feedback: keep new top/side producers landscape, main safe margins and live-only explicit layout motion; exact reversible patches over v0.9.26",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletCanvasPolicy.kt": [
+      {
+        "before": "        if (!g.isNativeLandscapeRail) return profile.canvas",
+        "after": "        // A user can enter via the separate top row before choosing either\n        // side rail. The producer direction is a physical display choice, not\n        // the selected PREVIEW arrangement. Do not resize an active display.\n        if (!StageDisplayPolicy.wideLandscapeTablet(g.screenWidth, g.screenHeight))\n            return profile.canvas"
+      },
+      {
+        "before": " * Only an uncreated side-rail producer on the physical landscape screen may\n * start with a landscape canvas. An already task-owning virtual display keeps",
+        "after": " * Only a new virtual display on the physical landscape screen may\n * start with a landscape canvas, independent of whether TOP, LEFT, or RIGHT\n * was selected when the workbench first opened. Otherwise launching in TOP\n * creates portrait producers that remain portrait forever after selecting\n * LEFT/RIGHT because continuity correctly retains task-owning displays.\n * An already task-owning virtual display keeps"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StagePresentationPolicy.kt": [
+      {
+        "before": "    fun apply(profile: WorkspaceLayoutProfile, priority: Boolean, inputReady: Boolean): WorkspaceLayoutProfile =\n        if(priority) StageMainWindowMetrics.enlarge(StageAdaptiveLayout.mainPriority(profile,profile.activeCount),inputReady)\n        else profile.copy(geometry=profile.geometry.copy(mainTopOverlap=0,mainInset=(12*profile.densityDpi/160f).roundToInt()))",
+        "after": "    fun apply(profile: WorkspaceLayoutProfile, priority: Boolean, inputReady: Boolean): WorkspaceLayoutProfile {\n        val staged = if (priority)\n            StageMainWindowMetrics.enlarge(\n                StageAdaptiveLayout.mainPriority(profile, profile.activeCount), inputReady)\n        else profile.copy(geometry = profile.geometry.copy(mainTopOverlap = 0,\n            mainInset = (12 * profile.densityDpi / 160f).roundToInt()))\n        val g = staged.geometry\n        // Keep a matching 12dp breathing margin *inside* the usable task\n        // region, on both edges of a wide Y700 side layout. Previously main\n        // priority set mainInset=0, pressing the task against the right bezel.\n        // Neither top-row mode nor any phone / near-square foldable is changed.\n        if (!g.isNativeLandscapeRail) return staged\n        val desiredInset = (12 * profile.densityDpi / 160f).roundToInt().coerceAtLeast(1)\n        val safeInset = desiredInset.coerceAtMost(\n            (minOf(g.availableWidth - g.sidebarWidth, g.availableHeight - g.topHeight) / 4)\n                .coerceAtLeast(1))\n        return staged.copy(geometry = g.copy(mainInset = safeInset))\n    }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": [
+      {
+        "before": "\n    private fun showMainMenu() {",
+        "after": "\n    private fun animateTabletLayoutSelection() {\n        val g = geometry()\n        val entry = io.github.x647368maker.atomicworkbench.workspace.StageTabletLayoutMotionPolicy\n            .entry(g, context.resources.displayMetrics.density) ?: return\n        val panel = records.firstOrNull { it.title == \"NeXtepSidebar\" }?.view ?: return\n        val generation = ++tabletLayoutMotionGeneration\n        panel.post {\n            if (generation != tabletLayoutMotionGeneration || !workspaceVisible || suspended)\n                return@post\n            val actual = geometry()\n            if (actual.railAtTop != g.railAtTop || actual.sidebarSide != g.sidebarSide ||\n                !actual.isLandscape) return@post\n            panel.animate().cancel()\n            panel.alpha = 0.86f\n            panel.translationX = entry.dx\n            panel.translationY = entry.dy\n            panel.animate().alpha(1f).translationX(0f).translationY(0f)\n                .setDuration(entry.durationMs)\n                .setInterpolator(transitionInterpolator).start()\n        }\n    }\n\n    private fun showMainMenu() {"
+      },
+      {
+        "before": "            viewport.setTopRail(top)\n            if (workspaceVisible && !suspended) onViewportChanged()",
+        "after": "            viewport.setTopRail(top)\n            if (workspaceVisible && !suspended) {\n                onViewportChanged()\n                // Animate only the live panel entering its *new* tablet layout.\n                // The task surface and click projection are still updated by\n                // the normal geometry owner; no frozen image or VD recreation.\n                animateTabletLayoutSelection()\n            }"
+      },
+      {
+        "before": "    private var windowPickerGeneration = 0",
+        "after": "    private var windowPickerGeneration = 0\n    private var tabletLayoutMotionGeneration = 0"
+      }
+    ]
+  }
+}
