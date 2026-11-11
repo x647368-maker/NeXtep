@@ -40,7 +40,17 @@ class StageY700ScreenFitWallpaperTest {
         assertEquals(portrait.canvas, StageTabletCanvasPolicy.proposed(portrait, null))
         val top = y700Land().copy(railAtTop = true, sidebarWidth = 320)
         val topProfile = WorkspaceLayoutProfile(top,320,2)
-        assertEquals(topProfile.canvas, StageTabletCanvasPolicy.proposed(topProfile,null))
+        assertEquals(SlotGeometry(top.availableWidth, top.availableHeight, 320),
+            StageTabletCanvasPolicy.proposed(topProfile,null))
+        // Start in TOP first, then select either side: do not morph the
+        // same producer back to the old 720x1120 portrait task canvas.
+        val createdInTop = StageTabletCanvasPolicy.proposed(topProfile, null)
+        for (side in SidebarSide.entries) {
+            val sideG = top.copy(railAtTop=false, sidebarSide=side)
+            val sideProfile = WorkspaceLayoutProfile(sideG,320,2)
+            assertEquals(createdInTop,StageTabletCanvasPolicy.proposed(sideProfile,createdInTop))
+            assertEquals(createdInTop,StageTabletCanvasPolicy.proposed(topProfile,createdInTop))
+        }
         for (g in listOf(
             WorkspaceGeometry.forDisplay(1140, 2616, density = 3f),
             WorkspaceGeometry.forDisplay(2248, 2480, density = 2.6f),
