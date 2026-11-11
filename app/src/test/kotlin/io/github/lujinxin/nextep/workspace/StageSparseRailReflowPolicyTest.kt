@@ -11,7 +11,7 @@ class StageSparseRailReflowPolicyTest {
         1600, 2560, SidebarSide.RIGHT, density = 2f)
 
     @Test fun leftRightCountChangesAreAllowedWithoutTouchingMainGeometry() {
-        for (g in listOf(ace, ace.copy(sidebarSide=SidebarSide.RIGHT), tablet)) {
+        for (g in listOf(ace, ace.copy(sidebarSide=SidebarSide.RIGHT))) {
             for ((old,now) in listOf(1 to 2,2 to 3,3 to 4,4 to 3,3 to 2)) {
                 val content = listOf(g.contentLeft,g.contentTop,g.contentWidth,g.contentHeight)
                 assertTrue(StageSparseRailReflowPolicy.supported(g,g,old,now))
@@ -20,6 +20,12 @@ class StageSparseRailReflowPolicyTest {
         }
         assertFalse(StageSparseRailReflowPolicy.supported(ace,ace,2,2))
         assertFalse(StageSparseRailReflowPolicy.supported(ace,ace,0,1))
+        assertFalse(StageSparseRailReflowPolicy.supported(tablet,tablet,1,2))
+        assertTrue(StageSparseRailReflowPolicy.trialModel("PMS110"))
+        assertTrue(StageSparseRailReflowPolicy.trialModel("pms110"))
+        assertFalse(StageSparseRailReflowPolicy.trialModel("Find N5"))
+        assertFalse(StageSparseRailReflowPolicy.trialModel("TB324ZC"))
+        assertFalse(StageSparseRailReflowPolicy.trialModel("unknown"))
     }
 
     @Test fun xAndYAlwaysUseSameScaleAndMaintainPreviousVisibleCentre() {
