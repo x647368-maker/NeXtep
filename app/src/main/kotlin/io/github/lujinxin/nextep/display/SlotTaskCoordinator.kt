@@ -1045,7 +1045,8 @@ class SlotTaskCoordinator(
                 }
                 // Native Shell WCT is async. Avoid the old immediate-check race.
                 val settled = if (park.isSuccess) waitForSlotDismissDisplay(task.taskId) else false
-                if (!settled && taskRepository.findTask(task.taskId)?.displayId != Display.DEFAULT_DISPLAY) {
+                if (SlotDismissDecisionPolicy.nativeFallbackRequired(
+                        settled, taskRepository.findTask(task.taskId)?.displayId)) {
                     // On some ColorOS/Vector builds the default TaskDisplayArea
                     // hook is unavailable. A real task move is the safe fallback:
                     // NEVER removeTask(), kill the app, or fake a preview frame.
@@ -1057,14 +1058,16 @@ class SlotTaskCoordinator(
                         "系统未能将应用移回后台（task=${task.taskId}）"
                     }
                 }
-                check(taskRepository.findTask(task.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
+                check(SlotDismissDecisionPolicy.mayPublishVacantSlot(
+                    taskRepository.findTask(task.taskId)?.displayId)) {
                     "关闭等待结束但应用仍留在小窗（task=${task.taskId}）"
                 }
                 // Binder fallback may temporarily raise the moved task; place
                 // the original real main task back on top without relaunching.
-                if (usedBinderFallback && foreground != null &&
-                    taskRepository.findTask(foreground.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
-                    taskRepository.bringTaskToFront(foreground.taskId).getOrThrow()
+                if (SlotDismissDecisionPolicy.shouldRestoreMain(
+                        usedBinderFallback, foreground?.taskId, task.taskId,
+                        foreground?.let { taskRepository.findTask(it.taskId)?.displayId })) {
+                    taskRepository.bringTaskToFront(checkNotNull(foreground).taskId).getOrThrow()
                     mainTaskPresenter.reconcileForeground(geometryProvider())
                         .onFailure { NeXtepLog.warn("slot_close","Main surface reconciliation deferred",it) }
                 }
@@ -1082,7 +1085,14 @@ class SlotTaskCoordinator(
             } catch (error: Throwable) {
                 // If Shell actually completed the move, never bounce a real
                 // task back to a mini-window just because a post-check failed.
-                if (taskRepository.findTask(task.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
+                if (SlotDismissDecisionPolicy.mayPublishVacantSlot(
+                        taskRepository.findTask(task.taskId)?.displayId)) {
+                    if (SlotDismissDecisionPolicy.shouldRestoreMain(
+                            usedBinderFallback, foreground?.taskId, task.taskId,
+                            foreground?.let { taskRepository.findTask(it.taskId)?.displayId })) {
+                        runCatching { taskRepository.bringTaskToFront(checkNotNull(foreground).taskId).getOrThrow() }
+                            .onFailure { NeXtepLog.warn("slot_close", "Main z-order recovery pending", it) }
+                    }
                     NeXtepLog.warn("slot_close",
                         "Parking committed despite a nonfatal follow-up error task=${task.taskId}",error)
                     record.exitTask = null
