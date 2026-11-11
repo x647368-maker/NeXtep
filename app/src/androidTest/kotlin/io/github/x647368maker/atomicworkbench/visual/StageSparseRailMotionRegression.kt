@@ -150,8 +150,12 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                 check(created.get()==4) {
                     "Card reflow destroyed/recreated TextureView surfaces"
                 }
-                check(resized.get()<=16) {
-                    "Unexpected repeated TextureView resizing during compositor-only reflow"
+                // Eight occupancy transitions can produce one legitimate
+                // host TextureView size notification for each affected card.
+                // They must not resize every animation frame or recreate a
+                // single producer Surface/VirtualDisplay.
+                check(resized.get()<=32) {
+                    "Repeated per-frame TextureView resize detected: ${resized.get()}"
                 }
             }
             // Screenshot is taken outside the UI thread: never block HWUI
