@@ -84,6 +84,9 @@ jobs:
           python3 publisher/scripts/publish-update-feed.py \
             --manifest release/atomic-update.json \
             --apk "release/$ATOMIC_APK_NAME" \
+            --apk-package-id "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "release/$ATOMIC_APK_NAME")" \
+            --apk-version-name "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest version-name "release/$ATOMIC_APK_NAME")" \
+            --apk-version-code "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest version-code "release/$ATOMIC_APK_NAME")" \
             --release-json release/release.json \
             --feed feed/index.json \
             --out feed/index.json \
