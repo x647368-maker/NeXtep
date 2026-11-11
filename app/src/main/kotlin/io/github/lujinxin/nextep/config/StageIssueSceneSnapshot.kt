@@ -13,6 +13,19 @@ import java.util.Locale
  * No periodic listeners, permissions, screenshots or persistent services.
  */
 internal object StageIssueSceneSnapshot {
+    fun screenLabel(context: Context): String {
+        val physical = runCatching {
+            context.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)
+        }.getOrNull()
+        val interactive = runCatching {
+            context.getSystemService(PowerManager::class.java)?.isInteractive
+        }.getOrNull()
+        val locked = runCatching {
+            context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked
+        }.getOrNull()
+        return StageIssueStateLabels.screen(interactive, locked, physical?.state)
+    }
+
     fun read(context: Context): String {
         val dm = context.getSystemService(DisplayManager::class.java)
         val physical = runCatching { dm?.getDisplay(Display.DEFAULT_DISPLAY) }.getOrNull()
@@ -33,7 +46,8 @@ internal object StageIssueSceneSnapshot {
         val heapMib = (vm.totalMemory() - vm.freeMemory()) / (1024L * 1024L)
         val displayLabel = if (mode == null) "不可用" else
             "${mode.physicalWidth}x${mode.physicalHeight}@${String.format(Locale.US, "%.1f", mode.refreshRate)}Hz"
-        return "主屏=$displayLabel 主屏状态=${physical?.state ?: "未知"} " +
+        return "屏幕分类=${StageIssueStateLabels.screen(interactive, locked, physical?.state)} " +
+            "主屏=$displayLabel 主屏状态=${physical?.state ?: "未知"} " +
             "资源方向=$orientation 锁屏=${locked ?: "未知"} 交互=${interactive ?: "未知"} " +
             "系统低内存=${if (memOk) memory.lowMemory else "未知"} " +
             "App进程Java堆≈${heapMib}MiB（不包含系统进程的小窗模块）"

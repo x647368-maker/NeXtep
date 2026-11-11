@@ -100,6 +100,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             durationValues.map{ "${it/60_000} 分钟" })
         duration.setSelection(1)
         body.addView(duration,LinearLayout.LayoutParams(-1,dp(50)))
+        body.addView(line("测试期间会利用系统现有通知，尽力记录亮屏、息屏、解锁，以及测试App切到前台/后台。工作台是否开启/挂起会在开始和结束时分别读取；不持续轮询。系统杀掉本App后可能漏记。"))
         body.addView(line("自动结束是一次性、非唤醒型提醒：手机睡着时不会为测试强行叫醒它；系统可能稍晚生成报告。重新进入本页也会自动处理过期会话。"))
 
         status=line("")
@@ -155,6 +156,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             if(note.text.isNullOrBlank() && session.storedNote().isNotBlank())
                 note.setText(session.storedNote())
         }
+        if (session.active()) StageIssueEventObserver.enable(this)
         checkDueAndArmUi()
         render()
     }
@@ -182,6 +184,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         val version=runCatching{UpdateCoordinator.installed(this).versionName}.getOrNull()?:"未知"
         val token=session.begin(BatterySample.read(this),chosen,minutes,version,
             note.text.toString(),StageIssueSceneSnapshot.read(this))
+        StageIssueEventObserver.enable(this)
         WorkspaceEnergyContract.query(this){ snapshot ->
             session.setStartRuntime(token,snapshot)
             if(!isDestroyed)render()

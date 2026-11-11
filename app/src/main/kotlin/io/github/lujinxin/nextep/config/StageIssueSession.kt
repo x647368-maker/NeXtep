@@ -31,6 +31,29 @@ internal class StageIssueSession(context: Context) {
             "\n补充说明（用户主动填写）：\n${StageIssueReportPolicy.note(extra)}\n")
             .take(StageIssueReportPolicy.MAX_REPORT_CHARS)
     }
+    private val maxAutoEvents = 32
+    fun autoEventCount(): Int = preferences.getInt("auto_event_count", 0).coerceIn(0, maxAutoEvents)
+
+    /**
+     * A bounded event log from real OS callbacks, not from periodic sampling.
+     * If Android kills this process, transitions in that interval are unknown.
+     */
+    fun recordAutoEvent(token: Long, type: String, screen: String) {
+        if (!active() || currentToken() != token || isDue()) return
+        val count = autoEventCount()
+        if (count >= maxAutoEvents) {
+            preferences.edit().putBoolean("auto_events_truncated", true).apply()
+            return
+        }
+        val elapsed = StageIssueReportPolicy.elapsedMs(token, SystemClock.elapsedRealtime())
+            ?.div(1000L) ?: return
+        val entry = "第${elapsed}秒｜${type.take(70)}｜屏幕：${screen.take(50)}"
+        preferences.edit()
+            .putString("auto_event_$count",entry.take(170))
+            .putInt("auto_event_count",count+1)
+            .apply()
+    }
+
     fun markersCount(): Int = markers().size
     fun elapsedSeconds(): Long? = if (active())
         StageIssueReportPolicy.elapsedMs(currentToken(), SystemClock.elapsedRealtime())?.div(1000)
@@ -122,7 +145,8 @@ internal class StageIssueSession(context: Context) {
         val finalNote = note.takeIf { it.isNotBlank() } ?: storedNote()
         val report = buildString {
             appendLine("台前调度｜用户自愿开启的故障测试报告")
-            appendLine("本报告只记录开始、可选手动标记和结束时的快照；无持续采样、截图或自动抓取崩溃堆栈。")
+            appendLine("只记录开始/结束快照、手动标记和系统主动通知的少量状态变化；不轮询、不截图、不抓取崩溃堆栈。")
+            appendLine("屏幕变化通知和测试App前后台事件仅在测试已开启且App进程存活时可能记录；若进程被杀或ROM限制广播，中途会有空白。")
             appendLine("测试类型：${category.name}")
             appendLine("操作说明：${category.instructions}")
             appendLine("可检测范围限制：${category.boundary}")
@@ -143,6 +167,14 @@ internal class StageIssueSession(context: Context) {
             appendLine("结束设备状态：${StageIssueSceneSnapshot.read(app)}")
             appendLine("开始工作台：${preferences.getString("start_runtime","无法读取")}")
             appendLine("结束工作台：${runtimeLine(snapshot)}")
+            appendLine("自动屏幕及测试App前后台事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
+            for (event in 0 until autoEventCount()) {
+                appendLine("状态事件#${event+1}：${preferences.getString("auto_event_$event","不可用")}")
+            }
+            if (preferences.getBoolean("auto_events_truncated",false))
+                appendLine("注意：状态事件超出上限，后续事件未写入。")
+            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台。")
+            appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
             appendLine("手动标记：${labels.size}次（不要求使用）")
             for (index in labels.indices) {
@@ -157,6 +189,7 @@ internal class StageIssueSession(context: Context) {
         }.take(StageIssueReportPolicy.MAX_REPORT_CHARS)
         preferences.edit().putBoolean("active", false).putString("report_core",report).apply()
         StageIssueAutoStop.cancel(app, token)
+        StageIssueEventObserver.disable()
         return report
     }
 
@@ -170,7 +203,7 @@ internal class StageIssueSession(context: Context) {
 
     private fun runtimeLine(s: WorkspaceEnergyContract.Snapshot?): String = if (s==null)
         "系统界面进程未响应（状态不可用）"
-    else "开启=${s.active} 挂起=${s.suspended} 小窗=${s.slotCount} " +
+    else "${StageIssueStateLabels.workspace(s.active,s.suspended)} 小窗=${s.slotCount} " +
         "帧计数=${s.slotFrames} 任务查询=${s.taskQueries} 截取计数=${s.previewCaptures}"
 
     private fun runtimeDelta(end: WorkspaceEnergyContract.Snapshot?): String {

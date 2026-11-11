@@ -1,0 +1,53 @@
+{
+  "purpose": "Assistant4 Y700: physical landscape producer only when new, portrait adaptive rail, crop physical backdrop, guard against stale rotated frame. Reversible against unified N5/Y700 0.9.18 base commit 1965b3b.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplaySlot.kt": [
+      {
+        "before": "        val requested = checkNotNull(layoutProfile).canvas",
+        "after": "        val profile = checkNotNull(layoutProfile)\n        // Only a *new* virtual display on a native-landscape tablet takes a\n        // horizontal producer canvas. Existing task-owning displays retain\n        // their recorded geometry across rotations and main/slot exchanges.\n        val requested = io.github.x647368maker.atomicworkbench.workspace.StageTabletCanvasPolicy\n            .proposed(profile, activeGeometry)"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt": [
+      {
+        "before": "        if (shown.isEmpty()) return base",
+        "after": "        if (shown.isEmpty()) return base\n        if (g.isNativeLandscapeRail) {\n            // Vertical stack of wide *live* cards on the physical left/right\n            // Y700 rail. Use each producer's actual retained canvas, not a\n            // forced rotated screenshot or the old portrait-only base slot.\n            // Portrait-locked apps remain portrait and are centered without\n            // stretching or incorrect touch projection.\n            val reserve = ((if (shown.size < 4) 56 else 16) * density).roundToInt()\n            val availableHeight = (g.sidebarLogicalHeight - reserve - (shown.size + 1) * gap)\n                .coerceAtLeast(shown.size)\n            val maxCardHeight = (availableHeight / shown.size).coerceAtLeast(1)\n            val maxCardWidth = (g.sidebarPhysicalWidth - 2 * gap).coerceAtLeast(1)\n            val fitted = shown.associateWith { i ->\n                val canvas = canvases[i] ?: profile.canvas\n                val scale = minOf(maxCardWidth.toFloat() / canvas.width,\n                    maxCardHeight.toFloat() / canvas.height)\n                WorkspaceLayoutProfile.Slot(\n                    (canvas.width * scale).roundToInt().coerceIn(1, maxCardWidth),\n                    (canvas.height * scale).roundToInt().coerceIn(1, maxCardHeight),\n                    0,\n                )\n            }\n            val stackHeight = shown.sumOf { fitted.getValue(it).height } +\n                (shown.size - 1) * gap\n            var y = ((g.sidebarLogicalHeight - reserve - stackHeight) / 2).coerceAtLeast(gap)\n            return base.toMutableList().also { cards ->\n                shown.forEach { index ->\n                    cards[index] = fitted.getValue(index).copy(top = y)\n                    y += cards[index].height + gap\n                }\n            }\n        }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageAdaptiveLayout.kt": [
+      {
+        "before": "            val fraction = when (count) { 1 -> .215f; 2 -> .235f; else -> .25f }",
+        "after": "            // Y700 portrait no longer reserves a four-window-wide rail when\n            // only one or two previews are visible. Phone and near-square\n            // foldable sizing follows the previously validated ratios.\n            val tabletPortrait = StageDisplayPolicy.wideTablet(g.screenWidth, g.screenHeight)\n            val fraction = if (tabletPortrait) when (count) {\n                1 -> .16f\n                2 -> .18f\n                3 -> .20f\n                else -> .22f\n            } else when (count) { 1 -> .215f; 2 -> .235f; else -> .25f }"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": [
+      {
+        "before": "        val panel = geometry.rotatedTo(0)\n        val background = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.sidebarLeft, panel.sidebarTop,",
+        "after": "        val panel = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy.panel(geometry)\n        val background = WorkspaceWallpaperBackdrop.crop(matchingWallpaperFrame(geometry), panel.sidebarLeft, panel.sidebarTop,"
+      },
+      {
+        "before": "                wallpaperBitmap, panel.controlLeft, panel.controlTop, panel.controlWidth, panel.controlHeight,",
+        "after": "                frame, panel.controlLeft, panel.controlTop, panel.controlWidth, panel.controlHeight,"
+      },
+      {
+        "before": "            WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, panel.controlLeft, panel.controlTop,",
+        "after": "            WorkspaceWallpaperBackdrop.crop(frame, panel.controlLeft, panel.controlTop,"
+      },
+      {
+        "before": "    private fun applyWallpaperBackdrop(geometry: WorkspaceGeometry, refreshContrast: Boolean = true) {\n        val panel = geometry.rotatedTo(0)",
+        "after": "    private fun applyWallpaperBackdrop(geometry: WorkspaceGeometry, refreshContrast: Boolean = true) {\n        // Wide ported tablets use physical panel coordinates; the phone/fold\n        // projection still uses its original portrait drawing axes.\n        val panel = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy.panel(geometry)\n        val frame = matchingWallpaperFrame(geometry)"
+      },
+      {
+        "before": "\n    private fun applyWallpaperBackdrop(geometry: WorkspaceGeometry, refreshContrast: Boolean = true) {",
+        "after": "\n    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? =\n        wallpaperBitmap?.takeIf {\n            !it.isRecycled &&\n                io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy\n                    .frameMatches(geometry, it.width, it.height, wallpaperRotation)\n        }\n\n    private fun applyWallpaperBackdrop(geometry: WorkspaceGeometry, refreshContrast: Boolean = true) {"
+      },
+      {
+        "before": "            ) WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)\n            else null",
+        "after": "            ) {\n                // A mismatched old screenshot cannot tile the Y700's new\n                // physical orientation. Let its live system wallpaper show\n                // through until a correctly oriented capture is available.\n                if (io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                        .wideTablet(geometry.screenWidth, geometry.screenHeight)) null\n                else WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)\n            } else null"
+      },
+      {
+        "before": "        if (rotationOnly && !geometry.railAtTop) {",
+        "after": "        if (rotationOnly && !geometry.railAtTop &&\n            !io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.wideTablet(\n                geometry.screenWidth, geometry.screenHeight)) {"
+      }
+    ]
+  }
+}
