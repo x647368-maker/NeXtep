@@ -15,6 +15,13 @@ internal object SystemUiPanelMonitor {
         val draw:ViewTreeObserver.OnPreDrawListener, val focus:ViewTreeObserver.OnWindowFocusChangeListener)
     private val roots=WeakHashMap<View,Observers>()
     private var lastState:StagePanelMenuGate.State?=null
+    private var lastDrawProbeAt=Long.MIN_VALUE
+    private fun changedFromDraw() {
+        val now=android.os.SystemClock.uptimeMillis()
+        if(!StagePanelDrawProbePolicy.shouldProbe(now,lastDrawProbeAt))return
+        lastDrawProbeAt=now
+        changed()
+    }
     fun isPanel(view:View,params:WindowManager.LayoutParams?=view.layoutParams as? WindowManager.LayoutParams):Boolean =
         StageNativePanelIdentity.matches(params?.title?.toString().orEmpty(),view.javaClass.name,params?.type ?: -1)
     fun observe(view:View,params:WindowManager.LayoutParams?=view.layoutParams as? WindowManager.LayoutParams) {
@@ -22,7 +29,7 @@ internal object SystemUiPanelMonitor {
         if(!isPanel(view,params) || roots.containsKey(view))return
         val ref=WeakReference(view)
         val listener=ViewTreeObserver.OnGlobalLayoutListener {if(ref.get()!=null)changed()}
-        val draw=ViewTreeObserver.OnPreDrawListener {if(ref.get()!=null)changed();true}
+        val draw=ViewTreeObserver.OnPreDrawListener {if(ref.get()!=null)changedFromDraw();true}
         val focus=ViewTreeObserver.OnWindowFocusChangeListener {if(ref.get()!=null)changed()}
         roots[view]=Observers(listener,draw,focus)
         view.viewTreeObserver.addOnGlobalLayoutListener(listener)
