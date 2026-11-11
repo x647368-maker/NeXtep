@@ -14,6 +14,37 @@ internal object StageLiveCardLayout {
         val shown = order.filter { occupied[it] }
         val base = profile.slots
         if (shown.isEmpty()) return base
+        if (g.isNativeLandscapeRail) {
+            // Vertical stack of wide *live* cards on the physical left/right
+            // Y700 rail. Use each producer's actual retained canvas, not a
+            // forced rotated screenshot or the old portrait-only base slot.
+            // Portrait-locked apps remain portrait and are centered without
+            // stretching or incorrect touch projection.
+            val reserve = ((if (shown.size < 4) 56 else 16) * density).roundToInt()
+            val availableHeight = (g.sidebarLogicalHeight - reserve - (shown.size + 1) * gap)
+                .coerceAtLeast(shown.size)
+            val maxCardHeight = (availableHeight / shown.size).coerceAtLeast(1)
+            val maxCardWidth = (g.sidebarPhysicalWidth - 2 * gap).coerceAtLeast(1)
+            val fitted = shown.associateWith { i ->
+                val canvas = canvases[i] ?: profile.canvas
+                val scale = minOf(maxCardWidth.toFloat() / canvas.width,
+                    maxCardHeight.toFloat() / canvas.height)
+                WorkspaceLayoutProfile.Slot(
+                    (canvas.width * scale).roundToInt().coerceIn(1, maxCardWidth),
+                    (canvas.height * scale).roundToInt().coerceIn(1, maxCardHeight),
+                    0,
+                )
+            }
+            val stackHeight = shown.sumOf { fitted.getValue(it).height } +
+                (shown.size - 1) * gap
+            var y = ((g.sidebarLogicalHeight - reserve - stackHeight) / 2).coerceAtLeast(gap)
+            return base.toMutableList().also { cards ->
+                shown.forEach { index ->
+                    cards[index] = fitted.getValue(index).copy(top = y)
+                    y += cards[index].height + gap
+                }
+            }
+        }
         val fitted = base.mapIndexed { i, box ->
             val canvas = canvases[i] ?: profile.canvas
             val maxWidth = if (g.railAtTop) box.width else (g.sidebarWidth - 2 * gap).coerceAtLeast(1)
