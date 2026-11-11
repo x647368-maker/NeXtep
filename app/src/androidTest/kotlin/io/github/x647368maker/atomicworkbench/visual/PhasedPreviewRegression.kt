@@ -8,6 +8,7 @@ import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.WorkspaceSwapAnimator
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /** Exercise the production async animation contract on a real attached HWUI host. */
 internal class PhasedPreviewRegression(private val instrumentation: Instrumentation) {
@@ -20,6 +21,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
         lateinit var target: Bitmap
         var releaseAllowed = false
         var completionCount = 0
+        val afterRollback = AtomicReference("rollback not invoked")
         instrumentation.runOnMainSync {
             animator = WorkspaceSwapAnimator(activity)
             source = Bitmap.createBitmap(100, 200, Bitmap.Config.ARGB_8888)
@@ -44,12 +46,16 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 }
                 releaseAllowed = true
                 complete(false)
+                val summary = "running=${animator.isRunning} count=$completionCount allowed=$releaseAllowed " +
+                    "finished.count=${finished.count} sourceRecycled=${source.isRecycled} targetRecycled=${target.isRecycled}"
+                afterRollback.set(summary)
+                android.util.Log.i("StagePhasedRegression", "After rollback callback: $summary")
             }
             // The async completion callback is allowed to finish on a posted frame.
             // Require eventual release instead of crashing the instrumentation target
             // with a same-main-loop synchronous assertion before that frame can run.
             check(finished.await(3, TimeUnit.SECONDS)) {
-                "Rollback preview did not settle within 3 seconds"
+                "Rollback preview did not settle within 3 seconds; afterRollback=${afterRollback.get()}"
             }
             instrumentation.runOnMainSync {
                 check(!animator.isRunning && completionCount == 1) {

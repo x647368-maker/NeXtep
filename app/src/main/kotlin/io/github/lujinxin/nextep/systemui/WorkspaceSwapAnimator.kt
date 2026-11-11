@@ -108,7 +108,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                         moveRequested = true
                         fun completed(moved: Boolean) {
                             if (generation != token) return
-                            if (!moved || cancelRequested) { cancel(); return }
+                            if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }
                             val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
                             awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), delay, isLiveReady)
                         }
