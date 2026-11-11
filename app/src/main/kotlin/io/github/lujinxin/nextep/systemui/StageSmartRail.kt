@@ -11,18 +11,25 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     var pinned = prefs.getBoolean("pinned", false); private set
     var hidden = false; private set
     private var retries = 0
-    private val idle = Runnable { hideNow() }
+    private var pending = false
+    private val idle = Runnable { pending = false; hideNow() }
 
     private fun arm() {
         handler.removeCallbacks(idle)
-        if (enabled && !pinned && !hidden) handler.postDelayed(idle, 3500)
+        pending = false
+        if (enabled && !pinned && !hidden) {
+            pending = true
+            handler.postDelayed(idle, 3500)
+        }
     }
     /** Event-driven rearm after a new foreground task or workspace activation.
      * A temporary restore/popup transition may leave allowed() false at timeout.
      * No continuous polling or repeating capture is introduced.
      */
     fun armWhenReady() {
-        if (!enabled || pinned || hidden) return
+        // A busy app may send many task notifications per second. Those are
+        // not touches and must not indefinitely restart the idle countdown.
+        if (!enabled || pinned || hidden || pending) return
         retries = 0
         arm()
     }
@@ -38,6 +45,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     }
     fun interact() {
         handler.removeCallbacks(idle)
+        pending = false
         retries = 0
         if (hidden) { hidden = false; render(false) }
         arm()
@@ -46,10 +54,12 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
         // A long press/drag must never disappear underneath the user's finger.
         if (!active) { interact(); return }
         handler.removeCallbacks(idle)
+        pending = false
         if (hidden) { hidden = false; render(false) }
     }
     fun hideNow() {
         handler.removeCallbacks(idle)
+        pending = false
         if (!enabled || pinned || hidden) return
         if (allowed()) {
             retries = 0
@@ -59,11 +69,13 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
             // Bounded one-shot recovery from a temporary task/popup transition.
             // A new user/task event can rearm later; never poll indefinitely.
             retries++
+            pending = true
             handler.postDelayed(idle, 2000)
         }
     }
     fun stop() {
         handler.removeCallbacks(idle)
+        pending = false
         retries = 0
         if (hidden) { hidden = false; render(false) }
     }
