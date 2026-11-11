@@ -57,10 +57,11 @@ internal class StageAppCatalog(context: Context) {
                         NeXtepLog.error("app_catalog", "All-profile query failed; retrying current user", error)
                     },
                 )
-                check(entries.isNotEmpty()) { "No launcher activities visible in the SystemUI host" }
-                entries.filter {
+                val selectable = entries.filter {
                     it.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE
                 }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+                check(selectable.isNotEmpty()) { "No selectable launcher activities visible in the SystemUI host" }
+                selectable
             }
             result.onFailure { NeXtepLog.error("app_catalog", "Could not load picker catalog", it) }
             handler.post {
