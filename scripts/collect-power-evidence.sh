@@ -61,21 +61,26 @@ if display="$(adb -s "$serial" shell dumpsys display 2>/dev/null)"; then display
   fi
   printf '\n[DISPLAY] status=%s\n' "$display_ok"
   if [ "$display_ok" = yes ]; then
-    # An unassociated numeric group ID is not evidence it belongs to NeXtep.
+    # Dumpsys repeats devices in sections; count unique NeXtep slot names.
     printf '%s\n' "$display" | awk '
       {
         s=$0
         if (match(s,/NeXtep-slot-[0-3]/)) {
           slot=substr(s,RSTART,RLENGTH)
-          state="unavailable"
+          if (!(slot in seen)) {seen[slot]=1;states[slot]="unavailable";count++}
           if (match(s,/state[ =:]+(OFF|ON|DOZE|DOZE_SUSPEND|UNKNOWN)/)) {
-            q=substr(s,RSTART,RLENGTH);sub(/.*[ =:]+/,"",q);state=q
+            q=substr(s,RSTART,RLENGTH);sub(/.*[ =:]+/,"",q);states[slot]=q
           }
-          print "slot=" slot " state=" state
         }
         if (match(s,/(groupId|mGroupId)[[:space:]]*=[[:space:]]*[0-9]+/)) {
-          q=substr(s,RSTART,RLENGTH);sub(/.*=/,"",q);gsub(/[[:space:]]/,"",q);print "unassociated_display_group_id=" q
+          q=substr(s,RSTART,RLENGTH);sub(/.*=/,"",q);gsub(/[[:space:]]/,"",q);groups[q]=1
         }
+      }
+      END {
+        for (i=0;i<4;i++) {slot="NeXtep-slot-" i;if (slot in seen) print "slot=" slot " state=" states[slot]}
+        for (g in groups) print "unassociated_display_group_id=" g
+        print "slot_record_count=" count+0
+        if (count==0) print "slot_record_status=not_visible_or_unavailable"
       }'
   fi
   printf '\nSTATE_OFF is not proof of deep sleep; missing data must remain unknown.\n'
