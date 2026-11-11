@@ -812,6 +812,11 @@ class NeXtepWindowController(
 
     private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {
         cancelDragVisuals()
+        // Folding is a display-geometry event. Switch dock vs inline '+' in
+        // place, even when no new usage query or task callback arrives.
+        quickBar?.setWideActions(
+            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                .quickBarCapacity(geometry.screenWidth, geometry.screenHeight) > 5)
         records.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry)
