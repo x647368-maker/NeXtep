@@ -37,6 +37,16 @@ internal object StageDisplayPolicy {
         return short >= 1800 && long.toFloat() / short <= 1.25f
     }
 
+    /** The bar remains scrollable; these are backed by actual usage/pins rather
+     * than filling empty slots with invented apps. Compact Ace 7 Pro keeps five
+     * automatic choices; N5 inner display uses ten, Y700 tablet up to twelve.
+     */
+    fun quickBarCapacity(width: Int, height: Int): Int = when {
+        wideTablet(width, height) -> 12
+        unfoldedNearSquare(width, height) -> 10
+        else -> 5
+    }
+
     /** ColorOS phone-ROM ports may report zero/insufficient status insets on
      * a tablet. Reserve 48dp in both orientations, only for wide tablet panels.
      * Respect a larger accurate OS inset and never change phone/fold layouts.
