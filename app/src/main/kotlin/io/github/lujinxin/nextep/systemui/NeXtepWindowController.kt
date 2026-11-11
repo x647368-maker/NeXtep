@@ -891,14 +891,7 @@ class NeXtepWindowController(
             "AtomicSidebarHandle" -> {
                 params.width=dp(48).toInt();params.height=dp(48).toInt()
                 params.x=geometry.availableRight-dp(56).toInt();params.y=geometry.availableTop+dp(4).toInt()
-                if (smartRail.hidden && geometry.isNativeLandscapeRail) {
-                    // On native tablets the rail lives at the top or bottom.
-                    // Its tiny reopen handle must not jump to a phone's left/right edge.
-                    val box=io.github.x647368maker.atomicworkbench.workspace.NativeLandscapeHandlePlacement
-                        .hidden(geometry,context.resources.displayMetrics.density)
-                    params.width=box.width;params.height=box.height
-                    params.x=box.left;params.y=box.top
-                } else if (smartRail.hidden && !geometry.railAtTop) {
+                if (smartRail.hidden && !geometry.railAtTop) {
                     // Inset from the back-gesture edge; no gesture exclusion or global listener.
                     params.width=dp(24).toInt();params.height=dp(48).toInt()
                     params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()
@@ -1195,14 +1188,11 @@ class NeXtepWindowController(
         syncCoreViewport()
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val anchor = records.firstOrNull { it.title == "StageMainHandle" }?.view ?: return
-        val current = geometry()
-        val nativeTablet = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
-            .wideLandscapeTablet(current.screenWidth, current.screenHeight)
         AtomicPopupMenu.show(context, anchor, listOf(
             "切换全屏（保留工作区）" to { onExitRequested() },
             "顶部横排" to { changeStageLayout(true) },
-            (if (nativeTablet) "小窗排列在上方" else "左侧排列") to { changeStageLayout(false,SidebarSide.LEFT) },
-            (if (nativeTablet) "小窗排列在下方" else "右侧排列") to { changeStageLayout(false,SidebarSide.RIGHT) },
+            "左侧排列" to { changeStageLayout(false,SidebarSide.LEFT) },
+            "右侧排列" to { changeStageLayout(false,SidebarSide.RIGHT) },
             (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
@@ -1869,7 +1859,7 @@ class NeXtepWindowController(
             slot.setLayoutProfile(profile)
             val box = if (occupied[index]) bounds[index] else io.github.x647368maker.atomicworkbench.workspace.WorkspaceLayoutProfile.Slot(1, 1, 0, 0)
             if (cinemaSlot == null) {
-                val x = if (!occupied[index]) 0 else if (geometry.railAtTop || geometry.isNativeLandscapeRail) box.left else (profile.geometry.sidebarWidth - box.width) / 2
+                val x = if (!occupied[index]) 0 else if (geometry.railAtTop) box.left else (profile.geometry.sidebarWidth - box.width) / 2
                 val old = slot.view.layoutParams as? FrameLayout.LayoutParams
                 if (old == null || old.width != box.width || old.height != box.height || old.marginStart != x || old.topMargin != box.top) {
                     slot.view.layoutParams = FrameLayout.LayoutParams(box.width, box.height, Gravity.TOP).apply { marginStart = x; topMargin = box.top }
@@ -1886,7 +1876,7 @@ class NeXtepWindowController(
         sidebarAddButton?.apply {
             visibility = if (shownWindowCount < WORKSPACE_SLOT_COUNT) View.VISIBLE else View.GONE
             layoutParams = FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(),
-                if (geometry.railAtTop || geometry.isNativeLandscapeRail) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop || geometry.isNativeLandscapeRail) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop || geometry.isNativeLandscapeRail) dp(10).toInt() else 0 }
+                if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0 }
         }
         slotWindows.forEachIndexed { index, slot ->
             val media = cinemaSlot
