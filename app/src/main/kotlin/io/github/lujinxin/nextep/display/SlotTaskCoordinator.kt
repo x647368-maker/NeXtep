@@ -535,7 +535,9 @@ class SlotTaskCoordinator(
                 // existing transaction. Fallback remains the old delayed fit.
                 val launchUser = io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat
                     .userIdentifier(normalized.targetUser() ?: android.os.Process.myUserHandle())
-                val armed = StageTabletColdLaunch.arm(component.packageName,launchUser,geometryProvider())
+                val armed = launchUser?.let {
+                    StageTabletColdLaunch.arm(component.packageName,it,geometryProvider())
+                } == true
                 try {
                     UserTargetedActivityLauncher.start(applicationContext,normalized).getOrThrow()
                 } catch (error: Throwable) {
