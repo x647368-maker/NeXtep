@@ -40,23 +40,41 @@ if display="$(adb -s "$serial" shell dumpsys display 2>/dev/null)"; then display
   fi
   printf '\n[POWER] status=%s\n' "$power_ok"
   if [ "$power_ok" = yes ]; then
-    # Emit whitelisted scalar tokens only, never complete dumpsys lines.
+    # Attribute summaries only inside AOSP's structured display-group section.
     printf '%s\n' "$power" | awk '
       {
         s=$0
-        if (match(s,/mWakefulness[[:space:]]*=[[:space:]]*[A-Za-z_]+/)) {
-          t=substr(s,RSTART,RLENGTH);split(t,a,"=");gsub(/[[:space:]]/,"",a[2]);
-          if (a[2] ~ /^(Awake|Asleep|Dozing|Dreaming|AWAKE|ASLEEP|DOZING|DREAMING|WAKEFULNESS_AWAKE|WAKEFULNESS_ASLEEP|WAKEFULNESS_DOZING|WAKEFULNESS_DREAMING)$/) print "wakefulness=" a[2]
+        if (!seen_w && match(s,/mWakefulness[[:space:]]*=[[:space:]]*[A-Za-z_]+/)) {
+          x=substr(s,RSTART,RLENGTH);sub(/.*=/,"",x);gsub(/[[:space:]]/,"",x)
+          if (x ~ /^(Awake|Asleep|Dozing|Dreaming|AWAKE|ASLEEP|DOZING|DREAMING)$/) {print "wakefulness=" x;seen_w=1}
         }
-        if (match(s,/(PowerGroupId|displayGroupId)[[:space:]]*[=:][[:space:]]*[0-9]+/)) {
-          t=substr(s,RSTART,RLENGTH);gsub(/.*[=:][[:space:]]*/,"",t);print "power_group_id=" t
+        if (!seen_global_lock && !in_groups && match(s,/mWakeLockSummary[[:space:]]*=[[:space:]]*(0x[0-9a-fA-F]+|[0-9]+)/)) {
+          x=substr(s,RSTART,RLENGTH);sub(/.*=/,"",x);gsub(/[[:space:]]/,"",x)
+          print "wakelock_summary=" x;seen_global_lock=1
         }
-        if (match(s,/mWakeLockSummary[[:space:]]*=[[:space:]]*(0x[0-9a-fA-F]+|[0-9]+)/)) {
-          t=substr(s,RSTART,RLENGTH);sub(/.*=/,"",t);gsub(/[[:space:]]/,"",t);print "wakelock_summary=" t
+        if (!seen_idle && match(s,/mDeviceIdleMode[[:space:]]*=[[:space:]]*(true|false)/)) {
+          x=substr(s,RSTART,RLENGTH);sub(/.*=/,"",x);gsub(/[[:space:]]/,"",x)
+          print "device_idle=" x;seen_idle=1
         }
-        if (match(s,/mDeviceIdleMode[[:space:]]*=[[:space:]]*(true|false)/)) {
-          t=substr(s,RSTART,RLENGTH);sub(/.*=/,"",t);gsub(/[[:space:]]/,"",t);print "device_idle=" t
+        if (s ~ /^[[:space:]]*Display Group User Activity:[[:space:]]*$/) {in_groups=1;section=1;current="";next}
+        if (in_groups && s ~ /^[[:space:]]*[A-Za-z][A-Za-z ]*:[[:space:]]*$/) {in_groups=0;current="";next}
+        if (in_groups && match(s,/^[[:space:]]*displayGroupId[[:space:]]*=[[:space:]]*[0-9]+/)) {
+          current=substr(s,RSTART,RLENGTH);sub(/.*=/,"",current);gsub(/[[:space:]]/,"",current)
+          if (!(current in groups)) {groups[current]=1;print "power_group_id=" current;count++}
+          next
         }
+        if (in_groups && current!="" && match(s,/^[[:space:]]*userActivitySummary[[:space:]]*=[[:space:]]*0x[0-9a-fA-F]+/)) {
+          x=substr(s,RSTART,RLENGTH);sub(/.*=/,"",x);gsub(/[[:space:]]/,"",x)
+          print "power_group_" current "_user_activity_summary=" x;next
+        }
+        if (in_groups && current!="" && match(s,/^[[:space:]]*mWakeLockSummary[[:space:]]*=[[:space:]]*0x[0-9a-fA-F]+/)) {
+          x=substr(s,RSTART,RLENGTH);sub(/.*=/,"",x);gsub(/[[:space:]]/,"",x)
+          print "power_group_" current "_wakelock_summary=" x;next
+        }
+      }
+      END {
+        if (!section) print "power_group_section=not_available"
+        else {print "power_group_section=available";print "power_group_count=" count+0}
       }'
   fi
   printf '\n[DISPLAY] status=%s\n' "$display_ok"

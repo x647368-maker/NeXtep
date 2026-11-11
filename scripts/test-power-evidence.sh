@@ -15,7 +15,18 @@ fi
 [ "$1" = -s ] && [ "$2" = SERIAL-PRIVATE ] && [ "$3" = shell ] && [ "$4" = dumpsys ] || exit 9
 case "$5" in
   battery) printf '  AC powered: false\n  USB powered: true\n  level: 76\n  temperature: 318\n  ownerPackageName=com.secret.bank\n';;
-  power) printf 'mWakefulness=Asleep packageName=com.secret.bank\n displayGroupId=4 packageName=com.secret.bank\n mWakeLockSummary=0x0 deviceToken=PERSONAL\n mDeviceIdleMode=true\n';;
+  power)
+    if [ "${MOCK_NO_POWER_GROUP:-0}" = 1 ]; then
+      printf 'mWakefulness=Asleep\n mWakeLockSummary=0x0\n mDeviceIdleMode=true\n'
+    else
+      printf 'Power Manager State:\n'
+      printf ' mWakefulness=Asleep packageName=com.secret.bank\n mWakeLockSummary=0x0 deviceToken=PERSONAL\n mDeviceIdleMode=true\n'
+      printf ' Display Group User Activity:\n'
+      printf ' displayGroupId=0 packageName=com.secret.bank\n userActivitySummary=0x0\n mWakeLockSummary=0x0\n'
+      printf ' displayGroupId=4 packageName=com.secret.bank\n userActivitySummary=0x2\n mWakeLockSummary=0x1\n'
+      printf '\n Other Section:\n displayGroupId=999\n mWakeLockSummary=0xff\n'
+    fi
+    ;;
   display)
     if [ "${MOCK_EMPTY_DISPLAY:-0}" = 1 ]; then
       printf 'DisplayDeviceInfo{"default": state ON}\n'
@@ -56,3 +67,14 @@ grep -q '^slot_record_count=0$' "$empty_report"
 grep -q '^slot_record_status=not_visible_or_unavailable$' "$empty_report"
 if grep -q '^slot=NeXtep-slot-' "$empty_report"; then echo 'Invented slot' >&2; exit 1; fi
 echo 'PASS: sanitized output, deduplicated slots, unknown baseline and safe reports'
+
+# AOSP structured power-group values; unrelated group numbers must be ignored.
+grep -q '^power_group_section=available$' "$report"
+grep -q '^power_group_count=2$' "$report"
+grep -q '^power_group_4_user_activity_summary=0x2$' "$report"
+grep -q '^power_group_4_wakelock_summary=0x1$' "$report"
+if grep -q '^power_group_id=999$' "$report"; then echo 'Invalid stray power group' >&2; exit 1; fi
+missing="$(PATH="$temp/bin:$PATH" MOCK_NO_POWER_GROUP=1 bash "$script" no_group "$temp/out" | sed 's/^Local report: //')"
+grep -q '^power_group_section=not_available$' "$missing"
+if grep -q '^power_group_id=' "$missing"; then echo 'Invented group' >&2; exit 1; fi
+echo 'PASS: structured group summary and absent-section handling'

@@ -24,3 +24,7 @@ bash scripts/collect-power-evidence.sh baseline
 ## 安全与验收门槛
 
 请在分享任何报告前人工再检查脱敏。只读脚本的安全测试可以运行 `bash scripts/test-power-evidence.sh`；它使用伪造 ADB 数据，不连接手机。必须同时对照息屏耗电、解锁时延与四小窗任务连续性，才考虑批准 PR #16。仍不得自动合并、正式推送或把任何模拟器和单元测试称作省电实测。
+
+## 按电源组观察（有限信息）
+
+只解析 AOSP `dumpsys power` 的 `Display Group User Activity:` 段，记录各 `displayGroupId` 对应的 `userActivitySummary`、`mWakeLockSummary` 数值。若系统未输出该段，报告会明确标为 `power_group_section=not_available`。这些摘要不是每组完整的 Wakefulness 状态，也不能单凭组号认定是台前调度创建的；必须再交叉核对实际显示归属和息屏耗电。
