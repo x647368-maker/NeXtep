@@ -7,6 +7,26 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Scoped Y700 native first-frame callback path. Reverse exact source fragments
+# and validate both full Git blob hashes before the v0.9.8 frozen chain.
+cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
+assert set(cold_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiHook.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt',
+}
+def undo_y700_cold(path,data):
+ if path not in cold_review:return data
+ spec=cold_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ text=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert text.count(patch['after'])==1,path
+  text=text.replace(patch['after'],patch['before'],1)
+ data=text.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
 # PR25 reviewed tablet-only source fragments, strictly reversed before
 # all existing full-blob checks. Never replace or relax the mainline freezes.
 ux_review=json.loads((root/'scripts/reviewed-assistant4-y700-ux-0.9.26.json').read_text())['files']
@@ -29,7 +49,7 @@ reflow_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindow
 reflow_review=json.loads((root/'scripts/reviewed-sparse-side-reflow-0.9.26.json').read_text())['files']
 assert set(reflow_review)=={reflow_path}
 def undo_reflow(path,data):
- data=undo_y700_ux(path,data)
+ data=undo_y700_ux(path,undo_y700_cold(path,data))
  if path!=reflow_path:return data
  spec=reflow_review[path]
  current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
