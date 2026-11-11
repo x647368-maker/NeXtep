@@ -198,6 +198,15 @@ for path,sha in frozen.items():
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
   data=(root/path).read_bytes()
+  # The frozen controller is also touched by the scoped Y700 wallpaper fix.
+  # Reverse exactly the separately reviewed changes before checking the
+  # original N5 diagnostics blob. Unknown changes are still rejected.
+  if path in screen_review:
+   text=data.decode()
+   for patch in screen_review[path]:
+    assert text.count(patch['after'])==1,path
+    text=text.replace(patch['after'],patch['before'],1)
+   data=text.encode()
   # Only this exact reviewed read-only instrumentation may change the frozen controller.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
