@@ -7,12 +7,29 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# PR25 reviewed tablet-only source fragments, strictly reversed before
+# all existing full-blob checks. Never replace or relax the mainline freezes.
+ux_review=json.loads((root/'scripts/reviewed-assistant4-y700-ux-0.9.26.json').read_text())['files']
+assert set(ux_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletCanvasPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StagePresentationPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMainHandle.kt',
+}
+def undo_y700_ux(path,data):
+ if path not in ux_review:return data
+ text=data.decode('utf-8')
+ for patch in ux_review[path]:
+  assert text.count(patch['after'])==1,path
+  text=text.replace(patch['after'],patch['before'],1)
+ return text.encode('utf-8')
 # Reviewed compositor-only reflow; normalize exact new controller blob
 # back to its previous code before every pre-existing freeze hash check.
 reflow_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'
 reflow_review=json.loads((root/'scripts/reviewed-sparse-side-reflow-0.9.26.json').read_text())['files']
 assert set(reflow_review)=={reflow_path}
 def undo_reflow(path,data):
+ data=undo_y700_ux(path,data)
  if path!=reflow_path:return data
  spec=reflow_review[path]
  current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
