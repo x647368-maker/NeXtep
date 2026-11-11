@@ -183,6 +183,7 @@ class SlotTaskCoordinator(
             throw error
         }
         active = false
+        io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.reset()
         cancelPendingAdd("工作区已退出")
         cancelPendingExchange()
         onSlotDragEnded()
@@ -277,6 +278,7 @@ class SlotTaskCoordinator(
         }
         if (value) {
             suspended = true
+            io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.reset()
             cancelPendingExchange()
             onSlotDragEnded()
             recentSelectionGeneration += 1
@@ -519,13 +521,37 @@ class SlotTaskCoordinator(
                         "top app promoted from slot",
                     )
                 }
-                if (currentMain?.taskId != existing.taskId) taskRepository.bringTaskToFront(existing.taskId).getOrThrow()
-                minimizePreviousMain()
-                mainTaskPresenter.presentTask(existing.taskId, geometryProvider()).getOrThrow()
+                // For a *retained* Y700 task already on display 0, prepare
+                // the actual task leash before Shell brings it to the front.
+                // Leave vendor dual-window, freeform, slot tasks, phones and
+                // foldables on the original task-preserving route.
+                val g=geometryProvider()
+                val earlyFit = sourceSlot < 0 &&
+                    existing.displayId == Display.DEFAULT_DISPLAY &&
+                    existing.windowingMode == fullscreenWindowingMode() &&
+                    !existing.vendorWindowed && currentMain?.taskId != existing.taskId &&
+                    io.github.x647368maker.atomicworkbench.workspace.StageTabletColdLaunchPolicy.arm(
+                        g.screenWidth,g.screenHeight,component.packageName,existing.userId ?: -1) &&
+                    TaskSurfaceCompat.preparePromotion(existing.taskId,g).isSuccess
+                try {
+                    if (currentMain?.taskId != existing.taskId) taskRepository.bringTaskToFront(existing.taskId).getOrThrow()
+                    minimizePreviousMain()
+                    mainTaskPresenter.presentTask(existing.taskId, geometryProvider()).getOrThrow()
+                } finally {
+                    if (earlyFit) TaskSurfaceCompat.cancelPreparedPromotion(existing.taskId)
+                }
             } else {
                 check(TaskContinuityPolicy.canLaunch(TaskContinuityPolicy.Origin.USER_LAUNCH, existingTask = false))
                 NeXtepLog.info("task_continuity", "explicit_user_launch package=${component.packageName} user=${normalized.targetUser()} reason=no_existing_task")
-                UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()
+                // Y700 native first-frame handoff. The Shell onTaskAppeared
+                // callback consumes this one-shot only if exact app/user,
+                // actual fullscreen windowing and physical display match.
+                val earlyLaunch=io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.arm(
+                    component,normalized.targetUser(),geometryProvider())
+                UserTargetedActivityLauncher.start(applicationContext, normalized)
+                    .onFailure {
+                        io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.cancel(earlyLaunch)
+                    }.getOrThrow()
                 minimizePreviousMain()
                 val generation = mainSelectionGeneration
                 handler.postDelayed({
