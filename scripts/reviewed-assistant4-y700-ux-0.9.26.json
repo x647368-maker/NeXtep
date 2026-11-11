@@ -1,6 +1,6 @@
 {
   "base": "f59d86225aaf806f70a39258090e0df94983ef13",
-  "purpose": "Y700 layout-feedback: keep new top/side producers landscape, main safe margins and live-only explicit layout motion; exact reversible patches over v0.9.26",
+  "purpose": "Y700 follow-up: physical producer initialization, symmetric main margin, real slide/fade, tablet center grip quickbar tap with long-press menu; exact reversible patches",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletCanvasPolicy.kt": [
       {
@@ -28,8 +28,42 @@
         "after": "            viewport.setTopRail(top)\n            if (workspaceVisible && !suspended) {\n                onViewportChanged()\n                // Animate only the live panel entering its *new* tablet layout.\n                // The task surface and click projection are still updated by\n                // the normal geometry owner; no frozen image or VD recreation.\n                animateTabletLayoutSelection()\n            }"
       },
       {
+        "before": "            \"StageMainHandle\" -> {",
+        "after": "            \"StageMainHandle\" -> {\n                (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(\n                    io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                        .wideTablet(geometry.screenWidth, geometry.screenHeight))"
+      },
+      {
+        "before": "            title = \"StageMainHandle\", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow),",
+        "after": "            title = \"StageMainHandle\", view = StageMainHandle(context, ::showMainMenu, ::closeMainWindow, {\n                // Only on a wide Y700-like tablet: quick tap toggles the\n                // favorites row. Long press still opens the complete main menu.\n                // Compact phones and near-square foldables keep click=menu.\n                val g = geometry()\n                if (io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy\n                        .tap(g.screenWidth, g.screenHeight) !=\n                    io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy.Tap.QUICK_BAR) false\n                else {\n                    setQuickExpanded(!(core.enabled && core.expanded))\n                    true\n                }\n            }),"
+      },
+      {
         "before": "    private var windowPickerGeneration = 0",
         "after": "    private var windowPickerGeneration = 0\n    private var tabletLayoutMotionGeneration = 0"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMainHandle.kt": [
+      {
+        "before": "            }",
+        "after": "            }\n            MotionEvent.ACTION_CANCEL -> {\n                removeCallbacks(longPress)\n                touchActive = false\n                return true\n            }"
+      },
+      {
+        "before": "            MotionEvent.ACTION_UP -> {",
+        "after": "            MotionEvent.ACTION_UP -> {\n                removeCallbacks(longPress)\n                touchActive = false\n                if (longPressHandled) return true"
+      },
+      {
+        "before": "            MotionEvent.ACTION_DOWN -> { x = event.rawX; y = event.rawY; return true }",
+        "after": "            MotionEvent.ACTION_DOWN -> {\n                x = event.rawX; y = event.rawY\n                touchActive = true\n                longPressHandled = false\n                postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())\n                return true\n            }\n            MotionEvent.ACTION_MOVE -> {\n                if (abs(event.rawX - x) > slop || abs(event.rawY - y) > slop) {\n                    removeCallbacks(longPress)\n                    touchActive = false\n                }\n                return true\n            }"
+      },
+      {
+        "before": "        setOnClickListener { menu() }",
+        "after": "        isLongClickable = true\n        setOnClickListener { if (quickBarTap?.invoke() != true) menu() }\n        // The main menu remains reachable on Y700. All other devices retain\n        // the original single-tap action and left-swipe-to-close gesture.\n        setOnLongClickListener { menu(); true }"
+      },
+      {
+        "before": "    private var y = 0f",
+        "after": "    private var y = 0f\n    private var touchActive = false\n    private var longPressHandled = false\n    private val longPress = Runnable {\n        if (touchActive) {\n            longPressHandled = performLongClick()\n        }\n    }\n\n    fun setTabletQuickBarShortcut(enabled: Boolean) {\n        contentDescription = if (enabled)\n            \"点击展开或收起常用应用栏，长按主窗菜单；在把手上向左滑动关闭主窗\"\n        else \"主窗菜单；在把手上向左滑动关闭主窗\"\n    }"
+      },
+      {
+        "before": "internal class StageMainHandle(context: Context, private val menu: () -> Unit, private val close: () -> Unit) : TextView(context) {",
+        "after": "internal class StageMainHandle(context: Context, private val menu: () -> Unit,\n    private val close: () -> Unit, private val quickBarTap: (() -> Boolean)? = null\n) : TextView(context) {"
       }
     ]
   }
