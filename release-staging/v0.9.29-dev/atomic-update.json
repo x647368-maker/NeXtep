@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "io.github.x647368maker.atomicworkbench",
+  "versionName": "0.9.29-dev",
+  "versionCode": 44,
+  "channel": "dev",
+  "apkAsset": "AtomicWorkbench-v0.9.29-dev-44-OnePlus-SAFE-CLOSE-INTERNAL.apk",
+  "sha256": "c69ca8bd13c0355b3061e7fa1eed3859fea720f72c44f531f12fbaf9c99ea848",
+  "size": 31956194,
+  "certificateSha256": "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe",
+  "releaseTag": "atomic-v0.9.29-dev",
+  "releaseNotes": "P0 内测：修复关闭小窗时异步系统任务迁移的过早失败、增加原生任务搬移回退及主窗口次序恢复。仅作为一加/N5/Y700 真机验证候选，尚未完成 ColorOS 真机关闭验收；继续保留 0.9.28 横屏与一加四窗、真实任务和输入映射。"
+}
