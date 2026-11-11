@@ -79,7 +79,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             text = "返回台前调度"; setOnClickListener { finish() }
         })
         val scroll = ScrollView(this).apply {
-            fillViewport = true
+            isFillViewport = true
             addView(body)
         }
         setContentView(scroll)
@@ -104,7 +104,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         render()
         val battery = BatterySample.read(this)
         val userNote = note.text.toString()
-        val version = runCatching { UpdateCoordinator.installed(this).versionName }.getOrDefault("未知")
+        val version = runCatching { UpdateCoordinator.installed(this).versionName }.getOrNull() ?: "未知"
         WorkspaceEnergyContract.query(this) { snapshot ->
             session.finish(version,userNote,battery,snapshot)
             pending = false
