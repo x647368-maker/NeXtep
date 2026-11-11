@@ -649,8 +649,8 @@ class NeXtepWindowController(
                 )
             },
         )
-        return "screen=${g.screenWidth}x${g.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\\n" +
-            (slotCoordinator?.slotDiagnostics() ?: "unavailable") + "\\n" +
+        return "screen=${g.screenWidth}x${g.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
+            (slotCoordinator?.slotDiagnostics() ?: "unavailable") + "\n" +
             StageNativeParallelDiagnostics.report(scene)
     }
 
