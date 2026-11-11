@@ -50,7 +50,10 @@ class LauncherAppRepository(private val context: Context) {
         }
         val launcherApps = runCatching { context.getSystemService(LauncherApps::class.java) }.getOrNull()
         val profiles = runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList())
-        val scanUsers = if (entries.isEmpty()) (listOf(Process.myUserHandle()) + profiles).distinct() else profiles
+        // A package-visible subset can be nonempty yet omit most installed apps.
+        // Merge the current user's LauncherApps results even in that case, without
+        // reloading icons for entries already obtained from PackageManager.
+        val scanUsers = (listOf(Process.myUserHandle()) + profiles).distinct()
         // Do not query clone APIs during a primary-user recovery; the user can
         // still add normal apps when an OEM clone service is unavailable.
         val multiApp = if (includeProfiles) MultiAppAccess.create() else null
@@ -68,16 +71,16 @@ class LauncherAppRepository(private val context: Context) {
                     runCatching {
                         val info = activity.activityInfo
                         val userId = info.applicationInfo.uid / PER_USER_RANGE
-                        if ((userId == currentUserId && primary.isNotEmpty() && entries.isNotEmpty()) ||
-                            !info.exported || !info.enabled || info.packageName == "com.android.stk"
-                        ) return@profileActivity
-                        val isClone = userId in clones
+                        if (!info.exported || !info.enabled || info.packageName == "com.android.stk")
+                            return@profileActivity
                         val component = activity.componentName
+                        val key = appKey(component, userId)
+                        if (key in entries) return@profileActivity
+                        val isClone = userId in clones
                         val label = displayLabel(activity.label.toString(), userId, isClone,
                             multiApp?.alias(component.packageName, userId), cloneLabels[userId])
                         val icon = runCatching { activity.getBadgedIcon(0) }
                             .getOrElse { userBadgedIcon(activity.getIcon(0), packageManager, userId) }
-                        val key = appKey(component, userId)
                         entries[key] = AppEntry(key, component, userId, label, icon, isClone)
                     }
                 }
