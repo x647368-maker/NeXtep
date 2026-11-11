@@ -46,7 +46,7 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
         lateinit var motion: StageSparseRailReflowAnimator
         instrumentation.runOnMainSync {
             root.removeAllViews()
-            motion=StageSparseRailReflowAnimator(activity)
+            motion=StageSparseRailReflowAnimator(activity, trialDevice = true)
             repeat(4) { index ->
                 val card=FrameLayout(activity)
                 // TextureViews must receive a real Surface before simulated occupancy changes.

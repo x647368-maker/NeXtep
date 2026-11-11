@@ -15,7 +15,12 @@ import java.util.IdentityHashMap
  * view size/layout changes, bitmap captures, extra display reconnects or
  * persistent timers. Native input dispatch sees the normal View transforms.
  */
-internal class StageSparseRailReflowAnimator(context: Context) {
+internal class StageSparseRailReflowAnimator(
+    context: Context,
+    // Production uses the real device model; instrumentation explicitly
+    // enables its own fake view harness without spoofing Build.MODEL.
+    private val trialDevice: Boolean = StageSparseRailReflowPolicy.trialModel(Build.MODEL),
+) {
     private val power = context.getSystemService(PowerManager::class.java)
     private val active = IdentityHashMap<View, Long>()
     private var generation = 0L
@@ -53,7 +58,7 @@ internal class StageSparseRailReflowAnimator(context: Context) {
         enabled: Boolean,
     ) {
         val allowed = enabled &&
-            StageSparseRailReflowPolicy.trialModel(Build.MODEL) &&
+            trialDevice &&
             StageSparseRailReflowPolicy.supported(oldGeometry, newGeometry, oldCount, newCount) &&
             ValueAnimator.areAnimatorsEnabled() &&
             power?.isPowerSaveMode != true

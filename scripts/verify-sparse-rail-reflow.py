@@ -10,6 +10,8 @@ assert 'const val DURATION_MS = 190L' in policy
 assert 'oldCount != newCount' in policy
 assert 'view.scaleX = start.uniformScale' in animator and 'view.scaleY = start.uniformScale' in animator
 assert 'isPowerSaveMode' in animator and 'areAnimatorsEnabled' in animator
+assert 'StageSparseRailReflowPolicy.trialModel(Build.MODEL)' in animator
+assert 'trialDevice &&' in animator
 assert 'withEndAction' in animator and 'active.remove(view)' in animator
 assert 'sparseRailMotion.cancel()' in host
 assert 'sparseRailMotion.isAnimating(this)' in host
