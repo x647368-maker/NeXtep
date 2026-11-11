@@ -2014,8 +2014,17 @@ class NeXtepWindowController(
         shownWindowCount = poses.size
         sidebarAddButton?.apply {
             visibility = if (shownWindowCount < WORKSPACE_SLOT_COUNT) View.VISIBLE else View.GONE
+            val compactAddTop = io.github.x647368maker.atomicworkbench.workspace.StageTabletRailVisualPolicy
+                .addTop(profile.geometry, bounds, occupied, dp(44).toInt(), dp(8).toInt())
             layoutParams = FrameLayout.LayoutParams(dp(44).toInt(), dp(44).toInt(),
-                if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM else if (shownWindowCount == 0) Gravity.CENTER else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt(); marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0 }
+                if (compactAddTop != null) Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                else if (geometry.railAtTop) Gravity.END or Gravity.BOTTOM
+                else if (shownWindowCount == 0) Gravity.CENTER
+                else Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                if (compactAddTop != null) topMargin = compactAddTop
+                else bottomMargin = if (geometry.railAtTop) dp(4).toInt() else dp(12).toInt()
+                marginEnd = if (geometry.railAtTop) dp(10).toInt() else 0
+            }
         }
         slotWindows.forEachIndexed { index, slot ->
             val media = cinemaSlot
@@ -2108,6 +2117,15 @@ class NeXtepWindowController(
 
     private fun refreshWallpaperBackdrop(attempt: Int = 0) {
         val geometry = geometry()
+        // Y700 wide panel: let the same native wallpaper surface show through
+        // both translucent panels. Duplicating screenshots over the live
+        // wallpaper creates visible seams after physical rotation.
+        if (io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy
+                .useLiveSystemWallpaper(geometry)) {
+            backdropGeneration.incrementAndGet()
+            applyWallpaperBackdrop(geometry)
+            return
+        }
         // Use the last frame immediately; surface capture runs off the UI thread.
         applyWallpaperBackdrop(geometry)
         val previous = wallpaperBitmap
@@ -2177,9 +2195,12 @@ class NeXtepWindowController(
         // Wide ported tablets use physical panel coordinates; the phone/fold
         // projection still uses its original portrait drawing axes.
         val panel = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy.panel(geometry)
-        val frame = matchingWallpaperFrame(geometry)
+        val useNative = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy
+            .useLiveSystemWallpaper(geometry)
+        val frame = if (useNative) null else matchingWallpaperFrame(geometry)
         (records.firstOrNull { it.title == "NeXtepTopBar" }?.view as? WorkspacePanelHost)?.setPanelBackground(
-            WorkspaceWallpaperBackdrop.crop(frame, panel.controlLeft, panel.controlTop,
+            if (useNative) android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            else WorkspaceWallpaperBackdrop.crop(frame, panel.controlLeft, panel.controlTop,
                 frostStrength, wallpaperRotation, panel.displayRotation),
         )
         if (refreshContrast) {
@@ -2192,8 +2213,12 @@ class NeXtepWindowController(
 
     private fun applySidebarBackdrop(geometry: WorkspaceGeometry) {
         val panel = io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy.panel(geometry)
-        val background = WorkspaceWallpaperBackdrop.crop(matchingWallpaperFrame(geometry), panel.sidebarLeft, panel.sidebarTop,
-            frostStrength, wallpaperRotation, panel.displayRotation)
+        // No duplicated wallpaper pixels in the tablet rail: the existing
+        // FLAG_SHOW_WALLPAPER surface is shared underneath all transparent panels.
+        val background = if (io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy
+                .useLiveSystemWallpaper(geometry)) android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            else WorkspaceWallpaperBackdrop.crop(matchingWallpaperFrame(geometry), panel.sidebarLeft, panel.sidebarTop,
+                frostStrength, wallpaperRotation, panel.displayRotation)
         val visibleBackground = if (geometry.mainTopOverlap > 0 && geometry.railAtTop)
             MainFooterBackdrop(background, Rect(geometry.contentLeft - geometry.sidebarLeft,
                 geometry.contentTop - geometry.sidebarTop, geometry.contentRight - geometry.sidebarLeft,

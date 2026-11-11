@@ -11,6 +11,15 @@ package io.github.x647368maker.atomicworkbench.workspace
  * wallpaper remains visible through the translucent fallback until recapture.
  */
 internal object StageTabletWallpaperPolicy {
+    /**
+     * The TopBar already owns FLAG_SHOW_WALLPAPER and disables wallpaper
+     * touch events. On a Y700-style wide screen, a screenshot copy sampled
+     * beside the *live* wallpaper will be out of phase during rotation.
+     * Draw no duplicate pixels in the rail or the top controls instead.
+     */
+    fun useLiveSystemWallpaper(g: WorkspaceGeometry): Boolean =
+        StageDisplayPolicy.wideTablet(g.screenWidth, g.screenHeight)
+
     fun panel(g: WorkspaceGeometry): WorkspaceGeometry =
         if (StageDisplayPolicy.wideTablet(g.screenWidth, g.screenHeight)) g
         else g.rotatedTo(0)

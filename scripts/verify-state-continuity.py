@@ -7,6 +7,22 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Final Y700 visual sources are strict pinned complete Git blobs.
+# Undo them in memory BEFORE the original v0.9.8 freeze chain.
+y700_visual_review=json.loads((root/'scripts/reviewed-y700-live-wallpaper-compact-0.9.25.json').read_text())['files']
+assert set(y700_visual_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
+}
+def undo_y700_visual(path,data):
+ if path not in y700_visual_review:return data
+ spec=y700_visual_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ previous=spec['previous_content'].encode('utf-8')
+ oldblob=hashlib.sha1(b'blob '+str(len(previous)).encode()+bytes([0])+previous).hexdigest()
+ assert oldblob==spec['previous_blob_sha1'],path
+ return previous
 # Backup4 Y700 post-feedback changes are reversible by exact reviewed
 # before/after fragments. Normalize the latest isolated branch back to the
 # unified N5/Y700 base *before* validating frozen SHA-1/SHA-256 identities.
@@ -46,7 +62,7 @@ assert set(tablet_review)=={
 }
 reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
- data=(root/path).read_bytes()
+ data=undo_y700_visual(path,(root/path).read_bytes())
  if path in screen_review:
   text=data.decode()
   for patch in screen_review[path]:
@@ -197,7 +213,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=(root/path).read_bytes()
+  data=undo_y700_visual(path,(root/path).read_bytes())
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
