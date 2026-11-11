@@ -23,10 +23,19 @@ class UpdateFeedAuthorityTest {
         assertFalse(UpdateFeedAuthority.hasApplicableRecords(1, 0))
     }
 
-    @Test fun populatedChannelRelevantFeedCanAnswerNoUpdate() {
+    @Test fun populatedChannelRelevantFeedStillNeedsANewerVersion() {
         // The caller validates each entry's package, cert, tag and download before counting it.
         assertTrue(UpdateFeedAuthority.hasApplicableRecords(1, 1))
         assertTrue(UpdateFeedAuthority.hasApplicableRecords(2, 1))
         assertTrue(UpdateFeedAuthority.hasApplicableRecords(40, 40))
+    }
+
+    @Test fun populatedButStaleFeedNeverMasksFreshGithubRelease() {
+        // A verified index containing only versions <= the installed code
+        // is not sufficient to claim the user has the newest published APK.
+        assertFalse(UpdateFeedAuthority.hasConfirmedUpgrade(true, false))
+        assertFalse(UpdateFeedAuthority.hasConfirmedUpgrade(false, false))
+        assertFalse(UpdateFeedAuthority.hasConfirmedUpgrade(false, true))
+        assertTrue(UpdateFeedAuthority.hasConfirmedUpgrade(true, true))
     }
 }
