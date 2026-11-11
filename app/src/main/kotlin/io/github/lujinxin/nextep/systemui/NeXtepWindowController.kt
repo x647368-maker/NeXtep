@@ -52,6 +52,8 @@ class NeXtepWindowController(
     private var slotCoordinator: SlotTaskCoordinator? = null
     private var sidebarCollapsed = false
     private var shownWindowCount = 0
+    private val sparseRailMotion = StageSparseRailReflowAnimator(context)
+    private var previousRailGeometry: WorkspaceGeometry? = null
     private var sidebarAddButton: android.widget.TextView? = null
     private val windowPicker = AtomicPanel(context)
     private val appCatalog = StageAppCatalog(context)
@@ -218,6 +220,7 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        sparseRailMotion.cancel()
         smartRail.stop()
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
@@ -372,6 +375,8 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        sparseRailMotion.cancel()
+        previousRailGeometry = null
         smartRail.stop()
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
@@ -1980,8 +1985,43 @@ class NeXtepWindowController(
         applyStageStack(geometry)
     }
 
+    /**
+     * Snapshot live card positions before a count change, including a possible
+     * unfinished earlier reflow. This is read-only and never captures pixels.
+     */
+    private fun liveRailFrames(
+        geometry: WorkspaceGeometry,
+        transformed: Boolean,
+    ): Map<View, io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds> =
+        slotWindows.mapNotNull { slot ->
+            val view = slot.view
+            if (!view.isWorkspaceCardVisible()) return@mapNotNull null
+            val box = view.layoutParams as? FrameLayout.LayoutParams ?: return@mapNotNull null
+            if (box.width <= 1 || box.height <= 1) return@mapNotNull null
+            val scaleX = if (transformed) view.scaleX else 1f
+            val scaleY = if (transformed) view.scaleY else 1f
+            if (kotlin.math.abs(scaleX - scaleY) > .04f) return@mapNotNull null
+            val dx = if (transformed) view.translationX else 0f
+            val dy = if (transformed) view.translationY else 0f
+            val visibleW = box.width * scaleX
+            val visibleH = box.height * scaleY
+            view to io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds(
+                geometry.sidebarLeft + box.marginStart + (box.width - visibleW) / 2f + dx,
+                geometry.sidebarTop + box.topMargin + (box.height - visibleH) / 2f + dy,
+                visibleW, visibleH,
+            )
+        }.toMap()
+
     private fun applyStageStack(geometry: WorkspaceGeometry) {
         if (slotWindows.isEmpty()) return
+        val oldCount = shownWindowCount
+        val oldRailGeometry = previousRailGeometry
+        val oldCardFrames = oldRailGeometry?.let { liveRailFrames(it, transformed = true) }.orEmpty()
+        // If the physical screen or layout mode changed, never preserve a stale
+        // scale/translation into the next touchable workspace.
+        if (oldRailGeometry != null &&
+            !io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy
+                .supported(oldRailGeometry, geometry, 2, 3)) sparseRailMotion.cancel()
         syncCoreViewport()
         val selectedProfile = viewport.layout().let { selected ->
             // The no-task compact rail is ONLY a parent/add affordance. Hidden
@@ -2056,12 +2096,16 @@ class NeXtepWindowController(
                 pivotY = bounds[index].height / 2f
                 cameraDistance = dp(900)
                 rotationY = pose.tilt
-                scaleX = pose.scale
-                scaleY = pose.scale
-                translationX = pose.x
-                translationY = pose.y
+                // A short compositor reflow already owns these properties.
+                // Other harmless refreshes must not snap it back mid-frame.
+                if (!sparseRailMotion.isAnimating(this)) {
+                    scaleX = pose.scale
+                    scaleY = pose.scale
+                    translationX = pose.x
+                    translationY = pose.y
+                    alpha = pose.alpha
+                }
                 elevation = pose.z
-                alpha = pose.alpha
                 // The live app fills the card. Its outline owns all four rounded corners.
                 setBackgroundColor(Color.TRANSPARENT)
                 invalidateOutline()
@@ -2069,7 +2113,20 @@ class NeXtepWindowController(
             }
         }
         sidebarView?.requestLayout()
+        previousRailGeometry = profile.geometry
         if (countChanged && workspaceVisible && !suspended) onViewportChanged()
+        if (countChanged) {
+            // 190ms, once per add/remove only. Never animate the main app,
+            // fixed menu, bottom '+' action, virtual display or touch bridge.
+            sparseRailMotion.animate(
+                oldRailGeometry, profile.geometry, oldCount, shownWindowCount,
+                oldCardFrames, liveRailFrames(profile.geometry, transformed = false),
+                enabled = workspaceVisible && !suspended && !sidebarCollapsed &&
+                    !smartRail.hidden && !groupInputBlocked && !workgroups.isSwitching() &&
+                    cinemaSlot == null && !swapAnimator.isRunning &&
+                    slotCoordinator?.isGroupRestoreReady() == true,
+            )
+        }
     }
 
     private fun scheduleStageFocus() {
