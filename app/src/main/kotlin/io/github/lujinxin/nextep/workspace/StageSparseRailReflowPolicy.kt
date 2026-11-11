@@ -20,6 +20,9 @@ internal object StageSparseRailReflowPolicy {
     data class Start(val offsetX: Float, val offsetY: Float,
         val uniformScale: Float, val alpha: Float)
 
+    /** Trial scope: only the Ace 7 Pro first, while N5/Y700 await physical validation. */
+    fun trialModel(model: String): Boolean = model.equals("PMS110", ignoreCase = true)
+
     fun supported(before: WorkspaceGeometry?, now: WorkspaceGeometry,
         oldCount: Int, newCount: Int): Boolean =
         before != null && oldCount in 1..4 && newCount in 1..4 &&
@@ -30,6 +33,9 @@ internal object StageSparseRailReflowPolicy {
             before.sidebarSide == now.sidebarSide &&
             before.displayRotation == now.displayRotation &&
             before.navigationInsets == now.navigationInsets &&
+            !StageDisplayPolicy.wideTablet(before.screenWidth, before.screenHeight) &&
+            !StageDisplayPolicy.wideTablet(now.screenWidth, now.screenHeight) &&
+            !StageDisplayPolicy.unfoldedNearSquare(before.screenWidth, before.screenHeight) &&
             !StageDisplayPolicy.unfoldedNearSquare(now.screenWidth, now.screenHeight)
 
     /**
