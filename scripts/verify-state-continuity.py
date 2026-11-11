@@ -147,11 +147,23 @@ reviewed_game_paths={
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/WorkspaceLandscapeRotationHooker.kt',
 }
 assert set(reviewed_game)==reviewed_game_paths
+reviewed_n5=json.loads((root/'scripts/reviewed-n5-parallel-diagnostics-0.9.18.json').read_text())['files']
+assert set(reviewed_n5)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'}
 frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
 assert set(reviewed_updater).issubset(set(frozen))
 assert reviewed_game_paths.issubset(set(frozen))
 for path,sha in frozen.items():
- if path in reviewed_game:
+ if path in reviewed_n5:
+  spec=reviewed_n5[path]
+  assert sha==spec['original_sha256'],path
+  data=(root/path).read_bytes()
+  # Only this exact reviewed read-only instrumentation may change the frozen controller.
+  git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+  assert git_blob==spec['reviewed_blob_sha1'],path
+  text=data.decode('utf-8')
+  assert 'StageNativeParallelDiagnostics.report(selected)' in text,path
+  assert 'fun slotStatesDescription()' in text,path
+ elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path
   data=(root/path).read_bytes()
