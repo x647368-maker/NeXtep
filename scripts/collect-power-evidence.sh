@@ -48,7 +48,7 @@ if display="$(adb -s "$serial" shell dumpsys display 2>/dev/null)"; then display
           t=substr(s,RSTART,RLENGTH);split(t,a,"=");gsub(/[[:space:]]/,"",a[2]);
           if (a[2] ~ /^(Awake|Asleep|Dozing|Dreaming|AWAKE|ASLEEP|DOZING|DREAMING|WAKEFULNESS_AWAKE|WAKEFULNESS_ASLEEP|WAKEFULNESS_DOZING|WAKEFULNESS_DREAMING)$/) print "wakefulness=" a[2]
         }
-        if (match(s,/PowerGroupId[[:space:]]*[=:][[:space:]]*[0-9]+/)) {
+        if (match(s,/(PowerGroupId|displayGroupId)[[:space:]]*[=:][[:space:]]*[0-9]+/)) {
           t=substr(s,RSTART,RLENGTH);gsub(/.*[=:][[:space:]]*/,"",t);print "power_group_id=" t
         }
         if (match(s,/mWakeLockSummary[[:space:]]*=[[:space:]]*(0x[0-9a-fA-F]+|[0-9]+)/)) {

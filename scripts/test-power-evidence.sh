@@ -15,7 +15,7 @@ fi
 [ "$1" = -s ] && [ "$2" = SERIAL-PRIVATE ] && [ "$3" = shell ] && [ "$4" = dumpsys ] || exit 9
 case "$5" in
   battery) printf '  AC powered: false\n  USB powered: true\n  level: 76\n  temperature: 318\n  ownerPackageName=com.secret.bank\n';;
-  power) printf 'mWakefulness=Asleep packageName=com.secret.bank\n PowerGroupId=4 packageName=com.secret.bank\n mWakeLockSummary=0x0 deviceToken=PERSONAL\n mDeviceIdleMode=true\n';;
+  power) printf 'mWakefulness=Asleep packageName=com.secret.bank\n displayGroupId=4 packageName=com.secret.bank\n mWakeLockSummary=0x0 deviceToken=PERSONAL\n mDeviceIdleMode=true\n';;
   display) printf 'DisplayDeviceInfo{"NeXtep-slot-2": uniqueId="virtual:PERSONAL", state OFF, ownerPackageName=com.secret.bank, groupId=4}\n DisplayDeviceInfo{"Chat with PERSONAL": state ON}\n';;
   *) exit 1;;
 esac
