@@ -98,6 +98,14 @@ internal class InteractionRegression(private val inst: Instrumentation) {
             val nodes=inst.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText("TEST_ACTION").orEmpty()
             check(nodes.size==1){"Menu missing or duplicated: ${nodes.size}"}
             check(nodes[0].performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+            // Native popup commits the action after its short dismiss animation.
+            // Await actual dispatch, not merely UI idle after injection.
+            val expectedCount = it + 1
+            val deadline = SystemClock.uptimeMillis() + 2000L
+            while (actions < expectedCount && SystemClock.uptimeMillis() < deadline) {
+                Thread.sleep(25)
+            }
+            check(actions==expectedCount) { "Menu action $it not delivered: actions=$actions menus=$menus" }
             pause()
         }
         check(menus==20 && actions==20)

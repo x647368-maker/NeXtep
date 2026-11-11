@@ -6,7 +6,8 @@ import kotlin.math.roundToInt
 /** Presentation only: match the existing producer, never resize its display. */
 internal object StageLiveCardLayout {
     fun bounds(profile: WorkspaceLayoutProfile, canvases: List<SlotGeometry?>,
-        occupied: List<Boolean>, order: List<Int>): List<WorkspaceLayoutProfile.Slot> {
+        occupied: List<Boolean>, order: List<Int>,
+        allowPhoneSparse: Boolean = false): List<WorkspaceLayoutProfile.Slot> {
         require(canvases.size == 4 && occupied.size == 4 && order.sorted() == (0..3).toList())
         val g = profile.geometry
         val density = profile.densityDpi / 160f
@@ -15,6 +16,7 @@ internal object StageLiveCardLayout {
         val base = profile.slots
         if (shown.isEmpty()) return base
         StageTabletRailVisualPolicy.compactCards(profile, canvases, occupied, order)?.let { return it }
+        if (allowPhoneSparse) StageSparseSideCardPolicy.fit(profile, canvases, occupied, order)?.let { return it }
         if (g.isNativeLandscapeRail) {
             // Vertical stack of wide *live* cards on the physical left/right
             // Y700 rail. Use each producer's actual retained canvas, not a
