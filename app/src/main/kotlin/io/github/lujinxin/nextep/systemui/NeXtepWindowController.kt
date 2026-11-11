@@ -621,8 +621,38 @@ class NeXtepWindowController(
         putBoolean("ok", false); putString("message", it.message ?: "操作失败")
     } }
 
-    fun slotStatesDescription(): String = "screen=${currentGeometry().screenWidth}x${currentGeometry().screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
-        (slotCoordinator?.slotDiagnostics() ?: "unavailable")
+    /** Read-only scope diagnostic for native two-pane scenes; never moves a task. */
+    fun slotStatesDescription(): String {
+        val g = currentGeometry()
+        val tasks = runCatching { taskRepository.runningTasks() }.getOrDefault(emptyList())
+        val scene = StageNativeParallelDiagnostics.Scene(
+            screenWidth = g.screenWidth,
+            screenHeight = g.screenHeight,
+            densityDpi = context.resources.displayMetrics.densityDpi,
+            railAtTop = g.railAtTop,
+            controlHeight = g.controlHeight,
+            sidebarWidth = g.sidebarPhysicalWidth,
+            sidebarHeight = g.sidebarPhysicalHeight,
+            mainLeft = g.contentLeft,
+            mainTop = g.contentTop,
+            mainWidth = g.contentWidth,
+            mainHeight = g.contentHeight,
+            fittedMainId = mainTaskPresenter.currentTaskId(),
+            tasks = tasks.take(6).map { task ->
+                StageNativeParallelDiagnostics.Task(
+                    id = task.taskId,
+                    app = task.component.packageName,
+                    display = task.displayId,
+                    mode = task.windowingMode,
+                    vendorWindowed = task.vendorWindowed,
+                    bounds = task.bounds.flattenToString(),
+                )
+            },
+        )
+        return "screen=${g.screenWidth}x${g.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\\n" +
+            (slotCoordinator?.slotDiagnostics() ?: "unavailable") + "\\n" +
+            StageNativeParallelDiagnostics.report(scene)
+    }
 
     internal fun visibleSlotTaskIds(): Set<Int> = if (!workspaceVisible || suspended) emptySet() else {
         slotCoordinator?.slotStates().orEmpty().filterIsInstance<SlotState.Occupied>()
