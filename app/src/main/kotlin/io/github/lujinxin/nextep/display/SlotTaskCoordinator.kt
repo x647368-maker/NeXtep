@@ -12,6 +12,7 @@ import io.github.x647368maker.atomicworkbench.R
 import io.github.x647368maker.atomicworkbench.config.AppLanguage
 import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.StageTabletColdLaunch
 import io.github.x647368maker.atomicworkbench.framework.UserTargetedActivityLauncher
 import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
@@ -183,6 +184,7 @@ class SlotTaskCoordinator(
             throw error
         }
         active = false
+        StageTabletColdLaunch.clearAll()
         cancelPendingAdd("工作区已退出")
         cancelPendingExchange()
         onSlotDragEnded()
@@ -277,6 +279,7 @@ class SlotTaskCoordinator(
         }
         if (value) {
             suspended = true
+            StageTabletColdLaunch.clearAll()
             cancelPendingExchange()
             onSlotDragEnded()
             recentSelectionGeneration += 1
@@ -525,7 +528,19 @@ class SlotTaskCoordinator(
             } else {
                 check(TaskContinuityPolicy.canLaunch(TaskContinuityPolicy.Origin.USER_LAUNCH, existingTask = false))
                 NeXtepLog.info("task_continuity", "explicit_user_launch package=${component.packageName} user=${normalized.targetUser()} reason=no_existing_task")
-                UserTargetedActivityLauncher.start(applicationContext, normalized).getOrThrow()
+                // On physical wide Y700 only, reserve the real task's native
+                // first-frame transform before ActivityTaskManager starts it.
+                // The ShellTaskOrganizer appeared callback consumes this on its
+                // existing transaction. Fallback remains the old delayed fit.
+                val launchUser = io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat
+                    .userIdentifier(normalized.targetUser() ?: android.os.Process.myUserHandle())
+                val armed = StageTabletColdLaunch.arm(component.packageName,launchUser,geometryProvider())
+                try {
+                    UserTargetedActivityLauncher.start(applicationContext,normalized).getOrThrow()
+                } catch (error: Throwable) {
+                    if (armed) StageTabletColdLaunch.cancel(component.packageName)
+                    throw error
+                }
                 minimizePreviousMain()
                 val generation = mainSelectionGeneration
                 handler.postDelayed({
