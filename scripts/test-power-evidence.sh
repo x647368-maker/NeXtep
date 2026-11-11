@@ -35,7 +35,9 @@ report="$(find "$temp/out" -type f | head -n 1)"
 grep -q '^wakefulness=Asleep$' "$report"
 grep -q '^slot=NeXtep-slot-2 state=OFF$' "$report"
 grep -q '^AC powered=false$' "$report"
-grep -q '^unassociated_display_group_id=4
+grep -q '^unassociated_display_group_id=4$' "$report"
+grep -q '^slot_record_count=1$' "$report"
+[ "$(grep -c '^slot=NeXtep-slot-2 ' "$report")" -eq 1 ] || { echo 'Duplicate slot' >&2; exit 1; }
 if grep -Eq 'PERSONAL|com\.secret|SERIAL-PRIVATE|deviceToken=|uniqueId=|ownerPackageName=' "$report"; then
   echo 'Privacy regression: raw sensitive values appeared' >&2;exit 1
 fi
@@ -49,42 +51,8 @@ if PATH="$temp/bin:$PATH" bash "$script" '../injection' "$temp/out" >/dev/null 2
   echo 'Unsafe label not rejected' >&2;exit 1
 fi
 [ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 2 ]
-echo 'PASS: sanitized output, safe device selection, rejected labels, distinct reports'
- "$report"
-grep -q '^slot_record_count=1
-if grep -Eq 'PERSONAL|com\.secret|SERIAL-PRIVATE|deviceToken=|uniqueId=|ownerPackageName=' "$report"; then
-  echo 'Privacy regression: raw sensitive values appeared' >&2;exit 1
-fi
-[ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 1 ]
-PATH="$temp/bin:$PATH" bash "$script" one "$temp/out" >/dev/null
-[ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 2 ] || { echo 'Reports overwritten' >&2; exit 1; }
-if PATH="$temp/bin:$PATH" MOCK_EXTRA=1 bash "$script" two "$temp/out" >/dev/null 2>&1; then
-  echo 'Second unauthorized device not rejected' >&2;exit 1
-fi
-if PATH="$temp/bin:$PATH" bash "$script" '../injection' "$temp/out" >/dev/null 2>&1; then
-  echo 'Unsafe label not rejected' >&2;exit 1
-fi
-[ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 2 ]
-echo 'PASS: sanitized output, safe device selection, rejected labels, distinct reports'
- "$report"
-[ "$(grep -c '^slot=NeXtep-slot-2 ' "$report")" -eq 1 ] || exit 1
-if grep -Eq 'PERSONAL|com\.secret|SERIAL-PRIVATE|deviceToken=|uniqueId=|ownerPackageName=' "$report"; then
-  echo 'Privacy regression: raw sensitive values appeared' >&2;exit 1
-fi
-[ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 1 ]
-PATH="$temp/bin:$PATH" bash "$script" one "$temp/out" >/dev/null
-[ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 2 ] || { echo 'Reports overwritten' >&2; exit 1; }
-if PATH="$temp/bin:$PATH" MOCK_EXTRA=1 bash "$script" two "$temp/out" >/dev/null 2>&1; then
-  echo 'Second unauthorized device not rejected' >&2;exit 1
-fi
-if PATH="$temp/bin:$PATH" bash "$script" '../injection' "$temp/out" >/dev/null 2>&1; then
-  echo 'Unsafe label not rejected' >&2;exit 1
-fi
-[ "$(find "$temp/out" -type f | wc -l | tr -d ' ')" -eq 2 ]
-echo 'PASS: sanitized output, safe device selection, rejected labels, distinct reports'
-
-# Unknown slot visibility must not be mistaken for confirmed display release.
 empty_report="$(PATH="$temp/bin:$PATH" MOCK_EMPTY_DISPLAY=1 bash "$script" baseline "$temp/out" | sed 's/^Local report: //')"
 grep -q '^slot_record_count=0$' "$empty_report"
 grep -q '^slot_record_status=not_visible_or_unavailable$' "$empty_report"
 if grep -q '^slot=NeXtep-slot-' "$empty_report"; then echo 'Invented slot' >&2; exit 1; fi
+echo 'PASS: sanitized output, deduplicated slots, unknown baseline and safe reports'
