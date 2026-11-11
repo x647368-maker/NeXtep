@@ -823,8 +823,9 @@ class NeXtepWindowController(
                 // favorites row. Long press still opens the complete main menu.
                 // Compact phones and near-square foldables keep click=menu.
                 val g = geometry()
-                if (!io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
-                        .wideTablet(g.screenWidth, g.screenHeight)) false
+                if (io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy
+                        .tap(g.screenWidth, g.screenHeight) !=
+                    io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy.Tap.QUICK_BAR) false
                 else {
                     setQuickExpanded(!(core.enabled && core.expanded))
                     true
