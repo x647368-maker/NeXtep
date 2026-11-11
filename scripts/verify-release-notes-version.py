@@ -44,7 +44,13 @@ def main():
         raise SystemExit(f"BUILD BLOCKED: RELEASE_NOTES.md heading {actual!r} != Gradle {expected!r}")
     if len(notes.strip()) < 80:
         raise SystemExit("BUILD BLOCKED: release notes are missing meaningful content")
-    print(f"Verified exact release-note identity {expected[0]} / versionCode {expected[1]}")
+    runtime_path = ROOT / "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt"
+    runtime = runtime_path.read_text(encoding="utf-8")
+    loaded_stamp = re.findall(r'^\s*const val BUILD\s*=\s*"([^"]+)"', runtime, re.M)
+    target_stamp = f"{expected[0]}/{expected[1]}"
+    if loaded_stamp != [target_stamp]:
+        raise SystemExit(f"BUILD BLOCKED: loaded SystemUI module stamp {loaded_stamp!r} != {target_stamp!r}")
+    print(f"Verified exact release notes and injected module identity {target_stamp}")
 
 if __name__ == "__main__":
     main()
