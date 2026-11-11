@@ -23,6 +23,7 @@ import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelection
 import io.github.x647368maker.atomicworkbench.workspace.RecentTaskSelectionContract
 import io.github.x647368maker.atomicworkbench.workspace.SelectedRecentTask
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
+import io.github.x647368maker.atomicworkbench.workspace.StageY700WechatTaskPolicy
 
 class SlotTaskCoordinator(
     context: Context,
@@ -1141,6 +1142,21 @@ class SlotTaskCoordinator(
         } ?: findLaunchTask(component, normalized.targetUser())
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
 
+        // Y700 ported ColorOS 16 can assign WeChat to a vendor-owned dual
+        // window. Reparenting such a task by force may destroy its live state.
+        // Preserve the original task and let the user leave the native mode
+        // first; do not mutate WeChat's process, resize flag, or private APIs.
+        if (existing != null && existing.displayId != targetDisplayId) {
+            val g=geometryProvider()
+            if (StageY700WechatTaskPolicy.nativeTaskMustStayOwned(
+                    g.screenWidth,g.screenHeight,existing.component.packageName,
+                    existing.vendorWindowed,existing.windowingMode)) {
+                NeXtepLog.info("wechat_y700_compat",
+                    "Protected vendor dual-window task=${existing.taskId} display=${existing.displayId} mode=${existing.windowingMode}; no migration")
+                return Result.failure(IllegalStateException(
+                    "微信正在由系统双窗模式管理，已保留原任务，请先退出系统双窗再加入小窗"))
+            }
+        }
         if (existing?.displayId == targetDisplayId) {
             slotRecords[slotIndex].retainedTaskId = existing.taskId
             val layoutResult = runCatching { ensureSlotLayout(slotIndex, existing) }
