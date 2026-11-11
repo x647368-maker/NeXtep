@@ -23,6 +23,9 @@ assert set(unified_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
 }
+# One-time diagnostic log: exact new/old Git blob pins, then original frozen audit.
+power_flags_review=json.loads((root/'scripts/reviewed-selected-vdisplay-flags-0.9.19.json').read_text())['files']
+assert set(power_flags_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplayFactory.kt'}
 # The tablet branch is independently reviewed as exact reverse patches.
 # Normalize only these known fragments before applying the existing frozen
 # v0.9.17 -> v0.9.8 source chain. An unrelated edit still fails its hash.
@@ -36,6 +39,14 @@ assert set(tablet_review)=={
 reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
+ if path in power_flags_review:
+  spec=power_flags_review[path]
+  blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+  assert blob==spec['reviewed_blob_sha1'],path
+  prior=spec['previous_content'].encode('utf-8')
+  base=hashlib.sha1(b'blob '+str(len(prior)).encode()+b'\0'+prior).hexdigest()
+  assert base==spec['previous_blob_sha1'],path
+  data=prior
  if path in unified_review:
   spec=unified_review[path]
   blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
@@ -188,6 +199,9 @@ for path,sha in frozen.items():
   assert 'StageNativeParallelDiagnostics.report(selected)' in text,path
   assert 'fun slotStatesDescription()' in text,path
  elif path in unified_review:
+  assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
+ elif path in power_flags_review:
+  assert sha==power_flags_review[path]['original_sha256'],path
   assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
  elif path in reviewed_game:
   spec=reviewed_game[path]
