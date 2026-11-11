@@ -130,7 +130,16 @@ class NeXtepWindowController(
             !geometry().railAtTop && !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&
             SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)
     private fun renderSmartRail(hidden: Boolean) {
-        // Display buffers and the frozen main/slot geometry remain untouched.
+        // Unfolded near-square foldables reclaim the side rail's unused physical
+        // width in the main task. Reconfigure the existing task surface through
+        // WorkspaceController, without recreating the four virtual displays.
+        // On phones and Y700 keep the previously verified geometry unchanged.
+        val current = viewport.geometry(sidebarSide)
+        if (workspaceVisible && !suspended &&
+            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
+                current.screenWidth, current.screenHeight) && !current.railAtTop) {
+            onViewportChanged()
+        }
         records.filter { it.title == "NeXtepSidebar" || it.title == "AtomicSidebarHandle" }.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry())
@@ -357,6 +366,7 @@ class NeXtepWindowController(
         // windows. Commit the actual final rail/main geometry before returning.
         applyStageStack(geometry())
         applyWindowGeometry(geometry(), refreshControls = false)
+        smartRail.armWhenReady()
         scheduleStageFocus()
         return geometry()
     }
@@ -417,6 +427,7 @@ class NeXtepWindowController(
 
     fun onTasksChanged() {
         slotCoordinator?.onTasksChanged()
+        smartRail.armWhenReady()
         scheduleCinemaCheck()
         scheduleStageFocus()
     }
@@ -434,6 +445,10 @@ class NeXtepWindowController(
         syncCoreViewport()
         return viewport.geometry(sidebarSide, refreshViewport).let {
             if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
+            else if (smartRail.hidden && !it.railAtTop &&
+                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
+                    it.screenWidth, it.screenHeight))
+                it.copy(mainTopOverlap = 0, sidebarWidth = minOf(it.sidebarWidth, dp(44).toInt().coerceAtLeast(2)))
             else if (viewport.activeCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
         }
     }
@@ -894,8 +909,11 @@ class NeXtepWindowController(
                 if (smartRail.hidden && !geometry.railAtTop) {
                     // Inset from the back-gesture edge; no gesture exclusion or global listener.
                     params.width=dp(24).toInt();params.height=dp(48).toInt()
-                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT) geometry.availableLeft+dp(32).toInt()
-                        else geometry.availableRight-dp(56).toInt()
+                    val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                        .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)
+                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT)
+                        geometry.availableLeft+dp(if (foldEdge) 8 else 32).toInt()
+                        else geometry.availableRight-dp(if (foldEdge) 32 else 56).toInt()
                     params.y=(geometry.availableTop+geometry.availableBottom-params.height)/2
                 }
             }
