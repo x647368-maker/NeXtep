@@ -84,7 +84,22 @@ internal class StageSparseRailReflowAnimator(
         }
         generation++
         val epoch = generation
-        active.keys.toList().forEach(::end)
+        // Removed cards can already have been hidden by the real workspace.
+        // Do not force alpha=1 on a card omitted from the next occupied set:
+        // rapid 4->3->2 would otherwise flash a just-closed real task.
+        for (view in active.keys.toList()) {
+            if (after.containsKey(view)) {
+                end(view)
+            } else {
+                val retainedAlpha=view.alpha
+                view.animate().cancel()
+                view.scaleX=1f
+                view.scaleY=1f
+                view.translationX=0f
+                view.translationY=0f
+                view.alpha=retainedAlpha
+            }
+        }
         active.clear()
         for ((view, target) in after) {
             if (!view.isAttachedToWindow || !view.isShown) continue
