@@ -27,6 +27,12 @@ internal class StageQuickStore(context: Context) {
     var pins: List<String>
         get() = state.pins
         set(v) { state = state.copy(pins = StageQuickPolicy.normalize(v)) }
+    /** User/profile qualified keys. Explicitly hidden auto recommendations stay
+     * hidden until added again from '+' or reset, without inventing app data.
+     */
+    var hiddenApps: Set<String>
+        get() = prefs.getStringSet("quick_hidden_v1", emptySet())?.toSet().orEmpty()
+        set(value) { prefs.edit().putStringSet("quick_hidden_v1", value.toSet()).apply() }
     var cinemaMode: StageCinemaPolicy.Mode
         get() = runCatching { StageCinemaPolicy.Mode.valueOf(prefs.getString("cinema", "AUTO")!!) }.getOrDefault(StageCinemaPolicy.Mode.AUTO)
         set(v) { prefs.edit().putString("cinema", v.name).apply() }

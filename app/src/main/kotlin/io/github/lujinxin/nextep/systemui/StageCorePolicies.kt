@@ -2,7 +2,9 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 /** Policies operate on real task IDs, never on package-created pseudo instances. */
 internal object StageQuickPolicy {
-    fun normalize(pins: List<String>) = pins.filter { it.isNotBlank() }.distinct().take(6)
+    // Persist up to 12 across fold states; compact phone renders only its
+    // original five-auto/six-fixed visible slots, never changes task identities.
+    fun normalize(pins: List<String>) = pins.filter { it.isNotBlank() }.distinct().take(12)
     fun toggle(pins: List<String>, key: String): List<String> =
         if (key in pins) pins.filter { it != key } else normalize(pins + key)
     fun move(pins: List<String>, key: String, delta: Int): List<String> {
@@ -11,8 +13,12 @@ internal object StageQuickPolicy {
         val to = (from + delta).coerceIn(0, result.lastIndex)
         result.removeAt(from); result.add(to, key); return result
     }
-    fun select(fixed: Boolean, pins: List<String>, recent: List<String>, available: Set<String>) =
-        (if (fixed) normalize(pins) else recent.distinct().take(5)).filter { it in available }
+    fun select(fixed: Boolean, pins: List<String>, recent: List<String>, available: Set<String>,
+        capacity: Int = 5): List<String> {
+        val cap = if (fixed) maxOf(6,capacity) else capacity
+        return (if (fixed) normalize(pins) else normalize(pins) + recent)
+            .distinct().filter { it in available }.take(cap.coerceIn(0,12))
+    }
     fun existing(key: String, running: Map<String, Int>): Int? = running[key]
 }
 

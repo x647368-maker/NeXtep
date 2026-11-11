@@ -7,6 +7,22 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# PR9/PR13 frozen presentation changes: verify exact new Git blobs, restore
+# the PR14 baseline in memory, then run the original reversible/frozen checks.
+unified_review=json.loads((root/'scripts/reviewed-unified-n5-y700-0.9.18.json').read_text())['files']
+assert set(unified_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageCorePolicies.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageFrequentAppPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageQuickBarView.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageQuickStore.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmartRail.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceViewport.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTopLayoutMetrics.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
+}
 # The tablet branch is independently reviewed as exact reverse patches.
 # Normalize only these known fragments before applying the existing frozen
 # v0.9.17 -> v0.9.8 source chain. An unrelated edit still fails its hash.
@@ -20,6 +36,14 @@ assert set(tablet_review)=={
 reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
 def protected_bytes(path):
  data=(root/path).read_bytes()
+ if path in unified_review:
+  spec=unified_review[path]
+  blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+  assert blob==spec['merged_blob_sha1'],path
+  prior=spec['previous_content'].encode('utf-8')
+  oldblob=hashlib.sha1(b'blob '+str(len(prior)).encode()+b'\0'+prior).hexdigest()
+  assert oldblob==spec['previous_blob_sha1'],path
+  data=prior
  if path in tablet_review:
   text=data.decode()
   for patch in tablet_review[path]:
@@ -163,6 +187,8 @@ for path,sha in frozen.items():
   text=data.decode('utf-8')
   assert 'StageNativeParallelDiagnostics.report(selected)' in text,path
   assert 'fun slotStatesDescription()' in text,path
+ elif path in unified_review:
+  assert hashlib.sha256(protected_bytes(path)).hexdigest()==sha,path
  elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path

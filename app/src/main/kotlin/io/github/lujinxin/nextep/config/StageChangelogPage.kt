@@ -58,15 +58,10 @@ internal object StageChangelogPage {
                 )
             }
         }.getOrDefault(emptyList())
-        val curatedVersions = StageChangeHistory.entries.map { it.version }.toSet()
-        val shownEntries = buildList {
-            val seen = mutableSetOf<String>()
-            currentEntry?.let { if (seen.add(it.version)) add(it) }
-            archiveEntries.filterNot { it.version in curatedVersions }.forEach {
-                if (seen.add(it.version)) add(it)
-            }
-            StageChangeHistory.entries.forEach { if (seen.add(it.version)) add(it) }
-        }
+        // Curated version records take priority over an old generic archive,
+        // but the exact installed APK's bundled notes always win for its version.
+        // Sort semantically (0.9.17 > 0.9.9), never by the arrival order of Git history.
+        val shownEntries = StageChangelogOrdering.merge(currentEntry, archiveEntries, StageChangeHistory.entries)
 
         shownEntries.forEachIndexed { index, entry ->
             val card = LinearLayout(activity).apply {

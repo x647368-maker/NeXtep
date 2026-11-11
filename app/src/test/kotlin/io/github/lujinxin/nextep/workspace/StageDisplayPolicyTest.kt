@@ -13,6 +13,12 @@ class StageDisplayPolicyTest {
         assertFalse(StageDisplayPolicy.wideLandscapeTablet(2616, 1140))
         assertFalse(StageDisplayPolicy.wideLandscapeTablet(2480, 2248))
         assertFalse(StageDisplayPolicy.wideLandscapeTablet(1600, 2560))
+        assertTrue(StageDisplayPolicy.wideTablet(1600, 2560))
+        assertTrue(StageDisplayPolicy.wideTablet(2560, 1600))
+        assertFalse(StageDisplayPolicy.wideTablet(1140, 2616))
+        assertFalse(StageDisplayPolicy.wideTablet(2480, 2248))
+        assertEquals(144, StageDisplayPolicy.safeTabletTopInset(2560, 1600, 3f, 0))
+        assertEquals(192, StageDisplayPolicy.safeTabletTopInset(1600, 2560, 3f, 192))
         // Migrated users' explicit top/side choices are left untouched.
         assertEquals(StageDisplayPolicy.Choice(true, SidebarSide.RIGHT),
             StageDisplayPolicy.initial(2560, 1600, 560, false, true, SidebarSide.RIGHT))

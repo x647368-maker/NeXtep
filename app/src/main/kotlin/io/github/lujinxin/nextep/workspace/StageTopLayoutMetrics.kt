@@ -27,7 +27,18 @@ internal object StageTopLayoutMetrics {
         val minimumMain = (if (g.isLandscape) 160 else 220) * density
         val limit = minOf(g.availableWidth - 1, g.availableHeight - g.topHeight - minimumMain.roundToInt())
             .coerceAtLeast(2)
-        return desired.coerceIn(2, limit)
+        // Only an explicitly selected TOP rail on a wide tablet gets this
+        // height limit. Otherwise portrait-phone preview proportions can
+        // consume most of the landscape canvas and make the top choice look
+        // unusable. Leave phone and near-square foldable results unchanged.
+        val tabletCap = when {
+            StageDisplayPolicy.unfoldedNearSquare(g.screenWidth, g.screenHeight) ->
+                (g.availableHeight * .24f).roundToInt().coerceAtLeast(2)
+            StageDisplayPolicy.wideLandscapeTablet(g.screenWidth, g.screenHeight) ->
+                (g.availableHeight * .32f).roundToInt().coerceAtLeast(2)
+            else -> limit
+        }
+        return desired.coerceIn(2, minOf(limit, tabletCap))
     }
     fun actions(width: Int, height: Int, density: Float): Actions {
         fun dp(value: Int) = (value * density).toInt()
