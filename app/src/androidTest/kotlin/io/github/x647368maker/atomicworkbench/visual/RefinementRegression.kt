@@ -109,6 +109,14 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 ui{AtomicPopupMenu.dismissAll()};settle()
                 for(index in expected[category]){
                     fired=-1;ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click("${StageMenuPolicy.groups[category]}  ›");click(commands[index])
+                    // Menu actions dismiss with a 70ms compositor fade and then post
+                    // their callback on the anchor. An HWUI-saturated emulator can
+                    // dispatch this after the general 180ms idle settle. Retain
+                    // the exact callback assertion, but await the real delivery.
+                    val callbackDeadline = SystemClock.uptimeMillis() + 2000L
+                    while (fired != index && SystemClock.uptimeMillis() < callbackDeadline) {
+                        Thread.sleep(25)
+                    }
                     check(fired==index){"Wrong callback $mode $index -> $fired"};check(!AtomicPopupMenu.isShowing())
                 }
             }
