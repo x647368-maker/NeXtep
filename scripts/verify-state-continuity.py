@@ -161,7 +161,7 @@ for path,sha in frozen.items():
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
   text=data.decode('utf-8')
-  assert 'StageNativeParallelDiagnostics.report(scene)' in text,path
+  assert 'StageNativeParallelDiagnostics.report(selected)' in text,path
   assert 'fun slotStatesDescription()' in text,path
  elif path in reviewed_game:
   spec=reviewed_game[path]
