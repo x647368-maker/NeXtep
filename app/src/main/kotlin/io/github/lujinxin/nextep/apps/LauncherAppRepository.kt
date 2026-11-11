@@ -50,7 +50,7 @@ class LauncherAppRepository(private val context: Context) {
         }
         val launcherApps = context.getSystemService(LauncherApps::class.java)
         val profiles = runCatching { launcherApps?.profiles.orEmpty() }.getOrDefault(emptyList())
-        val scanUsers = if (primary.isEmpty()) (listOf(Process.myUserHandle()) + profiles).distinct() else profiles
+        val scanUsers = if (entries.isEmpty()) (listOf(Process.myUserHandle()) + profiles).distinct() else profiles
         // Do not query clone APIs during a primary-user recovery; the user can
         // still add normal apps when an OEM clone service is unavailable.
         val multiApp = if (includeProfiles) MultiAppAccess.create() else null
@@ -68,7 +68,7 @@ class LauncherAppRepository(private val context: Context) {
                     runCatching {
                         val info = activity.activityInfo
                         val userId = info.applicationInfo.uid / PER_USER_RANGE
-                        if ((userId == currentUserId && primary.isNotEmpty()) ||
+                        if ((userId == currentUserId && primary.isNotEmpty() && entries.isNotEmpty()) ||
                             !info.exported || !info.enabled || info.packageName == "com.android.stk"
                         ) return@profileActivity
                         val isClone = userId in clones
