@@ -670,7 +670,7 @@ class NeXtepWindowController(
                 backdropHandler.post { setQuickExpanded(false); showStageMessage("快捷栏触摸区域不可用，已安全收起") }
             }.apply {
                 quickBar = StageQuickBarView(context, ::quickSelected,
-                    { chooseWindowApp(it, null, main = true) }, { setQuickExpanded(false) })
+                    { chooseWindowApp(it, null, quickPin = true) }, { setQuickExpanded(false) })
                 addView(quickBar, FrameLayout.LayoutParams(-1, dp(52).toInt(), Gravity.BOTTOM).apply {
                     leftMargin = dp(64).toInt(); rightMargin = dp(64).toInt(); bottomMargin = dp(4).toInt()
                 })
@@ -1052,7 +1052,11 @@ class NeXtepWindowController(
             frequentApps.request(entries) recentRow@ { recent ->
                 if (generation != quickGeneration || !workspaceVisible || suspended || !core.expanded) return@recentRow
                 val byKey = entries.associateBy { it.key }
-                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, byKey.keys)
+                val g = currentGeometry()
+                val capacity = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                    .quickBarCapacity(g.screenWidth, g.screenHeight)
+                val available = byKey.keys - core.hiddenApps
+                val keys = StageQuickPolicy.select(core.fixed, core.pins, recent.map { it.key }, available, capacity)
                 quickBar?.render(keys.mapNotNull(byKey::get))
             }
         } }
@@ -1081,9 +1085,22 @@ class NeXtepWindowController(
                 if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId == expected) open(index)
             }
         } }
-        actions += (if (entry.key in core.pins) "取消固定" else "固定到快捷栏（最多六个）") to {
-            if (entry.key !in core.pins && core.pins.size >= 6) showStageMessage("已固定六个，请先取消一个")
-            else { core.pins = StageQuickPolicy.toggle(core.pins, entry.key); refreshQuickBar() }
+        val g = currentGeometry()
+        val pinLimit = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+            .quickBarCapacity(g.screenWidth, g.screenHeight))
+        actions += (if (entry.key in core.pins) "取消固定" else "固定到快捷栏（最多${pinLimit}个）") to {
+            if (entry.key !in core.pins && core.pins.size >= pinLimit)
+                showStageMessage("固定应用已满，请先移除一个")
+            else {
+                core.hiddenApps = core.hiddenApps - entry.key
+                core.pins = StageQuickPolicy.toggle(core.pins, entry.key)
+                refreshQuickBar()
+            }
+        }
+        actions += "从常用应用栏移除" to {
+            core.pins = core.pins.filter { it != entry.key }
+            core.hiddenApps = core.hiddenApps + entry.key
+            refreshQuickBar()
         }
         if (entry.key in core.pins) {
             actions += "向前排序" to { core.pins = StageQuickPolicy.move(core.pins, entry.key, -1); refreshQuickBar() }
@@ -1223,6 +1240,11 @@ class NeXtepWindowController(
             (if (smartRail.pinned) "取消固定侧栏" else "固定侧栏") to { smartRail.setPinned(!smartRail.pinned) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
+            "添加常用应用到快捷栏" to { chooseWindowApp(anchor, null, quickPin = true) },
+            "恢复被隐藏的常用应用" to {
+                core.hiddenApps = emptySet()
+                refreshQuickBar()
+            },
             "关闭主窗（移回后台）" to { closeMainWindow() },
             "退出台前调度" to { onExitRequested() },
         ), avoidBounds = buildList {
@@ -1272,7 +1294,8 @@ class NeXtepWindowController(
         ))
     }
 
-    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null, main: Boolean = false) {
+    private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null,
+        main: Boolean = false, quickPin: Boolean = false) {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val generation = ++windowPickerGeneration
         val rows = android.widget.LinearLayout(context).apply { orientation = android.widget.LinearLayout.VERTICAL }
@@ -1284,7 +1307,8 @@ class NeXtepWindowController(
                 it.view.visibility = if (!shown && workspaceVisible && !suspended) View.VISIBLE else View.GONE
             }
         }
-        windowPicker.show(anchor, if (main) "替换主应用" else if (target == null) "添加小窗" else "替换应用", rows, fillContent = true)
+        windowPicker.show(anchor, if (quickPin) "添加到常用应用快捷栏" else if (main) "替换主应用"
+            else if (target == null) "添加小窗" else "替换应用", rows, fillContent = true)
         appCatalog.request { result ->
             if (generation != windowPickerGeneration || !windowPicker.isShowing || !workspaceVisible || suspended) return@request
             result.onSuccess { entries ->
@@ -1328,8 +1352,22 @@ class NeXtepWindowController(
                 grid.adapter = adapter
                 fun chooseEntry(entry: io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository.AppEntry) {
                     windowPicker.dismiss()
-                    val engine = slotCoordinator ?: return
                     if (workgroups.isSwitching() || groupInputBlocked || !workspaceVisible || suspended) return
+                    if (quickPin) {
+                        val g = currentGeometry()
+                        val cap = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                            .quickBarCapacity(g.screenWidth, g.screenHeight))
+                        if (entry.key !in core.pins && core.pins.size >= cap) {
+                            showStageMessage("快捷栏固定应用已满，请长按移除一个后再添加")
+                            return
+                        }
+                        core.hiddenApps = core.hiddenApps - entry.key
+                        if (entry.key !in core.pins) core.pins = core.pins + entry.key
+                        refreshQuickBar()
+                        showStageMessage("已添加到常用应用栏：${entry.label}")
+                        return
+                    }
+                    val engine = slotCoordinator ?: return
                     if (main) {
                         engine.openInMain(entry.launchIntent()).onFailure { showStageMessage(it.message ?: "主应用未打开") }
                     } else {
