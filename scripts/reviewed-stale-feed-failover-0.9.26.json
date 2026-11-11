@@ -1,0 +1,19 @@
+{
+  "purpose": "Exact reversible safety audit: stale but populated update index cannot conceal newer GitHub Releases; preserve v0.9.8 frozen client.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt": {
+      "previous_blob_sha1": "996bca1359370089e7fdee753bc1da6e1619321f",
+      "reviewed_blob_sha1": "3178ef620432dc06b23d3532e9cefb8264de73a0",
+      "patches": [
+        {
+          "before": "    fun hasApplicableRecords(total: Int, applicable: Int) =\n        validSize(total) && applicable in 1..total",
+          "after": "    fun hasApplicableRecords(total: Int, applicable: Int) =\n        validSize(total) && applicable in 1..total\n\n    // A well-formed index can be stale just after a new Release is published.\n    // Never treat a null result as authoritative; confirm with Releases API.\n    fun hasConfirmedUpgrade(feedSucceeded: Boolean, updateFound: Boolean) =\n        feedSucceeded && updateFound"
+        },
+        {
+          "before": "        if (feed.isSuccess) return feed.getOrThrow()",
+          "after": "        if (UpdateFeedAuthority.hasConfirmedUpgrade(feed.isSuccess, feed.getOrNull() != null))\n            return feed.getOrThrow()"
+        }
+      ]
+    }
+  }
+}
