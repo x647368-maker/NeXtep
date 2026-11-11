@@ -32,7 +32,11 @@ internal object StageTabletRailVisualPolicy {
         val availableHeight = (g.sidebarLogicalHeight - gap * (shown.size + 1) - addReserve)
             .coerceAtLeast(shown.size)
         val maxHeight = (availableHeight / shown.size).coerceAtLeast(1)
-        val maxWidth = (g.sidebarPhysicalWidth - 2 * gap).coerceAtLeast(1)
+        // Keep the vertical spacing and '+' anchor unchanged. When fewer
+        // than four cards are open, reclaim just a few pixels at the sides.
+        val horizontalInset = ((if (shown.size <= 2) 4f else if (shown.size == 3) 5f else 8f) *
+            profile.densityDpi / 160f).roundToInt().coerceAtLeast(1)
+        val maxWidth = (g.sidebarPhysicalWidth - 2 * horizontalInset).coerceAtLeast(1)
         val fitted = shown.associateWith { index ->
             val canvas = canvases[index] ?: profile.canvas
             val scale = minOf(maxWidth.toFloat() / canvas.width, maxHeight.toFloat() / canvas.height)

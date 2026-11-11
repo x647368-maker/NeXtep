@@ -7,6 +7,21 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# One-count to three-count side-card bounds change is independently
+# pinned to the exact full before/after Git blob. Restore the last audited
+# source IN MEMORY before the existing v0.9.25 -> v0.9.8 freeze chain.
+sparse_path='app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt'
+sparse_review=json.loads((root/'scripts/reviewed-sparse-side-cards-0.9.26.json').read_text())['files']
+assert set(sparse_review)=={sparse_path}
+def undo_sparse_cards(path,data):
+ if path!=sparse_path:return data
+ spec=sparse_review[path]
+ actual=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert actual==spec['reviewed_blob_sha1'],path
+ previous=spec['previous_content'].encode('utf-8')
+ old=hashlib.sha1(b'blob '+str(len(previous)).encode()+bytes([0])+previous).hexdigest()
+ assert old==spec['previous_blob_sha1'],path
+ return previous
 # Final Y700 visual sources are strict pinned complete Git blobs.
 # Undo them in memory BEFORE the original v0.9.8 freeze chain.
 y700_visual_review=json.loads((root/'scripts/reviewed-y700-live-wallpaper-compact-0.9.25.json').read_text())['files']
@@ -82,7 +97,7 @@ def undo_swap_rollback_fix(path,data):
  return previous
 
 def protected_bytes(path):
- data=undo_swap_rollback_fix(path,undo_y700_visual(path,(root/path).read_bytes()))
+ data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,(root/path).read_bytes())))
  if path in screen_review:
   text=data.decode()
   for patch in screen_review[path]:

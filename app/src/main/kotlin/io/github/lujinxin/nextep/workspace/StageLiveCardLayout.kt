@@ -15,6 +15,7 @@ internal object StageLiveCardLayout {
         val base = profile.slots
         if (shown.isEmpty()) return base
         StageTabletRailVisualPolicy.compactCards(profile, canvases, occupied, order)?.let { return it }
+        StageSparseSideCardPolicy.fit(profile, canvases, occupied, order)?.let { return it }
         if (g.isNativeLandscapeRail) {
             // Vertical stack of wide *live* cards on the physical left/right
             // Y700 rail. Use each producer's actual retained canvas, not a
