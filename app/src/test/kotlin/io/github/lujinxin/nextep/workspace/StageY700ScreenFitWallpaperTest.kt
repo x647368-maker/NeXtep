@@ -4,6 +4,7 @@ import io.github.x647368maker.atomicworkbench.display.SlotGeometry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlin.math.roundToInt
 import org.junit.Test
 
 /** Physical display cases, including a ported phone ROM reporting rotation 1/3. */
@@ -85,7 +86,7 @@ class StageY700ScreenFitWallpaperTest {
         assertTrue(narrow.contentWidth > four.contentWidth)
         val phone = WorkspaceGeometry.forDisplay(1140,2616,density=3f)
         val phoneTwo = StageAdaptiveLayout.rail(phone,2,3f)
-        assertEquals((phone.availableWidth*.235f).toInt(),phoneTwo.sidebarWidth)
+        assertEquals((phone.availableWidth*.235f).roundToInt(),phoneTwo.sidebarWidth)
     }
 
     @Test fun wallpaperTopAndSideSampleSamePhysicalAxesOnY700() {
