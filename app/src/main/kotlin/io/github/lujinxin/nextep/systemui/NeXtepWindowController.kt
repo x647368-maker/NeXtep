@@ -448,7 +448,8 @@ class NeXtepWindowController(
             else if (smartRail.hidden && !it.railAtTop &&
                 io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
                     it.screenWidth, it.screenHeight))
-                it.copy(mainTopOverlap = 0, sidebarWidth = minOf(it.sidebarWidth, dp(44).toInt().coerceAtLeast(2)))
+                io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy
+                    .reclaim(it, context.resources.displayMetrics.density)
             else if (viewport.activeCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
         }
     }
@@ -911,9 +912,12 @@ class NeXtepWindowController(
                     params.width=dp(24).toInt();params.height=dp(48).toInt()
                     val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
                         .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)
-                    params.x=if (geometry.sidebarSide==SidebarSide.LEFT)
-                        geometry.availableLeft+dp(if (foldEdge) 8 else 32).toInt()
-                        else geometry.availableRight-dp(if (foldEdge) 32 else 56).toInt()
+                    params.x=if (foldEdge)
+                        io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy
+                            .edgeHandleX(geometry, context.resources.displayMetrics.density)
+                        else if (geometry.sidebarSide==SidebarSide.LEFT)
+                            geometry.availableLeft+dp(32).toInt()
+                        else geometry.availableRight-dp(56).toInt()
                     params.y=(geometry.availableTop+geometry.availableBottom-params.height)/2
                 }
             }
