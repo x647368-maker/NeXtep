@@ -148,8 +148,18 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                     if(settleMs < StageSparseRailReflowPolicy.DURATION_MS) {
                         // Keep a transition active so the next call tests
                         // continuity rather than an already settled card.
-                        if(i==0) check(motion.isAnimating(view)) {
-                            "Expected a live transition during rapid changes"
+                        // On a heavily loaded CI emulator, runOnMainSync
+                        // may be dispatched after the 190ms animator ends,
+                        // even if the test thread only slept 60ms. In that
+                        // case verify clean completion, not wall-clock luck.
+                        if(i==0 && !motion.isAnimating(view)) {
+                            check(abs(view.scaleX-1f)<.002f &&
+                                abs(view.scaleY-1f)<.002f &&
+                                abs(view.translationX)<.002f &&
+                                abs(view.translationY)<.002f &&
+                                abs(view.alpha-1f)<.002f) {
+                                "Rapid reflow ended with a stale render transform"
+                            }
                         }
                     } else {
                         check(!motion.isAnimating(view)) {"Reflow did not settle by 380ms"}
@@ -162,6 +172,49 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
         }
 
         try {
+            // Deterministic same-main-frame interruption proof. Unlike
+            // Thread.sleep(60) on CI, this guarantees the second change lands
+            // while the first 190ms animation is still registered.
+            instrumentation.runOnMainSync {
+                val initial=(0 until 2).associate { i -> cards[i] as View to old[i].bounds() }
+                triple.forEachIndexed { i,p ->
+                    cards[i].layoutParams=FrameLayout.LayoutParams(p.w,p.h).apply {
+                        leftMargin=p.x;topMargin=p.y
+                    }
+                }
+                val middle=(0 until 3).associate { i -> cards[i] as View to triple[i].bounds() }
+                motion.animate(geo,geo,2,3,initial,middle,enabled=true)
+                check(motion.isAnimating(cards[0])) { "First transition not registered" }
+                val currentX=triple[0].x+triple[0].w/2f+cards[0].translationX
+                val currentY=triple[0].y+triple[0].h/2f+cards[0].translationY
+                val currentW=triple[0].w*cards[0].scaleX
+                val currentH=triple[0].h*cards[0].scaleY
+                val currentAlpha=cards[0].alpha
+                four.forEachIndexed { i,p ->
+                    cards[i].layoutParams=FrameLayout.LayoutParams(p.w,p.h).apply {
+                        leftMargin=p.x;topMargin=p.y
+                    }
+                }
+                val final=(0 until 4).associate { i -> cards[i] as View to four[i].bounds() }
+                motion.animate(geo,geo,3,4,middle,final,enabled=true)
+                check(motion.isAnimating(cards[0])) { "Interrupted transition did not start" }
+                check(abs(four[0].x+four[0].w/2f+cards[0].translationX-currentX)<1.5f &&
+                    abs(four[0].y+four[0].h/2f+cards[0].translationY-currentY)<1.5f &&
+                    abs(four[0].w*cards[0].scaleX-currentW)<2.5f &&
+                    abs(four[0].h*cards[0].scaleY-currentH)<2.5f &&
+                    abs(cards[0].alpha-currentAlpha)<.04f) {
+                    "Guaranteed in-flight interruption jumped live card position/size/alpha"
+                }
+                // Restore harness state for the longer real-frame sequence.
+                motion.cancel()
+                old.forEachIndexed { i,p ->
+                    cards[i].layoutParams=FrameLayout.LayoutParams(p.w,p.h).apply {
+                        leftMargin=p.x;topMargin=p.y
+                    }
+                }
+                cards[2].alpha=0f
+                cards[3].alpha=0f
+            }
             // Rapid 2->3->4 must not snap back to nominal layout between
             // one-shot animations. Reverse 4->3->2 and immediately add again.
             applyChange(old,triple,2,3,settleMs=60L)
