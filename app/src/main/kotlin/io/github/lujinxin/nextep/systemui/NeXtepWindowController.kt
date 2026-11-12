@@ -1978,10 +1978,13 @@ class NeXtepWindowController(
                         // dwell, verify task ownership ONCE the gate opens.
                         // A stale frame from the previous virtual display can
                         // otherwise be mistaken for the destination task.
+                        // One Binder snapshot for the entire handoff, not a
+                        // new getRunningTasks call per card (or per frame).
+                        val actualTasks = taskRepository.runningTasks()
                         fun slotOwnerCorrect(index: Int): Boolean =
                             when (val state = currentStates.getOrNull(index)) {
                                 is SlotState.Occupied ->
-                                    taskRepository.findTask(state.taskId)?.displayId == state.displayId
+                                    actualTasks.any { it.taskId == state.taskId && it.displayId == state.displayId }
                                 is SlotState.Ready -> true
                                 else -> false
                             }
@@ -1989,7 +1992,10 @@ class NeXtepWindowController(
                         val targetOwner = if (targetIndex != null) slotOwnerCorrect(targetIndex)
                             else if (parkingMain) true
                             else incomingTaskId != null &&
-                                taskRepository.findTask(incomingTaskId)?.displayId == android.view.Display.DEFAULT_DISPLAY
+                                actualTasks.any {
+                                    it.taskId == incomingTaskId &&
+                                        it.displayId == android.view.Display.DEFAULT_DISPLAY
+                                }
                         sourceOwner && targetOwner
                     }
                 },
