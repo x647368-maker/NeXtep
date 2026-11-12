@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.Button
 import android.widget.ScrollView
 import androidx.appcompat.app.AppCompatActivity
 import io.github.x647368maker.atomicworkbench.config.StageDonationPage
@@ -22,6 +23,7 @@ import java.io.File
 internal class StageDonationUiRegression(private val instrumentation: Instrumentation) {
     fun run(activity: Activity, root: FrameLayout, out: File): String {
         val previews = mutableListOf<ImageView>()
+        val actionButtons = mutableListOf<String>()
         val screen = ScrollView(activity)
         instrumentation.runOnMainSync {
             val page = StageDonationPage.create(activity as AppCompatActivity)
@@ -30,6 +32,7 @@ internal class StageDonationUiRegression(private val instrumentation: Instrument
             root.setBackgroundColor(Color.rgb(245, 245, 247))
             root.addView(screen, FrameLayout.LayoutParams(-1, -1))
             fun collect(view: View) {
+                if (view is Button) actionButtons.add(view.text.toString())
                 if (view is ImageView && view.contentDescription?.contains("收款码") == true)
                     previews.add(view)
                 if (view is ViewGroup)
@@ -37,6 +40,9 @@ internal class StageDonationUiRegression(private val instrumentation: Instrument
             }
             collect(page)
             check(previews.size == 2) { "Expected two donation QR previews, found ${previews.size}" }
+            for (required in listOf("保存收款码并打开微信", "保存收款码并打开支付宝")) {
+                check(required in actionButtons) { "Donation must not use misleading payment deep link: $required" }
+            }
             previews.forEach { preview ->
                 val bitmap = (preview.drawable as? BitmapDrawable)?.bitmap
                     ?: error("${preview.contentDescription}: no bitmap drawable")
