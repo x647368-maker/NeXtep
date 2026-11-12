@@ -3,11 +3,27 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt": {
       "previous_blob_sha1": "0711115f3630575b32c909fe817c767d60442c48",
-      "reviewed_blob_sha1": "1ea7c8245302612490693e4d15a1b5f766ca9dab",
+      "reviewed_blob_sha1": "a4edb0c0c72da4cca7a3b32ad2e7568936156869",
       "patches": [
         {
           "before": "    fun isWorkspaceActive(): Boolean =\n        ::workspaceController.isInitialized && workspaceController.isActive()\n\n    fun prepareDisplayRotation",
           "after": "    fun isWorkspaceActive(): Boolean =\n        ::workspaceController.isInitialized && workspaceController.isActive()\n\n    // True only while actual workspace content is visible and unlocked.\n    // Suspended retains task ownership but must not drive shade draw probes.\n    fun isWorkspaceInteractive(): Boolean =\n        ::workspaceController.isInitialized &&\n            workspaceController.isActive() && !workspaceController.isSuspended()\n\n    fun prepareDisplayRotation"
+        },
+        {
+          "before": "import java.util.concurrent.atomic.AtomicBoolean",
+          "after": "import java.util.concurrent.atomic.AtomicBoolean\nimport java.util.concurrent.atomic.AtomicInteger"
+        },
+        {
+          "before": "    @Volatile private var workspaceConfigReady = false\n    private val configRetry = Runnable { refreshWorkspaceConfig() }",
+          "after": "    @Volatile private var workspaceConfigReady = false\n    private val configQueryFailures = AtomicInteger(0)\n    private val configRetry = Runnable { refreshWorkspaceConfig(retryAttempt = true) }"
+        },
+        {
+          "before": "    private fun refreshWorkspaceConfig() {\n        lifecycleHandler.removeCallbacks(configRetry)",
+          "after": "    private fun refreshWorkspaceConfig(retryAttempt: Boolean = false) {\n        // A real unlock/config change restarts a small retry budget. A scheduled\n        // retry does not: a permanently unavailable provider must not loop forever.\n        if (!retryAttempt) configQueryFailures.set(0)\n        lifecycleHandler.removeCallbacks(configRetry)"
+        },
+        {
+          "before": "            if (queriedConfig == null) {\n                // Credential-protected module settings are unavailable before first unlock.\n                lifecycleHandler.postDelayed(configRetry, 2_000L)\n                return@execute\n            }\n            workspaceConfig = queriedConfig",
+          "after": "            if (queriedConfig == null) {\n                // Credential-protected settings may be missing before first unlock.\n                // Never run a 2s retry loop for hours on incompatible OEM hooks.\n                val failedReads = configQueryFailures.incrementAndGet()\n                if (StageConfigRetryBudget.shouldRetry(failedReads)) {\n                    lifecycleHandler.postDelayed(configRetry, 2_000L)\n                }\n                return@execute\n            }\n            configQueryFailures.set(0)\n            workspaceConfig = queriedConfig"
         }
       ]
     },
