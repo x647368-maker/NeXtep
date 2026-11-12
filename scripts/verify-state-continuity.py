@@ -335,6 +335,24 @@ reviewed_game_paths={
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/WorkspaceLandscapeRotationHooker.kt',
 }
 assert set(reviewed_game)==reviewed_game_paths
+# P0 0.9.30: a validated public feed covers the installed version, but API returns 403.
+# Reverse only this reviewed patch before every existing update-feed SHA check.
+p0_api403_path='app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt'
+p0_api403_review=json.loads((root/'scripts/reviewed-api403-index-fallback-0.9.30.json').read_text())['files']
+assert set(p0_api403_review)=={p0_api403_path}
+def undo_api403_fallback(path,data):
+ if path!=p0_api403_path:return data
+ spec=p0_api403_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ text=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert text.count(patch['after'])==1,path
+  text=text.replace(patch['after'],patch['before'],1)
+ data=text.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
 reviewed_n5=json.loads((root/'scripts/reviewed-n5-parallel-diagnostics-0.9.18.json').read_text())['files']
 assert set(reviewed_n5)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt'}
 frozen=json.loads((root/'scripts/frozen-workspace-0.9.8.json').read_text())
@@ -372,7 +390,7 @@ for path,sha in frozen.items():
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=(root/path).read_bytes()
+  data=undo_api403_fallback(path,(root/path).read_bytes())
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()

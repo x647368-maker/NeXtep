@@ -22,6 +22,12 @@ internal object UpdateFeedAuthority {
     // Never treat a null result as authoritative; confirm with Releases API.
     fun hasConfirmedUpgrade(feedSucceeded: Boolean, updateFound: Boolean) =
         feedSucceeded && updateFound
+
+    // A valid, channel-relevant public index is a usable fallback when
+    // GitHub's rate-limited API returns HTTP 403. This reports no *verified*
+    // newer release, never a fabricated release or an unverified download.
+    fun mayUseIndexNoUpgrade(feedSucceeded: Boolean, feedFoundUpgrade: Boolean, apiFailed: Boolean) =
+        feedSucceeded && !feedFoundUpgrade && apiFailed
 }
 
 internal object UpdateChecker {
@@ -42,6 +48,15 @@ internal object UpdateChecker {
             return feed.getOrThrow()
         val api = runCatching { checkReleasesApi(channel, installedCode) }
         if (api.isSuccess) return api.getOrThrow()
+        // If the index was actually downloaded and fully parsed for this
+        // channel, a GitHub API 403 is not a complete update-service outage.
+        // Still consult the API when reachable, so a stale index cannot mask
+        // a newly published, verified Release.
+        if (UpdateFeedAuthority.mayUseIndexNoUpgrade(
+                feedSucceeded = feed.isSuccess,
+                feedFoundUpgrade = feed.getOrNull() != null,
+                apiFailed = api.isFailure,
+            )) return null
         throw IOException(
             "更新源暂不可用；备用：${feed.exceptionOrNull()?.message.orEmpty().take(120)}；" +
                 "GitHub API：${api.exceptionOrNull()?.message.orEmpty().take(120)}",
