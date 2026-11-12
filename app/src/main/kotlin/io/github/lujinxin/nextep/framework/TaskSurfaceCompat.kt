@@ -334,7 +334,7 @@ object TaskSurfaceCompat {
         NeXtepLog.error("task_surface", "Presentation failed taskId=$taskId", error)
     }
 
-    fun reapply(taskId: Int, geometry: WorkspaceGeometry): Result<Unit> = runCatching {
+    fun reapply(taskId: Int, geometry: WorkspaceGeometry, force: Boolean = false): Result<Unit> = runCatching {
         val previous = activePresentations[taskId]
             ?: error("No active surface presentation for taskId=$taskId")
         val now = SystemClock.uptimeMillis()
@@ -347,10 +347,10 @@ object TaskSurfaceCompat {
             previous.scaleY != scaleY ||
             previous.positionX != geometry.contentTranslationX ||
             previous.positionY != geometry.contentTranslationY || previous.crop != crop
-        if (!geometryChanged && now - previous.lastAppliedAt < MIN_REAPPLY_INTERVAL_MS) {
+        if (!force && !geometryChanged && now - previous.lastAppliedAt < MIN_REAPPLY_INTERVAL_MS) {
             return@runCatching
         }
-        if (!geometryChanged && now > previous.reapplyUntil &&
+        if (!force && !geometryChanged && now > previous.reapplyUntil &&
             now - previous.lastAppliedAt < STEADY_REAPPLY_INTERVAL_MS
         ) {
             return@runCatching
@@ -385,6 +385,12 @@ object TaskSurfaceCompat {
             applyPresentation(presentation)
         } else if (geometryChanged) {
             animatePresentation(taskId, previous.frame, presentation, REPOSITION_DURATION_MS)
+        } else if (force) {
+            // An OEM Shell transaction may overwrite a settled main-task frame
+            // after the foldable rail has resized. Reassert the real task's
+            // uniform transform once, without resizing/relaunching its Activity.
+            cancelPresentationAnimation(taskId)
+            applyPresentation(presentation)
         } else if (!presentationAnimators.containsKey(taskId)) {
             applyPresentation(presentation)
         }
