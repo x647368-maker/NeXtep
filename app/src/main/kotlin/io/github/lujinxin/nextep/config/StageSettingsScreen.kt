@@ -47,6 +47,8 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     var page = "home"
         private set
     val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor); isFocusableInTouchMode = true }
+    private val originalStatusBarColor=activity.window.statusBarColor
+    private val originalSystemUiFlags=activity.window.decorView.systemUiVisibility
     private fun dp(n: Int) = (n * activity.resources.displayMetrics.density).toInt()
     private fun label(s: String, size: Float = 16f, color: Int = ink) = TextView(activity).apply {
         text = s; textSize = size; setTextColor(color); includeFontPadding = false
@@ -97,6 +99,17 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     fun back(): Boolean { if (page == "home") return false; open("home"); return true }
     fun open(target: String) {
         page = target; body = null; stateText = null; master = null
+        if (target == "update") {
+            view.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(15,13,35), Color.rgb(43,32,83), Color.rgb(29,23,55)))
+            activity.window.statusBarColor = Color.rgb(15,13,35)
+            activity.window.decorView.systemUiVisibility =
+                activity.window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        } else {
+            view.setBackgroundColor(backgroundColor)
+            activity.window.statusBarColor = originalStatusBarColor
+            activity.window.decorView.systemUiVisibility = originalSystemUiFlags
+        }
         view.removeAllViews()
         view.requestFocus()
         val column = LinearLayout(activity).apply {
@@ -137,10 +150,10 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         } else {
             val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "在线更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
-            header.addView(label("‹", 34f).apply {
+            header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
-            header.addView(label(titles[target] ?: "设置", 24f).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
+            header.addView(label(titles[target] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             column.addView(header)
             when (target) {
                 "core" -> corePage(column)
