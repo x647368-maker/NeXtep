@@ -2,7 +2,6 @@ package io.github.x647368maker.atomicworkbench.config
 
 import android.content.ContentValues
 import android.content.Intent
-import android.net.Uri
 import android.graphics.Typeface
 import android.graphics.Bitmap
 import android.graphics.drawable.GradientDrawable
@@ -66,16 +65,15 @@ internal object StageDonationPage {
             box.addView(txt(code.name, 18f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
             box.addView(txt(
                 if (code.name == "支付宝收款码")
-                    "下方是已核对的收款二维码。支付宝部分版本可能只打开首页；如未出现付款页，请使用扫一扫识别二维码，支付前确认收款人。"
-                else "下方是本人最新微信收款二维码。微信个人收款码没有可靠的一键支付接口；按钮仅打开微信，付款请用扫一扫识别二维码。",
+                    "点下方按钮会先把本人的支付宝收款码保存到相册，再打开支付宝。请在「扫一扫」里选择相册中的收款码，核对收款人后自愿付款。"
+                else "点下方按钮会先保存本人最新微信收款码，再打开微信。请在「扫一扫」里选择相册中的收款码。微信个人码无法可靠地由第三方直接打开付款页。",
                 13f, true
             ).apply { gravity = Gravity.CENTER; setPadding(0, dp(9), 0, dp(12)) })
             box.addView(Button(activity).apply {
-                text = if (code.name == "支付宝收款码") "尝试在支付宝打开收款链接" else "打开微信（需手动扫码）"
+                text = if (code.name == "支付宝收款码") "保存收款码并打开支付宝" else "保存收款码并打开微信"
                 contentDescription = text
                 setOnClickListener {
-                    if (code.name == "支付宝收款码") openAlipayReceipt(activity)
-                    else openWechatApp(activity)
+                    saveAndOpenPaymentApp(activity, code)
                 }
             }, LinearLayout.LayoutParams(-1, dp(52)))
             // The static image is decoded only on this user-requested page.
@@ -104,42 +102,27 @@ internal object StageDonationPage {
         return root
     }
 
-    /** User action only: a verified owner QR URL, not a fabricated payment API. */
-    private fun openAlipayReceipt(activity: AppCompatActivity) {
-        val url = StageDonationLinkPolicy.ALIPAY_RECEIPT_URL
-        if (!StageDonationLinkPolicy.isApprovedReceiptLink(url)) {
-            Toast.makeText(activity, "收款链接校验失败，请使用二维码", Toast.LENGTH_LONG).show()
-            return
-        }
-        val uri = Uri.parse(url)
-        val targeted = Intent(Intent.ACTION_VIEW, uri).apply {
-            setPackage(StageDonationLinkPolicy.ALIPAY_PACKAGE)
-            addCategory(Intent.CATEGORY_BROWSABLE)
-        }
-        // Some Alipay versions do not register the https intent. Fall back to
-        // normal Android intent resolution; NEVER invent a personal-pay scheme.
-        if (runCatching { activity.startActivity(targeted) }.isSuccess) {
-            Toast.makeText(activity, "若只进入支付宝首页，请保存收款码并使用扫一扫识别", Toast.LENGTH_LONG).show()
-            return
-        }
-        val browser = Intent(Intent.ACTION_VIEW, uri).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-        }
-        if (runCatching { activity.startActivity(browser) }.isFailure) {
-            Toast.makeText(activity, "无法打开支付宝收款链接，请使用下方二维码", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    /** Never call wxp:// as a payment deep link: it's receipt QR data only. */
-    private fun openWechatApp(activity: AppCompatActivity) {
-        val launch = activity.packageManager.getLaunchIntentForPackage(StageDonationLinkPolicy.WECHAT_PACKAGE)
+    /**
+     * A personal receipt QR isn't an external payment API. The supported
+     * same-phone flow is: save locally, open app, scan from photo album.
+     * Launch is only ever triggered by the user's explicit tap.
+     */
+    private fun saveAndOpenPaymentApp(activity: AppCompatActivity, code: StageDonationQr.Code) {
+        if (!saveToGallery(activity, code)) return
+        val alipay = code.name == "支付宝收款码"
+        val packageName = if (alipay) StageDonationLinkPolicy.ALIPAY_PACKAGE
+            else StageDonationLinkPolicy.WECHAT_PACKAGE
+        val appName = if (alipay) "支付宝" else "微信"
+        val launch = activity.packageManager.getLaunchIntentForPackage(packageName)
         if (launch == null || runCatching { activity.startActivity(launch) }.isFailure) {
-            Toast.makeText(activity, "未能打开微信，可用另一台设备扫描下方收款码", Toast.LENGTH_LONG).show()
+            Toast.makeText(activity, "收款码已保存，请自行打开$appName，在扫一扫中从相册识别", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(activity, "请在$appName「扫一扫」选择相册里的收款码，付款前核对收款人", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun saveToGallery(activity: AppCompatActivity, code: StageDonationQr.Code) {
-        if (activity.isDestroyed || activity.isFinishing) return
+    private fun saveToGallery(activity: AppCompatActivity, code: StageDonationQr.Code): Boolean {
+        if (activity.isDestroyed || activity.isFinishing) return false
         val resolver = activity.contentResolver
         var uri: android.net.Uri? = null
         try {
@@ -161,9 +144,11 @@ internal object StageDonationPage {
             } ?: error("无法保存二维码文件")
             resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
             Toast.makeText(activity, "收款码已保存到相册", Toast.LENGTH_SHORT).show()
+            return true
         } catch (_: Exception) {
             uri?.let { runCatching { resolver.delete(it, null, null) } }
             Toast.makeText(activity, "保存失败，请直接截图后识别", Toast.LENGTH_LONG).show()
+            return false
         }
     }
 }
