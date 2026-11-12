@@ -1,0 +1,30 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt": {
+      "reviewed_blob_sha1": "7e38268b542264d1990a902f52843727a935c046",
+      "previous_blob_sha1": "498933bf685a8a5f067494f4a3116de9219242af",
+      "patches": [
+        {
+          "before": "    var state: WorkspaceState = WorkspaceState.Disabled",
+          "after": "    private val n5RailRefitHandler = android.os.Handler(Looper.getMainLooper())\n    private var n5RailRefitEpoch = 0L\n\n    var state: WorkspaceState = WorkspaceState.Disabled"
+        },
+        {
+          "before": "    fun suspendForLock() {\n        val current = state as? WorkspaceState.Active ?: return",
+          "after": "    fun suspendForLock() {\n        ++n5RailRefitEpoch\n        val current = state as? WorkspaceState.Active ?: return"
+        },
+        {
+          "before": "            if (requested == previous.geometry) return@runCatching true\n            val rotationOnly = requested.isRotationOf(previous.geometry)",
+          "after": "            if (requested == previous.geometry) return@runCatching true\n            val railEpoch = ++n5RailRefitEpoch\n            val rotationOnly = requested.isRotationOf(previous.geometry)"
+        },
+        {
+          "before": "            state = WorkspaceState.Active(geometry)\n            SystemDialogLayoutController.setGeometry(geometry)\n            true",
+          "after": "            state = WorkspaceState.Active(geometry)\n            SystemDialogLayoutController.setGeometry(geometry)\n            if (StageN5RailRefitPolicy.shouldReassert(previous.geometry, geometry)) {\n                // A new sidebar width may settle before a late OEM Shell frame.\n                // One bounded check restores the live main Surface only; slot\n                // displays, task bounds, Activities and source buffers are untouched.\n                n5RailRefitHandler.postDelayed({\n                    val current = state as? WorkspaceState.Active\n                    if (railEpoch == n5RailRefitEpoch && current?.geometry == geometry &&\n                        windowController.currentGeometry() == geometry &&\n                        !windowController.isExchangePending()) {\n                        mainTaskPresenter.reconcileForeground(geometry).onFailure {\n                            NeXtepLog.warn(\"n5_rail_refit\", \"Owned main surface not yet ready\", it)\n                        }\n                    }\n                }, 350L)\n            }\n            true"
+        },
+        {
+          "before": "    private fun exit(): Boolean {\n        if (state is WorkspaceState.Disabled) return true",
+          "after": "    private fun exit(): Boolean {\n        ++n5RailRefitEpoch\n        if (state is WorkspaceState.Disabled) return true"
+        }
+      ]
+    }
+  }
+}
