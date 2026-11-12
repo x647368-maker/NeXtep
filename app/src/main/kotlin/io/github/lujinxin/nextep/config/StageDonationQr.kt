@@ -10,7 +10,7 @@ import android.graphics.RectF
 import java.util.Base64
 
 /**
- * Exact QR data matrices extracted from the TWO USER-SUPPLIED receipt QR images.
+ * Exact QR matrices from user-supplied receipts; WeChat refreshed from the official saved QR image on 2026-11-12.
  * Original and rendered matrices were independently decoded to identical payloads.
  * The original center photos are restored with offline 64px WebP thumbnails.\n * No payment SDK, URL lookup, connection, permission or timer.
  */
@@ -24,7 +24,7 @@ internal object StageDonationQr {
     val codes = listOf(
         Code(
             "微信收款码", 37,
-            "/oKQo/wQFm2QbqXUZLt1Eb5126IVFa7BY6AhB/qqqq/gG1eRAFegGa9t4barhFXCB8fN6pOtzVxtAAS3mggAjjN/gC0PewgBrSBiwvVCXsYxKzQKpAAD39Jsnsq15HdwR1ypwCTPWcBuyCmSfvDRuqADovlipITZ4JfNMZrCbTD0br2F6v+AZN70T/p5aisQVpqfF7pSc4/N1Pr6ci6earR7BauI+j/h1+fbgA==",
+            "/lpK8/wRK3JQbr6hQrt0RaLl26+0p67BYylpB/qqqq/gBPZVAEqHUmWiRsGHCganblxWcS6tJmAqAAA51rB4uYQdwC3GHy4Brad7svUoXaexKxp5vQBRIeNMntZw+Xd2/DhTBL6jPdhupp0a//Gll6ADI0yMCYLKx9Xa9QYrzNhG7mhoiv+AaAm8Y/k+POoQTRCRFbqlKN/t0U+XDu6VVFPVBby2a1/lFGRfgA==",
             "台前调度-微信收款码.png",
         ),
         Code(

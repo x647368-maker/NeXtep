@@ -1,0 +1,170 @@
+name: Publish verified v0.9.33-dev and synchronize app update feed
+
+on:
+  push:
+    branches: ['atomic-workbench/v0.9.33-integrated-y700-n5-donation']
+    paths: ['.github/workflows/publish-v033-verified.yml']
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: atomic-v033-verified-release
+  cancel-in-progress: false
+
+jobs:
+  publish-v033:
+    if: github.repository == 'x647368-maker/NeXtep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: x647368-maker/NeXtep
+      TAG: atomic-v0.9.33-dev
+      SRC: dc469274b876453aac0ba36d38572ba7bab30aa0
+      APKSHA: 69e42c8423629340a2f22468b2ae3459f88d7ce849f55d583852f14a955759d7
+      APK: AtomicWorkbench-v0.9.33-dev-48-SIGNED.apk
+      CERT: 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require completed SUCCESS on exact source commit (including visual regression)
+        run: |
+          set -euo pipefail
+          gh api repos/$REPO/actions/runs/43155338917 > /tmp/ci.json
+          gh api repos/$REPO/actions/runs/43155338917/jobs?per_page=100 > /tmp/jobs.json
+          python3 - <<'PY'
+          import json,os
+          c=json.load(open('/tmp/ci.json'))
+          assert (c['head_sha'],c['status'],c['conclusion'])==(os.environ['SRC'],'completed','success')
+          jobs={j['name']:j['conclusion'] for j in json.load(open('/tmp/jobs.json'))['jobs']}
+          assert jobs['development']=='success' and jobs['visual-regression']=='success',jobs
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 13915223429
+          run-id: 43155338917
+          github-token: ${{ github.token }}
+          path: /tmp/source-artifact
+      - name: Reconstruct exact existing signed APK without private signing key
+        run: |
+          set -euo pipefail
+          unsigned=$(find /tmp/source-artifact -type f -name app-debug-unsigned.apk -print -quit)
+          test -n "$unsigned" && test -s "$unsigned"
+          echo "83a437423e4c8f0a9b7d687b7f9ca8674bdc83ed799e770ba361ec197b494070  $unsigned" | sha256sum -c -
+          base64 -d release-staging/v0.9.33-dev/signed-apk-rebuild.zst.b64 > /tmp/signed-delta.zst
+          echo '83f02f2cd04b6f32764f7324fe8f5b3884abb55bc29ed50748f3492a7aef7ce7  /tmp/signed-delta.zst' | sha256sum -c -
+          command -v zstd >/dev/null || { sudo apt-get update; sudo apt-get install -y zstd; }
+          mkdir -p /tmp/release
+          zstd -d --patch-from="$unsigned" /tmp/signed-delta.zst -o "/tmp/release/$APK"
+          echo "$APKSHA  /tmp/release/$APK" | sha256sum -c -
+          test "$(stat -c %s "/tmp/release/$APK")" = 26524905
+          cp release-staging/v0.9.33-dev/atomic-update.json /tmp/release/atomic-update.json
+          python3 - <<'PY'
+          import json,os
+          m=json.load(open('/tmp/release/atomic-update.json'))
+          expected={'schemaVersion':1,'applicationId':'io.github.x647368maker.atomicworkbench','versionName':'0.9.33-dev','versionCode':48,'channel':'dev','apkAsset':os.environ['APK'],'size':26524905,'sha256':os.environ['APKSHA'],'certificateSha256':os.environ['CERT'],'releaseTag':os.environ['TAG']}
+          for k,v in expected.items():assert m[k]==v,(k,m.get(k),v)
+          PY
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Verify original v3 certificate and APK identity (do NOT re-sign)
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          apk=/tmp/release/$APK
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --min-sdk-version 35 --verbose --print-certs "$apk" > /tmp/signer.txt
+          grep -Fx 'Verifies' /tmp/signer.txt
+          grep -F 'Verified using v3 scheme (APK Signature Scheme v3): true' /tmp/signer.txt
+          grep -Fx "Signer #1 certificate SHA-256 digest: $CERT" /tmp/signer.txt
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$apk" | grep -Fx 'io.github.x647368maker.atomicworkbench'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest version-code "$apk" | grep -Fx '48'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest version-name "$apk" | grep -Fx '0.9.33-dev'
+      - name: Upload only two verified assets to GitHub DEV pre-release draft
+        run: |
+          set -euo pipefail
+          if gh api "repos/$REPO/releases/442516202" > /tmp/release-existing.json 2>/dev/null; then
+            echo 'Release already exists; will validate rather than overwrite'
+          else
+            gh release create "$TAG" "/tmp/release/$APK" /tmp/release/atomic-update.json \
+              --repo "$REPO" --target "$SRC" --draft --prerelease \
+              --title '台前调度 v0.9.33-dev（48）开发预发行版' \
+              --notes '418 项单元测试及模拟器 HWUI 通过；整合 Y700/N5 专项与可选打赏；三台 ColorOS 真机尚待验收。只发布开发版。'
+          fi
+          gh api "repos/$REPO/releases/442516202" > /tmp/asset-index.json
+          python3 - <<'PY'
+          import json,os
+          r=json.load(open('/tmp/asset-index.json'))
+          assert r['id']==442516202 and r['tag_name']==os.environ['TAG'] and r['prerelease'] is True
+          assert r['target_commitish']==os.environ['SRC']
+          assets={a['name']:a for a in r['assets']}
+          assert set(assets)=={'atomic-update.json',os.environ['APK']}
+          a=assets[os.environ['APK']]
+          assert a['size']==26524905 and a['digest']=='sha256:'+os.environ['APKSHA']
+          assert all(a['state']=='uploaded' for a in assets.values())
+          with open('/tmp/asset-ids.txt','w') as f:
+            for name,x in assets.items():f.write(f"{name} {x['id']}\n")
+          PY
+      - name: Re-download real hosted files; enforce same SHA and manifest before publicizing
+        run: |
+          set -euo pipefail
+          while read -r name id; do
+            curl --fail-with-body --silent --show-error --location \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/octet-stream' -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$REPO/releases/assets/$id" --output "/tmp/$name"
+            cmp "/tmp/release/$name" "/tmp/$name"
+          done < /tmp/asset-ids.txt
+          echo "$APKSHA  /tmp/$APK" | sha256sum -c -
+      - name: Publish only DEV pre-release; never publish stable
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/releases/442516202" > /tmp/pre-public.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/pre-public.json'))
+          assert r['prerelease'] is True
+          print('Release draft?',r['draft'])
+          PY
+          if python3 -c "import json;exit(0 if json.load(open('/tmp/pre-public.json'))['draft'] else 1)"; then
+            release_id=$(python3 -c "import json;print(json.load(open('/tmp/pre-public.json'))['id'])")
+            printf '{"draft":false,"prerelease":true}\n' | gh api -X PATCH "repos/$REPO/releases/$release_id" --input - >/tmp/public.json
+          fi
+          gh api "repos/$REPO/releases/442516202" > /tmp/public.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/public.json'))
+          assert r['draft'] is False and r['prerelease'] is True
+          assert len(r['assets'])==2
+          print('Verified published:',r['html_url'])
+          PY
+      - name: Only after live APK exists, commit public update index to versionCode 48
+        run: |
+          set -euo pipefail
+          git clone --quiet --branch atomic-update-feed \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" /tmp/feed
+          python3 scripts/publish-update-feed.py \
+            --manifest /tmp/release/atomic-update.json \
+            --release-json /tmp/public.json \
+            --feed /tmp/feed/index.json \
+            --out /tmp/feed/index.json \
+            --tag "$TAG"
+          if ! git -C /tmp/feed diff --quiet -- index.json; then
+            git -C /tmp/feed config user.name 'github-actions[bot]'
+            git -C /tmp/feed config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C /tmp/feed add index.json
+            git -C /tmp/feed commit -m 'chore(updates): index verified signed v0.9.33-dev/48'
+            git -C /tmp/feed push origin HEAD:atomic-update-feed
+          fi
+          gh api "repos/$REPO/contents/index.json?ref=atomic-update-feed" > /tmp/live-feed.json
+          python3 - <<'PY'
+          import json,base64,os
+          index=json.loads(base64.b64decode(json.load(open('/tmp/live-feed.json'))['content']))
+          dev=[x for x in index['releases'] if x['channel']=='dev']
+          assert len(dev)==1 and dev[0]['versionCode']==48 and dev[0]['sha256']==os.environ['APKSHA']
+          print('APP UPDATE FEED CONFIRMED: dev/48')
+          PY

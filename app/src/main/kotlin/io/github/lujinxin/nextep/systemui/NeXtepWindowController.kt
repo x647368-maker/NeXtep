@@ -1917,6 +1917,10 @@ class NeXtepWindowController(
             homePreview?.copy(Bitmap.Config.ARGB_8888, false)
         } else null
         val previewSlots = listOfNotNull(sourceSlot, targetSlot)
+        val y700NativeHandoff =
+            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                .wideLandscapeTablet(geometry.screenWidth, geometry.screenHeight)
+        val stableTabletFrame = StageTabletSwapLiveGate()
         var sourceFrame = sourceSlot.contentFrameSequence
         var targetFrame = targetSlot?.contentFrameSequence ?: 0L
         previewSlots.forEach { it.view.beginExchangePreview() }
@@ -1966,7 +1970,44 @@ class NeXtepWindowController(
                             taskRepository.foregroundTask()?.component?.packageName == returningHomePackage
                     } else incomingTaskId!=null && mainTaskPresenter.currentTaskId()==incomingTaskId &&
                         TaskSurfaceCompat.isPresentationSettled(incomingTaskId,geometry)
-                    sourceReady && targetReady
+                    val framesReady = sourceReady && targetReady
+                    if (!y700NativeHandoff) framesReady
+                    else if (!stableTabletFrame.ready(android.os.SystemClock.uptimeMillis(), framesReady)) false
+                    else {
+                        // After at least one new real buffer and a brief stable
+                        // dwell, verify task ownership ONCE the gate opens.
+                        // A stale frame from the previous virtual display can
+                        // otherwise be mistaken for the destination task.
+                        // One Binder snapshot for the entire handoff, not a
+                        // new getRunningTasks call per card (or per frame).
+                        val actualTasks = taskRepository.runningTasks()
+                        val actualOwners = actualTasks.map {
+                            StageTabletSwapOwnershipPolicy.Owner(it.taskId, it.displayId)
+                        }
+                        fun slotOwnerCorrect(index: Int): Boolean =
+                            when (val state = currentStates.getOrNull(index)) {
+                                is SlotState.Occupied ->
+                                    StageTabletSwapOwnershipPolicy.settled(
+                                        state.taskId, state.displayId, actualOwners)
+                                is SlotState.Ready ->
+                                    StageTabletSwapOwnershipPolicy.settled(
+                                        null, state.displayId, actualOwners)
+                                else -> false
+                            }
+                        val sourceOwner = slotOwnerCorrect(sourceIndex)
+                        val targetOwner = if (targetIndex != null) slotOwnerCorrect(targetIndex)
+                            else if (parkingMain) true
+                            else incomingTaskId != null &&
+                                StageTabletSwapOwnershipPolicy.settled(
+                                    incomingTaskId, android.view.Display.DEFAULT_DISPLAY,
+                                    actualOwners)
+                        if (!sourceOwner || !targetOwner) {
+                            // Ownership changed mid-handoff; require a fresh
+                            // stable dwell, never release on an old ready frame.
+                            stableTabletFrame.ready(android.os.SystemClock.uptimeMillis(), false)
+                        }
+                        sourceOwner && targetOwner
+                    }
                 },
                 onFinished = {
                     previewSlots.forEach { it.view.endExchangePreview() }
