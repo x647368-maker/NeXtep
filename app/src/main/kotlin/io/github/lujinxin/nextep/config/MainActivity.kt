@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("发现台前调度 ${release.version}")
             .setMessage(release.notes.ifBlank { "有经过身份校验的新版本可用。" }.take(2000))
             .setNegativeButton("稍后", null)
-            .setPositiveButton("查看并安装") { _, _ -> settings.open("about") }.show()
+            .setPositiveButton("查看并安装") { _, _ -> settings.open("update") }.show()
     }
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
