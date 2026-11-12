@@ -44,8 +44,14 @@ internal object StageUpdateDeviceLabel {
         // port. Contradictory known identities must not be silently mislabelled.
         val hardware = listOf(device, product).mapNotNull { officialName(key(it)) }.distinct()
         if (hardware.size > 1) return "设备型号待核实"
-        if (hardware.size == 1) return hardware.first()
-        officialName(key(model))?.let { return it }
+        val modelName = officialName(key(model))
+        if (hardware.size == 1) {
+            // A ported ROM may spoof MODEL. Contradictory known model codes are
+            // inconclusive even when DEVICE/PRODUCT agree with each other.
+            if (modelName != null && modelName != hardware.first()) return "设备型号待核实"
+            return hardware.first()
+        }
+        modelName?.let { return it }
         val raw = clean(model)
         val modelKey = key(raw)
         // Emulator SDK labels are not real retail device models.
