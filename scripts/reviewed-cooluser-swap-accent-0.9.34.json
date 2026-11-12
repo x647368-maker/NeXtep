@@ -1,0 +1,31 @@
+{
+  "purpose": "Only a 140ms lightweight outline animation on the existing tap-exchange overlay. No task move timing, display canvas, bitmap acquisition, input geometry, or window count changes.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "previous_blob_sha1": "38e9b9be451e845c34534b983fba0be207f6154a",
+      "reviewed_blob_sha1": "1f8ca00bbad270dd758f94edf2de680d182e3e0c",
+      "patches": [
+        {
+          "before": "    private var animator: ValueAnimator? = null",
+          "after": "    private var animator: ValueAnimator? = null\n    private var tapAccentAnimator: ValueAnimator? = null"
+        },
+        {
+          "before": "        overlay = preview\n        completion = onFinished\n        animator = ValueAnimator.ofFloat(0f, 1f).apply {",
+          "after": "        overlay = preview\n        completion = onFinished\n        // Presentation-only one-shot outline. The task move still commits on\n        // the next frame; no extra capture, waiting, Surface or task resize.\n        if (StageSwapTapAccentPolicy.shouldAnimate(freezeGeometry, returningHome,\n                ValueAnimator.areAnimatorsEnabled())) {\n            tapAccentAnimator = ValueAnimator.ofFloat(0f, 1f).apply {\n                duration = StageSwapTapAccentPolicy.DURATION_MS\n                addUpdateListener {\n                    if (generation == token && overlay === preview) {\n                        preview.tapAccentProgress = it.animatedValue as Float\n                        preview.invalidate()\n                    }\n                }\n                start()\n            }\n        }\n        animator = ValueAnimator.ofFloat(0f, 1f).apply {"
+        },
+        {
+          "before": "        generation += 1\n        animator?.cancel()\n        animator = null",
+          "after": "        generation += 1\n        tapAccentAnimator?.cancel()\n        tapAccentAnimator = null\n        animator?.cancel()\n        animator = null"
+        },
+        {
+          "before": "    var progress = 0f\n    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)",
+          "after": "    var progress = 0f\n    var tapAccentProgress = 0f\n    private val tapAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {\n        style = Paint.Style.STROKE\n        strokeWidth = context.resources.displayMetrics.density * 2f\n    }\n    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)"
+        },
+        {
+          "before": "            if (target != null) drawFixedFrame(canvas, target, targetBounds)\n            drawFixedFrame(canvas, source, sourceBounds)\n            return",
+          "after": "            if (target != null) drawFixedFrame(canvas, target, targetBounds)\n            drawFixedFrame(canvas, source, sourceBounds)\n            val alpha = StageSwapTapAccentPolicy.opacity(tapAccentProgress)\n            if (alpha > 0) {\n                tapAccentPaint.color = Color.argb(alpha, 198, 165, 255)\n                val radius = resources.displayMetrics.density * 22f\n                canvas.drawRoundRect(sourceBounds, radius, radius, tapAccentPaint)\n                if (target != null)\n                    canvas.drawRoundRect(targetBounds, radius, radius, tapAccentPaint)\n            }\n            return"
+        }
+      ]
+    }
+  }
+}

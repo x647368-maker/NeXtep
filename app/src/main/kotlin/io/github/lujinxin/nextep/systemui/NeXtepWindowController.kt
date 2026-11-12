@@ -608,6 +608,13 @@ class NeXtepWindowController(
             }
             "cinema_enter" -> { check(workspaceVisible && !suspended) { "请先开启台前调度" }; showCinemaMenu(records.first { it.title == "StageMainHandle" }.view) }
             "cinema_leave" -> leaveCinema()
+            "quick_enable" -> {
+                core.enabled = true
+                core.expanded = false
+                syncCoreViewport()
+                renderQuickChrome()
+                if (workspaceVisible && !suspended) onViewportChanged()
+            }
             "quick_expand", "quick_collapse", "quick_off" -> { if (command == "quick_off") core.enabled = false; setQuickExpanded(command == "quick_expand") }
             "quick_auto", "quick_fixed" -> { core.fixed = command == "quick_fixed"; refreshQuickBar() }
             "adaptive_on", "adaptive_off" -> { core.adaptive = command == "adaptive_on"; syncCoreViewport(); if(workspaceVisible && !suspended) onViewportChanged() }
@@ -655,7 +662,7 @@ class NeXtepWindowController(
             putBoolean("ok", true)
             putBoolean("layout_top", viewport.isTopRail())
             putString("cinema_mode", core.cinemaMode.name)
-            putBoolean("quick_fixed", core.fixed); putBoolean("quick_expanded", core.enabled && core.expanded)
+            putBoolean("quick_fixed", core.fixed); putBoolean("quick_enabled", core.enabled); putBoolean("quick_expanded", core.enabled && core.expanded)
             putBoolean("adaptive", core.adaptive); putBoolean("main_priority", core.mainPriority)
             putString("groups", workgroups.settingsSnapshot())
             putString("slot_diagnostics", slotStatesDescription())
@@ -823,7 +830,7 @@ class NeXtepWindowController(
                 // favorites row. Long press still opens the complete main menu.
                 // Compact phones and near-square foldables keep click=menu.
                 val g = geometry()
-                if (io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy
+                if (!core.enabled || io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy
                         .tap(g.screenWidth, g.screenHeight) !=
                     io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy.Tap.QUICK_BAR) false
                 else {
@@ -946,7 +953,7 @@ class NeXtepWindowController(
         if (record.title == "StageMainHandle") {
             (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(
                 io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
-                    .wideTablet(geometry.screenWidth, geometry.screenHeight))
+                    .wideTablet(geometry.screenWidth, geometry.screenHeight) && core.enabled)
         }
         setWindowBounds(record.title, params, geometry)
         if (record.title == "NeXtepTopBar") renderQuickChrome()
@@ -1134,13 +1141,12 @@ class NeXtepWindowController(
 
     private fun renderQuickChrome() {
         val shown = quickInputReady && !quickChromeSuppressed && !suspended
-        quickBar?.visibility = if (shown && core.enabled && core.expanded) View.VISIBLE else View.GONE
-        quickExpandButton?.visibility = if (shown && !(core.enabled && core.expanded)) View.VISIBLE else View.GONE
+        quickBar?.visibility = if (StageQuickBarEnablePolicy.showBar(shown, core.enabled, core.expanded)) View.VISIBLE else View.GONE
+        quickExpandButton?.visibility = if (StageQuickBarEnablePolicy.showHandle(shown, core.enabled, core.expanded)) View.VISIBLE else View.GONE
         quickBar?.parent?.requestLayout()
     }
     private fun setQuickExpanded(expanded: Boolean) {
-        if (groupInputBlocked || workgroups.isSwitching()) return
-        if (expanded) core.enabled = true
+        if (groupInputBlocked || workgroups.isSwitching() || (expanded && !core.enabled)) return
         core.expanded = expanded; syncCoreViewport()
         renderQuickChrome()
         if (!expanded) quickGeneration += 1
@@ -1362,7 +1368,10 @@ class NeXtepWindowController(
             "顶部横排" to { changeStageLayout(true) },
             "左侧排列" to { changeStageLayout(false,SidebarSide.LEFT) },
             "右侧排列" to { changeStageLayout(false,SidebarSide.RIGHT) },
-            (if (core.enabled && core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to { setQuickExpanded(!(core.enabled && core.expanded)) },
+            (if (!core.enabled) "常用应用栏已关闭（设置中可开启）" else if (core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to {
+                if (core.enabled) setQuickExpanded(!core.expanded)
+                else showStageMessage("请在设置 → 影音与快捷栏中开启常用应用栏")
+            },
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
             "添加小窗" to { chooseWindowApp(anchor,null) },

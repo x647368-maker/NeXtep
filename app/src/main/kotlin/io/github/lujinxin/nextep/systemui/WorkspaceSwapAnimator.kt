@@ -25,6 +25,7 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
 internal class WorkspaceSwapAnimator(private val context: Context) {
     private var overlay: SwapPreviewView? = null
     private var animator: ValueAnimator? = null
+    private var tapAccentAnimator: ValueAnimator? = null
     private var completion: (() -> Unit)? = null
     private var releaseAllowed: () -> Boolean = { true }
     private var cancelRequested = false
@@ -84,6 +85,21 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         overlay = preview
         completion = onFinished
+        // Presentation-only one-shot outline. The task move still commits on
+        // the next frame; no extra capture, waiting, Surface or task resize.
+        if (StageSwapTapAccentPolicy.shouldAnimate(freezeGeometry, returningHome,
+                ValueAnimator.areAnimatorsEnabled())) {
+            tapAccentAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = StageSwapTapAccentPolicy.DURATION_MS
+                addUpdateListener {
+                    if (generation == token && overlay === preview) {
+                        preview.tapAccentProgress = it.animatedValue as Float
+                        preview.invalidate()
+                    }
+                }
+                start()
+            }
+        }
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             // Static tap previews have no animation to play. Start task migration
             // after the existing render-commit callback instead of wasting the
@@ -163,6 +179,8 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         releaseAllowed = { true }
         generation += 1
+        tapAccentAnimator?.cancel()
+        tapAccentAnimator = null
         animator?.cancel()
         animator = null
         val previous = overlay
@@ -198,6 +216,11 @@ private class SwapPreviewView(
     private val freezeGeometry: Boolean,
 ) : View(context) {
     var progress = 0f
+    var tapAccentProgress = 0f
+    private val tapAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = context.resources.displayMetrics.density * 2f
+    }
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private val destination = RectF()
@@ -233,6 +256,14 @@ private class SwapPreviewView(
             // Do not interpolate width, height or 3D quad for these live windows.
             if (target != null) drawFixedFrame(canvas, target, targetBounds)
             drawFixedFrame(canvas, source, sourceBounds)
+            val alpha = StageSwapTapAccentPolicy.opacity(tapAccentProgress)
+            if (alpha > 0) {
+                tapAccentPaint.color = Color.argb(alpha, 198, 165, 255)
+                val radius = resources.displayMetrics.density * 22f
+                canvas.drawRoundRect(sourceBounds, radius, radius, tapAccentPaint)
+                if (target != null)
+                    canvas.drawRoundRect(targetBounds, radius, radius, tapAccentPaint)
+            }
             return
         }
         if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)

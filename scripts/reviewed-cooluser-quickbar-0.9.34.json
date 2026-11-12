@@ -1,0 +1,53 @@
+{
+  "purpose": "Private, reversible quickbar enable switch. No changes to task, display, N5/Y700 layout geometry or installed signing.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
+      "previous_blob_sha1": "39cc0e85207c4a8d6bf2dc0f8417e8cecf3e7b2e",
+      "reviewed_blob_sha1": "b96b1e6fd5864e16781081d3fc4b17fd4f97c818",
+      "patches": [
+        {
+          "before": "    private var quickFixed = false\n    private var quickExpanded = false",
+          "after": "    private var quickFixed = false\n    private var quickEnabled = true\n    private var quickExpanded = false"
+        },
+        {
+          "before": "        val quick = group(root)\n        row(quick, \"常用应用快捷栏\", if (quickExpanded) \"已展开\" else \"已收起\", \"apps\") { command(if (quickExpanded) \"quick_collapse\" else \"quick_expand\") }\n        row(quick, \"快捷栏内容\", if (quickFixed) \"固定应用（最多六个）\" else \"最近常用五个\", \"apps\") {\n            MaterialAlertDialogBuilder(activity).setTitle(\"快捷栏内容\").setItems(arrayOf(\"自动：最近常用五个\", \"固定：最多六个\")) { _, which ->\n                command(if (which == 0) \"quick_auto\" else \"quick_fixed\")\n            }.setNegativeButton(\"取消\", null).show()\n        }\n        row(quick, \"关闭快捷栏\", \"保留固定应用和排序\", \"apps\") { command(\"quick_off\") }\n        root.addView(hint(\"收起后点击工作区顶部 ▦ 按钮即可展开，触摸区域为 48dp。主窗 ⋯ 菜单也可展开。长按快捷栏或工作区应用列表的图标，可固定、调整顺序、添加到小窗或选择要替换的小窗。点击图标优先复用真实任务。\"))",
+          "after": "        val quick = group(root)\n        row(quick, \"启用常用应用栏\", \"关闭后隐藏顶部入口与快捷栏，保留固定应用\", \"apps\",\n            end = toggle(quickEnabled) { command(if (it) \"quick_enable\" else \"quick_off\") })\n        row(quick, \"常用应用快捷栏\", if (!quickEnabled) \"已关闭\" else if (quickExpanded) \"已展开\" else \"已收起\", \"apps\") {\n            if (quickEnabled) command(if (quickExpanded) \"quick_collapse\" else \"quick_expand\")\n            else toast(\"请先开启常用应用栏\")\n        }\n        row(quick, \"快捷栏内容\", if (quickFixed) \"固定应用（最多六个）\" else \"最近常用五个\", \"apps\") {\n            MaterialAlertDialogBuilder(activity).setTitle(\"快捷栏内容\").setItems(arrayOf(\"自动：最近常用五个\", \"固定：最多六个\")) { _, which ->\n                command(if (which == 0) \"quick_auto\" else \"quick_fixed\")\n            }.setNegativeButton(\"取消\", null).show()\n        }\n        root.addView(hint(\"总开关关闭后，顶部快捷栏和展开按钮隐藏，推荐应用不再加载；已固定的应用和排序保留。开启后点击 ▦ 展开。长按图标可固定、调整顺序或添加到小窗。\"))"
+        },
+        {
+          "before": "quickFixed = reply.getBoolean(\"quick_fixed\"); quickExpanded = reply.getBoolean(\"quick_expanded\")",
+          "after": "quickFixed = reply.getBoolean(\"quick_fixed\"); quickEnabled = reply.getBoolean(\"quick_enabled\", true); quickExpanded = reply.getBoolean(\"quick_expanded\")"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "5c2a08fb339c5b46d11cc18a51494753bf0e2bd2",
+      "reviewed_blob_sha1": "464f951844553c0fb533c6783bcfdc78730fc687",
+      "patches": [
+        {
+          "before": "            \"quick_expand\", \"quick_collapse\", \"quick_off\" -> { if (command == \"quick_off\") core.enabled = false; setQuickExpanded(command == \"quick_expand\") }",
+          "after": "            \"quick_enable\" -> {\n                core.enabled = true\n                core.expanded = false\n                syncCoreViewport()\n                renderQuickChrome()\n                if (workspaceVisible && !suspended) onViewportChanged()\n            }\n            \"quick_expand\", \"quick_collapse\", \"quick_off\" -> { if (command == \"quick_off\") core.enabled = false; setQuickExpanded(command == \"quick_expand\") }"
+        },
+        {
+          "before": "putBoolean(\"quick_fixed\", core.fixed); putBoolean(\"quick_expanded\", core.enabled && core.expanded)",
+          "after": "putBoolean(\"quick_fixed\", core.fixed); putBoolean(\"quick_enabled\", core.enabled); putBoolean(\"quick_expanded\", core.enabled && core.expanded)"
+        },
+        {
+          "before": "                if (io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy\n                        .tap(g.screenWidth, g.screenHeight) !=\n                    io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy.Tap.QUICK_BAR) false",
+          "after": "                if (!core.enabled || io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy\n                        .tap(g.screenWidth, g.screenHeight) !=\n                    io.github.x647368maker.atomicworkbench.workspace.StageTabletMainGripPolicy.Tap.QUICK_BAR) false"
+        },
+        {
+          "before": "            (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(\n                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                    .wideTablet(geometry.screenWidth, geometry.screenHeight))",
+          "after": "            (record.view as? StageMainHandle)?.setTabletQuickBarShortcut(\n                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                    .wideTablet(geometry.screenWidth, geometry.screenHeight) && core.enabled)"
+        },
+        {
+          "before": "    private fun renderQuickChrome() {\n        val shown = quickInputReady && !quickChromeSuppressed && !suspended\n        quickBar?.visibility = if (shown && core.enabled && core.expanded) View.VISIBLE else View.GONE\n        quickExpandButton?.visibility = if (shown && !(core.enabled && core.expanded)) View.VISIBLE else View.GONE\n        quickBar?.parent?.requestLayout()\n    }\n    private fun setQuickExpanded(expanded: Boolean) {\n        if (groupInputBlocked || workgroups.isSwitching()) return\n        if (expanded) core.enabled = true",
+          "after": "    private fun renderQuickChrome() {\n        val shown = quickInputReady && !quickChromeSuppressed && !suspended\n        quickBar?.visibility = if (StageQuickBarEnablePolicy.showBar(shown, core.enabled, core.expanded)) View.VISIBLE else View.GONE\n        quickExpandButton?.visibility = if (StageQuickBarEnablePolicy.showHandle(shown, core.enabled, core.expanded)) View.VISIBLE else View.GONE\n        quickBar?.parent?.requestLayout()\n    }\n    private fun setQuickExpanded(expanded: Boolean) {\n        if (groupInputBlocked || workgroups.isSwitching() || (expanded && !core.enabled)) return"
+        },
+        {
+          "before": "            (if (core.enabled && core.expanded) \"收起常用应用快捷栏\" else \"展开常用应用快捷栏\") to { setQuickExpanded(!(core.enabled && core.expanded)) },",
+          "after": "            (if (!core.enabled) \"常用应用栏已关闭（设置中可开启）\" else if (core.expanded) \"收起常用应用快捷栏\" else \"展开常用应用快捷栏\") to {\n                if (core.enabled) setQuickExpanded(!core.expanded)\n                else showStageMessage(\"请在设置 → 影音与快捷栏中开启常用应用栏\")\n            },"
+        }
+      ]
+    }
+  }
+}
