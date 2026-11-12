@@ -12,8 +12,10 @@ internal object StageHomeLayout {
     val sections=listOf(
         Section("工作台",listOf(Item("窗口布局","windows","windows"),Item("影音与快捷栏","core","apps"),
             Item("工作组","groups","groups"),Item("启动手势","gestures","gesture"))),
-        Section("系统",listOf(Item("快捷开关","tile","tile"),Item("运行诊断","diagnostics","diagnostics"),Item("使用与退出","help","help"))),
-        Section("支持",listOf(Item("建议与反馈","feedback","feedback"),Item("关于","about","info")))
+        Section("系统",listOf(Item("快捷开关","tile","tile"),Item("运行诊断","diagnostics","diagnostics"),
+            Item("在线更新","update","info"),Item("更新日志","changelog","info"),Item("使用与退出","help","help"))),
+        Section("支持",listOf(Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
+            Item("关于","about","info")))
     )
     fun contentWidth(availablePixels:Int,density:Float):Int {
         require(availablePixels>0 && density>0)
