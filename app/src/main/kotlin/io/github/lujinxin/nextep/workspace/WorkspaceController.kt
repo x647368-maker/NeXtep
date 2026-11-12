@@ -16,6 +16,9 @@ class WorkspaceController(
     private val mainTaskPresenter: MainTaskPresentationCoordinator,
     private val onStateChanged: () -> Unit = {},
 ) {
+    private val n5RailRefitHandler = android.os.Handler(Looper.getMainLooper())
+    private var n5RailRefitEpoch = 0L
+
     var state: WorkspaceState = WorkspaceState.Disabled
         private set(value) {
             field = value
@@ -34,6 +37,7 @@ class WorkspaceController(
     fun isSuspended(): Boolean = state is WorkspaceState.Suspended
 
     fun suspendForLock() {
+        ++n5RailRefitEpoch
         val current = state as? WorkspaceState.Active ?: return
         state = WorkspaceState.Suspended(current.geometry)
         windowController.suspendForLock()
@@ -132,6 +136,7 @@ class WorkspaceController(
             // changing our physical viewport. Keep attached panels in place.
             val requested = windowController.currentGeometry(refreshViewport)
             if (requested == previous.geometry) return@runCatching true
+            val railEpoch = ++n5RailRefitEpoch
             val rotationOnly = requested.isRotationOf(previous.geometry)
             val geometry = windowController.reconfigure(rotationOnly).getOrThrow()
             SystemUiRootTransformController.setGeometry(geometry)
@@ -151,6 +156,21 @@ class WorkspaceController(
             }
             state = WorkspaceState.Active(geometry)
             SystemDialogLayoutController.setGeometry(geometry)
+            if (StageN5RailRefitPolicy.shouldReassert(previous.geometry, geometry)) {
+                // A new sidebar width may settle before a late OEM Shell frame.
+                // One bounded check restores the live main Surface only; slot
+                // displays, task bounds, Activities and source buffers are untouched.
+                n5RailRefitHandler.postDelayed({
+                    val current = state as? WorkspaceState.Active
+                    if (railEpoch == n5RailRefitEpoch && current?.geometry == geometry &&
+                        windowController.currentGeometry() == geometry &&
+                        !windowController.isExchangePending()) {
+                        mainTaskPresenter.reassertPresentedSurface(geometry).onFailure {
+                            NeXtepLog.warn("n5_rail_refit", "Owned main surface not yet ready", it)
+                        }
+                    }
+                }, 320L)
+            }
             true
         }.onFailure { error ->
             NeXtepLog.error("workspace_configuration", "Reconfigure failed open", error)
@@ -198,6 +218,7 @@ class WorkspaceController(
     }
 
     private fun exit(): Boolean {
+        ++n5RailRefitEpoch
         if (state is WorkspaceState.Disabled) return true
         if (state is WorkspaceState.Entering || state is WorkspaceState.Exiting) return false
         if (windowController.deferExchangeExit { exit() }) return true
