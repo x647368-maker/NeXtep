@@ -319,8 +319,24 @@ def undo_cooluser_quickbar(path,data):
  assert blob(previous)==spec['previous_blob_sha1'],path
  return previous
 
+# Narrow, reversible overlay-decoration change over the existing frozen swap.
+cooluser_swap_review=json.loads((root/'scripts/reviewed-cooluser-swap-accent-0.9.34.json').read_text())['files']
+assert set(cooluser_swap_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt'}
+def undo_cooluser_swap(path,data):
+ if path not in cooluser_swap_review:return data
+ spec=cooluser_swap_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ body=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert body.count(patch['after'])==1,path
+  body=body.replace(patch['after'],patch['before'],1)
+ before=body.encode('utf-8')
+ assert blob(before)==spec['previous_blob_sha1'],path
+ return before
+
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,(root/path).read_bytes()))))))))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,(root/path).read_bytes())))))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -525,7 +541,7 @@ for path,sha in frozen.items():
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,(root/path).read_bytes())))))
+  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,(root/path).read_bytes()))))))
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
