@@ -7,6 +7,28 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Cross-device tap-to-exchange visual-only change audited exactly.
+# Normalize before every existing Y700/N5/frozen controller hash check.
+cross_motion=json.loads((root/'scripts/reviewed-cross-device-swap-motion-0.9.34.json').read_text())
+cross_motion_patches=cross_motion['files']
+cross_motion_blobs=cross_motion['git_blobs']
+assert set(cross_motion_patches)==set(cross_motion_blobs)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt',
+}
+def undo_cross_motion(path,data):
+ if path not in cross_motion_patches:return data
+ blob=lambda raw:hashlib.sha1(b'blob '+str(len(raw)).encode()+bytes([0])+raw).hexdigest()
+ assert blob(data)==cross_motion_blobs[path]['current'],path
+ source=data.decode('utf-8')
+ for patch in cross_motion_patches[path]:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==cross_motion_blobs[path]['previous'],path
+ return prior
+for path in cross_motion_patches:
+ undo_cross_motion(path,(root/path).read_bytes())
 # Assistant4 0.9.30: exact fragment reversals precede original frozen checks.
 handoff_contract=json.loads((root/'scripts/reviewed-assistant4-y700-handoff-0.9.30.json').read_text())
 handoff_review=handoff_contract['files']
@@ -31,7 +53,7 @@ def undo_y700_handoff(path,data):
  assert gitblob(previous)==handoff_blobs[path]['previous'],path
  return previous
 for source_path in handoff_review:
- undo_y700_handoff(source_path,(root/source_path).read_bytes())
+ undo_y700_handoff(source_path,undo_cross_motion(source_path,(root/source_path).read_bytes()))
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
 # and validate both full Git blob hashes before the v0.9.8 frozen chain.
 cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
@@ -284,7 +306,7 @@ def undo_unified_update(path,data):
  return before
 
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,(root/path).read_bytes()))))))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_cross_motion(path,(root/path).read_bytes())))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -461,7 +483,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,(root/path).read_bytes())))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cross_motion(path,(root/path).read_bytes()))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
@@ -482,7 +504,7 @@ for path,sha in frozen.items():
  elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_handoff(path,(root/path).read_bytes())
+  data=undo_y700_handoff(path,undo_cross_motion(path,(root/path).read_bytes()))
   # The exact Git blob SHA-1 pins the reviewed hook's entire contents.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
