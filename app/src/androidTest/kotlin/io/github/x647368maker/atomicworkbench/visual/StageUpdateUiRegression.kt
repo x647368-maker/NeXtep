@@ -43,7 +43,10 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
         val last=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update instructions")
         File(out,"update-center-help-visible.png").outputStream().use { last.compress(Bitmap.CompressFormat.PNG,100,it) }
         last.recycle()
-        instrumentation.runOnMainSync { root.removeAllViews() }
+        instrumentation.runOnMainSync {
+            root.removeAllViews()
+            root.setBackgroundColor(android.graphics.Color.rgb(20,32,70))
+        }
         return "PASS update center: native version hero, manual controls, help always present; hero/help real Android screenshots"
     }
 }
