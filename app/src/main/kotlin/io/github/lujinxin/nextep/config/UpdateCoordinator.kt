@@ -20,7 +20,8 @@ internal object UpdateCoordinator {
     // A single public update path accepts every validated newer build,
     // including old users whose preferences were previously "STABLE".
     // Keep the legacy setter so old settings references remain source compatible.
-    fun channel(c: Context): UpdatePolicy.Channel = UpdatePolicy.Channel.DEV
+    fun channel(c: Context): UpdatePolicy.Channel =
+        StageUnifiedUpdateChannel.fromLegacySelection(prefs(c).getString("channel",null))
     fun setChannel(c: Context,v: UpdatePolicy.Channel) {
         prefs(c).edit().putString("channel",UpdatePolicy.Channel.DEV.name).putLong("last_check",0).apply()
     }
