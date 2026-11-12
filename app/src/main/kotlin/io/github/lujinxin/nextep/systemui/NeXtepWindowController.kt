@@ -1981,21 +1981,31 @@ class NeXtepWindowController(
                         // One Binder snapshot for the entire handoff, not a
                         // new getRunningTasks call per card (or per frame).
                         val actualTasks = taskRepository.runningTasks()
+                        val actualOwners = actualTasks.map {
+                            StageTabletSwapOwnershipPolicy.Owner(it.taskId, it.displayId)
+                        }
                         fun slotOwnerCorrect(index: Int): Boolean =
                             when (val state = currentStates.getOrNull(index)) {
                                 is SlotState.Occupied ->
-                                    actualTasks.any { it.taskId == state.taskId && it.displayId == state.displayId }
-                                is SlotState.Ready -> true
+                                    StageTabletSwapOwnershipPolicy.settled(
+                                        state.taskId, state.displayId, actualOwners)
+                                is SlotState.Ready ->
+                                    StageTabletSwapOwnershipPolicy.settled(
+                                        null, state.displayId, actualOwners)
                                 else -> false
                             }
                         val sourceOwner = slotOwnerCorrect(sourceIndex)
                         val targetOwner = if (targetIndex != null) slotOwnerCorrect(targetIndex)
                             else if (parkingMain) true
                             else incomingTaskId != null &&
-                                actualTasks.any {
-                                    it.taskId == incomingTaskId &&
-                                        it.displayId == android.view.Display.DEFAULT_DISPLAY
-                                }
+                                StageTabletSwapOwnershipPolicy.settled(
+                                    incomingTaskId, android.view.Display.DEFAULT_DISPLAY,
+                                    actualOwners)
+                        if (!sourceOwner || !targetOwner) {
+                            // Ownership changed mid-handoff; require a fresh
+                            // stable dwell, never release on an old ready frame.
+                            stableTabletFrame.ready(android.os.SystemClock.uptimeMillis(), false)
+                        }
                         sourceOwner && targetOwner
                     }
                 },
