@@ -21,7 +21,7 @@ def undo_swap_hold(path,data):
  gitblob=lambda b:hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
  assert gitblob(data)==spec['reviewed_blob_sha1'],path
  body=data.decode('utf-8')
- expected=6 if path.endswith('NeXtepWindowController.kt') else 1
+ expected=8 if path.endswith('NeXtepWindowController.kt') else 1
  assert len(spec['patches'])==expected,path
  for patch in reversed(spec['patches']):
   assert body.count(patch['after'])==1,(path,patch['after'][:90])
