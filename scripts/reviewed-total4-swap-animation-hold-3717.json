@@ -1,0 +1,57 @@
+{
+  "purpose": "Prevent same-display transient layout callbacks from clearing an active real-task swap overlay; producer-size TextureView capture may fall back one time to attached live view pixels. Exact reversible review over PR47.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "reviewed_blob_sha1": "470281c590a65dba3194f7464617be2cb5e9a94f",
+      "previous_blob_sha1": "7174521abc50f58d32e193fd62e30cdedc9273ff",
+      "patches": [
+        {
+          "before": "    private val swapAnimator = WorkspaceSwapAnimator(context)\n    private val swapCapture = StageAsyncPreviewCapture()\n",
+          "after": "    private val swapAnimator = WorkspaceSwapAnimator(context)\n    private val swapCapture = StageAsyncPreviewCapture()\n    private var activeSwapViewport: WorkspaceGeometry? = null\n    private var previewCapturePending = false\n    private var deferredSwapGeometryRefresh = false\n\n    private fun keepActiveSwapForViewport(now: WorkspaceGeometry): Boolean =\n        StageSwapViewportHoldPolicy.retain(\n            swapAnimator.isRunning || previewCapturePending, activeSwapViewport, now,\n        )\n"
+        },
+        {
+          "before": "    private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {\n        cancelDragVisuals()\n",
+          "after": "    private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {\n        if (keepActiveSwapForViewport(geometry)) {\n            // Slot state notifications can request a new rail size while two\n            // real tasks are moving between displays. Do not cancel the\n            // visible card morph (or its transaction session) merely to draw\n            // an intermediate Occupied/Ready state. Final layout is flushed\n            // once by the exchange completion callback.\n            deferredSwapGeometryRefresh = true\n            NeXtepLog.info(\"swap_morph\", \"Deferred same-viewport window relayout during live exchange\")\n            return\n        }\n        cancelDragVisuals()\n"
+        },
+        {
+          "before": "    private fun applyStageStack(geometry: WorkspaceGeometry) {\n        if (slotWindows.isEmpty()) return\n",
+          "after": "    private fun applyStageStack(geometry: WorkspaceGeometry) {\n        if (slotWindows.isEmpty()) return\n        if (keepActiveSwapForViewport(geometry)) {\n            deferredSwapGeometryRefresh = true\n            return\n        }\n"
+        },
+        {
+          "before": "        val capturedGeometry=geometry()\n        val states=slotCoordinator?.slotStates().orEmpty().toList()\n        swapCapture.request(\n            load={\n                // A ColorOS system image can expose a live main task without a\n                // public Shell layer-capture path. Try the owned task leash\n                // first, then the actually displayed main viewport (never an\n                // uncropped whole screen). Both run off the UI thread and\n                // platform secure-layer exclusions remain in effect.\n                TaskSurfaceCompat.capturePreview(task,\n                    Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))\n                    ?: TaskSurfaceCompat.captureDisplayPreview(\n                        Rect(capturedGeometry.contentLeft,capturedGeometry.contentTop,\n                            capturedGeometry.contentRight,capturedGeometry.contentBottom))\n            },\n            valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},\n            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)},\n            onCancel=onFinished,\n        )\n    }\n\n",
+          "after": "        // Mark the whole PREVIEW-PREPARATION interval, not only the\n        // ValueAnimator. Without this guard, a rail count refresh during the\n        // async ColorOS task capture can cancel the entire exchange before the\n        // first drawable frame, producing the observed instant content swap.\n        swapCapture.cancel()\n        val capturedGeometry=geometry()\n        val states=slotCoordinator?.slotStates().orEmpty().toList()\n        activeSwapViewport = capturedGeometry\n        previewCapturePending = true\n        swapCapture.request(\n            load={\n                // A ColorOS system image can expose a live main task without a\n                // public Shell layer-capture path. Try the owned task leash\n                // first, then the actually displayed main viewport (never an\n                // uncropped whole screen). Both run off the UI thread and\n                // platform secure-layer exclusions remain in effect.\n                TaskSurfaceCompat.capturePreview(task,\n                    Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))\n                    ?: TaskSurfaceCompat.captureDisplayPreview(\n                        Rect(capturedGeometry.contentLeft,capturedGeometry.contentTop,\n                            capturedGeometry.contentRight,capturedGeometry.contentBottom))\n            },\n            valid={workspaceVisible && !suspended &&\n                StageSwapViewportHoldPolicy.retain(true,capturedGeometry,geometry()) &&\n                mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},\n            accept={\n                previewCapturePending = false\n                animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)\n            },\n            onCancel={\n                previewCapturePending = false\n                activeSwapViewport = null\n                val flush = deferredSwapGeometryRefresh\n                deferredSwapGeometryRefresh = false\n                if (flush) scheduleWindowRefresh()\n                onFinished()\n            },\n        )\n    }\n\n"
+        },
+        {
+          "before": "        fun withoutPreview() {\n            if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()\n            if (asyncMove != null) asyncMove { onFinished(); scheduleStageFocus() }\n            else try { move() } finally { onFinished(); scheduleStageFocus() }\n        }\n",
+          "after": "        fun withoutPreview() {\n            activeSwapViewport = null\n            previewCapturePending = false\n            if (deferredSwapGeometryRefresh) {\n                deferredSwapGeometryRefresh = false\n                scheduleWindowRefresh()\n            }\n            if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()\n            if (asyncMove != null) asyncMove { onFinished(); scheduleStageFocus() }\n            else try { move() } finally { onFinished(); scheduleStageFocus() }\n        }\n"
+        },
+        {
+          "before": "        val geometry = geometry()\n        val previewHost = contentHighlightView?.parent as? FrameLayout\n",
+          "after": "        // An in-flight occupied/ready callback can temporarily recalculate\n        // the rail thickness before it is drawn. Use the geometry captured at\n        // the user's tap, not an intermediate layout, for the card flight.\n        val geometry = activeSwapViewport?.takeIf {\n            StageSwapViewportHoldPolicy.retain(true,it,geometry())\n        } ?: geometry()\n        val previewHost = contentHighlightView?.parent as? FrameLayout\n"
+        },
+        {
+          "before": "        previewSlots.forEach { it.view.beginExchangePreview() }\n        try {\n",
+          "after": "        previewSlots.forEach { it.view.beginExchangePreview() }\n        activeSwapViewport = geometry\n        deferredSwapGeometryRefresh = false\n        try {\n"
+        },
+        {
+          "before": "                onFinished = {\n                    previewSlots.forEach { it.view.endExchangePreview() }\n                    onFinished()\n                    scheduleStageFocus()\n",
+          "after": "                onFinished = {\n                    previewSlots.forEach { it.view.endExchangePreview() }\n                    activeSwapViewport = null\n                    val flushLayout = deferredSwapGeometryRefresh\n                    deferredSwapGeometryRefresh = false\n                    onFinished()\n                    if (flushLayout && workspaceVisible && !suspended) {\n                        // One final frame after the exchange, not any polling\n                        // or per-frame requestLayout. Keep the real task IDs.\n                        backdropHandler.post {\n                            if (workspaceVisible && !suspended && !swapAnimator.isRunning) {\n                                val finalGeometry = geometry()\n                                applyStageStack(finalGeometry)\n                                applyWindowGeometry(finalGeometry, refreshControls = false)\n                            }\n                        }\n                    }\n                    scheduleStageFocus()\n"
+        },
+        {
+          "before": "        } catch (error: Throwable) {\n            swapAnimator.cancel()\n            previewSlots.forEach { it.view.endExchangePreview() }\n",
+          "after": "        } catch (error: Throwable) {\n            swapAnimator.cancel()\n            activeSwapViewport = null\n            deferredSwapGeometryRefresh = false\n            previewSlots.forEach { it.view.endExchangePreview() }\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/TaskSwitcherView.kt": {
+      "reviewed_blob_sha1": "ad0fca556604c4319735f595c391bdb4cc475194",
+      "previous_blob_sha1": "88c21811e50ed06e2e4812454ad5b56cb61d178f",
+      "patches": [
+        {
+          "before": "        // Exchanges request the producer's recorded size. The no-argument\n        // TextureView bitmap is only rail-sized and blurs when promoted to main.\n        val bitmap = textureView.getBitmap(width, height) ?: return@runCatching null\n",
+          "after": "        // Exchanges request the producer's recorded size. The no-argument\n        // TextureView bitmap is only rail-sized and blurs when promoted to main.\n        // The producer-sized getBitmap path can fail on some ColorOS drivers\n        // even while the attached TextureView is displaying actual content.\n        // Fall back once to the *current live view resolution* (never a stale\n        // cached screenshot). This trades detail for one 280–360ms transitional\n        // frame only; the destination is still the original real task Surface.\n        val bitmap = runCatching { textureView.getBitmap(width, height) }.getOrNull()\n            ?: textureView.takeIf { it.isAvailable && it.width > 1 && it.height > 1 }\n                ?.let { live -> runCatching { live.getBitmap(live.width, live.height) }.getOrNull() }\n            ?: return@runCatching null\n"
+        }
+      ]
+    }
+  }
+}

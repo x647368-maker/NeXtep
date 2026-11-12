@@ -103,6 +103,14 @@ class NeXtepWindowController(
     private var frostStrength = 50
     private val swapAnimator = WorkspaceSwapAnimator(context)
     private val swapCapture = StageAsyncPreviewCapture()
+    private var activeSwapViewport: WorkspaceGeometry? = null
+    private var previewCapturePending = false
+    private var deferredSwapGeometryRefresh = false
+
+    private fun keepActiveSwapForViewport(now: WorkspaceGeometry): Boolean =
+        StageSwapViewportHoldPolicy.retain(
+            swapAnimator.isRunning || previewCapturePending, activeSwapViewport, now,
+        )
     private val internalDrag = WorkspaceInternalDragController(
         context, ::geometry, { slotWindows.map { it.view } },
         ::highlightInternalDragTarget, ::dropInternalPayload,
@@ -929,6 +937,16 @@ class NeXtepWindowController(
     }
 
     private fun applyWindowGeometry(geometry: WorkspaceGeometry, refreshControls: Boolean = true) {
+        if (keepActiveSwapForViewport(geometry)) {
+            // Slot state notifications can request a new rail size while two
+            // real tasks are moving between displays. Do not cancel the
+            // visible card morph (or its transaction session) merely to draw
+            // an intermediate Occupied/Ready state. Final layout is flushed
+            // once by the exchange completion callback.
+            deferredSwapGeometryRefresh = true
+            NeXtepLog.info("swap_morph", "Deferred same-viewport window relayout during live exchange")
+            return
+        }
         cancelDragVisuals()
         // Folding is a display-geometry event. Switch dock vs inline '+' in
         // place, even when no new usage query or task callback arrives.
@@ -1855,8 +1873,15 @@ class NeXtepWindowController(
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
         }
+        // Mark the whole PREVIEW-PREPARATION interval, not only the
+        // ValueAnimator. Without this guard, a rail count refresh during the
+        // async ColorOS task capture can cancel the entire exchange before the
+        // first drawable frame, producing the observed instant content swap.
+        swapCapture.cancel()
         val capturedGeometry=geometry()
         val states=slotCoordinator?.slotStates().orEmpty().toList()
+        activeSwapViewport = capturedGeometry
+        previewCapturePending = true
         swapCapture.request(
             load={
                 // A ColorOS system image can expose a live main task without a
@@ -1870,9 +1895,21 @@ class NeXtepWindowController(
                         Rect(capturedGeometry.contentLeft,capturedGeometry.contentTop,
                             capturedGeometry.contentRight,capturedGeometry.contentBottom))
             },
-            valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
-            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)},
-            onCancel=onFinished,
+            valid={workspaceVisible && !suspended &&
+                StageSwapViewportHoldPolicy.retain(true,capturedGeometry,geometry()) &&
+                mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
+            accept={
+                previewCapturePending = false
+                animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)
+            },
+            onCancel={
+                previewCapturePending = false
+                activeSwapViewport = null
+                val flush = deferredSwapGeometryRefresh
+                deferredSwapGeometryRefresh = false
+                if (flush) scheduleWindowRefresh()
+                onFinished()
+            },
         )
     }
 
@@ -1887,6 +1924,12 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
     ) {
         fun withoutPreview() {
+            activeSwapViewport = null
+            previewCapturePending = false
+            if (deferredSwapGeometryRefresh) {
+                deferredSwapGeometryRefresh = false
+                scheduleWindowRefresh()
+            }
             if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()
             if (asyncMove != null) asyncMove { onFinished(); scheduleStageFocus() }
             else try { move() } finally { onFinished(); scheduleStageFocus() }
@@ -1895,7 +1938,12 @@ class NeXtepWindowController(
             withoutPreview()
             return
         }
-        val geometry = geometry()
+        // An in-flight occupied/ready callback can temporarily recalculate
+        // the rail thickness before it is drawn. Use the geometry captured at
+        // the user's tap, not an intermediate layout, for the card flight.
+        val geometry = activeSwapViewport?.takeIf {
+            StageSwapViewportHoldPolicy.retain(true,it,geometry())
+        } ?: geometry()
         val previewHost = contentHighlightView?.parent as? FrameLayout
         val sourceSlot = slotWindows.getOrNull(sourceIndex)
         val sourceRect = Rect()
@@ -1996,6 +2044,8 @@ class NeXtepWindowController(
         var sourceFrame = sourceSlot.contentFrameSequence
         var targetFrame = targetSlot?.contentFrameSequence ?: 0L
         previewSlots.forEach { it.view.beginExchangePreview() }
+        activeSwapViewport = geometry
+        deferredSwapGeometryRefresh = false
         try {
             swapAnimator.animate(
                 sourcePreview, targetPreview, start, from, to,
@@ -2087,7 +2137,21 @@ class NeXtepWindowController(
                 },
                 onFinished = {
                     previewSlots.forEach { it.view.endExchangePreview() }
+                    activeSwapViewport = null
+                    val flushLayout = deferredSwapGeometryRefresh
+                    deferredSwapGeometryRefresh = false
                     onFinished()
+                    if (flushLayout && workspaceVisible && !suspended) {
+                        // One final frame after the exchange, not any polling
+                        // or per-frame requestLayout. Keep the real task IDs.
+                        backdropHandler.post {
+                            if (workspaceVisible && !suspended && !swapAnimator.isRunning) {
+                                val finalGeometry = geometry()
+                                applyStageStack(finalGeometry)
+                                applyWindowGeometry(finalGeometry, refreshControls = false)
+                            }
+                        }
+                    }
                     scheduleStageFocus()
                     if (parkingMain) backdropHandler.postDelayed({
                         if (!suspended && workspaceVisible) captureHomePreview(currentGeometry())
@@ -2096,6 +2160,8 @@ class NeXtepWindowController(
             )
         } catch (error: Throwable) {
             swapAnimator.cancel()
+            activeSwapViewport = null
+            deferredSwapGeometryRefresh = false
             previewSlots.forEach { it.view.endExchangePreview() }
             if (!sourcePreview.isRecycled) sourcePreview.recycle()
             if (targetPreview != null && !targetPreview.isRecycled) targetPreview.recycle()
@@ -2198,6 +2264,10 @@ class NeXtepWindowController(
 
     private fun applyStageStack(geometry: WorkspaceGeometry) {
         if (slotWindows.isEmpty()) return
+        if (keepActiveSwapForViewport(geometry)) {
+            deferredSwapGeometryRefresh = true
+            return
+        }
         val oldCount = shownWindowCount
         val oldRailGeometry = previousRailGeometry
         val oldCardFrames = oldRailGeometry?.let { liveRailFrames(it, transformed = true) }.orEmpty()
