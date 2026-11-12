@@ -17,6 +17,10 @@ internal object StageTabletSwapOwnershipPolicy {
         if (displayId < 0) return false
         return if (expectedTaskId == null) owners.none { it.displayId == displayId }
         else owners.any { it.taskId == expectedTaskId && it.displayId == displayId } &&
-            owners.none { it.displayId == displayId && it.taskId != expectedTaskId }
+            // Display 0 legitimately hosts HOME and background tasks in
+            // addition to the focused main task. Exclusivity is meaningful
+            // for a one-task preview virtual display only.
+            (displayId == 0 ||
+                owners.none { it.displayId == displayId && it.taskId != expectedTaskId })
     }
 }
