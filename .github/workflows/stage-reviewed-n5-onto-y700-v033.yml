@@ -49,7 +49,7 @@ jobs:
             scripts/reviewed-assistant6-n5-rail-refit.json
           python3 - <<'PY'
           import subprocess
-          changed=sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
+          changed=sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()+subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines())
           approved=sorted([
             'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicy.kt',
             'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt',
