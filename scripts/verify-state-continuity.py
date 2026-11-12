@@ -201,8 +201,26 @@ def undo_home_ui(path,data):
  assert oldblob==spec['previous_blob_sha1'],path
  return previous
 
+# v0.9.32 exact UI/navigation review, before all historical freeze checks.
+# This is no blanket exemption: every byte of these three files is pinned.
+update_ui_files=json.loads((root/'scripts/reviewed-update-ui-0.9.32.json').read_text())['files']
+assert set(update_ui_files)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateCoordinator.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/MainActivity.kt',
+}
+def undo_update_ui(path,data):
+ if path not in update_ui_files:return data
+ spec=update_ui_files[path]
+ actual=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert actual==spec['reviewed_blob_sha1'],path
+ old=spec['previous_content'].encode('utf-8')
+ original=hashlib.sha1(b'blob '+str(len(old)).encode()+bytes([0])+old).hexdigest()
+ assert original==spec['previous_blob_sha1'],path
+ return old
+
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,(root/path).read_bytes()))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,(root/path).read_bytes())))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -407,7 +425,7 @@ for path,sha in frozen.items():
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=undo_api403_fallback(path,(root/path).read_bytes())
+  data=undo_api403_fallback(path,undo_update_ui(path,(root/path).read_bytes()))
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()

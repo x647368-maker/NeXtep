@@ -2,12 +2,17 @@ package io.github.x647368maker.atomicworkbench.config
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import java.util.Base64
 
 /**
- * Exact scan matrices extracted from the TWO USER-SUPPLIED receipt QR images.
+ * Exact QR data matrices extracted from the TWO USER-SUPPLIED receipt QR images.
  * Original and rendered matrices were independently decoded to identical payloads.
- * No QR generator, payment SDK, URL lookup, connection, permission or timer.
+ * The original center photos are restored with offline 64px WebP thumbnails.\n * No payment SDK, URL lookup, connection, permission or timer.
  */
 internal object StageDonationQr {
     data class Code(
@@ -48,6 +53,31 @@ internal object StageDonationQr {
                     yy * pixelsWide + left + pxPerModule, Color.BLACK)
             }
         }
-        return Bitmap.createBitmap(pixels, pixelsWide, pixelsWide, Bitmap.Config.ARGB_8888)
+        val output=Bitmap.createBitmap(pixels, pixelsWide, pixelsWide, Bitmap.Config.ARGB_8888)
+        // Original dog/portrait from the user's own QR images, rather than
+        // an impersonal stripped black-white QR. The source QR payload bits
+        // remain exactly unchanged; pictures are small, offline, on demand.
+        val photoBits=Base64.getDecoder().decode(
+            if(code.name=="微信收款码") StageDonationAvatar.WECHAT else StageDonationAvatar.ALIPAY
+        )
+        val avatar=BitmapFactory.decodeByteArray(photoBits,0,photoBits.size)
+            ?: return output
+        try {
+            val canvas=Canvas(output)
+            val edge=pixelsWide*0.26f
+            val cx=pixelsWide/2f
+            val cy=pixelsWide/2f
+            val photo=RectF(cx-edge/2f,cy-edge/2f,cx+edge/2f,cy+edge/2f)
+            val border=RectF(photo.left-6f,photo.top-6f,photo.right+6f,photo.bottom+6f)
+            val painter=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            painter.color=Color.WHITE
+            canvas.drawRoundRect(border,13f,13f,painter)
+            val rounded=Path().apply { addRoundRect(photo,9f,9f,Path.Direction.CW) }
+            canvas.save()
+            canvas.clipPath(rounded)
+            canvas.drawBitmap(avatar,null,photo,painter)
+            canvas.restore()
+        } finally { avatar.recycle() }
+        return output
     }
 }

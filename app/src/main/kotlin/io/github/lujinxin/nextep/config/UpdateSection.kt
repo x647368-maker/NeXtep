@@ -4,6 +4,10 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -14,13 +18,60 @@ internal object UpdateSection {
     fun create(activity: AppCompatActivity): View {
         fun dp(n:Int)=(n*activity.resources.displayMetrics.density).toInt()
         val installed=UpdateCoordinator.installed(activity)
-        val root=LinearLayout(activity).apply { orientation=LinearLayout.VERTICAL;setPadding(dp(16),dp(20),dp(16),dp(12)) }
-        fun label(value:String)=TextView(activity).apply { text=value;textSize=14f;setTextColor(SettingsPalette.text(activity));setPadding(0,dp(8),0,dp(8)) }
-        root.addView(label("在线更新 · ${installed.versionName} (${installed.longVersionCode})"))
-        val channel=Spinner(activity)
-        channel.adapter=ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,listOf("开发版（含稳定版）","仅稳定版"))
-        channel.setSelection(if(UpdateCoordinator.channel(activity)==UpdatePolicy.Channel.DEV)0 else 1)
-        root.addView(channel)
+        val dark=SettingsPalette.isDark(activity)
+        val ink=SettingsPalette.text(activity)
+        val muted=SettingsPalette.secondary(activity)
+        val accent=Color.rgb(43,114,225)
+        fun rounded(color:Int,radius:Int=21)=GradientDrawable().apply {
+            setColor(color);cornerRadius=dp(radius).toFloat()
+        }
+        fun text(value:String,size:Float=14f,color:Int=ink,bold:Boolean=false)=TextView(activity).apply {
+            text=value;textSize=size;setTextColor(color)
+            includeFontPadding=false;setLineSpacing(dp(3).toFloat(),1f)
+            if(bold) typeface=Typeface.DEFAULT_BOLD
+        }
+        val root=LinearLayout(activity).apply {
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(2),dp(12),dp(2),dp(22))
+        }
+        fun card():LinearLayout=LinearLayout(activity).apply {
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(18),dp(18),dp(18),dp(18))
+            background=rounded(SettingsPalette.surface(activity))
+            root.addView(this,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) })
+        }
+        fun gap(parent:LinearLayout,height:Int=10) {
+            parent.addView(View(activity),LinearLayout.LayoutParams(1,dp(height)))
+        }
+        // Version-first hero like an OS updater, but native to this app.
+        val hero=LinearLayout(activity).apply {
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(23),dp(23),dp(23),dp(23))
+            background=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(
+                if(dark)Color.rgb(28,25,59) else Color.rgb(45,42,102),
+                if(dark)Color.rgb(65,45,105) else Color.rgb(100,76,153),
+                if(dark)Color.rgb(94,61,91) else Color.rgb(185,124,153)
+            )).apply { cornerRadius=dp(26).toFloat() }
+        }
+        hero.addView(text("台前调度 · 软件更新",14f,Color.rgb(235,226,250),true))
+        gap(hero,15)
+        hero.addView(text("v"+installed.versionName.orEmpty(),32f,Color.WHITE,true))
+        gap(hero,8)
+        hero.addView(text("已安装版本  ·  versionCode "+installed.longVersionCode,13f,Color.rgb(242,234,251)))
+        gap(hero,15)
+        hero.addView(text("原证书签名   ·   完整校验   ·   系统安装器",12f,Color.rgb(236,229,247)))
+        root.addView(hero,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) })
+
+        val settings=card()
+        settings.addView(text("更新设置",17f,ink,true))
+        gap(settings,10)
+        settings.addView(text("版本渠道",13f,muted))
+        val channel=Spinner(activity).apply {
+            adapter=ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,listOf("开发版（含稳定版）","仅稳定版"))
+            setSelection(if(UpdateCoordinator.channel(activity)==UpdatePolicy.Channel.DEV)0 else 1)
+            minimumHeight=dp(46);contentDescription="版本渠道"
+        }
+        settings.addView(channel,LinearLayout.LayoutParams(-1,dp(48)))
         channel.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent:AdapterView<*>?)=Unit
             override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
@@ -28,19 +79,28 @@ internal object UpdateSection {
                 if(UpdateCoordinator.channel(activity)!=selected) UpdateCoordinator.setChannel(activity,selected)
             }
         }
-        root.addView(Switch(activity).apply {
-            text="启动应用时自动检查更新（正常每12小时一次）";isChecked=UpdateCoordinator.auto(activity)
+        settings.addView(Switch(activity).apply {
+            text="启动时低频检查新版本";textSize=14f;setTextColor(ink)
+            isChecked=UpdateCoordinator.auto(activity)
+            minimumHeight=dp(51)
             setOnCheckedChangeListener { _,enabled ->
                 UpdateCoordinator.setAuto(activity,enabled)
                 if(enabled) UpdateCoordinator.maybeCheck(activity) {
-                    if(!activity.isDestroyed && !activity.isFinishing) Toast.makeText(activity,"发现可验证的新版本，请点击查看 / 安装新版本",Toast.LENGTH_LONG).show()
+                    if(!activity.isDestroyed && !activity.isFinishing)
+                        Toast.makeText(activity,"发现可验证的新版本，请点击查看 / 安装新版本",Toast.LENGTH_LONG).show()
                 }
                 if(enabled && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
                     activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),72)
             }
-        })
-        val status=label("默认开启低频检查（正常每12小时一次），可手动关闭；仅打开 App 时检查，不常驻后台。即使拒绝通知仍可在应用内查看更新。")
-        root.addView(status)
+        },LinearLayout.LayoutParams(-1,dp(51)))
+        settings.addView(text("约每 12 小时、仅打开 App 时检查。不常驻后台；关闭提醒也能手动检查。",12f,muted))
+
+        val operations=card()
+        operations.addView(text("版本检测与安装",17f,ink,true))
+        gap(operations,11)
+        val status=text("点击“检查更新”获取已校验的官方版本信息。",13f,muted)
+        operations.addView(status)
+        gap(operations,12)
         var release=UpdateCoordinator.available(activity)
         var disposed=false
         val worker=Executors.newSingleThreadExecutor()
@@ -92,9 +152,32 @@ internal object UpdateSection {
             }
         }
         download.setOnClickListener { release=UpdateCoordinator.available(activity); if(release==null) { check.performClick(); return@setOnClickListener }; release?.takeIf { UpdatePolicy.eligible(it.metadata,installed.longVersionCode,UpdateCoordinator.channel(activity)) }?.let(::showRelease) }
-        for(button in listOf(check,download)) root.addView(button,LinearLayout.LayoutParams(-1,dp(52)))
-        root.addView(Button(activity).apply { text="查看项目发布页面";setOnClickListener { openBrowser(activity,UpdateChecker.RELEASES_URL) } },LinearLayout.LayoutParams(-1,dp(52)))
-        root.addView(label("更新后需要正常重启一次加载新版模块；不会清除工作组、固定应用或设置。"))
+        for (button in listOf(check,download)) {
+            val emphasized=button===check
+            button.textSize=16f
+            button.isAllCaps=false
+            button.setTextColor(if(emphasized)Color.WHITE else ink)
+            button.background=rounded(if(emphasized)accent else SettingsPalette.container(activity),15)
+            button.elevation=0f
+            operations.addView(button,LinearLayout.LayoutParams(-1,dp(53)).apply { bottomMargin=dp(9) })
+        }
+        operations.addView(Button(activity).apply {
+            text="查看 GitHub 版本发布记录";isAllCaps=false;textSize=15f
+            setTextColor(ink)
+            background=rounded(SettingsPalette.container(activity),15)
+            elevation=0f
+            setOnClickListener { openBrowser(activity,UpdateChecker.RELEASES_URL) }
+        },LinearLayout.LayoutParams(-1,dp(52)))
+        // The usage guide is always shown directly below the update controls;
+        // never hide it in About, a collapsed section, or a dialog.
+        val help=card()
+        help.addView(text("使用说明",17f,ink,true))
+        gap(help,11)
+        help.addView(text("① 选择开发版或稳定版，点击「检查更新」。\n② 如有新版，先查看更新内容，再「下载并验证」。\n③ 由系统安装器确认覆盖安装，不必主动卸载旧版。",14f,ink))
+        gap(help,11)
+        help.addView(text("安全校验：SHA-256、包名、版本码、原签名证书全部匹配才允许安装。",13f,muted))
+        gap(help,10)
+        help.addView(text("升级后请正常重启一次，让 Vector 模块加载新版。更新不会清除工作组、固定应用或设置。",13f,muted))
         return root
     }
     internal fun openBrowser(activity:AppCompatActivity,address:String) {

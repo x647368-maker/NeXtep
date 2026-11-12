@@ -107,6 +107,7 @@ class LivePreviewInstrumentation : Instrumentation() {
             }
             checks.add(StageSparseRailMotionRegression(this).run(activity,root,out))
             checks.add(StageChangelogRegression(this).run(activity,root,out))
+            checks.add(StageUpdateUiRegression(this).run(activity,root,out))
             checks.addAll(InteractionRegression(this).run(activity,root,out))
             checks.addAll(RefinementRegression(this).run(activity,root,out))
             checks.add(PhasedPreviewRegression(this).run(activity,root))
