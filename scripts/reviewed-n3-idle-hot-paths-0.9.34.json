@@ -1,0 +1,57 @@
+{
+  "purpose": "Only low-risk inactive/locked fast paths: no external services, timers, task/window reductions, or new screen/wakelock activity. Full Git blob before/after, reverse exact unique fragments before historical frozen hashes.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt": {
+      "previous_blob_sha1": "0711115f3630575b32c909fe817c767d60442c48",
+      "reviewed_blob_sha1": "1ea7c8245302612490693e4d15a1b5f766ca9dab",
+      "patches": [
+        {
+          "before": "    fun isWorkspaceActive(): Boolean =\n        ::workspaceController.isInitialized && workspaceController.isActive()\n\n    fun prepareDisplayRotation",
+          "after": "    fun isWorkspaceActive(): Boolean =\n        ::workspaceController.isInitialized && workspaceController.isActive()\n\n    // True only while actual workspace content is visible and unlocked.\n    // Suspended retains task ownership but must not drive shade draw probes.\n    fun isWorkspaceInteractive(): Boolean =\n        ::workspaceController.isInitialized &&\n            workspaceController.isActive() && !workspaceController.isSuspended()\n\n    fun prepareDisplayRotation"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiPanelMonitor.kt": {
+      "previous_blob_sha1": "e8070156483af12d43bba8613165bb08a0a8ce80",
+      "reviewed_blob_sha1": "a856489b6bb4bcb956eacb858e43d31e7cde9b1c",
+      "patches": [
+        {
+          "before": "    private fun changedFromDraw() {\n        val now=android.os.SystemClock.uptimeMillis()",
+          "after": "    private fun changedFromDraw() {\n        // Layout/focus events still update shade state; only per-frame fallback\n        // observation is idle when no interactive workspace/menu can be present.\n        if (!SystemUiRuntime.isWorkspaceInteractive()) return\n        val now=android.os.SystemClock.uptimeMillis()"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt": {
+      "previous_blob_sha1": "7e9c17d019734ff238e195b6e7e368a486473b06",
+      "reviewed_blob_sha1": "5d6e2674b34d0401d262c18c6ecab2ee3b5e9056",
+      "patches": [
+        {
+          "before": "    fun <R> interceptTransactionApply(transaction: Any, proceed: () -> R): R =\n        transactionGuard.intercept(transaction, proceed)",
+          "after": "    fun <R> interceptTransactionApply(transaction: Any, proceed: () -> R): R {\n        // All three ownership maps empty means there is literally no workspace\n        // transform to append. Do not enter the ThreadLocal transaction guard\n        // for unrelated SystemUI frames. Any retained task/slot keeps old path.\n        if (activePresentations.isEmpty() &&\n            preparedPresentations.isEmpty() && slotSurfaces.isEmpty()) return proceed()\n        return transactionGuard.intercept(transaction, proceed)\n    }"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "5c2a08fb339c5b46d11cc18a51494753bf0e2bd2",
+      "reviewed_blob_sha1": "99170ab9cffd3afd4f558c50b3d90cfd1d8b601f",
+      "patches": [
+        {
+          "before": "            if (!suspended) refreshWallpaperBackdrop()\n        }\n    }\n\n    init {",
+          "after": "            if (workspaceVisible && !suspended) refreshWallpaperBackdrop()\n        }\n    }\n\n    init {"
+        },
+        {
+          "before": "        // Warm the cache before the first workspace entry, including after unlocking.\n        // Window creation is deliberately lazy; wallpaper observation must not be.",
+          "after": "        // Do not pre-capture bitmap wallpapers at SystemUI startup: the user\n        // may never open workbench in this session. First show() requests it."
+        },
+        {
+          "before": "        backdropHandler.post { refreshWallpaperBackdrop() }\n        mainTaskPresenter.onHomePresented",
+          "after": "        // No background capture until a real workspace has been displayed.\n        mainTaskPresenter.onHomePresented"
+        },
+        {
+          "before": "    private fun refreshWallpaperBackdrop(attempt: Int = 0) {\n        val geometry = geometry()",
+          "after": "    private fun refreshWallpaperBackdrop(attempt: Int = 0) {\n        // Ignore delayed callbacks after hide/lock; no invisible bitmap capture.\n        if (!workspaceVisible || suspended) return\n        val geometry = geometry()"
+        }
+      ]
+    }
+  }
+}
