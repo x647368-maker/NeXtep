@@ -56,16 +56,36 @@ internal class StagePreviewBitmapRetentionRegression(
                 })
             }
             instrumentation.waitForIdleSync()
-            val shot=instrumentation.uiAutomation.takeScreenshot()
-                ?: error("HWUI capture unavailable for GPU bitmap test")
             val xy=IntArray(2)
-            instrumentation.runOnMainSync { view.getLocationOnScreen(xy) }
-            val rgb=shot.getPixel(xy[0]+120,xy[1]+120)
-            shot.recycle()
-            check(abs(Color.red(rgb)-70)<30 &&
-                abs(Color.green(rgb)-188)<30 &&
-                abs(Color.blue(rgb)-135)<30) {
-                "GPU-backed preview did not render on hardware canvas"
+            instrumentation.runOnMainSync {
+                view.getLocationOnScreen(xy)
+                // The first idle callback can arrive before the next RenderThread
+                // frame. Explicitly request a real HWUI frame, not a fake bitmap.
+                view.invalidate()
+            }
+            var rgb=Color.TRANSPARENT
+            var actualFrame=false
+            repeat(8) {
+                val shot=instrumentation.uiAutomation.takeScreenshot()
+                if (shot!=null) {
+                    val x=xy[0]+120
+                    val y=xy[1]+120
+                    if (x in 0 until shot.width && y in 0 until shot.height) {
+                        rgb=shot.getPixel(x,y)
+                        actualFrame=abs(Color.red(rgb)-70)<30 &&
+                            abs(Color.green(rgb)-188)<30 &&
+                            abs(Color.blue(rgb)-135)<30
+                    }
+                    shot.recycle()
+                }
+                if(actualFrame) return@repeat
+                Thread.sleep(125L)
+                instrumentation.runOnMainSync { view.invalidate() }
+            }
+            check(actualFrame) {
+                "GPU-backed preview not present in HWUI frame: RGB=" +
+                    "${Color.red(rgb)},${Color.green(rgb)},${Color.blue(rgb)} " +
+                    "at ${xy[0]+120},${xy[1]+120}"
             }
         } finally {
             instrumentation.runOnMainSync { host.removeView(view) }
