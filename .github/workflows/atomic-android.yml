@@ -124,6 +124,11 @@ jobs:
           path: api101-unit-results/
       - name: Build and test; retry only transient dependency downloads
         run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+      - name: Audit APK ZIP size without changing runtime or settings
+        shell: bash
+        run: |
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          python3 scripts/audit-apk-size.py "$apk" | tee "$RUNNER_TEMP/apk-size-audit.txt"
       - name: Verify offline release notes are embedded unchanged
         shell: bash
         run: |
