@@ -11,7 +11,7 @@ import java.util.Base64
 
 /**
  * Exact QR matrices from user-supplied receipts; WeChat refreshed from the official saved QR image on 2026-11-12.
- * Original and rendered matrices were independently decoded to identical payloads.
+ * Matrices are independently decoded and pinned to the owner-provided QR screenshots (2026-11-12).
  * The original center photos are restored with offline 64px WebP thumbnails.\n * No payment SDK, URL lookup, connection, permission or timer.
  */
 internal object StageDonationQr {
@@ -24,7 +24,7 @@ internal object StageDonationQr {
     val codes = listOf(
         Code(
             "微信收款码", 37,
-            "/lpK8/wRK3JQbr6hQrt0RaLl26+0p67BYylpB/qqqq/gBPZVAEqHUmWiRsGHCganblxWcS6tJmAqAAA51rB4uYQdwC3GHy4Brad7svUoXaexKxp5vQBRIeNMntZw+Xd2/DhTBL6jPdhupp0a//Gll6ADI0yMCYLKx9Xa9QYrzNhG7mhoiv+AaAm8Y/k+POoQTRCRFbqlKN/t0U+XDu6VVFPVBby2a1/lFGRfgA==",
+            "/nCi8/wS15IQbqD5zLt0YgKl262TB67BSo/pB/qqqq/gDEa9AErYpm2hbDOb4heX8DxFu4zbFt4tAACh8tDIvUpKEA3mIoiBouancuUvWOexKnZkgQBKceuMnpA2+Xd0mHjKBDykXVh+p5KE//GlGnADB58DMAYGh9RvcUZx6klmvTOG6vuAQDm8b/lVPaowR+iVF7rJmM/90p+WBO6DRNOlBeI6Qd/lqCFtgA==",
             "台前调度-微信收款码.png",
         ),
         Code(
@@ -53,15 +53,20 @@ internal object StageDonationQr {
                     yy * pixelsWide + left + pxPerModule, Color.BLACK)
             }
         }
-        val output=Bitmap.createBitmap(pixels, pixelsWide, pixelsWide, Bitmap.Config.ARGB_8888)
+        // createBitmap(colors, width, height, config) is immutable on Android.
+        // Canvas(immutableBitmap) throws when rendering the owner's avatar,
+        // leaving the donation page blank or causing a crash.
+        val output = Bitmap.createBitmap(pixelsWide, pixelsWide, Bitmap.Config.ARGB_8888).apply {
+            setPixels(pixels, 0, pixelsWide, 0, 0, pixelsWide, pixelsWide)
+        }
         // Original dog/portrait from the user's own QR images, rather than
         // an impersonal stripped black-white QR. The source QR payload bits
         // remain exactly unchanged; pictures are small, offline, on demand.
         val photoBits=Base64.getDecoder().decode(
             if(code.name=="微信收款码") StageDonationAvatar.WECHAT else StageDonationAvatar.ALIPAY
         )
-        val avatar=BitmapFactory.decodeByteArray(photoBits,0,photoBits.size)
-            ?: return output
+        val avatar = runCatching { BitmapFactory.decodeByteArray(photoBits, 0, photoBits.size) }
+            .getOrNull() ?: return output
         try {
             val canvas=Canvas(output)
             val edge=pixelsWide*0.26f

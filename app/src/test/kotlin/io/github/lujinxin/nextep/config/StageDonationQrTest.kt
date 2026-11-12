@@ -11,7 +11,7 @@ class StageDonationQrTest {
         assertEquals(listOf("微信收款码","支付宝收款码"),codes.map{it.name})
         assertEquals(listOf(37,41),codes.map{it.size})
         val expected=listOf(
-            "503c130430045ceb75bd62837af33b75960c93404375c46dce9b65a1e1f784fc",
+            "78cce8655fb7c2b1f740b7c2dff8905bbd1d0583fc722c43630d2a4337d88925",
             "28e2795e2b5a9d392cfd97242bf6b052f1d6867bde2afee0fdd748c5fc05156e"
         )
         codes.forEachIndexed { index, code ->

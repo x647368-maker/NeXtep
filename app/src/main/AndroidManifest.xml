@@ -4,6 +4,9 @@
 
     <queries>
         <package android:name="com.coolapk.market" />
+        <!-- Explicitly visible only for user-requested donation app launches. -->
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.eg.android.AlipayGphone" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

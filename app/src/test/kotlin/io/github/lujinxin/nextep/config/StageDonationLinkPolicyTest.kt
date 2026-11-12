@@ -9,7 +9,7 @@ class StageDonationLinkPolicyTest {
         for (x in listOf("http://qr.alipay.com/fkx12832fcf3lxl8txjpz50",
             "https://qr.alipay.com/other", "https://qr.alipay.com.evil.org/fkx12832fcf3lxl8txjpz50",
             "alipays://platformapi/startapp?appId=20000056",
-            "wxp://f2f0wS6dugkH292zD4aLKIJU4x7M2F85ode1o6dsJZBvPPA",
+            "wxp://f2f0FymOl16eW-Bcur_wukrDiwZGGRL7ELuW5tpzT_FX7Xo",
             "https://qr.alipay.com/fkx12832fcf3lxl8txjpz50?redirect=evil")) {
             assertFalse(x,StageDonationLinkPolicy.isApprovedReceiptLink(x))
         }
