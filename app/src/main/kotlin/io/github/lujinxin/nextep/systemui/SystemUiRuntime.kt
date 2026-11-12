@@ -290,6 +290,12 @@ object SystemUiRuntime {
     fun isWorkspaceActive(): Boolean =
         ::workspaceController.isInitialized && workspaceController.isActive()
 
+    // True only while actual workspace content is visible and unlocked.
+    // Suspended retains task ownership but must not drive shade draw probes.
+    fun isWorkspaceInteractive(): Boolean =
+        ::workspaceController.isInitialized &&
+            workspaceController.isActive() && !workspaceController.isSuspended()
+
     fun prepareDisplayRotation(rotation: Int, generation: Long) {
         // WM can deliver a resize before SystemUI's configuration callback is
         // dequeued. Its first drawing pass must already know the target angle.
