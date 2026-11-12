@@ -245,6 +245,8 @@ class NeXtepWindowController(
         records.forEach { record ->
             record.view.animate().cancel()
             record.view.alpha = 0f
+            record.view.scaleX = 1f
+            record.view.scaleY = 1f
             val params = record.view.layoutParams as WindowManager.LayoutParams
             params.flags = (params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) and
                 WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER.inv()
@@ -269,6 +271,8 @@ class NeXtepWindowController(
             record.view.alpha = 1f
             record.view.translationX = 0f
             record.view.translationY = 0f
+            record.view.scaleX = 1f
+            record.view.scaleY = 1f
         }
         resumeContentAfterFrame()
         return geometry
@@ -342,22 +346,35 @@ class NeXtepWindowController(
         syncCoreViewport()
         mediaSignals.start(); refreshQuickBar()
         reconfigure().getOrThrow()
+        // Compose the first real workbench frame with the same bounded,
+        // uniform card movement as tap exchanges. No extra layers or captures.
+        // Leave control handles at scale 1 so their touch geometry never shifts.
+        val entryGeometry = geometry()
+        val entryMotion = StageWorkbenchEntryMotionPolicy.enabled(
+            android.animation.ValueAnimator.areAnimatorsEnabled(),
+            context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true,
+        )
+        val railOnRight = logicalSidebarSide(entryGeometry) == SidebarSide.RIGHT
         records.forEach { record ->
             val view = record.view
             view.animate().cancel()
             view.visibility = View.VISIBLE
-            view.translationX = 0f
-            view.alpha = 0f
-            view.translationY = when (record.title) {
-                "NeXtepTopBar" -> -dp(ENTER_OFFSET_DP)
-                else -> dp(ENTER_OFFSET_DP)
+            val start = StageWorkbenchEntryMotionPolicy.start(
+                record.title, entryGeometry.railAtTop, railOnRight,
+            )
+            view.translationX = if (entryMotion) dp(start.offsetXdp) else 0f
+            view.translationY = if (entryMotion) dp(start.offsetYdp) else 0f
+            view.scaleX = if (entryMotion) start.scale else 1f
+            view.scaleY = if (entryMotion) start.scale else 1f
+            view.alpha = if (entryMotion) start.alpha else 1f
+            if (entryMotion) {
+                view.animate()
+                    .alpha(1f).translationX(0f).translationY(0f)
+                    .scaleX(1f).scaleY(1f)
+                    .setDuration(WORKSPACE_ENTER_DURATION_MS)
+                    .setInterpolator(transitionInterpolator)
+                    .start()
             }
-            view.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .setDuration(WORKSPACE_ENTER_DURATION_MS)
-                .setInterpolator(transitionInterpolator)
-                .start()
         }
         refreshWallpaperBackdrop()
         topAppStrip?.setWorkspaceVisible(true)
@@ -412,12 +429,17 @@ class NeXtepWindowController(
                     if (record.title == "NeXtepTopBar") -dp(EXIT_OFFSET_DP)
                     else dp(EXIT_OFFSET_DP),
                 )
+                .translationX(0f)
+                .scaleX(1f)
+                .scaleY(1f)
                 .setDuration(WORKSPACE_EXIT_DURATION_MS)
                 .setInterpolator(transitionInterpolator)
                 .withEndAction {
                     view.visibility = View.GONE
                     view.translationX = 0f
                     view.translationY = 0f
+                    view.scaleX = 1f
+                    view.scaleY = 1f
                 }
                 .start()
         }
