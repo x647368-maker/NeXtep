@@ -31,7 +31,7 @@ class StageSwapViewportHoldPolicyTest {
             g.copy(screenWidth=2248),
             g.copy(screenHeight=2480),
             g.copy(displayRotation=(g.displayRotation+1)%4),
-            g.copy(sidebarSide=SidebarSide.RIGHT),
+            g.copy(sidebarSide=SidebarSide.LEFT),
             g.copy(railAtTop=!g.railAtTop),
             g.copy(navigationInsets=WorkspaceNavigationInsets(top=75,bottom=35)),
         )
