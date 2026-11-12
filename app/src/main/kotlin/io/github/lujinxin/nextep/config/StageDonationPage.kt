@@ -66,12 +66,12 @@ internal object StageDonationPage {
             box.addView(txt(code.name, 18f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
             box.addView(txt(
                 if (code.name == "支付宝收款码")
-                    "优先尝试打开支付宝的原始收款链接。是否成功直达付款页取决于支付宝客户端；若无法打开，可使用下方二维码。"
-                else "微信个人收款码没有可验证的第三方一键付款接口。可主动打开微信，但不会假装已经进入付款页；二维码仍可供另一台设备扫码。",
+                    "下方是已核对的收款二维码。支付宝部分版本可能只打开首页；如未出现付款页，请使用扫一扫识别二维码，支付前确认收款人。"
+                else "下方是本人最新微信收款二维码。微信个人收款码没有可靠的一键支付接口；按钮仅打开微信，付款请用扫一扫识别二维码。",
                 13f, true
             ).apply { gravity = Gravity.CENTER; setPadding(0, dp(9), 0, dp(12)) })
             box.addView(Button(activity).apply {
-                text = if (code.name == "支付宝收款码") "使用支付宝尝试打开收款链接" else "打开微信"
+                text = if (code.name == "支付宝收款码") "尝试在支付宝打开收款链接" else "打开微信（需手动扫码）"
                 contentDescription = text
                 setOnClickListener {
                     if (code.name == "支付宝收款码") openAlipayReceipt(activity)
@@ -81,8 +81,12 @@ internal object StageDonationPage {
             // The static image is decoded only on this user-requested page.
             box.addView(ImageView(activity).apply {
                 setImageBitmap(StageDonationQr.bitmap(code))
+                // Independent white background + fixed preview bounds keep QR legible
+                // on ColorOS, foldables and tablets regardless of app night mode.
+                setBackgroundColor(android.graphics.Color.WHITE)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                adjustViewBounds = true
+                adjustViewBounds = false
                 contentDescription = code.name + "，长按保存二维码"
                 setOnLongClickListener { saveToGallery(activity, code); true }
             }, LinearLayout.LayoutParams(-1, dp(312)))
@@ -94,7 +98,7 @@ internal object StageDonationPage {
             root.addView(box, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         }
         root.addView(txt(
-            "这是支持二次开发者 ZMW小武 的个人自愿打赏，并非使用门槛或付费解锁。请在微信或支付宝中确认收款人并自行选择金额；打开支付 App 并不代表付款成功。所有功能与更新永久免费。不主动弹窗、不暗中检测支付。原项目 NeXtep（Jensen Lu），许可证 Apache-2.0。",
+            "这是支持二次开发者 ZMW小武 的个人自愿打赏，并非使用门槛或付费解锁。可直接用另一台设备扫码；同一设备可先保存二维码，再从微信/支付宝的扫一扫中选择相册图片识别。付款前请确认收款人并自行选择金额；打开支付 App 并不代表付款成功。所有功能与更新永久免费。不主动弹窗、不暗中检测支付。原项目 NeXtep（Jensen Lu），许可证 Apache-2.0。",
             12f, true
         ).apply { setPadding(dp(12), dp(8), dp(12), dp(24)) })
         return root
@@ -114,7 +118,10 @@ internal object StageDonationPage {
         }
         // Some Alipay versions do not register the https intent. Fall back to
         // normal Android intent resolution; NEVER invent a personal-pay scheme.
-        if (runCatching { activity.startActivity(targeted) }.isSuccess) return
+        if (runCatching { activity.startActivity(targeted) }.isSuccess) {
+            Toast.makeText(activity, "若只进入支付宝首页，请保存收款码并使用扫一扫识别", Toast.LENGTH_LONG).show()
+            return
+        }
         val browser = Intent(Intent.ACTION_VIEW, uri).apply {
             addCategory(Intent.CATEGORY_BROWSABLE)
         }
