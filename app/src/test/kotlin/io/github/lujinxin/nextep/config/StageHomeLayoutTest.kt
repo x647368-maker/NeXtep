@@ -3,22 +3,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageHomeLayoutTest {
-    @Test fun threeGroupsMatchRequestedOrderWithoutLosingDestinations() {
+    @Test fun threeGroupsMatchRequestedOrderWithoutDuplicateDestinations() {
         assertEquals(listOf("工作台","系统","支持"),StageHomeLayout.sections.map{it.title})
-        assertEquals(listOf("windows","core","groups","gestures","tile","diagnostics","help","feedback","about"),
+        assertEquals(listOf("windows","core","groups","gestures",
+            "tile","diagnostics","update","changelog","help","feedback","donate","about"),
             StageHomeLayout.sections.flatMap{it.items}.map{it.page})
-        assertEquals(listOf(4,3,2),StageHomeLayout.sections.map{it.items.size})
+        assertEquals(listOf(4,5,3),StageHomeLayout.sections.map{it.items.size})
+        assertEquals(12,StageHomeLayout.sections.flatMap{it.items}.map{it.page}.toSet().size)
+    }
+    @Test fun updateChangelogOnlyAppearUnderSystemAndDonateOnlyUnderSupport() {
+        val system=StageHomeLayout.sections.single{it.title=="系统"}
+        val support=StageHomeLayout.sections.single{it.title=="支持"}
+        assertEquals(listOf("update","changelog"),system.items.filter { it.page=="update"||it.page=="changelog" }.map { it.page })
+        assertEquals(1,support.items.count { it.page=="donate" })
+        assertFalse(StageHomeLayout.sections.filter{it.title!="支持"}.flatMap{it.items}.any{it.page=="donate"})
     }
     @Test fun homeHasNeitherSearchNorDuplicateDestructiveExit() {
         val items=StageHomeLayout.sections.flatMap{it.items}
-        assertEquals(9,items.size);assertEquals(9,items.map{it.page}.toSet().size)
-        assertFalse(items.any{it.name.contains("搜索")||it.name=="退出台前调度"||it.name=="选择主应用"})
-    }
-    @Test fun normalTextHomeFitsReferenceViewportAndRowsRemainTouchable() {
+        assertFalse(items.any { it.name.contains("搜索")||it.name=="退出台前调度"||it.name=="选择主应用" })
         assertTrue(StageHomeLayout.ROW_DP>=48)
-        val rows=9*StageHomeLayout.ROW_DP
-        val groups=3*(StageHomeLayout.SECTION_TOP_DP+14+StageHomeLayout.GROUP_GAP_DP)+6
-        val total=12+StageHomeLayout.HEADER_DP+rows+groups+16+48
-        assertTrue("Normal font content height $total dp",total<=760)
+    }
+    @Test fun expandedMenuScrollsInsteadOfShrinkingTouchRows() {
+        val rows=StageHomeLayout.sections.sumOf{it.items.size}*StageHomeLayout.ROW_DP
+        assertTrue(rows>600) // ScrollView, never cut touch areas to fit.
+        assertTrue(StageHomeLayout.HEADER_DP>=48)
+        assertTrue(StageHomeLayout.MAX_COLUMN_DP in 600..800)
     }
 }
