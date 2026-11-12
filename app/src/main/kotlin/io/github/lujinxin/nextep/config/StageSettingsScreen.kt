@@ -94,7 +94,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             intArrayOf(blue, if (dark) Color.rgb(75, 77, 81) else Color.rgb(204, 206, 210)))
         setOnCheckedChangeListener { _, value -> if (!settingSwitch) action(value) }
     }
-    fun back(): Boolean { if (page == "home") return false; open(if (page == "changelog") "about" else "home"); return true }
+    fun back(): Boolean { if (page == "home") return false; open("home"); return true }
     fun open(target: String) {
         page = target; body = null; stateText = null; master = null
         view.removeAllViews()
@@ -135,10 +135,10 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "在线更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f).apply {
-                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open(if (target == "changelog") "about" else "home") }
+                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
             header.addView(label(titles[target] ?: "设置", 24f).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             column.addView(header)
@@ -153,6 +153,8 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "about" -> about(column)
                 "feedback" -> feedback(column)
                 "changelog" -> column.addView(StageChangelogPage.create(activity), LinearLayout.LayoutParams(-1, -2))
+                "update" -> column.addView(UpdateSection.create(activity), LinearLayout.LayoutParams(-1, -2))
+                "donate" -> column.addView(StageDonationPage.create(activity), LinearLayout.LayoutParams(-1, -2))
             }
         }
     }
@@ -160,7 +162,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private fun renderHome() {
         val root = body ?: return; root.removeAllViews()
         if (UpdateCoordinator.available(activity) != null)
-            row(group(root), "发现台前调度新版本", icon = "info") { open("about") }
+            row(group(root), "发现台前调度新版本", icon = "info") { open("update") }
         row(group(root), "故障测试与报告", "手动开启 · 标记问题 · 自行导出，平时不监控", "diagnostics") {
             activity.startActivity(Intent(activity, StageIssueDiagnosticActivity::class.java))
         }
@@ -278,10 +280,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 .setMessage("原作者：lujinxin / JensenLu。保留 NeXtep 的 Apache-2.0 许可证与第三方声明。Android 任务引擎来自原作，本分支增加四侧窗、工作组和新的交互。\n\n交互参考 macOS Stage Manager，非 Apple 官方应用。")
                 .setPositiveButton("知道了", null).show()
         }
-        row(group(root), "更新日志", "离线查看各版本重大变化与验收状态", "info") { open("changelog") }
-        row(group(root), "建议与反馈 · 酷安", "ZMW专用 · UID 43881308", "help") { open("feedback") }
-        root.addView(UpdateSection.create(activity))
-        root.addView(hint("真实任务迁移、点击交换、侧栏收起和工作组切换。新版本的实际安装、注入与交互效果仍需真机验收。"))
+        root.addView(hint("在线更新、离线更新日志和自愿打赏均已移到首页对应分组。真实任务迁移、点击交换、侧栏收起和工作组切换保持不变；新版本的实际安装、注入与交互仍需真机验收。"))
     }
     private fun feedback(root: LinearLayout) {
         val intro = group(root)
@@ -507,6 +506,7 @@ private class StageSettingsIcon(context: Context, private val kind: String, colo
             "exit" -> { canvas.drawArc(3f, 4f, 21f, 22f, -48f, 276f, false, paint); canvas.drawLine(12f, 2f, 12f, 12f, paint) }
             "gesture" -> { canvas.drawLine(4f, 13f, 10f, 19f, paint); canvas.drawLine(10f, 19f, 21f, 5f, paint); canvas.drawCircle(5f, 5f, 2f, paint) }
             "diagnostics" -> { canvas.drawLine(2f, 13f, 6f, 13f, paint); canvas.drawLine(6f, 13f, 10f, 5f, paint); canvas.drawLine(10f, 5f, 14f, 20f, paint); canvas.drawLine(14f, 20f, 18f, 10f, paint); canvas.drawLine(18f, 10f, 22f, 10f, paint) }
+            "heart" -> { val p=Path().apply { moveTo(12f,21f); cubicTo(9f,18f,2f,14f,2f,9f); cubicTo(2f,3f,9f,1f,12f,7f); cubicTo(15f,1f,22f,3f,22f,9f); cubicTo(22f,14f,15f,18f,12f,21f); close() }; canvas.drawPath(p,paint) }
             else -> { canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawLine(12f, 11f, 12f, 17f, paint); canvas.drawPoint(12f, 7f, paint) }
         }; canvas.restoreToCount(save)
     }
