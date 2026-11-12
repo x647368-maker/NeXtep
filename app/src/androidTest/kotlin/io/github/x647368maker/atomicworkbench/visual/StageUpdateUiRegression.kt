@@ -49,9 +49,35 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
                 "Updated status card crowds the device title"
             }
         }
-        val first=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update hero")
-        File(out,"update-center-hero.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG,100,it) }
-        first.recycle()
+        // An emulated HWUI surface can lag the first idle callback. Do not
+        // silently accept a plain backdrop as a passed hero screenshot.
+        val heroBounds=IntArray(2)
+        hero.getLocationOnScreen(heroBounds)
+        fun heroPainted(bitmap:Bitmap): Boolean {
+            var whitePixels=0
+            val left=(bitmap.width/5).coerceAtLeast(0)
+            val right=(bitmap.width*4/5).coerceAtMost(bitmap.width)
+            val top=heroBounds[1].coerceIn(0,bitmap.height-1)
+            val bottom=(top+hero.height).coerceAtMost(bitmap.height)
+            for(y in top until bottom step 4) for(x in left until right step 4) {
+                val color=bitmap.getPixel(x,y)
+                if(android.graphics.Color.red(color)+android.graphics.Color.green(color)+
+                    android.graphics.Color.blue(color)>690) whitePixels++
+                if(whitePixels>=20) return true
+            }
+            return false
+        }
+        var first:Bitmap?=null
+        for(attempt in 0 until 8) {
+            val shot=instrumentation.uiAutomation.takeScreenshot() ?: continue
+            if(heroPainted(shot)) {first=shot;break}
+            shot.recycle()
+            Thread.sleep(160)
+            instrumentation.waitForIdleSync()
+        }
+        val ready=first ?: error("Update hero not visible in an actual HWUI screenshot")
+        File(out,"update-center-hero.png").outputStream().use { ready.compress(Bitmap.CompressFormat.PNG,100,it) }
+        ready.recycle()
         instrumentation.runOnMainSync { (screen as? ScrollView)?.fullScroll(View.FOCUS_DOWN) }
         instrumentation.waitForIdleSync()
         val last=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update instructions")
