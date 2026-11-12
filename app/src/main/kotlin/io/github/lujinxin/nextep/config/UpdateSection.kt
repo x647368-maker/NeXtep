@@ -36,11 +36,12 @@ internal object UpdateSection {
         val hero=LinearLayout(activity).apply {
             orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL
         }
-        hero.addView(text("台前调度",35f,Color.WHITE,true))
+        hero.addView(text("台前调度",35f,Color.WHITE,true).apply { gravity=Gravity.CENTER })
         gap(hero,10)
-        hero.addView(text("v"+installed.versionName.orEmpty(),49f,Color.rgb(214,185,255)))
+        hero.addView(text("v"+installed.versionName.orEmpty(),49f,Color.rgb(214,185,255)).apply { gravity=Gravity.CENTER })
         gap(hero,11)
         hero.addView(text(StageUpdateDeviceLabel.current(),16f).apply {
+            gravity=Gravity.CENTER
             maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
             contentDescription="当前设备："+StageUpdateDeviceLabel.current()
         })

@@ -10,6 +10,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import io.github.x647368maker.atomicworkbench.config.UpdateSection
+import io.github.x647368maker.atomicworkbench.config.StageUpdateBackdrop
 import java.io.File
 
 /** Render the actual update page, assert its guide is in the live hierarchy. */
@@ -21,7 +22,7 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             val page=UpdateSection.create(activity as AppCompatActivity)
             screen.addView(page,ViewGroup.LayoutParams(-1,-2))
             root.removeAllViews()
-            root.setBackgroundColor(android.graphics.Color.rgb(21,17,45))
+            root.background = StageUpdateBackdrop()
             root.addView(screen,FrameLayout.LayoutParams(-1,-1))
             fun visit(v:View) {
                 if (v is TextView) shown.add(v.text.toString())
@@ -29,6 +30,9 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             }
             visit(screen)
         }
+        instrumentation.waitForIdleSync()
+        // Wait for the first HWUI surface frame, not merely the view-tree traversal.
+        Thread.sleep(300)
         instrumentation.waitForIdleSync()
         for (required in listOf("台前调度","检查新版本","检查更新")) {
             check(shown.any { it.contains(required) }) { "Update page hid required content: $required" }
