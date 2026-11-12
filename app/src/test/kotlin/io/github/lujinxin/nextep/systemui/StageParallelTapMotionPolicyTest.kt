@@ -10,10 +10,11 @@ class StageParallelTapMotionPolicyTest {
         assertEquals(180L, StageParallelTapMotionPolicy.durationMs(1000))
     }
     @Test fun fullMotionOnlyForSafeTap() {
-        assertTrue(StageParallelTapMotionPolicy.concurrent(true,false,true))
-        assertFalse(StageParallelTapMotionPolicy.concurrent(true,true,true))
-        assertFalse(StageParallelTapMotionPolicy.concurrent(false,false,true))
-        assertFalse(StageParallelTapMotionPolicy.concurrent(true,false,false))
+        assertTrue(StageParallelTapMotionPolicy.concurrent(true,false,true,true))
+        assertFalse(StageParallelTapMotionPolicy.concurrent(true,true,true,true))
+        assertFalse(StageParallelTapMotionPolicy.concurrent(false,false,true,true))
+        assertFalse(StageParallelTapMotionPolicy.concurrent(true,false,false,true))
+        assertFalse(StageParallelTapMotionPolicy.concurrent(true,false,true,false))
     }
     @Test fun handoffWaitsForBothButNeverDelaysStartingTheMove() {
         assertFalse(StageParallelTapMotionPolicy.canHandoff(false,true))

@@ -1932,7 +1932,7 @@ class NeXtepWindowController(
         // remains available, without touching the real task lifecycle.
         // User-reduced animation, power saver and HOME transitions are
         // authoritative. All supported form factors use the same geometry gate.
-        val animateTap = drag == null && !parkingMain &&
+        val animateTap = drag == null && !parkingMain && asyncMove != null &&
             android.animation.ValueAnimator.areAnimatorsEnabled() &&
             context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode != true &&
             StageCrossDeviceSwapMotionPolicy.canAnimateTap(

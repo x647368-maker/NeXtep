@@ -87,7 +87,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         overlay = preview
         completion = onFinished
         val concurrentTap = StageParallelTapMotionPolicy.concurrent(
-            uniformTapMorph, returningHome, ValueAnimator.areAnimatorsEnabled())
+            uniformTapMorph, returningHome, ValueAnimator.areAnimatorsEnabled(), moveAsync != null)
         var moveRequested = false
         var movedAt = -1L
         var animationDone = false
