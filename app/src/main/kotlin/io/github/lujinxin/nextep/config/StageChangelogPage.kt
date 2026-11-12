@@ -111,7 +111,7 @@ internal object StageChangelogPage {
             root.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         }
         root.addView(text(
-            "这是 APK 内置的离线版本说明，不会自动检查更新。需要下载安装时，请返回「关于」使用原有应用更新入口。",
+            "这是 APK 内置的离线版本说明，不会自动检查更新。需要下载安装时，请返回首页「系统 → 在线更新」。",
             12f, true
         ).apply { setPadding(dp(14), dp(8), dp(14), dp(16)) })
         return root
