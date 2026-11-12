@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "io.github.x647368maker.atomicworkbench",
+  "versionName": "0.9.30-dev",
+  "versionCode": 45,
+  "channel": "dev",
+  "apkAsset": "AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk",
+  "sha256": "532080deadc87e48c4a77bf289a9a80a301ff7e20495153cc911bbbe37e02adc",
+  "size": 31964386,
+  "certificateSha256": "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe",
+  "releaseTag": "atomic-v0.9.30-dev",
+  "releaseNotes": "台前调度 v0.9.30-dev（45）开发内测：修正有效公开索引与 GitHub API 403 冲突时的误报；保留 v0.9.29 的添加/关闭小窗 P0 修复候选、原有布局、Vector 兼容与签名校验。已通过 Android CI 单元测试与模拟器 HWUI；一加、N5、联想 Y700 的真机在线升级链路仍需验收。不是稳定版。",
+  "deviceNotes": "一加 Ace 7 Pro / ColorOS 17、OPPO Find N5 和联想 Y700 / 移植 ColorOS 16：需真机验收。"
+}
