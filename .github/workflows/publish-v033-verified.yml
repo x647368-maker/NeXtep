@@ -51,7 +51,8 @@ jobs:
       - name: Reconstruct exact existing signed APK without private signing key
         run: |
           set -euo pipefail
-          unsigned=/tmp/source-artifact/app/build/outputs/apk/debug/app-debug-unsigned.apk
+          unsigned=$(find /tmp/source-artifact -type f -name app-debug-unsigned.apk -print -quit)
+          test -n "$unsigned" && test -s "$unsigned"
           echo "83a437423e4c8f0a9b7d687b7f9ca8674bdc83ed799e770ba361ec197b494070  $unsigned" | sha256sum -c -
           base64 -d release-staging/v0.9.33-dev/signed-apk-rebuild.zst.b64 > /tmp/signed-delta.zst
           echo '83f02f2cd04b6f32764f7324fe8f5b3884abb55bc29ed50748f3492a7aef7ce7  /tmp/signed-delta.zst' | sha256sum -c -
