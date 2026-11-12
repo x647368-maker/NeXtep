@@ -218,15 +218,31 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                 // OEMs that omit frame-commit callbacks; it does not postpone
                 // the real-task handoff or schedule any periodic work.
                 val main = android.os.Handler(android.os.Looper.getMainLooper())
-                val release = Runnable { previous.release() } // idempotent
+                val observer = host.viewTreeObserver
+                lateinit var onCommitted: Runnable
+                val release = Runnable {
+                    // The observer owns this callback until it is consumed or
+                    // explicitly unregistered. Do not retain an old GPU Bitmap
+                    // when the screen locks before the removal frame appears.
+                    runCatching {
+                        if (observer.isAlive) observer.unregisterFrameCommitCallback(onCommitted)
+                    }
+                    main.removeCallbacks(onCommitted)
+                    previous.release()
+                }
+                onCommitted = Runnable { main.post(release) }
                 runCatching {
-                    host.viewTreeObserver.registerFrameCommitCallback {
+                    if (observer.isAlive) {
+                        observer.registerFrameCommitCallback(onCommitted)
+                        host.invalidate()
+                    } else {
                         main.post(release)
                     }
-                    host.invalidate()
                 }.onFailure {
                     NeXtepLog.warn("workspace_swap", "GPU preview release frame callback unavailable", it)
+                    main.post(release)
                 }
+                // One-shot fallback only. No repeating redraw or background loop.
                 main.postDelayed(release, GPU_RELEASE_FALLBACK_MS)
             } else previous.release()
         }
