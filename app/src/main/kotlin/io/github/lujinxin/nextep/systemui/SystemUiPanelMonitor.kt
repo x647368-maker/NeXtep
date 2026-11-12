@@ -17,6 +17,9 @@ internal object SystemUiPanelMonitor {
     private var lastState:StagePanelMenuGate.State?=null
     private var lastDrawProbeAt=Long.MIN_VALUE
     private fun changedFromDraw() {
+        // Layout/focus events still update shade state; only per-frame fallback
+        // observation is idle when no interactive workspace/menu can be present.
+        if (!SystemUiRuntime.isWorkspaceInteractive()) return
         val now=android.os.SystemClock.uptimeMillis()
         if(!StagePanelDrawProbePolicy.shouldProbe(now,lastDrawProbeAt))return
         lastDrawProbeAt=now
