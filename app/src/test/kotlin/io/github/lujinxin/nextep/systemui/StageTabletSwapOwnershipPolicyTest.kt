@@ -20,11 +20,14 @@ class StageTabletSwapOwnershipPolicyTest {
         assertFalse(owner.settled(23, 8, listOf(owner.Owner(23, 8), owner.Owner(19, 8))))
     }
 
-    @Test fun mainDisplayMustHaveExactIncomingTaskWithoutOldOccupant() {
-        val during = listOf(owner.Owner(19, 0), owner.Owner(23, 0))
-        assertFalse(owner.settled(23, 0, during))
-        val committed = listOf(owner.Owner(23, 0), owner.Owner(19, 8))
-        assertTrue(owner.settled(23, 0, committed))
-        assertTrue(owner.settled(19, 8, committed))
+    @Test fun mainDisplayMustContainIncomingTaskButCanAlsoContainHome() {
+        val stillOld = listOf(owner.Owner(19, 0), owner.Owner(44, 0))
+        assertFalse(owner.settled(23, 0, stillOld))
+        // Display 0 can legitimately have HOME or suspended tasks alongside
+        // the selected main task. Foreground and surface readiness are already
+        // independently checked by the existing swap coordinator.
+        val withHome = listOf(owner.Owner(23, 0), owner.Owner(44, 0), owner.Owner(19, 8))
+        assertTrue(owner.settled(23, 0, withHome))
+        assertTrue(owner.settled(19, 8, withHome))
     }
 }
