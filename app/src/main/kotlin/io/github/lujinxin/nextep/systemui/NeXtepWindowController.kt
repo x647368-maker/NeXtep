@@ -1917,6 +1917,10 @@ class NeXtepWindowController(
             homePreview?.copy(Bitmap.Config.ARGB_8888, false)
         } else null
         val previewSlots = listOfNotNull(sourceSlot, targetSlot)
+        val y700NativeHandoff =
+            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
+                .wideLandscapeTablet(geometry.screenWidth, geometry.screenHeight)
+        val stableTabletFrame = StageTabletSwapLiveGate()
         var sourceFrame = sourceSlot.contentFrameSequence
         var targetFrame = targetSlot?.contentFrameSequence ?: 0L
         previewSlots.forEach { it.view.beginExchangePreview() }
@@ -1966,7 +1970,28 @@ class NeXtepWindowController(
                             taskRepository.foregroundTask()?.component?.packageName == returningHomePackage
                     } else incomingTaskId!=null && mainTaskPresenter.currentTaskId()==incomingTaskId &&
                         TaskSurfaceCompat.isPresentationSettled(incomingTaskId,geometry)
-                    sourceReady && targetReady
+                    val framesReady = sourceReady && targetReady
+                    if (!y700NativeHandoff) framesReady
+                    else if (!stableTabletFrame.ready(android.os.SystemClock.uptimeMillis(), framesReady)) false
+                    else {
+                        // After at least one new real buffer and a brief stable
+                        // dwell, verify task ownership ONCE the gate opens.
+                        // A stale frame from the previous virtual display can
+                        // otherwise be mistaken for the destination task.
+                        fun slotOwnerCorrect(index: Int): Boolean =
+                            when (val state = currentStates.getOrNull(index)) {
+                                is SlotState.Occupied ->
+                                    taskRepository.findTask(state.taskId)?.displayId == state.displayId
+                                is SlotState.Ready -> true
+                                else -> false
+                            }
+                        val sourceOwner = slotOwnerCorrect(sourceIndex)
+                        val targetOwner = if (targetIndex != null) slotOwnerCorrect(targetIndex)
+                            else if (parkingMain) true
+                            else incomingTaskId != null &&
+                                taskRepository.findTask(incomingTaskId)?.displayId == android.view.Display.DEFAULT_DISPLAY
+                        sourceOwner && targetOwner
+                    }
                 },
                 onFinished = {
                     previewSlots.forEach { it.view.endExchangePreview() }
