@@ -1858,7 +1858,18 @@ class NeXtepWindowController(
         val capturedGeometry=geometry()
         val states=slotCoordinator?.slotStates().orEmpty().toList()
         swapCapture.request(
-            load={TaskSurfaceCompat.capturePreview(task,Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))},
+            load={
+                // A ColorOS system image can expose a live main task without a
+                // public Shell layer-capture path. Try the owned task leash
+                // first, then the actually displayed main viewport (never an
+                // uncropped whole screen). Both run off the UI thread and
+                // platform secure-layer exclusions remain in effect.
+                TaskSurfaceCompat.capturePreview(task,
+                    Rect(0,0,capturedGeometry.screenWidth,capturedGeometry.screenHeight))
+                    ?: TaskSurfaceCompat.captureDisplayPreview(
+                        Rect(capturedGeometry.contentLeft,capturedGeometry.contentTop,
+                            capturedGeometry.contentRight,capturedGeometry.contentBottom))
+            },
             valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
             accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)},
             onCancel=onFinished,
@@ -1928,11 +1939,22 @@ class NeXtepWindowController(
             else -> null
         }
         val needsTargetPreview = !parkingMain && (targetOccupied || mainTaskId != null)
-        if (sourcePreview == null || (needsTargetPreview && targetPreview == null)) {
-            sourcePreview?.recycle()
-            if (targetPreview !== sourcePreview) targetPreview?.recycle()
+        if (sourcePreview == null) {
+            // No legitimate source image: never invent a static task image.
+            // Keep normal task migration instead of rendering stale pixels.
+            if (targetPreview !== sourcePreview && targetPreview?.isRecycled == false)
+                targetPreview.recycle()
+            NeXtepLog.warn("swap_morph", "Source TextureView preview missing; genuine task migration retained")
             withoutPreview()
             return
+        }
+        if (needsTargetPreview && targetPreview == null) {
+            // Crucial ColorOS fallback: a missing main-task capture must NOT
+            // disable the visible small -> large card expansion. Render the
+            // real occupied TextureView as a one-way moving card, then hand
+            // ownership back to both real tasks. Never retain the bitmap.
+            NeXtepLog.info("swap_morph",
+                "Main preview unavailable; continue source-only uniform scale with live task handoff")
         }
         val from = RectF(if (parkingMain) mainRect else sourceRect)
         val to = RectF(if (parkingMain) sourceRect else targetRect)
@@ -1954,7 +1976,11 @@ class NeXtepWindowController(
         // remains available, without touching the real task lifecycle.
         // User-reduced animation, power saver and HOME transitions are
         // authoritative. All supported form factors use the same geometry gate.
-        val animateTap = drag == null && !parkingMain && asyncMove != null &&
+        // Scale on the actual slot TAP path, regardless of whether the move
+        // is phased/async or a guarded legacy synchronous transaction. The old
+        // asyncMove != null gate silently selected a frozen 1ms preview in
+        // other valid tap paths, even though user requested live card motion.
+        val animateTap = drag == null && !parkingMain &&
             android.animation.ValueAnimator.areAnimatorsEnabled() &&
             context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode != true &&
             StageCrossDeviceSwapMotionPolicy.canAnimateTap(

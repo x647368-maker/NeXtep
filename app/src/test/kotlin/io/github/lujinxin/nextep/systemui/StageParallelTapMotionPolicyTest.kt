@@ -5,9 +5,10 @@ import org.junit.Test
 
 class StageParallelTapMotionPolicyTest {
     @Test fun shortBoundedVisualAnimation() {
-        assertEquals(100L, StageParallelTapMotionPolicy.durationMs(80))
-        assertEquals(180L, StageParallelTapMotionPolicy.durationMs(200))
-        assertEquals(180L, StageParallelTapMotionPolicy.durationMs(1000))
+        assertEquals(280L, StageParallelTapMotionPolicy.durationMs(80))
+        assertEquals(280L, StageParallelTapMotionPolicy.durationMs(200))
+        assertEquals(300L, StageParallelTapMotionPolicy.durationMs(300))
+        assertEquals(360L, StageParallelTapMotionPolicy.durationMs(1000))
     }
     @Test fun fullMotionOnlyForSafeTap() {
         assertTrue(StageParallelTapMotionPolicy.concurrent(true,false,true,true))
