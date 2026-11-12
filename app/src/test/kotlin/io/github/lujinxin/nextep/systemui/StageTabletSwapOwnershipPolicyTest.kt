@@ -14,10 +14,10 @@ class StageTabletSwapOwnershipPolicyTest {
         assertFalse(owner.settled(null, -1, tasks))
     }
 
-    @Test fun occupiedDisplayRejectsOldAndDuplicateOwner() {
+    @Test fun occupiedDisplayNeedsTargetButMayAlsoHavePausedTasks() {
         assertTrue(owner.settled(23, 8, listOf(StageTabletSwapOwnershipPolicy.Owner(23, 8), StageTabletSwapOwnershipPolicy.Owner(19, 0))))
         assertFalse(owner.settled(23, 8, listOf(StageTabletSwapOwnershipPolicy.Owner(23, 0), StageTabletSwapOwnershipPolicy.Owner(19, 8))))
-        assertFalse(owner.settled(23, 8, listOf(StageTabletSwapOwnershipPolicy.Owner(23, 8), StageTabletSwapOwnershipPolicy.Owner(19, 8))))
+        assertTrue(owner.settled(23, 8, listOf(StageTabletSwapOwnershipPolicy.Owner(23, 8), StageTabletSwapOwnershipPolicy.Owner(19, 8))))
     }
 
     @Test fun mainDisplayMustContainIncomingTaskButCanAlsoContainHome() {
