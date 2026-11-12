@@ -33,6 +33,7 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceController
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceStateBridge
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 object SystemUiRuntime {
     private val initialized = AtomicBoolean(false)
@@ -46,7 +47,8 @@ object SystemUiRuntime {
     }
     @Volatile private var workspaceConfig = WorkspaceTopConfig()
     @Volatile private var workspaceConfigReady = false
-    private val configRetry = Runnable { refreshWorkspaceConfig() }
+    private val configQueryFailures = AtomicInteger(0)
+    private val configRetry = Runnable { refreshWorkspaceConfig(retryAttempt = true) }
     private val taskRefreshQueued = AtomicBoolean(false)
     private val taskRefresh = Runnable {
         taskRefreshQueued.set(false)
@@ -62,16 +64,24 @@ object SystemUiRuntime {
         }
     }
 
-    private fun refreshWorkspaceConfig() {
+    private fun refreshWorkspaceConfig(retryAttempt: Boolean = false) {
+        // A real unlock/config change restarts a small retry budget. A scheduled
+        // retry does not: a permanently unavailable provider must not loop forever.
+        if (!retryAttempt) configQueryFailures.set(0)
         lifecycleHandler.removeCallbacks(configRetry)
         configExecutor.execute {
             // Query the module even before the workspace windows exist.
             val queriedConfig = WorkspaceConfigClient.queryOrNull(applicationContext)
             if (queriedConfig == null) {
-                // Credential-protected module settings are unavailable before first unlock.
-                lifecycleHandler.postDelayed(configRetry, 2_000L)
+                // Credential-protected settings may be missing before first unlock.
+                // Never run a 2s retry loop for hours on incompatible OEM hooks.
+                val failedReads = configQueryFailures.incrementAndGet()
+                if (StageConfigRetryBudget.shouldRetry(failedReads)) {
+                    lifecycleHandler.postDelayed(configRetry, 2_000L)
+                }
                 return@execute
             }
+            configQueryFailures.set(0)
             workspaceConfig = queriedConfig
             AppLanguage.updateHostLanguage(queriedConfig.languageTag)
             workspaceConfigReady = true
