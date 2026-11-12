@@ -18,10 +18,12 @@ internal object UpdateSection {
     fun create(activity: AppCompatActivity): View {
         fun dp(n:Int)=(n*activity.resources.displayMetrics.density).toInt()
         val installed=UpdateCoordinator.installed(activity)
-        val dark=SettingsPalette.isDark(activity)
-        val ink=SettingsPalette.text(activity)
-        val muted=SettingsPalette.secondary(activity)
-        val accent=Color.rgb(43,114,225)
+        val dark=true  // Update page intentionally uses its own immersive palette.
+        val ink=Color.WHITE
+        val muted=Color.rgb(209,201,224)
+        val accent=Color.rgb(102,91,187)
+        val updateSurface=Color.rgb(42,35,71)
+        val updateContainer=Color.rgb(75,66,105)
         fun rounded(color:Int,radius:Int=21)=GradientDrawable().apply {
             setColor(color);cornerRadius=dp(radius).toFloat()
         }
@@ -37,7 +39,7 @@ internal object UpdateSection {
         fun card():LinearLayout=LinearLayout(activity).apply {
             orientation=LinearLayout.VERTICAL
             setPadding(dp(18),dp(18),dp(18),dp(18))
-            background=rounded(SettingsPalette.surface(activity))
+            background=rounded(updateSurface)
             root.addView(this,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) })
         }
         fun gap(parent:LinearLayout,height:Int=10) {
@@ -160,14 +162,14 @@ internal object UpdateSection {
             button.textSize=16f
             button.isAllCaps=false
             button.setTextColor(if(emphasized)Color.WHITE else ink)
-            button.background=rounded(if(emphasized)accent else SettingsPalette.container(activity),15)
+            button.background=rounded(if(emphasized)accent else updateContainer,15)
             button.elevation=0f
             operations.addView(button,LinearLayout.LayoutParams(-1,dp(53)).apply { bottomMargin=dp(9) })
         }
         operations.addView(Button(activity).apply {
             text="查看 GitHub 版本发布记录";isAllCaps=false;textSize=15f
             setTextColor(ink)
-            background=rounded(SettingsPalette.container(activity),15)
+            background=rounded(updateContainer,15)
             elevation=0f
             setOnClickListener { openBrowser(activity,UpdateChecker.RELEASES_URL) }
         },LinearLayout.LayoutParams(-1,dp(52)))
