@@ -40,13 +40,18 @@ internal class StageChangelogRegression(private val inst: Instrumentation) {
         check(names.count { it.startsWith("v0.9.28-dev · ") } == 1) {
             "Archived 0.9.28-dev entry missing or duplicated: ${names.take(5)}"
         }
-        val patches = names.map { name ->
-            Regex("^v0\\.9\\.(\\d+)(?:-dev)? · ").find(name)?.groupValues?.get(1)?.toInt()
+        // A stable release and a -dev release may share the same patch number.
+        // The archive legitimately contains both 0.9.9 and 0.9.9-dev; compare
+        // full semantic rank, not patch numbers alone.
+        val ranks = names.map { name ->
+            val match = Regex("^v0\\.9\\.(\\d+)(-dev)? · ").find(name)
                 ?: error("Invalid changelog version entry: $name")
+            val patch = match.groupValues[1].toInt()
+            patch * 2 + if (match.groupValues[2].isEmpty()) 1 else 0
         }
         check(names.isNotEmpty() && names[0].startsWith("v$installed · ") &&
-            patches.size == patches.distinct().size &&
-            patches.zipWithNext().all { (newer, older) -> newer > older }) {
+            ranks.size == ranks.distinct().size &&
+            ranks.zipWithNext().all { (newer, older) -> newer > older }) {
             "Version sorting is wrong: ${names.take(5)}"
         }
         inst.runOnMainSync {
