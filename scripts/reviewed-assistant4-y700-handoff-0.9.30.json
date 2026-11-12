@@ -24,19 +24,19 @@
       },
       {
         "before": "                NeXtepLog.info(\"y700_cold_launch\", \"Prefitted native task=${info.taskId} before Shell appearance\")\n            }.onFailure {",
-        "after": "                synchronized(this) {\n                    if (pending?.id == ticket.id) pending = null\n                }\n                NeXtepLog.info(\"y700_cold_launch\",\n                    \"Prefitted task=${info.taskId} attempt=${ticket.attempts}\")\n            }.onFailure { error ->\n                synchronized(this) {\n                    if (pending?.id == ticket.id &&\n                        !StageTabletColdLaunchPolicy.mayRetryPrefit(\n                            ticket.attempts, ticket.expiresAt, SystemClock.uptimeMillis())) {\n                        pending = null\n                    }\n                }"
+        "after": "                synchronized(this) {\n                    ticket.inFlight = false\n                    if (pending?.id == ticket.id) pending = null\n                }\n                NeXtepLog.info(\"y700_cold_launch\",\n                    \"Prefitted task=${info.taskId} attempt=${ticket.attempts}\")\n            }.onFailure { error ->\n                synchronized(this) {\n                    ticket.inFlight = false\n                    if (pending?.id == ticket.id &&\n                        !StageTabletColdLaunchPolicy.mayRetryPrefit(\n                            ticket.attempts, ticket.expiresAt, SystemClock.uptimeMillis())) {\n                        pending = null\n                    }\n                }"
       },
       {
         "before": "        // The hook has already recorded the real task leash. Do not touch\n        // any synthetic display, shell task parent, or UI thread here.",
-        "after": "        // Shell has already published ownership information. Do not touch\n        // any synthetic display, parent container, or third-party app API."
+        "after": "        // Once the real task is already presented, a late callback must not\n        // recreate a prepared promotion that might overwrite its final fit.\n        if (TaskSurfaceCompat.ownsMainTask(info.taskId)) {\n            synchronized(this) {\n                if (pending?.id == ticket.id) pending = null\n                ticket.inFlight = false\n            }\n            return\n        }\n        // Shell has already published ownership information. Do not touch\n        // any synthetic display, parent container, or third-party app API."
       },
       {
         "before": "            pending = null",
-        "after": "            current.attempts += 1"
+        "after": "            current.attempts += 1\n            current.inFlight = true"
       },
       {
         "before": "            if (now > current.expiresAt) { pending = null; return }",
-        "after": "            if (!StageTabletColdLaunchPolicy.mayRetryPrefit(\n                    current.attempts, current.expiresAt, now)) {\n                pending = null\n                return\n            }"
+        "after": "            if (!StageTabletColdLaunchPolicy.mayRetryPrefit(\n                    current.attempts, current.expiresAt, now)) {\n                pending = null\n                return\n            }\n            // Some vendor Shell task callbacks can run concurrently; only one\n            // attempt can own the ticket at a time.\n            if (current.inFlight) return"
       },
       {
         "before": "    fun onTaskAppeared(info: ActivityManager.RunningTaskInfo) {",
@@ -44,7 +44,7 @@
       },
       {
         "before": "        val geometry: WorkspaceGeometry, val expiresAt: Long,",
-        "after": "        val geometry: WorkspaceGeometry, val expiresAt: Long,\n        var attempts: Int = 0,"
+        "after": "        val geometry: WorkspaceGeometry, val expiresAt: Long,\n        var attempts: Int = 0,\n        var inFlight: Boolean = false,"
       }
     ],
     "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletColdLaunchPolicy.kt": [
