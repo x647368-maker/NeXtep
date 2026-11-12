@@ -6,15 +6,16 @@ class StageHomeLayoutTest {
     @Test fun threeGroupsMatchRequestedOrderWithoutDuplicateDestinations() {
         assertEquals(listOf("工作台","系统","支持"),StageHomeLayout.sections.map{it.title})
         assertEquals(listOf("windows","core","groups","gestures",
-            "tile","diagnostics","update","changelog","help","feedback","donate","about"),
+            "tile","diagnostics","update","help","feedback","donate","about"),
             StageHomeLayout.sections.flatMap{it.items}.map{it.page})
-        assertEquals(listOf(4,5,3),StageHomeLayout.sections.map{it.items.size})
-        assertEquals(12,StageHomeLayout.sections.flatMap{it.items}.map{it.page}.toSet().size)
+        assertEquals(listOf(4,4,3),StageHomeLayout.sections.map{it.items.size})
+        assertEquals(11,StageHomeLayout.sections.flatMap{it.items}.map{it.page}.toSet().size)
     }
     @Test fun updateChangelogOnlyAppearUnderSystemAndDonateOnlyUnderSupport() {
         val system=StageHomeLayout.sections.single{it.title=="系统"}
         val support=StageHomeLayout.sections.single{it.title=="支持"}
-        assertEquals(listOf("update","changelog"),system.items.filter { it.page=="update"||it.page=="changelog" }.map { it.page })
+        assertEquals(listOf("update"),system.items.filter { it.page=="update"||it.page=="changelog" }.map { it.page })
+        assertEquals(listOf("软件更新","使用帮助与退出"),system.items.filter { it.page=="update"||it.page=="help" }.map { it.name })
         assertEquals(1,support.items.count { it.page=="donate" })
         assertFalse(StageHomeLayout.sections.filter{it.title!="支持"}.flatMap{it.items}.any{it.page=="donate"})
     }

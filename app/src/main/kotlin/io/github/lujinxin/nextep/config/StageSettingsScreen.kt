@@ -100,8 +100,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     fun open(target: String) {
         page = target; body = null; stateText = null; master = null
         if (target == "update") {
-            view.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.rgb(15,13,35), Color.rgb(43,32,83), Color.rgb(29,23,55)))
+            view.background = StageUpdateBackdrop()
             activity.window.statusBarColor = Color.rgb(15,13,35)
             activity.window.decorView.systemUiVisibility =
                 activity.window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
@@ -130,6 +129,11 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             addView(columnHost, ViewGroup.LayoutParams(-1, -2))
         }
         view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        if (target == "update" && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            scroll.alpha = 0f
+            scroll.translationY = dp(14).toFloat()
+            scroll.animate().alpha(1f).translationY(0f).setDuration(240L).start()
+        }
         if (target == "home") {
             val header = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -148,12 +152,44 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "在线更新", "donate" to "打赏作者")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
             header.addView(label(titles[target] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (target == "update") {
+                val more = label("⋮", 28f, Color.WHITE).apply {
+                    gravity = Gravity.CENTER
+                    contentDescription = "更多更新选项"
+                    isClickable = true; isFocusable = true
+                    minimumHeight = dp(48)
+                    setOnClickListener { anchor ->
+                        val popup = PopupMenu(activity, anchor)
+                        popup.menu.add("查看更新说明").setOnMenuItemClickListener { open("changelog"); true }
+                        popup.menu.add("更新使用说明").setOnMenuItemClickListener {
+                            MaterialAlertDialogBuilder(activity)
+                                .setTitle("更新使用说明")
+                                .setMessage("检查更新后，只有可信的较高版本才会出现下载入口。下载后必须通过 SHA-256、包名、版本码和原证书校验，再由 Android 系统安装器确认覆盖升级。安装完成后正常重启以加载新版 Vector 模块。")
+                                .setPositiveButton("知道了", null).show()
+                            true
+                        }
+                        popup.menu.add("关于更新").setOnMenuItemClickListener {
+                            MaterialAlertDialogBuilder(activity).setTitle("关于软件更新")
+                                .setMessage("统一更新渠道，只读取项目已发布、通过校验的版本。不会静默安装、收集设备标识或常驻后台。自动检查仅在打开 App 时低频进行。")
+                                .setMultiChoiceItems(arrayOf("打开 App 时自动检查更新"), booleanArrayOf(UpdateCoordinator.auto(activity))) { _, _, enabled ->
+                                    UpdateCoordinator.setAuto(activity, enabled)
+                                    if (enabled && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                                        activity.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 72)
+                                }
+                                .setPositiveButton("完成", null).show()
+                            true
+                        }
+                        popup.show()
+                    }
+                }
+                header.addView(more, LinearLayout.LayoutParams(dp(48), dp(48)))
+            }
             column.addView(header)
             when (target) {
                 "core" -> corePage(column)
@@ -167,7 +203,12 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "feedback" -> feedback(column)
                 "changelog" -> column.addView(StageChangelogPage.create(activity), LinearLayout.LayoutParams(-1, -2))
                 "update" -> column.addView(UpdateSection.create(activity), LinearLayout.LayoutParams(-1, -2))
-                "donate" -> column.addView(StageDonationPage.create(activity), LinearLayout.LayoutParams(-1, -2))
+                "donate" -> runCatching { StageDonationPage.create(activity) }
+                    .onSuccess { column.addView(it, LinearLayout.LayoutParams(-1, -2)) }
+                    .onFailure {
+                        column.addView(label("打赏页面加载失败，请稍后重试；应用其他功能不受影响。", 15f), LinearLayout.LayoutParams(-1,-2))
+                        toast("打赏二维码加载失败，请在故障测试与报告中反馈")
+                    }
             }
         }
     }
@@ -519,6 +560,9 @@ private class StageSettingsIcon(context: Context, private val kind: String, colo
             "exit" -> { canvas.drawArc(3f, 4f, 21f, 22f, -48f, 276f, false, paint); canvas.drawLine(12f, 2f, 12f, 12f, paint) }
             "gesture" -> { canvas.drawLine(4f, 13f, 10f, 19f, paint); canvas.drawLine(10f, 19f, 21f, 5f, paint); canvas.drawCircle(5f, 5f, 2f, paint) }
             "diagnostics" -> { canvas.drawLine(2f, 13f, 6f, 13f, paint); canvas.drawLine(6f, 13f, 10f, 5f, paint); canvas.drawLine(10f, 5f, 14f, 20f, paint); canvas.drawLine(14f, 20f, 18f, 10f, paint); canvas.drawLine(18f, 10f, 22f, 10f, paint) }
+            "update" -> { canvas.drawArc(4f,4f,20f,20f,205f,220f,false,paint); canvas.drawLine(17f,4f,20f,4f,paint); canvas.drawLine(20f,4f,20f,7f,paint); canvas.drawArc(4f,4f,20f,20f,25f,145f,false,paint); canvas.drawLine(4f,17f,4f,20f,paint); canvas.drawLine(4f,20f,7f,20f,paint) }
+            "book" -> { rect(2f,4f,11f,20f);rect(13f,4f,22f,20f);canvas.drawLine(12f,6f,12f,20f,paint);canvas.drawLine(5f,9f,8f,9f,paint);canvas.drawLine(16f,9f,19f,9f,paint) }
+            "about" -> { canvas.drawCircle(12f,12f,9f,paint);canvas.drawCircle(12f,9f,2.8f,paint);canvas.drawArc(7f,12f,17f,20f,185f,170f,false,paint) }
             "heart" -> { val p=Path().apply { moveTo(12f,21f); cubicTo(9f,18f,2f,14f,2f,9f); cubicTo(2f,3f,9f,1f,12f,7f); cubicTo(15f,1f,22f,3f,22f,9f); cubicTo(22f,14f,15f,18f,12f,21f); close() }; canvas.drawPath(p,paint) }
             else -> { canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawLine(12f, 11f, 12f, 17f, paint); canvas.drawPoint(12f, 7f, paint) }
         }; canvas.restoreToCount(save)

@@ -80,11 +80,16 @@ internal object StageDonationPage {
             }, LinearLayout.LayoutParams(-1, dp(52)))
             // The static image is decoded only on this user-requested page.
             box.addView(ImageView(activity).apply {
-                setImageBitmap(StageDonationQr.bitmap(code))
+                // Bad/corrupt QR data must not crash Settings on entry.
+                val image = runCatching { StageDonationQr.bitmap(code) }.getOrNull()
+                if (image != null) setImageBitmap(image)
+                else contentDescription = code.name + "暂时无法加载，请使用其他收款方式"
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 adjustViewBounds = true
-                contentDescription = code.name + "，长按保存二维码"
-                setOnLongClickListener { saveToGallery(activity, code); true }
+                if (image != null) {
+                    contentDescription = code.name + "，长按保存二维码"
+                    setOnLongClickListener { saveToGallery(activity, code); true }
+                }
             }, LinearLayout.LayoutParams(-1, dp(312)))
             box.addView(Button(activity).apply {
                 text = "保存" + code.name + "到相册"

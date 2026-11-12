@@ -13,9 +13,9 @@ internal object StageHomeLayout {
         Section("工作台",listOf(Item("窗口布局","windows","windows"),Item("影音与快捷栏","core","apps"),
             Item("工作组","groups","groups"),Item("启动手势","gestures","gesture"))),
         Section("系统",listOf(Item("快捷开关","tile","tile"),Item("运行诊断","diagnostics","diagnostics"),
-            Item("在线更新","update","info"),Item("更新日志","changelog","info"),Item("使用与退出","help","help"))),
+            Item("软件更新","update","update"),Item("使用帮助与退出","help","book"))),
         Section("支持",listOf(Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
-            Item("关于","about","info")))
+            Item("关于","about","about")))
     )
     fun contentWidth(availablePixels:Int,density:Float):Int {
         require(availablePixels>0 && density>0)

@@ -30,11 +30,10 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             visit(screen)
         }
         instrumentation.waitForIdleSync()
-        for (required in listOf("台前调度 · 软件更新","自动发现新版本","版本检测与安装",
-            "检查更新","查看 / 安装新版本","查看 GitHub 版本发布记录",
-            "已安装版本","使用说明","SHA-256","工作组","正常重启一次")) {
+        for (required in listOf("台前调度","检查新版本","检查更新","当前设备")) {
             check(shown.any { it.contains(required) }) { "Update page hid required content: $required" }
         }
+        check(shown.none { it.contains("已安装版本") || it.contains("Atomic Workbench") }) { "Update page exposed removed hero text" }
         val first=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update hero")
         File(out,"update-center-hero.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG,100,it) }
         first.recycle()
@@ -47,6 +46,6 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             root.removeAllViews()
             root.setBackgroundColor(android.graphics.Color.rgb(20,32,70))
         }
-        return "PASS update center: native version hero, manual controls, help always present; hero/help real Android screenshots"
+        return "PASS update center: native gradients, clean installed-version hero, safe manual check; HWUI screenshots"
     }
 }
