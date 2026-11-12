@@ -513,7 +513,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,(root/path).read_bytes())))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,(root/path).read_bytes())))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
@@ -534,7 +534,7 @@ for path,sha in frozen.items():
  elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_handoff(path,(root/path).read_bytes())
+  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,(root/path).read_bytes())))
   # The exact Git blob SHA-1 pins the reviewed hook's entire contents.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
