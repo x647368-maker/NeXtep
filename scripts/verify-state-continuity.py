@@ -294,7 +294,7 @@ assert set(private_ux_files)=={
 def undo_private_ux(path,data):
  if path not in private_ux_files:return data
  spec=private_ux_files[path]
- gitblob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+b'\\0'+b).hexdigest()
+ gitblob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
  assert gitblob(data)==spec['reviewed_blob_sha1'],path
  original=spec['previous_content'].encode('utf-8')
  assert gitblob(original)==spec['previous_blob_sha1'],path

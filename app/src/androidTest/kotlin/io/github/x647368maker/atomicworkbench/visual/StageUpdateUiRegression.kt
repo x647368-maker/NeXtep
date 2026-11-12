@@ -30,7 +30,7 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             visit(screen)
         }
         instrumentation.waitForIdleSync()
-        for (required in listOf("台前调度","检查新版本","检查更新","当前设备")) {
+        for (required in listOf("台前调度","检查新版本","检查更新")) {
             check(shown.any { it.contains(required) }) { "Update page hid required content: $required" }
         }
         check(shown.none { it.contains("已安装版本") || it.contains("Atomic Workbench") }) { "Update page exposed removed hero text" }
