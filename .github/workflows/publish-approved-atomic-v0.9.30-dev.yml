@@ -1,0 +1,109 @@
+name: Publish owner-approved Atomic Workbench v0.9.30-dev prerelease (one time)
+
+on:
+  push:
+    branches:
+      - 'release-approval/atomic-v0.9.30-dev-20261112'
+    paths:
+      - '.github/workflows/publish-approved-atomic-v0.9.30-dev.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish-approved-dev:
+    if: github.repository == 'x647368-maker/NeXtep' && github.ref == 'refs/heads/release-approval/atomic-v0.9.30-dev-20261112'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: x647368-maker/NeXtep
+    steps:
+      - name: Fetch exact unpublished release metadata
+        run: |
+          set -euo pipefail
+          gh api repos/x647368-maker/NeXtep/releases/442376430 > /tmp/release.json
+      - name: Verify fixed draft, target and two asset identities
+        run: |
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/release.json',encoding='utf-8'))
+          assert r['id']==442376430
+          assert r['tag_name']=='atomic-v0.9.30-dev'
+          assert r['target_commitish']=='atomic-workbench/p0-update-403-0.9.30'
+          assert r['draft'] is True and r['prerelease'] is True and r['published_at'] is None
+          assets={a['name']:a for a in r['assets']}
+          assert set(assets)=={'atomic-update.json','AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk'}
+          assert assets['atomic-update.json']['id']==737570238
+          assert assets['atomic-update.json']['size']==941
+          assert assets['atomic-update.json']['digest']=='sha256:95ab576c6130068512f41048bb41dc7aebe920c2c34b1babdaa46de5ef1bc8e0'
+          a=assets['AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk']
+          assert a['id']==737570181 and a['size']==31964386
+          assert a['digest']=='sha256:532080deadc87e48c4a77bf289a9a80a301ff7e20495153cc911bbbe37e02adc'
+          assert all(a['state']=='uploaded' for a in assets.values())
+          print('Verified exact draft release and both uploaded asset records')
+          PY
+      - name: Download actual draft assets through authenticated GitHub API
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/x647368-maker/NeXtep/releases/assets/737570238" \
+            --output /tmp/atomic-update.json
+          curl --fail-with-body --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/x647368-maker/NeXtep/releases/assets/737570181" \
+            --output /tmp/AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk
+      - name: Verify actual asset bytes and release manifest contract before publishing
+        run: |
+          python3 - <<'PY'
+          import json,hashlib,pathlib
+          meta_path=pathlib.Path('/tmp/atomic-update.json')
+          apk=pathlib.Path('/tmp/AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk')
+          assert meta_path.stat().st_size==941
+          assert hashlib.sha256(meta_path.read_bytes()).hexdigest()=='95ab576c6130068512f41048bb41dc7aebe920c2c34b1babdaa46de5ef1bc8e0'
+          m=json.loads(meta_path.read_text(encoding='utf-8'))
+          required={
+            'schemaVersion':1,
+            'applicationId':'io.github.x647368maker.atomicworkbench',
+            'versionName':'0.9.30-dev',
+            'versionCode':45,
+            'channel':'dev',
+            'apkAsset':'AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk',
+            'sha256':'532080deadc87e48c4a77bf289a9a80a301ff7e20495153cc911bbbe37e02adc',
+            'size':31964386,
+            'certificateSha256':'3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe',
+            'releaseTag':'atomic-v0.9.30-dev',
+          }
+          for k,v in required.items():
+            assert m[k]==v,(k,m[k],v)
+          assert apk.stat().st_size==31964386
+          with apk.open('rb') as inp:
+            actual=hashlib.file_digest(inp,'sha256').hexdigest()
+          assert actual==m['sha256'],actual
+          print('Real Release assets verified: apk_size=31964386, versionCode=45, SHA-256='+actual)
+          PY
+      - name: Publish the approved development pre-release (never stable)
+        run: |
+          set -euo pipefail
+          printf '{"draft":false,"prerelease":true}\n' |
+            gh api -X PATCH repos/x647368-maker/NeXtep/releases/442376430 --input - > /tmp/published.json
+      - name: Verify public release after publication
+        run: |
+          set -euo pipefail
+          gh api repos/x647368-maker/NeXtep/releases/tags/atomic-v0.9.30-dev > /tmp/public.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('/tmp/public.json',encoding='utf-8'))
+          assert r['id']==442376430
+          assert r['tag_name']=='atomic-v0.9.30-dev'
+          assert r['draft'] is False and r['prerelease'] is True
+          a={x['name']:x for x in r['assets']}
+          assert set(a)=={'atomic-update.json','AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk'}
+          assert a['AtomicWorkbench-v0.9.30-dev-45-SIGNED.apk']['digest']=='sha256:532080deadc87e48c4a77bf289a9a80a301ff7e20495153cc911bbbe37e02adc'
+          print('PUBLIC_PRERELEASE_URL='+r['html_url'])
+          PY
