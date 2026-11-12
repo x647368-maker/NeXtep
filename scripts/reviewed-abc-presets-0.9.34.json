@@ -1,0 +1,23 @@
+{
+  "purpose": "Private user-approved A/B layout preset selector plus C occupied-count adaptive toggle. Reuses existing commands, per-physical-shape preferences, unchanged task/Surface/VD/geometry and PR41 all-device swap motion.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
+      "previous_blob_sha1": "b96b1e6fd5864e16781081d3fc4b17fd4f97c818",
+      "reviewed_blob_sha1": "e9b18850e57e5abd7780d07b60a147354463ab66",
+      "patches": [
+        {
+          "before": "    private var adaptive = true\n    private var mainPriority = true",
+          "after": "    private var adaptive = true\n    private var topRail = false\n    private var mainPriority = true"
+        },
+        {
+          "before": "        row(layout, \"自动适配\", \"按实际屏幕状态与小窗数量计算；每个屏幕状态分别保存排列和显示策略\", \"windows\", end = toggle(adaptive) { command(if (it) \"adaptive_on\" else \"adaptive_off\") })\n        row(layout, \"顶部横排\", \"小窗横向排列在主窗上方\", \"windows\") { command(\"layout_top\") }\n        row(layout, \"侧边纵排\", \"小窗纵向排列在主窗旁\", \"windows\") { command(\"layout_side\") }",
+          "after": "        // A and B are the existing proven layouts; C is an optional shared\n        // occupied-count rule, not another window manager or virtual display.\n        row(layout, \"窗口排列 A / B\", if (topRail) \"B · 顶部四小窗（当前屏幕）\" else \"A · 侧边四小窗（当前屏幕）\", \"windows\") {\n            MaterialAlertDialogBuilder(activity).setTitle(\"窗口排列预设\")\n                .setItems(arrayOf(\"A · 侧边纵排（主窗优先）\", \"B · 顶部横排（主窗优先）\")) { _, which ->\n                    command(if (which == 0) \"layout_side\" else \"layout_top\")\n                }.setNegativeButton(\"取消\", null).show()\n        }\n        row(layout, \"C · 小窗智能自适应\", \"与 A/B 组合；按已打开小窗数量调整显示，不新增任务\", \"windows\",\n            end = toggle(adaptive) { command(if (it) \"adaptive_on\" else \"adaptive_off\") })\n        root.addView(hint(\"新设备形态首次进入时根据实际宽高和密度建议 A/B；已经手动选择过的屏幕保持原布局。C 仅调整安全的预览排列，不拉伸真实任务、重建虚拟显示或改变四小窗上限。\"))"
+        },
+        {
+          "before": "adaptive = reply.getBoolean(\"adaptive\", true)\n                    mainPriority",
+          "after": "adaptive = reply.getBoolean(\"adaptive\", true)\n                    topRail = reply.getBoolean(\"layout_top\", topRail)\n                    mainPriority"
+        }
+      ]
+    }
+  }
+}
