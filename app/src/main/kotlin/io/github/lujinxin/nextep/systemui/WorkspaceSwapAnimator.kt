@@ -47,6 +47,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         moveAsync: ((((Boolean) -> Unit) -> Unit))? = null,
         canRelease: () -> Boolean = { true },
         freezeGeometry: Boolean = false,
+        uniformTapMorph: Boolean = false,
         onFinished: () -> Unit,
     ) {
         cancel()
@@ -66,7 +67,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val token = ++generation
         handoff=StageStableHandoff()
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
-            sourceQuad, targetQuad, freezeGeometry)
+            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -196,6 +197,7 @@ private class SwapPreviewView(
     private val sourceQuad: FloatArray?,
     private val targetQuad: FloatArray?,
     private val freezeGeometry: Boolean,
+    private val uniformTapMorph: Boolean,
 ) : View(context) {
     var progress = 0f
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -235,8 +237,40 @@ private class SwapPreviewView(
             drawFixedFrame(canvas, source, sourceBounds)
             return
         }
+        if (uniformTapMorph) {
+            // All supported form factors use the same two-way movement, but
+            // never map the bitmap corners onto a changing quadrilateral.
+            // A uniform fit and letterbox protects text/video proportions
+            // while the real tasks are moved and their live buffers settle.
+            if (target != null) drawUniformMotionFrame(canvas, target, targetBounds, sourceBounds)
+            drawUniformMotionFrame(canvas, source, start, targetBounds)
+            return
+        }
         if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)
         drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)
+    }
+
+    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {
+        val frame = StageExchangeMotion.frame(
+            StageExchangeMotion.Box(from.left, from.top, from.right, from.bottom),
+            StageExchangeMotion.Box(to.left, to.top, to.right, to.bottom), progress,
+        ).box
+        if (!frame.left.isFinite() || !frame.top.isFinite() ||
+            !frame.right.isFinite() || !frame.bottom.isFinite() ||
+            frame.right <= frame.left || frame.bottom <= frame.top) return
+        val bounds = RectF(frame.left, frame.top, frame.right, frame.bottom)
+        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,
+            bounds.left, bounds.top, bounds.right, bounds.bottom)
+        destination.set(fit.left, fit.top, fit.right, fit.bottom)
+        outline.reset()
+        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
+            bounds.width(), bounds.height(), resources.displayMetrics.density)
+        outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
+        val save = canvas.save()
+        canvas.clipPath(outline)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(bitmap, null, destination, bitmapPaint)
+        canvas.restoreToCount(save)
     }
 
     private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {
