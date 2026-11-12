@@ -330,7 +330,15 @@ class TaskSwitcherView(
         io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics.previewCaptures.incrementAndGet()
         // Exchanges request the producer's recorded size. The no-argument
         // TextureView bitmap is only rail-sized and blurs when promoted to main.
-        val bitmap = textureView.getBitmap(width, height) ?: return@runCatching null
+        // The producer-sized getBitmap path can fail on some ColorOS drivers
+        // even while the attached TextureView is displaying actual content.
+        // Fall back once to the *current live view resolution* (never a stale
+        // cached screenshot). This trades detail for one 280–360ms transitional
+        // frame only; the destination is still the original real task Surface.
+        val bitmap = runCatching { textureView.getBitmap(width, height) }.getOrNull()
+            ?: textureView.takeIf { it.isAvailable && it.width > 1 && it.height > 1 }
+                ?.let { live -> runCatching { live.getBitmap(live.width, live.height) }.getOrNull() }
+            ?: return@runCatching null
         // TextureView returns its logical portrait buffer. Follow the rail's
         // actual transform so reverse-landscape drag/swap previews face correctly.
         val panelRotation = (parent as? View)?.rotation ?: 0f
