@@ -2,6 +2,7 @@ package io.github.x647368maker.atomicworkbench.config
 
 import android.content.ContentValues
 import android.graphics.Typeface
+import android.graphics.Bitmap
 import android.graphics.drawable.GradientDrawable
 import android.os.Environment
 import android.provider.MediaStore
@@ -13,7 +14,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import io.github.x647368maker.atomicworkbench.R
 
 /**
  * Entirely voluntary and offline.
@@ -21,12 +21,6 @@ import io.github.x647368maker.atomicworkbench.R
  * No on-start popup, background task, timer, analytics, network or payment SDK.
  */
 internal object StageDonationPage {
-    private data class Code(val name: String, val drawable: Int, val filename: String)
-    private val codes = listOf(
-        Code("微信收款码", R.drawable.donate_wechat, "台前调度-微信收款码.png"),
-        Code("支付宝收款码", R.drawable.donate_alipay, "台前调度-支付宝收款码.png"),
-    )
-
     fun create(activity: AppCompatActivity): View {
         fun dp(n: Int) = (n * activity.resources.displayMetrics.density).toInt()
         fun txt(value: String, size: Float = 15f, muted: Boolean = false): TextView =
@@ -65,7 +59,7 @@ internal object StageDonationPage {
             ).apply { setPadding(0, dp(12), 0, 0) })
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
 
-        codes.forEach { code ->
+        StageDonationQr.codes.forEach { code ->
             val box = card()
             box.addView(txt(code.name, 18f).apply { typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER })
             box.addView(txt("可使用对应 App 扫码；同一台手机可先保存到相册后识别。", 13f, true).apply {
@@ -74,16 +68,16 @@ internal object StageDonationPage {
             })
             // The static image is decoded only on this user-requested page.
             box.addView(ImageView(activity).apply {
-                setImageResource(code.drawable)
+                setImageBitmap(StageDonationQr.bitmap(code))
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 adjustViewBounds = true
                 contentDescription = code.name + "，长按保存二维码"
-                setOnLongClickListener { saveToGallery(activity, code.drawable, code.filename); true }
+                setOnLongClickListener { saveToGallery(activity, code); true }
             }, LinearLayout.LayoutParams(-1, dp(312)))
             box.addView(Button(activity).apply {
                 text = "保存" + code.name + "到相册"
                 contentDescription = text
-                setOnClickListener { saveToGallery(activity, code.drawable, code.filename) }
+                setOnClickListener { saveToGallery(activity, code) }
             }, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(12) })
             root.addView(box, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         }
@@ -94,13 +88,13 @@ internal object StageDonationPage {
         return root
     }
 
-    private fun saveToGallery(activity: AppCompatActivity, resourceId: Int, filename: String) {
+    private fun saveToGallery(activity: AppCompatActivity, code: StageDonationQr.Code) {
         if (activity.isDestroyed || activity.isFinishing) return
         val resolver = activity.contentResolver
         var uri: android.net.Uri? = null
         try {
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+                put(MediaStore.Images.Media.DISPLAY_NAME, code.filename)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/台前调度")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -108,7 +102,12 @@ internal object StageDonationPage {
             uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: error("无法创建相册图片")
             resolver.openOutputStream(uri)?.use { output ->
-                activity.resources.openRawResource(resourceId).use { input -> input.copyTo(output) }
+                val bitmap = StageDonationQr.bitmap(code)
+                try {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "二维码写入失败" }
+                } finally {
+                    bitmap.recycle()
+                }
             } ?: error("无法保存二维码文件")
             resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
             Toast.makeText(activity, "收款码已保存到相册", Toast.LENGTH_SHORT).show()
