@@ -87,7 +87,7 @@ jobs:
       - name: Upload only two verified assets to GitHub DEV pre-release draft
         run: |
           set -euo pipefail
-          if gh api "repos/$REPO/releases/tags/$TAG" > /tmp/release-existing.json 2>/dev/null; then
+          if gh api "repos/$REPO/releases/442516202" > /tmp/release-existing.json 2>/dev/null; then
             echo 'Release already exists; will validate rather than overwrite'
           else
             gh release create "$TAG" "/tmp/release/$APK" /tmp/release/atomic-update.json \
@@ -95,11 +95,11 @@ jobs:
               --title '台前调度 v0.9.33-dev（48）开发预发行版' \
               --notes '418 项单元测试及模拟器 HWUI 通过；整合 Y700/N5 专项与可选打赏；三台 ColorOS 真机尚待验收。只发布开发版。'
           fi
-          gh api "repos/$REPO/releases/tags/$TAG" > /tmp/asset-index.json
+          gh api "repos/$REPO/releases/442516202" > /tmp/asset-index.json
           python3 - <<'PY'
           import json,os
           r=json.load(open('/tmp/asset-index.json'))
-          assert r['tag_name']==os.environ['TAG'] and r['prerelease'] is True
+          assert r['id']==442516202 and r['tag_name']==os.environ['TAG'] and r['prerelease'] is True
           assert r['target_commitish']==os.environ['SRC']
           assets={a['name']:a for a in r['assets']}
           assert set(assets)=={'atomic-update.json',os.environ['APK']}
@@ -123,7 +123,7 @@ jobs:
       - name: Publish only DEV pre-release; never publish stable
         run: |
           set -euo pipefail
-          gh api "repos/$REPO/releases/tags/$TAG" > /tmp/pre-public.json
+          gh api "repos/$REPO/releases/442516202" > /tmp/pre-public.json
           python3 - <<'PY'
           import json
           r=json.load(open('/tmp/pre-public.json'))
@@ -134,7 +134,7 @@ jobs:
             release_id=$(python3 -c "import json;print(json.load(open('/tmp/pre-public.json'))['id'])")
             printf '{"draft":false,"prerelease":true}\n' | gh api -X PATCH "repos/$REPO/releases/$release_id" --input - >/tmp/public.json
           fi
-          gh api "repos/$REPO/releases/tags/$TAG" > /tmp/public.json
+          gh api "repos/$REPO/releases/442516202" > /tmp/public.json
           python3 - <<'PY'
           import json
           r=json.load(open('/tmp/public.json'))
