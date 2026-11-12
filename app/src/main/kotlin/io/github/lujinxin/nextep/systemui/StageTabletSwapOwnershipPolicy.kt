@@ -16,11 +16,9 @@ internal object StageTabletSwapOwnershipPolicy {
     fun settled(expectedTaskId: Int?, displayId: Int, owners: List<Owner>): Boolean {
         if (displayId < 0) return false
         return if (expectedTaskId == null) owners.none { it.displayId == displayId }
-        else owners.any { it.taskId == expectedTaskId && it.displayId == displayId } &&
-            // Display 0 legitimately hosts HOME and background tasks in
-            // addition to the focused main task. Exclusivity is meaningful
-            // for a one-task preview virtual display only.
-            (displayId == 0 ||
-                owners.none { it.displayId == displayId && it.taskId != expectedTaskId })
+        else owners.any { it.taskId == expectedTaskId && it.displayId == displayId }
+        // RunningTasks also reports background/paused tasks on the same
+        // virtual display. They must not stall an otherwise valid handoff.
+        // A Ready display, unlike an Occupied one, really must be vacant.
     }
 }
