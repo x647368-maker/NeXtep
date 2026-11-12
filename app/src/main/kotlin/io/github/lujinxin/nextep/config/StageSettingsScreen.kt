@@ -50,6 +50,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         private set
     val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor); isFocusableInTouchMode = true }
     private val originalStatusBarColor=activity.window.statusBarColor
+    private val originalNavigationBarColor=activity.window.navigationBarColor
     private val originalSystemUiFlags=activity.window.decorView.systemUiVisibility
     private fun dp(n: Int) = (n * activity.resources.displayMetrics.density).toInt()
     private fun label(s: String, size: Float = 16f, color: Int = ink) = TextView(activity).apply {
@@ -104,15 +105,88 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         if (target == "update") {
             view.background = StageUpdateBackdrop()
             activity.window.statusBarColor = Color.rgb(15,13,35)
-            activity.window.decorView.systemUiVisibility =
-                activity.window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            activity.window.navigationBarColor = Color.rgb(23,14,65)
+            activity.window.decorView.systemUiVisibility = originalSystemUiFlags and
+                (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR).inv()
         } else {
             view.setBackgroundColor(backgroundColor)
             activity.window.statusBarColor = originalStatusBarColor
+            activity.window.navigationBarColor = originalNavigationBarColor
             activity.window.decorView.systemUiVisibility = originalSystemUiFlags
         }
         view.removeAllViews()
         view.requestFocus()
+        if (target == "update") {
+            // Dedicated full-height native page: bottom card anchoring needs a
+            // measured viewport. The general settings ScrollView is WRAP_CONTENT.
+            // No bitmap, live blur, extra network polling or new window Surface.
+            val shell = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+            }
+            val header = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(label("‹", 34f, Color.WHITE).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "返回"
+                setOnClickListener { open("home") }
+            }, LinearLayout.LayoutParams(dp(40), dp(52)))
+            header.addView(label("软件更新", 21f, Color.WHITE).apply {
+                typeface = Typeface.DEFAULT_BOLD
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            val more = label("⋮", 28f, Color.WHITE).apply {
+                gravity = Gravity.CENTER
+                contentDescription = "更多更新选项"
+                isClickable = true; isFocusable = true
+                minimumHeight = dp(48)
+                setOnClickListener { anchor ->
+                    PopupMenu(activity, anchor).apply {
+                        menu.add("查看更新说明").setOnMenuItemClickListener {
+                            open("changelog"); true
+                        }
+                        menu.add("更新使用说明").setOnMenuItemClickListener {
+                            MaterialAlertDialogBuilder(activity).setTitle("更新使用说明")
+                                .setMessage("只显示项目官方可验证的新版本。下载后必须通过 SHA-256、包名、版本码和原证书校验，最后由 Android 系统安装器确认覆盖升级。安装后正常重启设备。")
+                                .setPositiveButton("知道了", null).show()
+                            true
+                        }
+                        menu.add("关于更新").setOnMenuItemClickListener {
+                            MaterialAlertDialogBuilder(activity).setTitle("关于软件更新")
+                                .setMessage("统一更新渠道，不静默安装、不收集设备标识，也不持续在后台轮询。检查功能仅在用户操作或启用低频自动检查时运行。")
+                                .setMultiChoiceItems(arrayOf("打开 App 时自动检查更新"),
+                                    booleanArrayOf(UpdateCoordinator.auto(activity))) { _, _, enabled ->
+                                    UpdateCoordinator.setAuto(activity, enabled)
+                                    if (enabled && activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                                        activity.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 72)
+                                }.setPositiveButton("完成", null).show()
+                            true
+                        }
+                        show()
+                    }
+                }
+            }
+            header.addView(more, LinearLayout.LayoutParams(dp(48), dp(48)))
+            shell.addView(header, LinearLayout.LayoutParams(-1, dp(52)))
+            val host = FrameLayout(activity)
+            val updateContent = UpdateSection.create(activity) { open("changelog") }
+            host.addView(updateContent, FrameLayout.LayoutParams(-1, -1, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+            host.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+                val wanted = minOf(right - left, dp(540)).coerceAtLeast(1)
+                if (updateContent.layoutParams.width != wanted)
+                    updateContent.layoutParams = (updateContent.layoutParams as FrameLayout.LayoutParams).apply {
+                        width = wanted
+                    }
+            }
+            shell.addView(host, LinearLayout.LayoutParams(-1, 0, 1f))
+            view.addView(shell, FrameLayout.LayoutParams(-1, -1))
+            if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                shell.alpha = 0f
+                shell.animate().alpha(1f).setDuration(200L).start()
+            }
+            return
+        }
         val column = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(if (target == "home") 12 else 8), dp(16), dp(if (target == "home") 16 else 28))
         }

@@ -10,6 +10,28 @@ class StageUpdateDeviceLabelTest {
         assertEquals("OPPO Find N5 卫星通信版",StageUpdateDeviceLabel.fromProperties("OPPO","PKH120"))
         assertEquals("联想拯救者 Y700 2025",StageUpdateDeviceLabel.fromProperties("Lenovo","TB321FU"))
         assertEquals("联想拯救者 Y700 四代",StageUpdateDeviceLabel.fromProperties("Lenovo","TB322FU"))
+        assertEquals("联想拯救者 Y700 无极",StageUpdateDeviceLabel.fromProperties("Lenovo","TB324ZC"))
+    }
+    @Test fun knownHardwareIdOutranksSpoofedRomModel() {
+        assertEquals("联想拯救者 Y700 无极",StageUpdateDeviceLabel.fromSystemProperties(
+            "OPPO","OPPO","ColorOS","TB324ZC","TB324ZC"))
+        assertEquals("OPPO Find N5",StageUpdateDeviceLabel.fromSystemProperties(
+            "OPPO","OPPO","Unknown","PKH110","device_pk"))
+        assertEquals("一加 Ace 7 Pro",StageUpdateDeviceLabel.fromSystemProperties(
+            "OnePlus","OnePlus","PMS110","OP64F1L1","other"))
+        assertEquals("设备型号待核实",StageUpdateDeviceLabel.fromSystemProperties(
+            "OPPO","OPPO","PKH110","TB324ZC","PMS110"))
+    }
+    @Test fun genericModelsDoNotInventADevice() {
+        assertEquals("设备型号未识别",StageUpdateDeviceLabel.fromSystemProperties(
+            "OPPO","OPPO","generic","unknown","unknown"))
+        assertEquals("OPPO Find N5",StageUpdateDeviceLabel.fromProperties("OPPO","OPPO Find N5"))
+    }
+    @Test fun emulatorLabelNeverLooksLikeRetailDevice() {
+        assertEquals("Android 模拟器",StageUpdateDeviceLabel.fromSystemProperties(
+            "Google","Google","sdk_gphone64_x86_64","emu64x","sdk_gphone64_x86_64"))
+        assertEquals("Android 模拟器",StageUpdateDeviceLabel.fromProperties(
+            "Google","Android SDK built for x86_64"))
     }
     @Test fun modifiedRomMustNotInventAnIdentity() {
         assertEquals("OPPO N5-ported-ROM",StageUpdateDeviceLabel.fromProperties("OPPO","N5-ported-ROM"))

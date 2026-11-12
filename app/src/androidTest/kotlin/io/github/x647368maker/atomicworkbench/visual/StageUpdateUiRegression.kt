@@ -17,10 +17,9 @@ import java.io.File
 internal class StageUpdateUiRegression(private val instrumentation: Instrumentation) {
     fun run(activity: Activity, root: FrameLayout, out: File): String {
         val shown=mutableListOf<String>()
-        val screen=ScrollView(activity)
+        lateinit var screen: View
         instrumentation.runOnMainSync {
-            val page=UpdateSection.create(activity as AppCompatActivity)
-            screen.addView(page,ViewGroup.LayoutParams(-1,-2))
+            screen=UpdateSection.create(activity as AppCompatActivity)
             root.removeAllViews()
             root.background = StageUpdateBackdrop()
             root.addView(screen,FrameLayout.LayoutParams(-1,-1))
@@ -38,10 +37,48 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             check(shown.any { it.contains(required) }) { "Update page hid required content: $required" }
         }
         check(shown.none { it.contains("已安装版本") || it.contains("Atomic Workbench") }) { "Update page exposed removed hero text" }
-        val first=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update hero")
-        File(out,"update-center-hero.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG,100,it) }
-        first.recycle()
-        instrumentation.runOnMainSync { screen.fullScroll(View.FOCUS_DOWN) }
+        // Real full-height layout: all static drawing, bottom-anchored card, and
+        // a visible gap between device hero and status content on tall phones.
+        val hero=root.findViewWithTag<View>("stage_update_hero")
+        val card=root.findViewWithTag<View>("stage_update_bottom_card")
+        check(hero!=null && card!=null) { "Update hero or bottom glass card not present" }
+        if (root.height > (650*activity.resources.displayMetrics.density)) {
+            val heroXY=IntArray(2);val cardXY=IntArray(2)
+            hero.getLocationOnScreen(heroXY);card.getLocationOnScreen(cardXY)
+            check(cardXY[1]-heroXY[1]-hero.height > (36*activity.resources.displayMetrics.density)) {
+                "Updated status card crowds the device title"
+            }
+        }
+        // An emulated HWUI surface can lag the first idle callback. Do not
+        // silently accept a plain backdrop as a passed hero screenshot.
+        val heroBounds=IntArray(2)
+        hero.getLocationOnScreen(heroBounds)
+        fun heroPainted(bitmap:Bitmap): Boolean {
+            var whitePixels=0
+            val left=(bitmap.width/5).coerceAtLeast(0)
+            val right=(bitmap.width*4/5).coerceAtMost(bitmap.width)
+            val top=heroBounds[1].coerceIn(0,bitmap.height-1)
+            val bottom=(top+hero.height).coerceAtMost(bitmap.height)
+            for(y in top until bottom step 4) for(x in left until right step 4) {
+                val color=bitmap.getPixel(x,y)
+                if(android.graphics.Color.red(color)+android.graphics.Color.green(color)+
+                    android.graphics.Color.blue(color)>690) whitePixels++
+                if(whitePixels>=20) return true
+            }
+            return false
+        }
+        var first:Bitmap?=null
+        for(attempt in 0 until 8) {
+            val shot=instrumentation.uiAutomation.takeScreenshot() ?: continue
+            if(heroPainted(shot)) {first=shot;break}
+            shot.recycle()
+            Thread.sleep(160)
+            instrumentation.waitForIdleSync()
+        }
+        val ready=first ?: error("Update hero not visible in an actual HWUI screenshot")
+        File(out,"update-center-hero.png").outputStream().use { ready.compress(Bitmap.CompressFormat.PNG,100,it) }
+        ready.recycle()
+        instrumentation.runOnMainSync { (screen as? ScrollView)?.fullScroll(View.FOCUS_DOWN) }
         instrumentation.waitForIdleSync()
         val last=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update instructions")
         File(out,"update-center-help-visible.png").outputStream().use { last.compress(Bitmap.CompressFormat.PNG,100,it) }
@@ -50,6 +87,6 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             root.removeAllViews()
             root.setBackgroundColor(android.graphics.Color.rgb(20,32,70))
         }
-        return "PASS update center: native gradients, clean installed-version hero, safe manual check; HWUI screenshots"
+        return "PASS update center: device hero, bottom glass card, no top version, safe manual check; HWUI screenshots"
     }
 }
