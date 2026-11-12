@@ -10,8 +10,19 @@ assert 'const val DURATION_MS = 190L' in policy
 assert 'oldCount != newCount' in policy
 assert 'view.scaleX = start.uniformScale' in animator and 'view.scaleY = start.uniformScale' in animator
 assert 'isPowerSaveMode' in animator and 'areAnimatorsEnabled' in animator
-assert 'StageSparseRailReflowPolicy.trialModel(Build.MODEL)' in animator
+# Universal motion, but legacy device-limited *sizing* remains untouched.
+# A removed guard must not also remove the power, compositor or frame safety rules.
+assert 'private val trialDevice: Boolean = true' in animator
 assert 'trialDevice &&' in animator
+assert 'before.railAtTop == now.railAtTop' in policy
+assert 'before.screenWidth == now.screenWidth' in policy
+assert 'before.screenHeight == now.screenHeight' in policy
+assert 'before.displayRotation == now.displayRotation' in policy
+assert 'before.navigationInsets == now.navigationInsets' in policy
+assert 'abs(sx - sy) > .045f' in policy
+assert 'if (scale !in .55f..1.6f) return null' in policy
+assert '!StageDisplayPolicy.wideTablet(' not in policy
+assert '!StageDisplayPolicy.unfoldedNearSquare(' not in policy
 assert 'withEndAction' in animator and 'active.remove(view)' in animator
 assert 'sparseRailMotion.cancel()' in host
 assert 'sparseRailMotion.isAnimating(this)' in host
@@ -27,4 +38,4 @@ for bad in ['setRepeating(', 'setExact(', 'WakeLock', 'Thread.sleep(', 'HandlerT
     assert bad not in animator, bad
 assert 'requestLayout()' not in animator
 assert 'onSurfaceTextureSizeChanged' not in animator
-print('PASS: 190ms one-shot compositor side-card reflow on count change; power saver and system animation settings honored; no background schedule')
+print('PASS: geometry-gated 190ms one-shot live-card reflow across supported shapes; legacy sizing frozen; power saver, system animation settings and no background schedule enforced')
