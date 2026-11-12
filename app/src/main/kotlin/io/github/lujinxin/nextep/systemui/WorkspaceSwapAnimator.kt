@@ -143,7 +143,11 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             // A bounded short visual motion, with no extra delay before
             // real task migration; drag and HOME keep the original timing.
-            duration = if (concurrentTap) StageParallelTapMotionPolicy.durationMs(durationMs)
+            // Keep an actually visible, continuous scale in BOTH phased and
+            // legacy tap paths. The previous async-only condition let a tap
+            // choose a frozen one-frame "animation" despite valid geometry.
+            duration = if (uniformTapMorph && !returningHome)
+                StageParallelTapMotionPolicy.durationMs(durationMs)
                 else StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)
             interpolator = PathInterpolator(0.22f, 0f, 0.12f, 1f)
             addUpdateListener {
