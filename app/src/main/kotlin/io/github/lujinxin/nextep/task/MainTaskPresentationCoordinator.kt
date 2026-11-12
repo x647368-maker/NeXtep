@@ -133,21 +133,6 @@ class MainTaskPresentationCoordinator(context: Context) {
         return restoreForeground()
     }
 
-    /**
-     * N5 rail transitions can race a vendor Shell frame commit. Reassert only
-     * the already-owned fullscreen task; never resize, restart, or move an app.
-     */
-    fun reassertPresentedSurface(geometry: WorkspaceGeometry): Result<Unit> {
-        val taskId = presentedTaskId ?: return reconcileForeground(geometry)
-        if (activePresenter !== surfacePresenter) return Result.success(Unit)
-        val foreground = taskRepository.foregroundTask()
-            ?: return Result.failure(IllegalStateException("No foreground task for rail refit"))
-        if (foreground.taskId != taskId || !isMainFullscreen(foreground)) {
-            return Result.success(Unit)
-        }
-        return TaskSurfaceCompat.reapply(taskId, geometry, force = true)
-    }
-
     fun currentTaskId(): Int? = presentedTaskId
 
     fun restoreForeground(animateToFullscreen: Boolean = false): Result<Unit> {
