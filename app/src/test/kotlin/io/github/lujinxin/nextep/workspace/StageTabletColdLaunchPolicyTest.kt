@@ -31,6 +31,16 @@ class StageTabletColdLaunchPolicyTest {
         assertFalse(allowed(vendor=true)) // ColorOS double-window must stay native.
     }
 
+    @Test fun prefitFailureCanRetryOnNativeTaskUpdateButNotPollForever() {
+        val expiration = 2500L
+        assertEquals(3, StageTabletColdLaunchPolicy.MAX_PREFIT_ATTEMPTS)
+        assertTrue(StageTabletColdLaunchPolicy.mayRetryPrefit(0,expiration,100L))
+        assertTrue(StageTabletColdLaunchPolicy.mayRetryPrefit(1,expiration,700L))
+        assertTrue(StageTabletColdLaunchPolicy.mayRetryPrefit(2,expiration,2499L))
+        assertFalse(StageTabletColdLaunchPolicy.mayRetryPrefit(3,expiration,100L))
+        assertFalse(StageTabletColdLaunchPolicy.mayRetryPrefit(0,expiration,2501L))
+    }
+
     @Test fun deadlineIsFiniteAndDoesNotRunBackgroundTimers() {
         assertEquals(2500L,StageTabletColdLaunchPolicy.HANDOFF_MS)
         assertTrue(StageTabletColdLaunchPolicy.matches("com.test",0,3200L,
