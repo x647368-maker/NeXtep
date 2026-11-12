@@ -20,7 +20,7 @@ class StageSparseRailReflowPolicyTest {
         }
         assertFalse(StageSparseRailReflowPolicy.supported(ace,ace,2,2))
         assertFalse(StageSparseRailReflowPolicy.supported(ace,ace,0,1))
-        assertFalse(StageSparseRailReflowPolicy.supported(tablet,tablet,1,2))
+        assertTrue(StageSparseRailReflowPolicy.supported(tablet,tablet,1,2))
         assertTrue(StageSparseRailReflowPolicy.trialModel("PMS110"))
         assertTrue(StageSparseRailReflowPolicy.trialModel("pms110"))
         assertFalse(StageSparseRailReflowPolicy.trialModel("Find N5"))
@@ -48,19 +48,47 @@ class StageSparseRailReflowPolicyTest {
         assertTrue(start.alpha in 0f..1f)
     }
 
-    @Test fun deviceOrientationFoldTopOrUnrelatedGeometryNeverAnimates() {
+    @Test fun everyStableDisplayShapeAnimatesButPhysicalGeometryChangesDoNot() {
         val landscape=WorkspaceGeometry.forDisplay(
             2616,1140,SidebarSide.LEFT,density=3f,displayRotation=1)
         val n5=WorkspaceGeometry.forDisplay(2248,2480,density=2.6f)
         val top=ace.copy(railAtTop=true,sidebarWidth=200)
         assertFalse(StageSparseRailReflowPolicy.supported(null,ace,2,3))
         assertFalse(StageSparseRailReflowPolicy.supported(ace,landscape,2,3))
-        assertFalse(StageSparseRailReflowPolicy.supported(n5,n5,2,3))
-        assertFalse(StageSparseRailReflowPolicy.supported(top,top,2,3))
+        assertTrue(StageSparseRailReflowPolicy.supported(landscape,landscape,2,3))
+        assertTrue(StageSparseRailReflowPolicy.supported(
+            WorkspaceGeometry.forDisplay(2560,1600,density=2f),
+            WorkspaceGeometry.forDisplay(2560,1600,density=2f),3,4))
+        assertFalse(StageSparseRailReflowPolicy.supported(ace,top,2,3))
+        assertTrue(StageSparseRailReflowPolicy.supported(n5,n5,2,3))
+        assertTrue(StageSparseRailReflowPolicy.supported(top,top,2,3))
         assertFalse(StageSparseRailReflowPolicy.supported(
             ace,ace.copy(sidebarSide=SidebarSide.RIGHT),2,3))
         assertFalse(StageSparseRailReflowPolicy.supported(
             ace,ace.copy(displayRotation=1),2,3))
+    }
+
+    @Test fun allScreenShapesUseUniformCardMotionOrSafePerCardFallback() {
+        val shapes = listOf(
+            WorkspaceGeometry.forDisplay(1140,2616,density=3f),
+            WorkspaceGeometry.forDisplay(2248,2480,density=2.6f),
+            WorkspaceGeometry.forDisplay(2560,1600,density=2f),
+            WorkspaceGeometry.forDisplay(1600,2560,density=2f),
+            WorkspaceGeometry.forDisplay(1140,2616,density=3f).copy(railAtTop=true),
+        )
+        val old = StageSparseRailReflowPolicy.Bounds(24f,130f,140f,280f)
+        val next = StageSparseRailReflowPolicy.Bounds(32f,200f,154f,308f)
+        for (shape in shapes) {
+            assertTrue(StageSparseRailReflowPolicy.supported(shape,shape,2,3))
+            val start = StageSparseRailReflowPolicy.start(old,next)!!
+            assertEquals(old.width/next.width,start.uniformScale,.001f)
+            assertEquals(old.height/next.height,start.uniformScale,.001f)
+            assertEquals(old.cx,next.cx+start.offsetX,.001f)
+            assertEquals(old.cy,next.cy+start.offsetY,.001f)
+        }
+        // A different aspect ratio is never warped to mimic a smooth motion.
+        val rotatedContent = StageSparseRailReflowPolicy.Bounds(32f,200f,308f,154f)
+        assertNull(StageSparseRailReflowPolicy.start(old,rotatedContent))
     }
 
     @Test fun invalidOrStretchingFramesSkipTransitionInsteadOfDistorting() {
