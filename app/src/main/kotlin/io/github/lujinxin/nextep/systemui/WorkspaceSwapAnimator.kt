@@ -48,6 +48,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         moveAsync: ((((Boolean) -> Unit) -> Unit))? = null,
         canRelease: () -> Boolean = { true },
         freezeGeometry: Boolean = false,
+        uniformTapMorph: Boolean = false,
         onFinished: () -> Unit,
     ) {
         cancel()
@@ -67,7 +68,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val token = ++generation
         handoff=StageStableHandoff()
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
-            sourceQuad, targetQuad, freezeGeometry)
+            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -85,8 +86,49 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         overlay = preview
         completion = onFinished
-        // Presentation-only one-shot outline. The task move still commits on
-        // the next frame; no extra capture, waiting, Surface or task resize.
+        val concurrentTap = StageParallelTapMotionPolicy.concurrent(
+            uniformTapMorph, returningHome, ValueAnimator.areAnimatorsEnabled())
+        var moveRequested = false
+        var movedAt = -1L
+        var animationDone = false
+        var handoffStarted = false
+        fun enterHandoffIfReady() {
+            if (generation != token || handoffStarted ||
+                !StageParallelTapMotionPolicy.canHandoff(animationDone, movedAt >= 0L)) return
+            handoffStarted = true
+            val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
+            awaitLiveFrame(preview, token, movedAt, delay, isLiveReady)
+        }
+        fun completed(moved: Boolean) {
+            if (generation != token) return
+            if (!moved || cancelRequested) {
+                this@WorkspaceSwapAnimator.cancel()
+                return
+            }
+            movedAt = SystemClock.uptimeMillis()
+            enterHandoffIfReady()
+        }
+        fun commitMove() {
+            if (generation != token || moveRequested) return
+            moveRequested = true
+            if (moveAsync != null) moveAsync(::completed)
+            else completed(runCatching(move).onFailure {
+                NeXtepLog.warn("workspace_swap", "Exchange callback failed", it)
+            }.getOrDefault(false))
+        }
+        fun scheduleMove() {
+            // First rendered preview frame commits before the Binder task move.
+            // Full two-way visual movement continues while live buffers migrate.
+            runCatching {
+                preview.viewTreeObserver.registerFrameCommitCallback {
+                    preview.post { commitMove() }
+                }
+            }.onFailure { NeXtepLog.warn("workspace_swap", "Frame commit callback unavailable", it) }
+            preview.postDelayed({ commitMove() }, 160L)
+            preview.invalidate()
+        }
+        // No double effects: this short outline only runs for a fixed
+        // stationary preview fallback, not during cross-device morph motion.
         if (StageSwapTapAccentPolicy.shouldAnimate(freezeGeometry, returningHome,
                 ValueAnimator.areAnimatorsEnabled())) {
             tapAccentAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -100,12 +142,12 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                 start()
             }
         }
+        if (concurrentTap) scheduleMove()
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            // Static tap previews have no animation to play. Start task migration
-            // after the existing render-commit callback instead of wasting the
-            // configured 200ms on repeated identical frames. Keep HOME and drag
-            // animation durations, live-frame handoff and rollback untouched.
-            duration = StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)
+            // A bounded short visual motion, with no extra delay before
+            // real task migration; drag and HOME keep the original timing.
+            duration = if (concurrentTap) StageParallelTapMotionPolicy.durationMs(durationMs)
+                else StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)
             interpolator = PathInterpolator(0.22f, 0f, 0.12f, 1f)
             addUpdateListener {
                 preview.progress = it.animatedValue as Float
@@ -116,31 +158,11 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                     if (generation != token) return
                     animator = null
                     preview.progress = 1f
-                    // Wait for the final preview to reach the render swap chain
-                    // before a synchronous Binder move can block task relayout.
-                    var moveRequested = false
-                    fun commitMove() {
-                        if (generation != token || moveRequested) return
-                        moveRequested = true
-                        fun completed(moved: Boolean) {
-                            if (generation != token) return
-                            if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }
-                            val delay = if (returningHome) HOME_HANDOFF_DELAY_MS else MIN_HANDOFF_DELAY_MS
-                            awaitLiveFrame(preview, token, SystemClock.uptimeMillis(), delay, isLiveReady)
-                        }
-                        if (moveAsync != null) moveAsync(::completed)
-                        else completed(runCatching(move).onFailure {
-                            NeXtepLog.warn("workspace_swap", "Exchange callback failed", it)
-                        }.getOrDefault(false))
-                    }
-                    runCatching {
-                        preview.viewTreeObserver.registerFrameCommitCallback {
-                            preview.post { commitMove() }
-                        }
-                    }.onFailure { NeXtepLog.warn("workspace_swap", "Frame commit callback unavailable", it) }
-                    // A cancelled/missing render commit must not lock task exchange forever.
-                    preview.postDelayed({ commitMove() }, 160)
                     preview.invalidate()
+                    animationDone = true
+                    if (!concurrentTap) scheduleMove()
+                    else if (!moveRequested) commitMove()
+                    enterHandoffIfReady()
                 }
             })
             start()
@@ -214,6 +236,7 @@ private class SwapPreviewView(
     private val sourceQuad: FloatArray?,
     private val targetQuad: FloatArray?,
     private val freezeGeometry: Boolean,
+    private val uniformTapMorph: Boolean,
 ) : View(context) {
     var progress = 0f
     var tapAccentProgress = 0f
@@ -266,8 +289,40 @@ private class SwapPreviewView(
             }
             return
         }
+        if (uniformTapMorph) {
+            // All supported form factors use the same two-way movement, but
+            // never map the bitmap corners onto a changing quadrilateral.
+            // A uniform fit and letterbox protects text/video proportions
+            // while the real tasks are moved and their live buffers settle.
+            if (target != null) drawUniformMotionFrame(canvas, target, targetBounds, sourceBounds)
+            drawUniformMotionFrame(canvas, source, start, targetBounds)
+            return
+        }
         if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)
         drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)
+    }
+
+    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {
+        val frame = StageExchangeMotion.frame(
+            StageExchangeMotion.Box(from.left, from.top, from.right, from.bottom),
+            StageExchangeMotion.Box(to.left, to.top, to.right, to.bottom), progress,
+        ).box
+        if (!frame.left.isFinite() || !frame.top.isFinite() ||
+            !frame.right.isFinite() || !frame.bottom.isFinite() ||
+            frame.right <= frame.left || frame.bottom <= frame.top) return
+        val bounds = RectF(frame.left, frame.top, frame.right, frame.bottom)
+        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,
+            bounds.left, bounds.top, bounds.right, bounds.bottom)
+        destination.set(fit.left, fit.top, fit.right, fit.bottom)
+        outline.reset()
+        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
+            bounds.width(), bounds.height(), resources.displayMetrics.density)
+        outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
+        val save = canvas.save()
+        canvas.clipPath(outline)
+        canvas.drawColor(Color.BLACK)
+        canvas.drawBitmap(bitmap, null, destination, bitmapPaint)
+        canvas.restoreToCount(save)
     }
 
     private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {

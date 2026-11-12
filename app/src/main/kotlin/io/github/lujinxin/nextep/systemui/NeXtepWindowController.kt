@@ -1925,6 +1925,21 @@ class NeXtepWindowController(
         val stationaryBackground = if (parkingMain) {
             homePreview?.copy(Bitmap.Config.ARGB_8888, false)
         } else null
+        // Click-to-exchange is a cross-device motion. The rectangle geometry
+        // is acquired from current actual workspace bounds in every display
+        // shape: phones, folded/unfolded foldables and tablets. No model gate.
+        // When capture/geometry is missing the proven fixed-frame fallback
+        // remains available, without touching the real task lifecycle.
+        // User-reduced animation, power saver and HOME transitions are
+        // authoritative. All supported form factors use the same geometry gate.
+        val animateTap = drag == null && !parkingMain &&
+            android.animation.ValueAnimator.areAnimatorsEnabled() &&
+            context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode != true &&
+            StageCrossDeviceSwapMotionPolicy.canAnimateTap(
+                StageCrossDeviceSwapMotionPolicy.Bounds(start.left, start.top, start.right, start.bottom),
+                StageCrossDeviceSwapMotionPolicy.Bounds(to.left, to.top, to.right, to.bottom),
+                sourcePreview != null,
+            )
         val previewSlots = listOfNotNull(sourceSlot, targetSlot)
         val y700NativeHandoff =
             io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
@@ -1953,9 +1968,13 @@ class NeXtepWindowController(
                     }
                 },
                 canRelease = canRelease,
-                // Tap swaps should change task ownership, never animate the
-                // physical outline or distort the screenshot as it crosses sizes.
-                freezeGeometry = drag == null,
+                // Move both temporary preview frames on EVERY supported
+                // screen shape, while preserving each image's actual aspect
+                // ratio. For invalid bounds, fall back to fixed safe exchange.
+                // Task ownership, Surface handoff and input geometry remain
+                // managed by the existing real display coordinator.
+                freezeGeometry = drag == null && !animateTap,
+                uniformTapMorph = animateTap,
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.
