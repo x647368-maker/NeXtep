@@ -30,6 +30,24 @@ class UpdateFeedAuthorityTest {
         assertTrue(UpdateFeedAuthority.hasApplicableRecords(40, 40))
     }
 
+    @Test fun validatedFeedAtInstalledVersionSurvivesGithub403() {
+        assertTrue(UpdateFeedAuthority.mayUseIndexNoUpgrade(
+            feedSucceeded = true, feedFoundUpgrade = false, apiFailed = true))
+    }
+
+    @Test fun unreadableFeedAndGithub403StillReportsFailure() {
+        assertFalse(UpdateFeedAuthority.mayUseIndexNoUpgrade(false, false, true))
+    }
+
+    @Test fun usableGithubApiStillChecksForNewerRelease() {
+        assertFalse(UpdateFeedAuthority.mayUseIndexNoUpgrade(true, false, false))
+    }
+
+    @Test fun verifiedNewerFeedIsReturnedNotDiscardedOnGithub403() {
+        assertFalse(UpdateFeedAuthority.mayUseIndexNoUpgrade(true, true, true))
+        assertTrue(UpdateFeedAuthority.hasConfirmedUpgrade(true, true))
+    }
+
     @Test fun populatedButStaleFeedNeverMasksFreshGithubRelease() {
         // A verified index containing only versions <= the installed code
         // is not sufficient to claim the user has the newest published APK.
