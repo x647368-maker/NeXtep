@@ -28,6 +28,7 @@ internal object StageTabletColdLaunchBridge {
         val id: Long, val packageName: String, val userId: Int,
         val geometry: WorkspaceGeometry, val expiresAt: Long,
         var attempts: Int = 0,
+        var inFlight: Boolean = false,
     )
 
     private var nextId = 0L
@@ -73,24 +74,39 @@ internal object StageTabletColdLaunchBridge {
                 pending = null
                 return
             }
+            // Some vendor Shell task callbacks can run concurrently; only one
+            // attempt can own the ticket at a time.
+            if (current.inFlight) return
             if (!StageTabletColdLaunchPolicy.matches(
                     current.packageName, current.userId, current.expiresAt,
                     pkg, user, now, state.displayId, state.windowingMode, state.vendorWindowed)
             ) return
             current.attempts += 1
+            current.inFlight = true
             current
+        }
+        // Once the real task is already presented, a late callback must not
+        // recreate a prepared promotion that might overwrite its final fit.
+        if (TaskSurfaceCompat.ownsMainTask(info.taskId)) {
+            synchronized(this) {
+                if (pending?.id == ticket.id) pending = null
+                ticket.inFlight = false
+            }
+            return
         }
         // Shell has already published ownership information. Do not touch
         // any synthetic display, parent container, or third-party app API.
         TaskSurfaceCompat.preparePromotion(info.taskId, ticket.geometry)
             .onSuccess {
                 synchronized(this) {
+                    ticket.inFlight = false
                     if (pending?.id == ticket.id) pending = null
                 }
                 NeXtepLog.info("y700_cold_launch",
                     "Prefitted task=${info.taskId} attempt=${ticket.attempts}")
             }.onFailure { error ->
                 synchronized(this) {
+                    ticket.inFlight = false
                     if (pending?.id == ticket.id &&
                         !StageTabletColdLaunchPolicy.mayRetryPrefit(
                             ticket.attempts, ticket.expiresAt, SystemClock.uptimeMillis())) {
