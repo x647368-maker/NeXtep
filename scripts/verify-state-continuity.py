@@ -7,6 +7,25 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Quickbar master switch: exact reviewed complete Git blob and reversible patches.
+quickbar_review=json.loads((root/'scripts/reviewed-cooluser-quickbar-0.9.34.json').read_text())['files']
+assert set(quickbar_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+}
+def undo_cooluser_quickbar(path,data):
+ if path not in quickbar_review:return data
+ spec=quickbar_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ previous=source.encode('utf-8')
+ assert blob(previous)==spec['previous_blob_sha1'],path
+ return previous
+
 # Assistant4 0.9.30: exact fragment reversals precede original frozen checks.
 handoff_contract=json.loads((root/'scripts/reviewed-assistant4-y700-handoff-0.9.30.json').read_text())
 handoff_review=handoff_contract['files']
@@ -31,7 +50,7 @@ def undo_y700_handoff(path,data):
  assert gitblob(previous)==handoff_blobs[path]['previous'],path
  return previous
 for source_path in handoff_review:
- undo_y700_handoff(source_path,(root/source_path).read_bytes())
+ undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,(root/source_path).read_bytes()))
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
 # and validate both full Git blob hashes before the v0.9.8 frozen chain.
 cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
@@ -299,25 +318,6 @@ def undo_private_ux(path,data):
  original=spec['previous_content'].encode('utf-8')
  assert gitblob(original)==spec['previous_blob_sha1'],path
  return original
-
-# Quickbar master switch: exact reviewed complete Git blob and reversible patches.
-quickbar_review=json.loads((root/'scripts/reviewed-cooluser-quickbar-0.9.34.json').read_text())['files']
-assert set(quickbar_review)=={
- 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt',
- 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
-}
-def undo_cooluser_quickbar(path,data):
- if path not in quickbar_review:return data
- spec=quickbar_review[path]
- blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
- assert blob(data)==spec['reviewed_blob_sha1'],path
- source=data.decode('utf-8')
- for patch in reversed(spec['patches']):
-  assert source.count(patch['after'])==1,path
-  source=source.replace(patch['after'],patch['before'],1)
- previous=source.encode('utf-8')
- assert blob(previous)==spec['previous_blob_sha1'],path
- return previous
 
 # Narrow, reversible overlay-decoration change over the existing frozen swap.
 cooluser_swap_review=json.loads((root/'scripts/reviewed-cooluser-swap-accent-0.9.34.json').read_text())['files']
