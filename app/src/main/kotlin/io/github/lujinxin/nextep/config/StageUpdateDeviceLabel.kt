@@ -8,7 +8,7 @@ internal object StageUpdateDeviceLabel {
     fun current(): String = fromProperties(Build.MANUFACTURER, Build.MODEL)
 
     fun fromProperties(manufacturer: String?, model: String?): String {
-        val raw = model.orEmpty().trim().filter { !it.isISOControl() }.take(64)
+        val raw = model.orEmpty().trim().filter { !Character.isISOControl(it) }.take(64)
         val key = raw.uppercase(Locale.ROOT).replace("-", "").replace("_", "")
         when (key) {
             "PMS110" -> return "一加 Ace 7 Pro"
