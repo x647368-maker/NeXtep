@@ -207,8 +207,44 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         overlay = null
         completion = null
         if (previous != null) {
-            runCatching { (previous.parent as? FrameLayout)?.removeView(previous) }
-            previous.release()
+            val host = previous.parent as? FrameLayout
+            runCatching { host?.removeView(previous) }
+            if (previous.hasGpuBackedFrame() &&
+                host?.isAttachedToWindow == true && host.isHardwareAccelerated) {
+                // Bitmap.wrapHardwareBuffer owns a GPU reference used by the
+                // most recently submitted RenderThread display list. Wait for
+                // the *removal* frame's commit before releasing its buffer.
+                // A one-shot main-looper fallback prevents leaks on detach or
+                // OEMs that omit frame-commit callbacks; it does not postpone
+                // the real-task handoff or schedule any periodic work.
+                val main = android.os.Handler(android.os.Looper.getMainLooper())
+                val observer = host.viewTreeObserver
+                lateinit var onCommitted: Runnable
+                val release = Runnable {
+                    // The observer owns this callback until it is consumed or
+                    // explicitly unregistered. Do not retain an old GPU Bitmap
+                    // when the screen locks before the removal frame appears.
+                    runCatching {
+                        if (observer.isAlive) observer.unregisterFrameCommitCallback(onCommitted)
+                    }
+                    main.removeCallbacks(onCommitted)
+                    previous.release()
+                }
+                onCommitted = Runnable { main.post(release) }
+                runCatching {
+                    if (observer.isAlive) {
+                        observer.registerFrameCommitCallback(onCommitted)
+                        host.invalidate()
+                    } else {
+                        main.post(release)
+                    }
+                }.onFailure {
+                    NeXtepLog.warn("workspace_swap", "GPU preview release frame callback unavailable", it)
+                    main.post(release)
+                }
+                // One-shot fallback only. No repeating redraw or background loop.
+                main.postDelayed(release, GPU_RELEASE_FALLBACK_MS)
+            } else previous.release()
         }
         finished?.invoke()
     }
@@ -218,6 +254,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         // HOME's wallpaper zoom can continue after the task has resumed.
         const val HOME_HANDOFF_DELAY_MS = WorkspaceTransitionSpec.DURATION_MS + MIN_HANDOFF_DELAY_MS
         const val MAX_HANDOFF_DELAY_MS = 600L
+        const val GPU_RELEASE_FALLBACK_MS = 200L
     }
 }
 
@@ -380,6 +417,11 @@ private class SwapPreviewView(
         canvas.drawBitmap(bitmap, projection, bitmapPaint)
         canvas.restoreToCount(save)
     }
+
+    fun hasGpuBackedFrame(): Boolean =
+        source.config == Bitmap.Config.HARDWARE ||
+            target?.config == Bitmap.Config.HARDWARE ||
+            stationaryBackground?.config == Bitmap.Config.HARDWARE
 
     fun release() {
         if (released) return

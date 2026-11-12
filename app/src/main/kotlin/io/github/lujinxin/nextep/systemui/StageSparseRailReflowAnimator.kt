@@ -2,7 +2,6 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 import android.animation.ValueAnimator
 import android.content.Context
-import android.os.Build
 import android.os.PowerManager
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -17,9 +16,9 @@ import java.util.IdentityHashMap
  */
 internal class StageSparseRailReflowAnimator(
     context: Context,
-    // Production uses the real device model; instrumentation explicitly
-    // enables its own fake view harness without spoofing Build.MODEL.
-    private val trialDevice: Boolean = StageSparseRailReflowPolicy.trialModel(Build.MODEL),
+    // A geometry-only compositor animation on every supported phone, fold and
+    // tablet. The optional switch remains for deterministic instrumentation.
+    private val trialDevice: Boolean = true,
 ) {
     private val power = context.getSystemService(PowerManager::class.java)
     private val active = IdentityHashMap<View, Long>()

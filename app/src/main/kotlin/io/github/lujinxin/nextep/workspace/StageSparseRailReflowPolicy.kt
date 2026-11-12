@@ -20,23 +20,27 @@ internal object StageSparseRailReflowPolicy {
     data class Start(val offsetX: Float, val offsetY: Float,
         val uniformScale: Float, val alpha: Float)
 
-    /** Trial scope: only the Ace 7 Pro first, while N5/Y700 await physical validation. */
+    /** Keep legacy Ace-only *layout sizing* unchanged. Motion is device-agnostic. */
     fun trialModel(model: String): Boolean = model.equals("PMS110", ignoreCase = true)
 
+    /**
+     * Animate only a card-count change within the *same physical viewport*.
+     * Fold/unfold, rotation, side/top preset changes, insets and rail relocation
+     * use the existing immediate safe layout; none may interpolate stale pixels
+     * or stale input geometry. Valid moving cards are then checked one by one
+     * by start(): only uniform X/Y scale is accepted, otherwise instant fallback.
+     */
     fun supported(before: WorkspaceGeometry?, now: WorkspaceGeometry,
         oldCount: Int, newCount: Int): Boolean =
         before != null && oldCount in 1..4 && newCount in 1..4 &&
-            oldCount != newCount && !before.railAtTop && !now.railAtTop &&
-            !before.isLandscape && !now.isLandscape &&
+            oldCount != newCount &&
+            before.railAtTop == now.railAtTop &&
+            before.isLandscape == now.isLandscape &&
             before.screenWidth == now.screenWidth &&
             before.screenHeight == now.screenHeight &&
             before.sidebarSide == now.sidebarSide &&
             before.displayRotation == now.displayRotation &&
-            before.navigationInsets == now.navigationInsets &&
-            !StageDisplayPolicy.wideTablet(before.screenWidth, before.screenHeight) &&
-            !StageDisplayPolicy.wideTablet(now.screenWidth, now.screenHeight) &&
-            !StageDisplayPolicy.unfoldedNearSquare(before.screenWidth, before.screenHeight) &&
-            !StageDisplayPolicy.unfoldedNearSquare(now.screenWidth, now.screenHeight)
+            before.navigationInsets == now.navigationInsets
 
     /**
      * Capture the real on-screen rectangle of a card *before* cancelling a

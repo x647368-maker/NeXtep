@@ -226,9 +226,21 @@ object TaskSurfaceCompat {
         }?.invoke(null, args) ?: return@runCatching null
         val bitmap = buffer.javaClass.getMethod("asBitmap").invoke(buffer) as? android.graphics.Bitmap
             ?: return@runCatching null
-        try { bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }
-        finally { bitmap.recycle() }
+        // ScreenCapture.asBitmap() already wraps an immutable GPU HardwareBuffer.
+        // This exchange preview is drawn ONLY on an accelerated View canvas:
+        // copying a full-resolution N5 frame to CPU ARGB can cost more than the
+        // 180ms preview budget and temporarily allocate a second large image.
+        // The bitmap owns its HardwareBuffer reference; SwapPreviewView releases
+        // it after the real task Surface has taken over. Software/OEM fallbacks
+        // keep the original defensive copy and never become mutable producers.
+        retainPreviewForAcceleratedCanvas(bitmap)
     }.onFailure { NeXtepLog.warn("task_preview", "Task preview unavailable taskId=$taskId", it) }.getOrNull()
+
+    /** Ownership of the result transfers to the short-lived HWUI exchange overlay. */
+    internal fun retainPreviewForAcceleratedCanvas(bitmap: android.graphics.Bitmap): android.graphics.Bitmap? =
+        if (bitmap.config == android.graphics.Bitmap.Config.HARDWARE) bitmap
+        else try { bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }
+        finally { bitmap.recycle() }
 
     /** Capture the composed viewport so HOME keeps its rendered wallpaper zoom and offsets. */
     internal fun captureDisplayPreview(sourceCrop: Rect): android.graphics.Bitmap? = runCatching {

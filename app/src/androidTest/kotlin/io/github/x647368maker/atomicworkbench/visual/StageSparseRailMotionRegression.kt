@@ -237,6 +237,44 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                     "Repeated per-frame TextureView resize detected: ${resized.get()}"
                 }
             }
+            // Exercise the production geometry gate for all physical form
+            // factors with the SAME attached live TextureViews and buffers.
+            // This intentionally does not spoof Build.MODEL or recreate an app.
+            val displayShapes = listOf(
+                geo.copy(railAtTop=true),
+                WorkspaceGeometry.forDisplay(2248,2480,SidebarSide.LEFT,density=2.6f),
+                WorkspaceGeometry.forDisplay(2560,1600,SidebarSide.LEFT,density=2f),
+                WorkspaceGeometry.forDisplay(1600,2560,SidebarSide.RIGHT,density=2f),
+                WorkspaceGeometry.forDisplay(2616,1140,SidebarSide.RIGHT,density=3f),
+            )
+            for (shape in displayShapes) {
+                instrumentation.runOnMainSync {
+                    motion.cancel()
+                    cards[3].alpha=0f
+                    val before=(0 until 3).associate { i -> cards[i] as View to four[i].bounds() }
+                    val after=(0 until 4).associate { i -> cards[i] as View to four[i].bounds() }
+                    check(StageSparseRailReflowPolicy.supported(shape,shape,3,4))
+                    motion.animate(shape,shape,3,4,before,after,enabled=true)
+                    check(motion.isAnimating(cards[3])) {
+                        "Count-entry motion gated off for stable cross-device viewport"
+                    }
+                    check(abs(cards[3].scaleX-cards[3].scaleY)<.0001f) {
+                        "Cross-device reflow stretched an attached live buffer"
+                    }
+                }
+                Thread.sleep(400L)
+                instrumentation.runOnMainSync {
+                    check(!motion.isAnimating(cards[3]))
+                    check(abs(cards[3].scaleX-1f)<.002f &&
+                        abs(cards[3].scaleY-1f)<.002f &&
+                        abs(cards[3].alpha-1f)<.002f) {
+                        "Cross-device card retained a stale animation transform"
+                    }
+                    check(created.get()==4) {
+                        "Cross-device card motion re-created a producer Surface"
+                    }
+                }
+            }
             // Screenshot is taken outside the UI thread: never block HWUI
             // drawing while waiting for its current frame.
             val shot=instrumentation.uiAutomation.takeScreenshot()
@@ -268,6 +306,6 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                 surfaces.forEach { it.release() }
             }
         }
-        return "PASS real HWUI 2->3->4->3->2->1->2->3->4 rapid interruption-safe uniform motion, preserved live buffers, no stale transform or flying add card"
+        return "PASS real HWUI count reflow and five stable phone/fold/tablet/top/landscape geometries with unchanged live Surface identities and uniform scale"
     }
 }
