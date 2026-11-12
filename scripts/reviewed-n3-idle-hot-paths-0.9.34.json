@@ -33,11 +33,15 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiPanelMonitor.kt": {
       "previous_blob_sha1": "e8070156483af12d43bba8613165bb08a0a8ce80",
-      "reviewed_blob_sha1": "a856489b6bb4bcb956eacb858e43d31e7cde9b1c",
+      "reviewed_blob_sha1": "f1aa5f938b5b389c41a3da4767e96952954ec392",
       "patches": [
         {
           "before": "    private fun changedFromDraw() {\n        val now=android.os.SystemClock.uptimeMillis()",
-          "after": "    private fun changedFromDraw() {\n        // Layout/focus events still update shade state; only per-frame fallback\n        // observation is idle when no interactive workspace/menu can be present.\n        if (!SystemUiRuntime.isWorkspaceInteractive()) return\n        val now=android.os.SystemClock.uptimeMillis()"
+          "after": "    private fun changedFromDraw(context: Context) {\n        // Only suppress idle pre-draw checks inside the real SystemUI host.\n        // Non-SystemUI callers and the native-panel regression fixture must\n        // still observe OPEN transitions for menu/panel mutual exclusion.\n        if (context.packageName == \"com.android.systemui\" &&\n            !SystemUiRuntime.isWorkspaceInteractive()) return\n        val now=android.os.SystemClock.uptimeMillis()"
+        },
+        {
+          "before": "        val draw=ViewTreeObserver.OnPreDrawListener {if(ref.get()!=null)changedFromDraw();true}",
+          "after": "        val draw=ViewTreeObserver.OnPreDrawListener {\n            ref.get()?.let { changedFromDraw(it.context) }\n            true\n        }"
         }
       ]
     },
