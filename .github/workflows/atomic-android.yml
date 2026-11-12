@@ -186,6 +186,26 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/androidTest/debug/*.apk
+      # EXPERIMENT ONLY: runs after uploading untouched baseline artifacts.
+      # Repackages disposable checkout; does not change source branch or releases.
+      - name: Compare exact-pixel icon WebP pilot APK against unchanged baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          test -n "$baseline"
+          original_size=$(stat -c %s "$baseline")
+          echo "ORIGINAL_APK_BYTES=$original_size"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq webp imagemagick
+          python3 scripts/try-lossless-webp-size.py
+          bash scripts/ci-android-build.sh :app:assembleDebug
+          optimized=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          optimized_size=$(stat -c %s "$optimized")
+          echo "EXACT_PIXEL_WEBP_APK_BYTES=$optimized_size"
+          echo "EXPERIMENT_SAVINGS_BYTES=$((original_size-optimized_size))"
+          python3 scripts/audit-apk-size.py "$optimized"
+          python3 scripts/verify-startup-package.py --apk "$optimized" --aapt2 "$ANDROID_HOME/build-tools/36.0.0/aapt2"
       # Publishing is deliberately manual. Build success never creates a public Release.
 
   visual-regression:
