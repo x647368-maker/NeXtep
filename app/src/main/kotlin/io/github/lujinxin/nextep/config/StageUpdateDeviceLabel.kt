@@ -47,7 +47,11 @@ internal object StageUpdateDeviceLabel {
         if (hardware.size == 1) return hardware.first()
         officialName(key(model))?.let { return it }
         val raw = clean(model)
-        if (raw.isBlank() || key(raw) in setOf("UNKNOWN","GENERIC","ANDROID","SDK","EMULATOR"))
+        val modelKey = key(raw)
+        // Emulator SDK labels are not real retail device models.
+        if (modelKey.startsWith("SDKGPHONE") || modelKey.startsWith("ANDROIDSDKBUILTFOR"))
+            return "Android 模拟器"
+        if (raw.isBlank() || modelKey in setOf("UNKNOWN","GENERIC","ANDROID","SDK","EMULATOR"))
             return "设备型号未识别"
         val maker = listOf(manufacturer, brand).joinToString(" ").lowercase(Locale.ROOT)
         val prefix = when {

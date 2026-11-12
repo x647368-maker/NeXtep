@@ -27,6 +27,12 @@ class StageUpdateDeviceLabelTest {
             "OPPO","OPPO","generic","unknown","unknown"))
         assertEquals("OPPO Find N5",StageUpdateDeviceLabel.fromProperties("OPPO","OPPO Find N5"))
     }
+    @Test fun emulatorLabelNeverLooksLikeRetailDevice() {
+        assertEquals("Android 模拟器",StageUpdateDeviceLabel.fromSystemProperties(
+            "Google","Google","sdk_gphone64_x86_64","emu64x","sdk_gphone64_x86_64"))
+        assertEquals("Android 模拟器",StageUpdateDeviceLabel.fromProperties(
+            "Google","Android SDK built for x86_64"))
+    }
     @Test fun modifiedRomMustNotInventAnIdentity() {
         assertEquals("OPPO N5-ported-ROM",StageUpdateDeviceLabel.fromProperties("OPPO","N5-ported-ROM"))
         assertEquals("设备型号未识别",StageUpdateDeviceLabel.fromProperties("OPPO","unknown"))
