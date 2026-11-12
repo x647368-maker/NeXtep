@@ -58,7 +58,7 @@ internal object UpdateCoordinator {
         val p=prefs(c);if(p.getLong("notified",0)>=r.metadata.versionCode) return
         val manager=c.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("atomic_updates","台前调度更新",NotificationManager.IMPORTANCE_DEFAULT))
-        val intent=Intent(c,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("stage_page","about")
+        val intent=Intent(c,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("stage_page","update")
         val pending=PendingIntent.getActivity(c,72,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         manager.notify(72,Notification.Builder(c,"atomic_updates").setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("台前调度发现新版本").setContentText(r.version+" · 点击查看更新说明")
