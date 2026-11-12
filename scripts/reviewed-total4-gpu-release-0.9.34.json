@@ -1,0 +1,23 @@
+{
+  "explanation": "Hardware-only ownership: after HWUI removal-frame commit, release preview; a 200ms single-shot fallback prevents leaks without delaying real task handoff.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "reviewed_blob_sha1": "f9e8c3d5681eb767c29b18f342cf75a64717ac18",
+      "previous_blob_sha1": "2395d602b7a39790af98c91c07d583452744ede1",
+      "patches": [
+        {
+          "before": "        if (previous != null) {\n            runCatching { (previous.parent as? FrameLayout)?.removeView(previous) }\n            previous.release()\n        }\n",
+          "after": "        if (previous != null) {\n            val host = previous.parent as? FrameLayout\n            runCatching { host?.removeView(previous) }\n            if (previous.hasGpuBackedFrame() &&\n                host?.isAttachedToWindow == true && host.isHardwareAccelerated) {\n                // Bitmap.wrapHardwareBuffer owns a GPU reference used by the\n                // most recently submitted RenderThread display list. Wait for\n                // the *removal* frame's commit before releasing its buffer.\n                // A one-shot main-looper fallback prevents leaks on detach or\n                // OEMs that omit frame-commit callbacks; it does not postpone\n                // the real-task handoff or schedule any periodic work.\n                val main = android.os.Handler(android.os.Looper.getMainLooper())\n                val release = Runnable { previous.release() } // idempotent\n                runCatching {\n                    host.viewTreeObserver.registerFrameCommitCallback {\n                        main.post(release)\n                    }\n                    host.invalidate()\n                }.onFailure {\n                    NeXtepLog.warn(\"workspace_swap\", \"GPU preview release frame callback unavailable\", it)\n                }\n                main.postDelayed(release, GPU_RELEASE_FALLBACK_MS)\n            } else previous.release()\n        }\n"
+        },
+        {
+          "before": "        const val MAX_HANDOFF_DELAY_MS = 600L\n",
+          "after": "        const val MAX_HANDOFF_DELAY_MS = 600L\n        const val GPU_RELEASE_FALLBACK_MS = 200L\n"
+        },
+        {
+          "before": "",
+          "after": "    fun hasGpuBackedFrame(): Boolean =\n        source.config == Bitmap.Config.HARDWARE ||\n            target?.config == Bitmap.Config.HARDWARE ||\n            stationaryBackground?.config == Bitmap.Config.HARDWARE\n\n"
+        }
+      ]
+    }
+  }
+}
