@@ -27,6 +27,7 @@ internal object StageTabletColdLaunchBridge {
     private data class Ticket(
         val id: Long, val packageName: String, val userId: Int,
         val geometry: WorkspaceGeometry, val expiresAt: Long,
+        var attempts: Int = 0,
     )
 
     private var nextId = 0L
@@ -52,29 +53,53 @@ internal object StageTabletColdLaunchBridge {
     @Synchronized
     fun reset() { pending = null }
 
-    fun onTaskAppeared(info: ActivityManager.RunningTaskInfo) {
+    fun onTaskAppeared(info: ActivityManager.RunningTaskInfo) = onTaskObserved(info)
+
+    /** A first onTaskAppeared can precede availability of its real task leash.
+     * Previously the one-shot was consumed before preparePromotion succeeded;
+     * when that failed, the real app briefly appeared fullscreen until a later
+     * presenter poll. Retry on real onTaskInfoChanged events (max three), with
+     * the same exact package/user/display/WM checks. No timer or polling.
+     */
+    fun onTaskObserved(info: ActivityManager.RunningTaskInfo) {
         val state = TaskInfoCompat.readWindowState(info) ?: return
         val user = TaskInfoCompat.readUserId(info)
         val pkg = info.baseActivity?.packageName ?: info.topActivity?.packageName
         val now = SystemClock.uptimeMillis()
         val ticket = synchronized(this) {
             val current = pending ?: return
-            if (now > current.expiresAt) { pending = null; return }
+            if (!StageTabletColdLaunchPolicy.mayRetryPrefit(
+                    current.attempts, current.expiresAt, now)) {
+                pending = null
+                return
+            }
             if (!StageTabletColdLaunchPolicy.matches(
                     current.packageName, current.userId, current.expiresAt,
                     pkg, user, now, state.displayId, state.windowingMode, state.vendorWindowed)
             ) return
-            pending = null
+            current.attempts += 1
             current
         }
-        // The hook has already recorded the real task leash. Do not touch
-        // any synthetic display, shell task parent, or UI thread here.
+        // Shell has already published ownership information. Do not touch
+        // any synthetic display, parent container, or third-party app API.
         TaskSurfaceCompat.preparePromotion(info.taskId, ticket.geometry)
             .onSuccess {
-                NeXtepLog.info("y700_cold_launch", "Prefitted native task=${info.taskId} before Shell appearance")
-            }.onFailure {
+                synchronized(this) {
+                    if (pending?.id == ticket.id) pending = null
+                }
+                NeXtepLog.info("y700_cold_launch",
+                    "Prefitted task=${info.taskId} attempt=${ticket.attempts}")
+            }.onFailure { error ->
+                synchronized(this) {
+                    if (pending?.id == ticket.id &&
+                        !StageTabletColdLaunchPolicy.mayRetryPrefit(
+                            ticket.attempts, ticket.expiresAt, SystemClock.uptimeMillis())) {
+                        pending = null
+                    }
+                }
                 NeXtepLog.warn("y700_cold_launch",
-                    "Native prefit unavailable, safe legacy presentation remains", it)
+                    "Native prefit not yet available task=${info.taskId} attempt=${ticket.attempts}; legacy fallback retained",
+                    error)
             }
     }
 }
