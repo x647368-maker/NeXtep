@@ -28,6 +28,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private val handler = Handler(Looper.getMainLooper())
     private var cinemaMode = "AUTO"
     private var quickFixed = false
+    private var quickEnabled = true
     private var quickExpanded = false
     private var adaptive = true
     private var mainPriority = true
@@ -272,14 +273,18 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         row(video, "选择影音小窗", "先添加视频小窗，再选择横屏或竖屏布局", "windows") { command("cinema_enter") }
         row(video, "退出影音布局", "恢复之前的顶部 / 侧边排列", "windows") { command("cinema_leave") }
         val quick = group(root)
-        row(quick, "常用应用快捷栏", if (quickExpanded) "已展开" else "已收起", "apps") { command(if (quickExpanded) "quick_collapse" else "quick_expand") }
+        row(quick, "启用常用应用栏", "关闭后隐藏顶部入口与快捷栏，保留固定应用", "apps",
+            end = toggle(quickEnabled) { command(if (it) "quick_enable" else "quick_off") })
+        row(quick, "常用应用快捷栏", if (!quickEnabled) "已关闭" else if (quickExpanded) "已展开" else "已收起", "apps") {
+            if (quickEnabled) command(if (quickExpanded) "quick_collapse" else "quick_expand")
+            else toast("请先开启常用应用栏")
+        }
         row(quick, "快捷栏内容", if (quickFixed) "固定应用（最多六个）" else "最近常用五个", "apps") {
             MaterialAlertDialogBuilder(activity).setTitle("快捷栏内容").setItems(arrayOf("自动：最近常用五个", "固定：最多六个")) { _, which ->
                 command(if (which == 0) "quick_auto" else "quick_fixed")
             }.setNegativeButton("取消", null).show()
         }
-        row(quick, "关闭快捷栏", "保留固定应用和排序", "apps") { command("quick_off") }
-        root.addView(hint("收起后点击工作区顶部 ▦ 按钮即可展开，触摸区域为 48dp。主窗 ⋯ 菜单也可展开。长按快捷栏或工作区应用列表的图标，可固定、调整顺序、添加到小窗或选择要替换的小窗。点击图标优先复用真实任务。"))
+        root.addView(hint("总开关关闭后，顶部快捷栏和展开按钮隐藏，推荐应用不再加载；已固定的应用和排序保留。开启后点击 ▦ 展开。长按图标可固定、调整顺序或添加到小窗。"))
         row(group(root), "按小窗数量智能布局", "关闭后回退到 0.8.1 的固定容量布局", "windows", end = toggle(adaptive) { command(if (it) "adaptive_on" else "adaptive_off") })
         row(group(root), "移动当前微信任务到小窗", "在工作区主窗打开小程序后使用", "windows") { command("wechat_move") }
         root.addView(hint("微信兼容按系统实际 Task ID 移动，不调用微信私有接口。共用任务会整体移动；系统提供独立任务时保留独立身份。无法保证小程序与微信分别运行。失败会尝试恢复原任务。\n\n自动影音要求同用户、唯一任务和唯一媒体会话，以及一致的任务方向信号。信号不足、暂停或缓冲时保持布局。可手动指定横屏或竖屏。为避免额外重建，布局仅改变显示几何，不强改播放器分辨率或 DPI，可能保留留白。应用自身黑边无法保证消除。"))
@@ -530,7 +535,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     } }
                     slotDiagnostics = reply.getString("slot_diagnostics") ?: "系统组件未返回槽位诊断"
                     cinemaMode = reply.getString("cinema_mode", "AUTO")
-                    quickFixed = reply.getBoolean("quick_fixed"); quickExpanded = reply.getBoolean("quick_expanded")
+                    quickFixed = reply.getBoolean("quick_fixed"); quickEnabled = reply.getBoolean("quick_enabled", true); quickExpanded = reply.getBoolean("quick_expanded")
                     adaptive = reply.getBoolean("adaptive", true)
                     mainPriority = reply.getBoolean("main_priority", true)
                     reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
