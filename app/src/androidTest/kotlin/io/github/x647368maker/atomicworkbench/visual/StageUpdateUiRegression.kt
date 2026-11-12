@@ -21,7 +21,7 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             val page=UpdateSection.create(activity as AppCompatActivity)
             screen.addView(page,ViewGroup.LayoutParams(-1,-2))
             root.removeAllViews()
-            root.setBackgroundColor(android.graphics.Color.rgb(241,242,245))
+            root.setBackgroundColor(android.graphics.Color.rgb(21,17,45))
             root.addView(screen,FrameLayout.LayoutParams(-1,-1))
             fun visit(v:View) {
                 if (v is TextView) shown.add(v.text.toString())
@@ -30,9 +30,9 @@ internal class StageUpdateUiRegression(private val instrumentation: Instrumentat
             visit(screen)
         }
         instrumentation.waitForIdleSync()
-        for (required in listOf("台前调度 · 软件更新","更新设置","版本检测与安装",
+        for (required in listOf("台前调度 · 软件更新","自动发现新版本","版本检测与安装",
             "检查更新","查看 / 安装新版本","查看 GitHub 版本发布记录",
-            "使用说明","SHA-256","工作组","正常重启一次")) {
+            "已安装版本","使用说明","SHA-256","工作组","正常重启一次")) {
             check(shown.any { it.contains(required) }) { "Update page hid required content: $required" }
         }
         val first=instrumentation.uiAutomation.takeScreenshot() ?: error("No screenshot for update hero")
