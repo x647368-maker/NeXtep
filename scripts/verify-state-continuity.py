@@ -18,6 +18,14 @@ assert set(update_hero_review)=={
 }
 def undo_update_hero(path,data):
  if path not in update_hero_review:return data
+ # TW4 isolated regression fix: reverse this one reviewed local-label fragment
+ # before checking PR44's complete pinned Git blob. Never exempt other bytes.
+ if path=='app/src/main/kotlin/io/github/lujinxin/nextep/config/StageUpdateDeviceLabel.kt':
+  old='        if (hardware.size == 1) return hardware.first()\n        officialName(key(model))?.let { return it }'
+  new='        val modelName = officialName(key(model))\n        if (hardware.size == 1) {\n            // A ported ROM may spoof MODEL. Contradictory known model codes are\n            // inconclusive even when DEVICE/PRODUCT agree with each other.\n            if (modelName != null && modelName != hardware.first()) return "设备型号待核实"\n            return hardware.first()\n        }\n        modelName?.let { return it }'
+  source=data.decode('utf-8')
+  assert source.count(new)==1,path
+  data=source.replace(new,old,1).encode('utf-8')
  spec=update_hero_review[path]
  gitblob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
  assert gitblob(data)==spec['reviewed_blob_sha1'],path
