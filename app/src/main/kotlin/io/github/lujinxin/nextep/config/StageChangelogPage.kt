@@ -61,7 +61,10 @@ internal object StageChangelogPage {
         // Curated version records take priority over an old generic archive,
         // but the exact installed APK's bundled notes always win for its version.
         // Sort semantically (0.9.17 > 0.9.9), never by the arrival order of Git history.
-        val shownEntries = StageChangelogOrdering.merge(currentEntry, archiveEntries, StageChangeHistory.entries)
+        // Updates are fetched only by the existing updater. Here we read
+        // the locally cached notes immediately, without networking.
+        val syncedEntries = StageSyncedReleaseNotes.load(activity)
+        val shownEntries = StageChangelogOrdering.merge(currentEntry, syncedEntries + archiveEntries, StageChangeHistory.entries)
 
         shownEntries.forEachIndexed { index, entry ->
             val card = LinearLayout(activity).apply {
@@ -111,7 +114,7 @@ internal object StageChangelogPage {
             root.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         }
         root.addView(text(
-            "这是 APK 内置的离线版本说明，不会自动检查更新。需要下载安装时，请返回首页「系统 → 在线更新」。",
+            "更新说明在检查新版时自动同步并离线缓存；网络异常仍可查看内置历史。需要安装时，请返回首页「系统 → 在线更新」。",
             12f, true
         ).apply { setPadding(dp(14), dp(8), dp(14), dp(16)) })
         return root

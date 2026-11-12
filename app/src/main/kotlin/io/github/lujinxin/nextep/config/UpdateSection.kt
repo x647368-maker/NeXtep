@@ -18,10 +18,12 @@ internal object UpdateSection {
     fun create(activity: AppCompatActivity): View {
         fun dp(n:Int)=(n*activity.resources.displayMetrics.density).toInt()
         val installed=UpdateCoordinator.installed(activity)
-        val dark=SettingsPalette.isDark(activity)
-        val ink=SettingsPalette.text(activity)
-        val muted=SettingsPalette.secondary(activity)
-        val accent=Color.rgb(43,114,225)
+        val dark=true  // Update page intentionally uses its own immersive palette.
+        val ink=Color.WHITE
+        val muted=Color.rgb(209,201,224)
+        val accent=Color.rgb(102,91,187)
+        val updateSurface=Color.rgb(42,35,71)
+        val updateContainer=Color.rgb(75,66,105)
         fun rounded(color:Int,radius:Int=21)=GradientDrawable().apply {
             setColor(color);cornerRadius=dp(radius).toFloat()
         }
@@ -37,7 +39,7 @@ internal object UpdateSection {
         fun card():LinearLayout=LinearLayout(activity).apply {
             orientation=LinearLayout.VERTICAL
             setPadding(dp(18),dp(18),dp(18),dp(18))
-            background=rounded(SettingsPalette.surface(activity))
+            background=rounded(updateSurface)
             root.addView(this,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(12) })
         }
         fun gap(parent:LinearLayout,height:Int=10) {
@@ -56,29 +58,27 @@ internal object UpdateSection {
         hero.addView(text("台前调度 · 软件更新",14f,Color.rgb(235,226,250),true))
         gap(hero,15)
         hero.addView(text("v"+installed.versionName.orEmpty(),32f,Color.WHITE,true))
+        gap(hero,9)
+        hero.addView(text(StageUpdateDeviceLabel.current(),15f,Color.WHITE).apply {
+            maxLines=1
+            ellipsize=android.text.TextUtils.TruncateAt.END
+            contentDescription="当前设备："+StageUpdateDeviceLabel.current()
+        })
+        gap(hero,7)
+        hero.addView(text("已安装版本 · "+installed.longVersionCode,12f,Color.rgb(242,234,251)))
+        gap(hero,18)
+        val heroStatus=text("点击下方检查更新",19f,Color.WHITE,true)
+        hero.addView(heroStatus)
         gap(hero,8)
-        hero.addView(text("已安装版本  ·  versionCode "+installed.longVersionCode,13f,Color.rgb(242,234,251)))
-        gap(hero,15)
-        hero.addView(text("原证书签名   ·   完整校验   ·   系统安装器",12f,Color.rgb(236,229,247)))
+        hero.addView(text("原证书签名 · 安全校验 · 系统安装器",12f,Color.rgb(236,229,247)))
         root.addView(hero,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) })
 
-        val settings=card()
-        settings.addView(text("更新设置",17f,ink,true))
+        // One continuous details area: no developer/stable selector and
+        // no nested cards that make the native settings page feel fragmented.
+        val details=card()
+        val settings=details
+        settings.addView(text("自动发现新版本",17f,ink,true))
         gap(settings,10)
-        settings.addView(text("版本渠道",13f,muted))
-        val channel=Spinner(activity).apply {
-            adapter=ArrayAdapter(activity,android.R.layout.simple_spinner_dropdown_item,listOf("开发版（含稳定版）","仅稳定版"))
-            setSelection(if(UpdateCoordinator.channel(activity)==UpdatePolicy.Channel.DEV)0 else 1)
-            minimumHeight=dp(46);contentDescription="版本渠道"
-        }
-        settings.addView(channel,LinearLayout.LayoutParams(-1,dp(48)))
-        channel.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent:AdapterView<*>?)=Unit
-            override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
-                val selected=if(position==0)UpdatePolicy.Channel.DEV else UpdatePolicy.Channel.STABLE
-                if(UpdateCoordinator.channel(activity)!=selected) UpdateCoordinator.setChannel(activity,selected)
-            }
-        }
         settings.addView(Switch(activity).apply {
             text="启动时低频检查新版本";textSize=14f;setTextColor(ink)
             isChecked=UpdateCoordinator.auto(activity)
@@ -93,9 +93,10 @@ internal object UpdateSection {
                     activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),72)
             }
         },LinearLayout.LayoutParams(-1,dp(51)))
-        settings.addView(text("约每 12 小时、仅打开 App 时检查。不常驻后台；关闭提醒也能手动检查。",12f,muted))
+        settings.addView(text("统一更新渠道 · 约每 12 小时、仅打开 App 时检查。不常驻后台；关闭提醒也能手动检查。",12f,muted))
 
-        val operations=card()
+        val operations=details
+        gap(operations,22)
         operations.addView(text("版本检测与安装",17f,ink,true))
         gap(operations,11)
         val status=text("点击“检查更新”获取已校验的官方版本信息。",13f,muted)
@@ -145,9 +146,13 @@ internal object UpdateSection {
                     check.isEnabled=true
                     result.onSuccess { found ->
                         release=found;download.isEnabled=found!=null
-                        status.text=if(found==null)"暂无可验证的更高版本。历史无校验元数据的版本会忽略。" else "发现 ${found.version}，版本码 ${found.metadata.versionCode}"
+                        status.text=if(found==null)"当前未发现可验证的更高版本；历史无校验元数据的版本会忽略。" else "发现 ${found.version}，版本码 ${found.metadata.versionCode}"
+                        heroStatus.text=if(found==null)"暂无可验证的新版本" else "发现新版本"
                         found?.let(::showRelease)
-                    }.onFailure { status.text="检查失败，不影响工作区："+(it.message ?: "请稍后重试") }
+                    }.onFailure {
+                        heroStatus.text="更新检查暂不可用"
+                        status.text="检查失败，不影响工作区："+(it.message ?: "请稍后重试")
+                    }
                 }
             }
         }
@@ -157,23 +162,24 @@ internal object UpdateSection {
             button.textSize=16f
             button.isAllCaps=false
             button.setTextColor(if(emphasized)Color.WHITE else ink)
-            button.background=rounded(if(emphasized)accent else SettingsPalette.container(activity),15)
+            button.background=rounded(if(emphasized)accent else updateContainer,15)
             button.elevation=0f
             operations.addView(button,LinearLayout.LayoutParams(-1,dp(53)).apply { bottomMargin=dp(9) })
         }
         operations.addView(Button(activity).apply {
             text="查看 GitHub 版本发布记录";isAllCaps=false;textSize=15f
             setTextColor(ink)
-            background=rounded(SettingsPalette.container(activity),15)
+            background=rounded(updateContainer,15)
             elevation=0f
             setOnClickListener { openBrowser(activity,UpdateChecker.RELEASES_URL) }
         },LinearLayout.LayoutParams(-1,dp(52)))
         // The usage guide is always shown directly below the update controls;
         // never hide it in About, a collapsed section, or a dialog.
-        val help=card()
+        val help=details
+        gap(help,22)
         help.addView(text("使用说明",17f,ink,true))
         gap(help,11)
-        help.addView(text("① 选择开发版或稳定版，点击「检查更新」。\n② 如有新版，先查看更新内容，再「下载并验证」。\n③ 由系统安装器确认覆盖安装，不必主动卸载旧版。",14f,ink))
+        help.addView(text("① 点击「检查更新」，自动检查所有较新的可信版本。\n② 如有新版，先查看更新说明，再「下载并验证」。\n③ 由系统安装器确认覆盖安装，不必主动卸载旧版。",14f,ink))
         gap(help,11)
         help.addView(text("安全校验：SHA-256、包名、版本码、原签名证书全部匹配才允许安装。",13f,muted))
         gap(help,10)

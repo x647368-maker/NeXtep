@@ -17,10 +17,14 @@ internal object UpdateCoordinator {
     @Volatile private var checking=false
     private fun prefs(c: Context)=c.getSharedPreferences("atomic_updates_v1",Context.MODE_PRIVATE)
     fun installed(c: Context)=c.packageManager.getPackageInfo(c.packageName,0)
-    fun channel(c: Context): UpdatePolicy.Channel = runCatching {
-        UpdatePolicy.Channel.valueOf(prefs(c).getString("channel",null) ?: if(installed(c).versionName.orEmpty().contains("-dev")) "DEV" else "STABLE")
-    }.getOrDefault(UpdatePolicy.Channel.DEV)
-    fun setChannel(c: Context,v: UpdatePolicy.Channel) { prefs(c).edit().putString("channel",v.name).putLong("last_check",0).apply() }
+    // A single public update path accepts every validated newer build,
+    // including old users whose preferences were previously "STABLE".
+    // Keep the legacy setter so old settings references remain source compatible.
+    fun channel(c: Context): UpdatePolicy.Channel =
+        StageUnifiedUpdateChannel.fromLegacySelection(prefs(c).getString("channel",null))
+    fun setChannel(c: Context,v: UpdatePolicy.Channel) {
+        prefs(c).edit().putString("channel",UpdatePolicy.Channel.DEV.name).putLong("last_check",0).apply()
+    }
     fun auto(c: Context)=prefs(c).getBoolean("auto",true)
     fun setAuto(c: Context,v: Boolean) { prefs(c).edit().putBoolean("auto",v).putLong("last_check",0).apply() }
     fun available(c: Context): UpdateChecker.Release? = runCatching {
@@ -30,6 +34,9 @@ internal object UpdateCoordinator {
     fun check(c: Context): UpdateChecker.Release? {
         val release=UpdateChecker.check(channel(c),installed(c).longVersionCode)
         prefs(c).edit().putString("available",release?.let(UpdateChecker::encode)).apply()
+        // The release note is piggybacked on the already-verified check. Offline
+        // history is retained if the network fails; no additional traffic.
+        if (release != null) StageSyncedReleaseNotes.capture(c,release)
         return release
     }
     fun maybeCheck(activity: AppCompatActivity,changed: () -> Unit) {
