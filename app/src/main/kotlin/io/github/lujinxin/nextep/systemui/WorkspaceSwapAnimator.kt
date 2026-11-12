@@ -101,10 +101,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         fun completed(moved: Boolean) {
             if (generation != token) return
-            if (!moved || cancelRequested) {
-                this@WorkspaceSwapAnimator.cancel()
-                return
-            }
+            if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }
             movedAt = SystemClock.uptimeMillis()
             enterHandoffIfReady()
         }
