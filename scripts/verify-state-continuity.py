@@ -265,8 +265,26 @@ def undo_n5_rail_refit(path,data):
  assert blob==spec['previous_blob_sha1'],path
  return data
 
+# v0.9.34 UI-only unification: every changed protected file must match the
+# reviewed complete Git blob, then reverse to exact prior complete blob before
+# all existing 0.9.8/Y700/N5/update-install contract checks.
+unified_update_files=json.loads((root/'scripts/reviewed-unified-device-updates-0.9.34.json').read_text())['files']
+assert set(unified_update_files)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateCoordinator.kt',
+}
+def undo_unified_update(path,data):
+ if path not in unified_update_files:return data
+ spec=unified_update_files[path]
+ gitblob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
+ assert gitblob(data)==spec['reviewed_blob_sha1'],path
+ before=spec['previous_content'].encode('utf-8')
+ assert gitblob(before)==spec['previous_blob_sha1'],path
+ return before
+
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,(root/path).read_bytes())))))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,(root/path).read_bytes()))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -471,7 +489,7 @@ for path,sha in frozen.items():
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=undo_api403_fallback(path,undo_update_ui(path,(root/path).read_bytes()))
+  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,(root/path).read_bytes())))
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
