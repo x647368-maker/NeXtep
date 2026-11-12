@@ -219,8 +219,29 @@ def undo_update_ui(path,data):
  assert original==spec['previous_blob_sha1'],path
  return old
 
+# N5 foldable-only delayed main-Surface reassertion: validate the complete
+# reviewed WorkspaceController Git blob, then reverse ONLY the exact five
+# approved fragments before all original v0.9.8 freeze checks.
+n5_rail_refit_path='app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt'
+n5_rail_refit_review=json.loads((root/'scripts/reviewed-assistant6-n5-rail-refit.json').read_text())['files']
+assert set(n5_rail_refit_review)=={n5_rail_refit_path}
+def undo_n5_rail_refit(path,data):
+ if path!=n5_rail_refit_path:return data
+ spec=n5_rail_refit_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ assert len(spec['patches'])==5,path
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return data
+
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,(root/path).read_bytes())))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,(root/path).read_bytes()))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
