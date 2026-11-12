@@ -104,11 +104,12 @@ class NeXtepWindowController(
     private val swapAnimator = WorkspaceSwapAnimator(context)
     private val swapCapture = StageAsyncPreviewCapture()
     private var activeSwapViewport: WorkspaceGeometry? = null
+    private var previewCapturePending = false
     private var deferredSwapGeometryRefresh = false
 
     private fun keepActiveSwapForViewport(now: WorkspaceGeometry): Boolean =
         StageSwapViewportHoldPolicy.retain(
-            swapAnimator.isRunning, activeSwapViewport, now,
+            swapAnimator.isRunning || previewCapturePending, activeSwapViewport, now,
         )
     private val internalDrag = WorkspaceInternalDragController(
         context, ::geometry, { slotWindows.map { it.view } },
@@ -1872,8 +1873,15 @@ class NeXtepWindowController(
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
         }
+        // Mark the whole PREVIEW-PREPARATION interval, not only the
+        // ValueAnimator. Without this guard, a rail count refresh during the
+        // async ColorOS task capture can cancel the entire exchange before the
+        // first drawable frame, producing the observed instant content swap.
+        swapCapture.cancel()
         val capturedGeometry=geometry()
         val states=slotCoordinator?.slotStates().orEmpty().toList()
+        activeSwapViewport = capturedGeometry
+        previewCapturePending = true
         swapCapture.request(
             load={
                 // A ColorOS system image can expose a live main task without a
@@ -1888,8 +1896,18 @@ class NeXtepWindowController(
                             capturedGeometry.contentRight,capturedGeometry.contentBottom))
             },
             valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
-            accept={animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)},
-            onCancel=onFinished,
+            accept={
+                previewCapturePending = false
+                animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)
+            },
+            onCancel={
+                previewCapturePending = false
+                activeSwapViewport = null
+                val flush = deferredSwapGeometryRefresh
+                deferredSwapGeometryRefresh = false
+                if (flush) scheduleWindowRefresh()
+                onFinished()
+            },
         )
     }
 
@@ -1904,6 +1922,12 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
     ) {
         fun withoutPreview() {
+            activeSwapViewport = null
+            previewCapturePending = false
+            if (deferredSwapGeometryRefresh) {
+                deferredSwapGeometryRefresh = false
+                scheduleWindowRefresh()
+            }
             if(capturedMainPreview?.isRecycled==false)capturedMainPreview.recycle()
             if (asyncMove != null) asyncMove { onFinished(); scheduleStageFocus() }
             else try { move() } finally { onFinished(); scheduleStageFocus() }
