@@ -184,8 +184,25 @@ def undo_catalog_files(path,data):
  assert previous==spec['previous_blob_sha1'],path
  return original
 
+# 0.9.31 home-only UI: exact full-blob audit, reverse before all pre-existing
+# 0.9.8 protected byte hashes. Unknown settings or engine edits still fail.
+home_ui_review=json.loads((root/'scripts/reviewed-opt-in-donation-home-0.9.31.json').read_text())['files']
+assert set(home_ui_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageHomeLayout.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt',
+}
+def undo_home_ui(path,data):
+ if path not in home_ui_review:return data
+ spec=home_ui_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ previous=spec['previous_content'].encode('utf-8')
+ oldblob=hashlib.sha1(b'blob '+str(len(previous)).encode()+bytes([0])+previous).hexdigest()
+ assert oldblob==spec['previous_blob_sha1'],path
+ return previous
+
 def protected_bytes(path):
- data=undo_catalog_files(path,(root/path).read_bytes())
+ data=undo_catalog_files(path,undo_home_ui(path,(root/path).read_bytes()))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
