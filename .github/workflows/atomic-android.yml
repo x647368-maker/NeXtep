@@ -208,6 +208,35 @@ jobs:
           echo "EXPERIMENT_SAVINGS_BYTES=$((original_size-optimized_size))"
           python3 scripts/audit-apk-size.py "$optimized"
           python3 scripts/verify-startup-package.py --apk "$optimized" --aapt2 "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+      # Stage only the seven exact-pixel images on a separate, non-publishing
+      # branch based on the already-published candidate. Never push to main.
+      - name: Save verified asset-only changes on assistant2 isolated branch
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="98e61fb7651ebff9c678bd509046a7d3ebbcbe5a"
+          target="assistant2/verified-lossless-icons-v0.9.30"
+          echo "Preparing asset-only handoff: $target"
+          original_size=31877244
+          optimized=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
+          optimized_size=$(stat -c %s "$optimized")
+          test "$((original_size-optimized_size))" -ge 5000000
+          count=$(find app/src/main/res/drawable-nodpi -maxdepth 1 -name 'ic_launcher*_artwork.webp' | wc -l)
+          test "$count" -eq 7
+          git config user.name "atomic-size-audit[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A app/src/main/res/drawable-nodpi
+          git diff --cached --name-status
+          git diff --cached --quiet && { echo "No modified image assets"; exit 1; }
+          git commit -m "assets: exact-pixel lossless launcher WebP only [skip ci]"
+          source_image_commit=$(git rev-parse HEAD)
+          git fetch --no-tags origin "$target"
+          test "$(git rev-parse FETCH_HEAD)" = "$base"
+          git switch -c assistant2-assets-ready FETCH_HEAD
+          git cherry-pick "$source_image_commit"
+          git push origin HEAD:refs/heads/"$target"
+          echo "Asset-only branch commit: $(git rev-parse HEAD)"
       # Publishing is deliberately manual. Build success never creates a public Release.
 
   visual-regression:
