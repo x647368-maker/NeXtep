@@ -47,6 +47,19 @@ class StageCrossDeviceSwapMotionPolicyTest {
             valid,b(0f,0f,Float.POSITIVE_INFINITY,120f),true))
     }
 
+    @Test fun sourceOnlyTapStillHasVisibleUniformScalingWhenMainCaptureFails() {
+        val slot = b(20f,300f,280f,770f)
+        val main = b(310f,170f,1110f,2430f)
+        // Main-task screenshot availability must NOT enter the geometry gate.
+        // A valid real small-window frame is enough to render a growing card.
+        assertTrue(StageCrossDeviceSwapMotionPolicy.canAnimateTap(slot,main,true))
+        assertTrue(StageParallelTapMotionPolicy.concurrent(true,false,true,true))
+        assertEquals(280L,StageParallelTapMotionPolicy.durationMs(200))
+        // A synchronous compatibility move must still get the same user-visible
+        // uniform morph; it simply cannot run task migration mid-UI-frame.
+        assertFalse(StageParallelTapMotionPolicy.concurrent(true,false,true,false))
+    }
+
     @Test fun liveMotionUsesConfiguredTimeWhileOldFrozenFallbackStillFast() {
         assertEquals(200L, StageSwapTimingPolicy.previewDurationMs(200,false,false))
         assertEquals(300L, StageSwapTimingPolicy.previewDurationMs(300,false,false))
