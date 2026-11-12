@@ -98,12 +98,20 @@ internal object StageTabletColdLaunchBridge {
         // any synthetic display, parent container, or third-party app API.
         TaskSurfaceCompat.preparePromotion(info.taskId, ticket.geometry)
             .onSuccess {
-                synchronized(this) {
+                val superseded = synchronized(this) {
                     ticket.inFlight = false
-                    if (pending?.id == ticket.id) pending = null
+                    val replaced = pending?.id != ticket.id
+                    if (!replaced) pending = null
+                    replaced
+                }
+                // The user may tap a second app while the vendor Shell is
+                // processing the first callback. Never retain a prepared
+                // transform for the superseded launch or a task already shown.
+                if (superseded || TaskSurfaceCompat.ownsMainTask(info.taskId)) {
+                    TaskSurfaceCompat.cancelPreparedPromotion(info.taskId)
                 }
                 NeXtepLog.info("y700_cold_launch",
-                    "Prefitted task=${info.taskId} attempt=${ticket.attempts}")
+                    "Prefitted task=${info.taskId} attempt=${ticket.attempts} superseded=$superseded")
             }.onFailure { error ->
                 synchronized(this) {
                     ticket.inFlight = false
