@@ -1,0 +1,19 @@
+{
+  "purpose": "P0: verified index usable on GitHub API 403; never disable stale-index API check or loosen APK verification; full blob reversible",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateChecker.kt": {
+      "previous_blob_sha1": "3178ef620432dc06b23d3532e9cefb8264de73a0",
+      "reviewed_blob_sha1": "8bb4881a5d2a547816e75c4dc7e438b3b3acf7d7",
+      "patches": [
+        {
+          "before": "    fun hasConfirmedUpgrade(feedSucceeded: Boolean, updateFound: Boolean) =\n        feedSucceeded && updateFound",
+          "after": "    fun hasConfirmedUpgrade(feedSucceeded: Boolean, updateFound: Boolean) =\n        feedSucceeded && updateFound\n\n    // A valid, channel-relevant public index is a usable fallback when\n    // GitHub's rate-limited API returns HTTP 403. This reports no *verified*\n    // newer release, never a fabricated release or an unverified download.\n    fun mayUseIndexNoUpgrade(feedSucceeded: Boolean, feedFoundUpgrade: Boolean, apiFailed: Boolean) =\n        feedSucceeded && !feedFoundUpgrade && apiFailed"
+        },
+        {
+          "before": "        val api = runCatching { checkReleasesApi(channel, installedCode) }\n        if (api.isSuccess) return api.getOrThrow()\n        throw IOException(",
+          "after": "        val api = runCatching { checkReleasesApi(channel, installedCode) }\n        if (api.isSuccess) return api.getOrThrow()\n        // If the index was actually downloaded and fully parsed for this\n        // channel, a GitHub API 403 is not a complete update-service outage.\n        // Still consult the API when reachable, so a stale index cannot mask\n        // a newly published, verified Release.\n        if (UpdateFeedAuthority.mayUseIndexNoUpgrade(\n                feedSucceeded = feed.isSuccess,\n                feedFoundUpgrade = feed.getOrNull() != null,\n                apiFailed = api.isFailure,\n            )) return null\n        throw IOException("
+        }
+      ]
+    }
+  }
+}
