@@ -106,6 +106,7 @@ class LivePreviewInstrumentation : Instrumentation() {
                 checks.add("PASS four ${if(top) "top" else "side"} live buffers, rounded corners and exact compact bounds")
             }
             checks.add(StageSparseRailMotionRegression(this).run(activity,root,out))
+            checks.add(StagePreviewBitmapRetentionRegression(this).run(activity,root))
             checks.add(StageChangelogRegression(this).run(activity,root,out))
             checks.add(StageUpdateUiRegression(this).run(activity,root,out))
             checks.addAll(InteractionRegression(this).run(activity,root,out))
