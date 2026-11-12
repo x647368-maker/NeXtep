@@ -199,7 +199,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq webp imagemagick
           python3 scripts/try-lossless-webp-size.py
-          bash scripts/ci-android-build.sh :app:assembleDebug
+          # Gradle cannot reliably notice files replaced in an existing source directory.
+          # Clean prevents stale resource output; do not mistake old APK for a size win.
+          bash scripts/ci-android-build.sh :app:clean :app:assembleDebug
           optimized=$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)
           optimized_size=$(stat -c %s "$optimized")
           echo "EXACT_PIXEL_WEBP_APK_BYTES=$optimized_size"
