@@ -302,8 +302,33 @@ def undo_n3_lock_power(path,data):
  assert previous==spec['previous_blob_sha1'],path
  return data
 
+# N3 inactive hot paths: exact current Git blobs and strictly reversible
+# changes across SystemUI renderer, Surface commits and wallpaper listener.
+# Never replace/relax any existing freeze manifest or previous reviewed blob.
+n3_idle_review=json.loads((root/'scripts/reviewed-n3-idle-hot-paths-0.9.34.json').read_text())['files']
+n3_idle_paths={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiPanelMonitor.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+}
+assert set(n3_idle_review)==n3_idle_paths
+def undo_n3_idle(path,data):
+ if path not in n3_idle_paths:return data
+ spec=n3_idle_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
+
 def protected_bytes(path):
- data=undo_n3_lock_power(path,(root/path).read_bytes())
+ data=undo_n3_lock_power(path,undo_n3_idle(path,(root/path).read_bytes()))
  data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,data))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
@@ -481,7 +506,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,(root/path).read_bytes())))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_n3_idle(path,(root/path).read_bytes()))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
