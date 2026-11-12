@@ -5,6 +5,12 @@ package io.github.x647368maker.atomicworkbench.workspace
  */
 internal object StageTabletColdLaunchPolicy {
     const val HANDOFF_MS = 2500L
+    // Shell may announce the task before a usable leash is published. Retry
+    // only on subsequent real task callbacks, never by polling.
+    const val MAX_PREFIT_ATTEMPTS = 3
+
+    fun mayRetryPrefit(attempts: Int, expiresAt: Long, now: Long): Boolean =
+        attempts < MAX_PREFIT_ATTEMPTS && now <= expiresAt
 
     fun arm(screenWidth: Int, screenHeight: Int, packageName: String, userId: Int): Boolean =
         StageDisplayPolicy.wideLandscapeTablet(screenWidth, screenHeight) &&
