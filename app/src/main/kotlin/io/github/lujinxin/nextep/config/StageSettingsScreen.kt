@@ -31,6 +31,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var quickEnabled = true
     private var quickExpanded = false
     private var adaptive = true
+    private var topRail = false
     private var mainPriority = true
     private var active = false
     private var connected = false
@@ -252,9 +253,17 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         row(layout, "主窗口显示策略", if (mainPriority) "主窗口优先（推荐）" else "完整显示 · 原 macOS 风格", "windows") {
             MaterialAlertDialogBuilder(activity).setTitle("主窗口显示策略").setItems(arrayOf("主窗口优先：安全空间最大化，保持完整画面", "完整显示：保留原主窗与卡片布局")) { _, which -> command(if(which == 0) "main_priority" else "main_complete") }.setNegativeButton("取消", null).show()
         }
-        row(layout, "自动适配", "按实际屏幕状态与小窗数量计算；每个屏幕状态分别保存排列和显示策略", "windows", end = toggle(adaptive) { command(if (it) "adaptive_on" else "adaptive_off") })
-        row(layout, "顶部横排", "小窗横向排列在主窗上方", "windows") { command("layout_top") }
-        row(layout, "侧边纵排", "小窗纵向排列在主窗旁", "windows") { command("layout_side") }
+        // A and B are the existing proven layouts; C is an optional shared
+        // occupied-count rule, not another window manager or virtual display.
+        row(layout, "窗口排列 A / B", if (topRail) "B · 顶部四小窗（当前屏幕）" else "A · 侧边四小窗（当前屏幕）", "windows") {
+            MaterialAlertDialogBuilder(activity).setTitle("窗口排列预设")
+                .setItems(arrayOf("A · 侧边纵排（主窗优先）", "B · 顶部横排（主窗优先）")) { _, which ->
+                    command(if (which == 0) "layout_side" else "layout_top")
+                }.setNegativeButton("取消", null).show()
+        }
+        row(layout, "C · 小窗智能自适应", "与 A/B 组合；按已打开小窗数量调整显示，不新增任务", "windows",
+            end = toggle(adaptive) { command(if (it) "adaptive_on" else "adaptive_off") })
+        root.addView(hint("新设备形态首次进入时根据实际宽高和密度建议 A/B；已经手动选择过的屏幕保持原布局。C 仅调整安全的预览排列，不拉伸真实任务、重建虚拟显示或改变四小窗上限。"))
         val side = group(root)
         row(side, "侧栏放左边", icon = "windows") { command("left") }
         row(side, "侧栏放右边", icon = "windows") { command("right") }
@@ -537,6 +546,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     cinemaMode = reply.getString("cinema_mode", "AUTO")
                     quickFixed = reply.getBoolean("quick_fixed"); quickEnabled = reply.getBoolean("quick_enabled", true); quickExpanded = reply.getBoolean("quick_expanded")
                     adaptive = reply.getBoolean("adaptive", true)
+                    topRail = reply.getBoolean("layout_top", topRail)
                     mainPriority = reply.getBoolean("main_priority", true)
                     reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
                     if (page == "groups" || page == "diagnostics" || page == "windows" || page == "core") open(page)
