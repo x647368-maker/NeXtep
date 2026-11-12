@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "io.github.x647368maker.atomicworkbench",
+  "versionName": "0.9.33-dev",
+  "versionCode": 48,
+  "channel": "dev",
+  "apkAsset": "AtomicWorkbench-v0.9.33-dev-48-SIGNED.apk",
+  "sha256": "69e42c8423629340a2f22468b2ae3459f88d7ce849f55d583852f14a955759d7",
+  "size": 26524905,
+  "certificateSha256": "3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe",
+  "releaseTag": "atomic-v0.9.33-dev",
+  "releaseNotes": "台前调度 v0.9.33-dev/48：整合备用4联想Y700首帧/交换修复候选与备用6 OPPO N5侧栏重排修复候选；保留原生在线更新中心、内置更新日志、七张桌面图标无损压缩。自愿打赏仅在主动点击后显示，使用新微信收款码并提供支付宝原收款链接；所有功能永久免费。通过418项JVM测试和HWUI模拟器图形回归；三台ColorOS真机适配和付款链接仍需实际验收。此版本为开发预发行版，不是稳定版。",
+  "deviceNotes": "一加 Ace 7 Pro / ColorOS 17、OPPO Find N5 和联想 Y700 / 移植 ColorOS 16：待真机验收，原有工作区功能不得退化。"
+}
