@@ -3,7 +3,7 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt": {
       "previous_blob_sha1": "0711115f3630575b32c909fe817c767d60442c48",
-      "reviewed_blob_sha1": "a4edb0c0c72da4cca7a3b32ad2e7568936156869",
+      "reviewed_blob_sha1": "eb7ce127ee6b7492c8ed5af9737b9dcd80299f16",
       "patches": [
         {
           "before": "    fun isWorkspaceActive(): Boolean =\n        ::workspaceController.isInitialized && workspaceController.isActive()\n\n    fun prepareDisplayRotation",
@@ -24,6 +24,10 @@
         {
           "before": "            if (queriedConfig == null) {\n                // Credential-protected module settings are unavailable before first unlock.\n                lifecycleHandler.postDelayed(configRetry, 2_000L)\n                return@execute\n            }\n            workspaceConfig = queriedConfig",
           "after": "            if (queriedConfig == null) {\n                // Credential-protected settings may be missing before first unlock.\n                // Never run a 2s retry loop for hours on incompatible OEM hooks.\n                val failedReads = configQueryFailures.incrementAndGet()\n                if (StageConfigRetryBudget.shouldRetry(failedReads)) {\n                    lifecycleHandler.postDelayed(configRetry, 2_000L)\n                }\n                return@execute\n            }\n            configQueryFailures.set(0)\n            workspaceConfig = queriedConfig"
+        },
+        {
+          "before": "    private val taskRefresh = Runnable {\n        taskRefreshQueued.set(false)\n        if (::windowController.isInitialized) windowController.onTasksChanged()\n    }\n\n    fun onTasksChanged() {\n        if (taskRefreshQueued.compareAndSet(false, true)) lifecycleHandler.post(taskRefresh)\n    }",
+          "after": "    private val taskRefresh = Runnable {\n        taskRefreshQueued.set(false)\n        // The queued callback can arrive just after closing or locking.\n        if (isWorkspaceInteractive() && ::windowController.isInitialized)\n            windowController.onTasksChanged()\n    }\n\n    fun onTasksChanged() {\n        // ShellTaskOrganizer continues reporting system task events when our\n        // workbench is not displayed. No UI refresh is useful in that state;\n        // activation and unlock explicitly reconcile current task ownership.\n        if (!isWorkspaceInteractive()) return\n        if (taskRefreshQueued.compareAndSet(false, true)) lifecycleHandler.post(taskRefresh)\n    }"
         }
       ]
     },
