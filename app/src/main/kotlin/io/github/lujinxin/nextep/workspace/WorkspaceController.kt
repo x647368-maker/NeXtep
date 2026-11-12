@@ -165,11 +165,11 @@ class WorkspaceController(
                     if (railEpoch == n5RailRefitEpoch && current?.geometry == geometry &&
                         windowController.currentGeometry() == geometry &&
                         !windowController.isExchangePending()) {
-                        mainTaskPresenter.reassertPresentedSurface(geometry).onFailure {
+                        mainTaskPresenter.reconcileForeground(geometry).onFailure {
                             NeXtepLog.warn("n5_rail_refit", "Owned main surface not yet ready", it)
                         }
                     }
-                }, 320L)
+                }, 350L)
             }
             true
         }.onFailure { error ->
