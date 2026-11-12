@@ -52,10 +52,16 @@ object SystemUiRuntime {
     private val taskRefreshQueued = AtomicBoolean(false)
     private val taskRefresh = Runnable {
         taskRefreshQueued.set(false)
-        if (::windowController.isInitialized) windowController.onTasksChanged()
+        // The queued callback can arrive just after closing or locking.
+        if (isWorkspaceInteractive() && ::windowController.isInitialized)
+            windowController.onTasksChanged()
     }
 
     fun onTasksChanged() {
+        // ShellTaskOrganizer continues reporting system task events when our
+        // workbench is not displayed. No UI refresh is useful in that state;
+        // activation and unlock explicitly reconcile current task ownership.
+        if (!isWorkspaceInteractive()) return
         if (taskRefreshQueued.compareAndSet(false, true)) lifecycleHandler.post(taskRefresh)
     }
     private val configReceiver = object : BroadcastReceiver() {
