@@ -46,12 +46,14 @@ object SystemUiHook {
                                 io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat.observeTaskInfo(
                                     info, if (method.name == "onTaskAppeared") chain.args.getOrNull(1) else null,
                                 )
-                                if (method.name == "onTaskAppeared") {
-                                    // Y700 only: put the live task leash at main
-                                    // geometry BEFORE Shell submits the native
-                                    // appearance transaction. Other devices are
-                                    // unchanged; OEM windows fail open.
-                                    StageTabletColdLaunchBridge.onTaskAppeared(info)
+                                if (method.name == "onTaskAppeared" ||
+                                    method.name == "onTaskInfoChanged") {
+                                    // The first appearance callback can arrive
+                                    // before its task leash is usable. Use only
+                                    // actual Shell task events for a bounded
+                                    // retry. The bridge checks exact Y700
+                                    // package/user/fullscreen ownership.
+                                    StageTabletColdLaunchBridge.onTaskObserved(info)
                                 }
                             }
                         }
