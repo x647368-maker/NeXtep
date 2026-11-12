@@ -1895,7 +1895,9 @@ class NeXtepWindowController(
                         Rect(capturedGeometry.contentLeft,capturedGeometry.contentTop,
                             capturedGeometry.contentRight,capturedGeometry.contentBottom))
             },
-            valid={workspaceVisible && !suspended && geometry()==capturedGeometry && mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
+            valid={workspaceVisible && !suspended &&
+                StageSwapViewportHoldPolicy.retain(true,capturedGeometry,geometry()) &&
+                mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
             accept={
                 previewCapturePending = false
                 animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)
@@ -1936,7 +1938,12 @@ class NeXtepWindowController(
             withoutPreview()
             return
         }
-        val geometry = geometry()
+        // An in-flight occupied/ready callback can temporarily recalculate
+        // the rail thickness before it is drawn. Use the geometry captured at
+        // the user's tap, not an intermediate layout, for the card flight.
+        val geometry = activeSwapViewport?.takeIf {
+            StageSwapViewportHoldPolicy.retain(true,it,geometry())
+        } ?: geometry()
         val previewHost = contentHighlightView?.parent as? FrameLayout
         val sourceSlot = slotWindows.getOrNull(sourceIndex)
         val sourceRect = Rect()
