@@ -1,0 +1,71 @@
+name: One-time reviewed N5 refit onto current Y700 candidate
+on:
+  push:
+    branches: ['atomic-workbench/v0.9.33-integrated-y700-n5-donation']
+    paths: ['.github/workflows/stage-reviewed-n5-onto-y700-v033.yml']
+permissions:
+  contents: write
+jobs:
+  exact-source-merge:
+    runs-on: ubuntu-latest
+    if: github.repository == 'x647368-maker/NeXtep'
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Fetch exact PR35 evidence, verify changed paths, and stage ONLY N5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin 5ee2d1a3b3912c2d3ab401c23ec5a1e69b4c26b0
+          git fetch origin c017983a438518a0250085cd33c7981f1e6b093b
+          git fetch origin aebd5ae1d87c7d93d08a3cb0ce7640e49e2d72e8
+          python3 - <<'PY'
+          import subprocess
+          base='5ee2d1a3b3912c2d3ab401c23ec5a1e69b4c26b0'
+          n5='c017983a438518a0250085cd33c7981f1e6b093b'
+          changed=sorted(subprocess.check_output(['git','diff','--name-only',base,n5],text=True).splitlines())
+          approved=sorted([
+            'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicy.kt',
+            'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt',
+            'app/src/test/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicyTest.kt',
+            'scripts/reviewed-assistant6-n5-rail-refit.json',
+            'scripts/verify-state-continuity.py',
+          ])
+          assert changed==approved, (changed,approved)
+          # PR35 and PR36 share the same v0.9.32 ancestor.
+          y700='aebd5ae1d87c7d93d08a3cb0ce7640e49e2d72e8'
+          head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert subprocess.check_output(['git','merge-base',base,y700],text=True).strip()==base
+          assert subprocess.check_output(['git','diff','--name-only',base,y700],text=True).find('workspace/WorkspaceController.kt')<0
+          print('N5 5-file diff approved; existing Y700 fixes are independent')
+          PY
+          git restore --source c017983a438518a0250085cd33c7981f1e6b093b -- \
+            app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicy.kt \
+            app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt \
+            app/src/test/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicyTest.kt \
+            scripts/reviewed-assistant6-n5-rail-refit.json
+          python3 - <<'PY'
+          import subprocess
+          changed=sorted(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines())
+          approved=sorted([
+            'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicy.kt',
+            'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt',
+            'app/src/test/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicyTest.kt',
+            'scripts/reviewed-assistant6-n5-rail-refit.json',
+          ])
+          assert changed==approved,(changed,approved)
+          for path in approved:
+            assert subprocess.check_output(['git','hash-object',path],text=True).strip() == subprocess.check_output(['git','rev-parse','c017983a438518a0250085cd33c7981f1e6b093b:'+path],text=True).strip(),path
+          print('Four imported N5 files have exactly the Git blob bytes of PR35')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicy.kt \
+                    app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt \
+                    app/src/test/kotlin/io/github/lujinxin/nextep/workspace/StageN5RailRefitPolicyTest.kt \
+                    scripts/reviewed-assistant6-n5-rail-refit.json
+          git commit -m 'integrate: exact four reviewed N5 refit source and test files from PR35'
+          git push origin HEAD:atomic-workbench/v0.9.33-integrated-y700-n5-donation
