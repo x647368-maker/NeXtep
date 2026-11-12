@@ -7,6 +7,24 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Scoped ColorOS update-center redesign; exact Git blob verifier then undo
+# only this private UI patch before all previous reviewed frozen checks.
+update_hero_review=json.loads((root/'scripts/reviewed-update-coloros-hero-device-0.9.34.json').read_text())['files']
+assert set(update_hero_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageUpdateDeviceLabel.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageUpdateBackdrop.kt',
+}
+def undo_update_hero(path,data):
+ if path not in update_hero_review:return data
+ spec=update_hero_review[path]
+ gitblob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()
+ assert gitblob(data)==spec['reviewed_blob_sha1'],path
+ previous=spec['previous_content'].encode('utf-8')
+ assert gitblob(previous)==spec['previous_blob_sha1'],path
+ return previous
+
 # ABC layout preset UI: exact blob and reversible fragment review. No new
 # runtime task, geometry, virtual-display or rendering changes are authorized.
 abc_ui_review=json.loads((root/'scripts/reviewed-abc-presets-0.9.34.json').read_text())['files']
@@ -86,7 +104,7 @@ def undo_y700_handoff(path,data):
  assert gitblob(previous)==handoff_blobs[path]['previous'],path
  return previous
 for source_path in handoff_review:
- undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,undo_parallel_motion(source_path,undo_abc_ui(source_path,(root/source_path).read_bytes()))))
+ undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,undo_parallel_motion(source_path,undo_abc_ui(source_path,undo_update_hero(source_path,(root/source_path).read_bytes())))))
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
 # and validate both full Git blob hashes before the v0.9.8 frozen chain.
 cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
@@ -372,7 +390,7 @@ def undo_cooluser_swap(path,data):
  return before
 
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,(root/path).read_bytes())))))))))))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,(root/path).read_bytes()))))))))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -549,7 +567,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,(root/path).read_bytes())))))))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,(root/path).read_bytes()))))))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
@@ -570,14 +588,14 @@ for path,sha in frozen.items():
  elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,(root/path).read_bytes())))))
+  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,(root/path).read_bytes()))))))
   # The exact Git blob SHA-1 pins the reviewed hook's entire contents.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,(root/path).read_bytes()))))))))
+  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,(root/path).read_bytes())))))))))
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
