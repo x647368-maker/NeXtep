@@ -22,6 +22,14 @@ class StageUpdateDeviceLabelTest {
         assertEquals("设备型号待核实",StageUpdateDeviceLabel.fromSystemProperties(
             "OPPO","OPPO","PKH110","TB324ZC","PMS110"))
     }
+    @Test fun conflictingKnownModelAndHardwareAreNotGuessed() {
+        assertEquals("设备型号待核实",StageUpdateDeviceLabel.fromSystemProperties(
+            "OPPO","OPPO","PMS110","TB324ZC","TB324ZC"))
+        assertEquals("设备型号待核实",StageUpdateDeviceLabel.fromSystemProperties(
+            "Lenovo","Lenovo","TB324ZC","PKH110","device_port"))
+        assertEquals("联想拯救者 Y700 无极",StageUpdateDeviceLabel.fromSystemProperties(
+            "OPPO","OPPO","ColorOS","TB324ZC","TB324ZC"))
+    }
     @Test fun genericModelsDoNotInventADevice() {
         assertEquals("设备型号未识别",StageUpdateDeviceLabel.fromSystemProperties(
             "OPPO","OPPO","generic","unknown","unknown"))
