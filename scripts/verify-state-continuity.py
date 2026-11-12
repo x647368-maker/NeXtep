@@ -8,7 +8,10 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
 # Assistant4 0.9.30: exact fragment reversals precede original frozen checks.
-handoff_review=json.loads((root/'scripts/reviewed-assistant4-y700-handoff-0.9.30.json').read_text())['files']
+handoff_contract=json.loads((root/'scripts/reviewed-assistant4-y700-handoff-0.9.30.json').read_text())
+handoff_review=handoff_contract['files']
+handoff_blobs=handoff_contract['git_blobs']
+assert set(handoff_blobs)==set(handoff_review)
 assert set(handoff_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiHook.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
@@ -17,11 +20,16 @@ assert set(handoff_review)=={
 }
 def undo_y700_handoff(path,data):
  if path not in handoff_review:return data
+ def gitblob(blob):
+  return hashlib.sha1(b'blob '+str(len(blob)).encode()+b'\0'+blob).hexdigest()
+ assert gitblob(data)==handoff_blobs[path]['current'],path
  source=data.decode('utf-8')
  for fragment in handoff_review[path]:
   assert source.count(fragment['after'])==1,path
   source=source.replace(fragment['after'],fragment['before'],1)
- return source.encode('utf-8')
+ previous=source.encode('utf-8')
+ assert gitblob(previous)==handoff_blobs[path]['previous'],path
+ return previous
 for source_path in handoff_review:
  undo_y700_handoff(source_path,(root/source_path).read_bytes())
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
