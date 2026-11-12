@@ -3,14 +3,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageSettingsAdaptiveTest {
-    @Test fun exactHomeArchitectureHasTwelveLiveDestinations() {
+    @Test fun exactHomeArchitectureHasElevenLiveDestinations() {
         assertEquals(listOf("工作台","系统","支持"),StageHomeLayout.sections.map{it.title})
         assertEquals(listOf("窗口布局","影音与快捷栏","工作组","启动手势",
-            "快捷开关","运行诊断","在线更新","更新日志","使用与退出",
+            "快捷开关","运行诊断","软件更新","使用帮助与退出",
             "建议与反馈","打赏作者","关于"),
             StageHomeLayout.sections.flatMap{it.items}.map{it.name})
         assertEquals(listOf("windows","core","groups","gestures","tile","diagnostics",
-            "update","changelog","help","feedback","donate","about"),
+            "update","help","feedback","donate","about"),
             StageHomeLayout.sections.flatMap{it.items}.map{it.page})
     }
     @Test fun phoneAndFoldedColumnsUseAvailableWidthExpandedIsCapped() {
