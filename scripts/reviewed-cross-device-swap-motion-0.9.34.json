@@ -1,0 +1,47 @@
+{
+  "purpose": "All-device click-to-swap bilateral uniform aspect-preserving motion, explicitly reviewed reversible modifications; original task/VD/input frozen chain retained",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": [
+      {
+        "before": "                // Tap swaps should change task ownership, never animate the\n                // physical outline or distort the screenshot as it crosses sizes.\n                freezeGeometry = drag == null,",
+        "after": "                // Move both temporary preview frames on EVERY supported\n                // screen shape, while preserving each image's actual aspect\n                // ratio. For invalid bounds, fall back to fixed safe exchange.\n                // Task ownership, Surface handoff and input geometry remain\n                // managed by the existing real display coordinator.\n                freezeGeometry = drag == null && !animateTap,\n                uniformTapMorph = animateTap,"
+      },
+      {
+        "before": "        } else null\n        val previewSlots = listOfNotNull(sourceSlot, targetSlot)",
+        "after": "        } else null\n        // Click-to-exchange is a cross-device motion. The rectangle geometry\n        // is acquired from current actual workspace bounds in every display\n        // shape: phones, folded/unfolded foldables and tablets. No model gate.\n        // When capture/geometry is missing the proven fixed-frame fallback\n        // remains available, without touching the real task lifecycle.\n        val animateTap = drag == null && StageCrossDeviceSwapMotionPolicy.canAnimateTap(\n            StageCrossDeviceSwapMotionPolicy.Bounds(start.left, start.top, start.right, start.bottom),\n            StageCrossDeviceSwapMotionPolicy.Bounds(to.left, to.top, to.right, to.bottom),\n            sourcePreview != null,\n        )\n        val previewSlots = listOfNotNull(sourceSlot, targetSlot)"
+      }
+    ],
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": [
+      {
+        "before": "\n    private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {",
+        "after": "\n    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {\n        val frame = StageExchangeMotion.frame(\n            StageExchangeMotion.Box(from.left, from.top, from.right, from.bottom),\n            StageExchangeMotion.Box(to.left, to.top, to.right, to.bottom), progress,\n        ).box\n        if (!frame.left.isFinite() || !frame.top.isFinite() ||\n            !frame.right.isFinite() || !frame.bottom.isFinite() ||\n            frame.right <= frame.left || frame.bottom <= frame.top) return\n        val bounds = RectF(frame.left, frame.top, frame.right, frame.bottom)\n        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,\n            bounds.left, bounds.top, bounds.right, bounds.bottom)\n        destination.set(fit.left, fit.top, fit.right, fit.bottom)\n        outline.reset()\n        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n            bounds.width(), bounds.height(), resources.displayMetrics.density)\n        outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)\n        val save = canvas.save()\n        canvas.clipPath(outline)\n        canvas.drawColor(Color.BLACK)\n        canvas.drawBitmap(bitmap, null, destination, bitmapPaint)\n        canvas.restoreToCount(save)\n    }\n\n    private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {"
+      },
+      {
+        "before": "        }\n        if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)",
+        "after": "        }\n        if (uniformTapMorph) {\n            // All supported form factors use the same two-way movement, but\n            // never map the bitmap corners onto a changing quadrilateral.\n            // A uniform fit and letterbox protects text/video proportions\n            // while the real tasks are moved and their live buffers settle.\n            if (target != null) drawUniformMotionFrame(canvas, target, targetBounds, sourceBounds)\n            drawUniformMotionFrame(canvas, source, start, targetBounds)\n            return\n        }\n        if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)"
+      },
+      {
+        "before": "    private val freezeGeometry: Boolean,",
+        "after": "    private val freezeGeometry: Boolean,\n    private val uniformTapMorph: Boolean,"
+      },
+      {
+        "before": "            sourceQuad, targetQuad, freezeGeometry)",
+        "after": "            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph)"
+      },
+      {
+        "before": "        freezeGeometry: Boolean = false,",
+        "after": "        freezeGeometry: Boolean = false,\n        uniformTapMorph: Boolean = false,"
+      }
+    ]
+  },
+  "git_blobs": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous": "5c2a08fb339c5b46d11cc18a51494753bf0e2bd2",
+      "current": "56e97dc00eb28925365f8e8d0911223997641d7a"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "previous": "38e9b9be451e845c34534b983fba0be207f6154a",
+      "current": "c836f379118f17a42e2769bb26519040be62c16b"
+    }
+  }
+}
