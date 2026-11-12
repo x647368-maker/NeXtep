@@ -7,6 +7,31 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# N3 inactive hot paths: exact current Git blobs and strictly reversible
+# changes across SystemUI renderer, Surface commits and wallpaper listener.
+# Never replace/relax any existing freeze manifest or previous reviewed blob.
+n3_idle_review=json.loads((root/'scripts/reviewed-n3-idle-hot-paths-0.9.34.json').read_text())['files']
+n3_idle_paths={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiPanelMonitor.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/framework/TaskSurfaceCompat.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
+}
+assert set(n3_idle_review)==n3_idle_paths
+def undo_n3_idle(path,data):
+ if path not in n3_idle_paths:return data
+ spec=n3_idle_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
+
 # Assistant4 0.9.30: exact fragment reversals precede original frozen checks.
 handoff_contract=json.loads((root/'scripts/reviewed-assistant4-y700-handoff-0.9.30.json').read_text())
 handoff_review=handoff_contract['files']
@@ -31,7 +56,7 @@ def undo_y700_handoff(path,data):
  assert gitblob(previous)==handoff_blobs[path]['previous'],path
  return previous
 for source_path in handoff_review:
- undo_y700_handoff(source_path,(root/source_path).read_bytes())
+ undo_y700_handoff(source_path,undo_n3_idle(source_path,(root/source_path).read_bytes()))
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
 # and validate both full Git blob hashes before the v0.9.8 frozen chain.
 cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
@@ -283,8 +308,28 @@ def undo_unified_update(path,data):
  assert gitblob(before)==spec['previous_blob_sha1'],path
  return before
 
+# N3 screen-off scope: pin full new Git blob; reverse only reviewed, unique
+# lock-output / fallback-probe fragments before the existing frozen SHA chain.
+n3_power_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt'
+n3_power_review=json.loads((root/'scripts/reviewed-n3-lock-power-0.9.34.json').read_text())['files']
+assert set(n3_power_review)=={n3_power_path}
+def undo_n3_lock_power(path,data):
+ if path!=n3_power_path:return data
+ spec=n3_power_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
+
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,(root/path).read_bytes()))))))
+ data=undo_n3_lock_power(path,undo_n3_idle(path,(root/path).read_bytes()))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,data))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -461,7 +506,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,(root/path).read_bytes())))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_n3_idle(path,(root/path).read_bytes()))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.

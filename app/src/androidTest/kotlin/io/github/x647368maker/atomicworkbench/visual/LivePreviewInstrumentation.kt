@@ -71,12 +71,24 @@ class LivePreviewInstrumentation : Instrumentation() {
                 }
                 check(ready.await(10,TimeUnit.SECONDS)) { "No live texture frame" }
                 Thread.sleep(350)
-                val shot=uiAutomation.takeScreenshot() ?: error("No HWUI screenshot")
                 val xy=IntArray(2);runOnMainSync { card.getLocationOnScreen(xy) }
-                val background=shot.getPixel(xy[0]-10,xy[1]+80)
+                // SurfaceTextureUpdated confirms the producer frame, not necessarily
+                // its first composition into the physical emulator screenshot.
+                // Wait briefly for the REAL live pixel; retain every strict pixel
+                // assertion below. No screenshot substitutions or skipped checks.
+                val deadline=android.os.SystemClock.uptimeMillis()+5_000L
+                var shot=uiAutomation.takeScreenshot() ?: error("No HWUI screenshot")
+                var background=shot.getPixel(xy[0]-10,xy[1]+80)
+                var center=shot.getPixel(xy[0]+120,xy[1]+250)
+                while(center==background && android.os.SystemClock.uptimeMillis()<deadline) {
+                    shot.recycle()
+                    Thread.sleep(150)
+                    shot=uiAutomation.takeScreenshot() ?: error("No HWUI screenshot")
+                    background=shot.getPixel(xy[0]-10,xy[1]+80)
+                    center=shot.getPixel(xy[0]+120,xy[1]+250)
+                }
                 val corner=shot.getPixel(xy[0]+1,xy[1]+74)
-                val center=shot.getPixel(xy[0]+120,xy[1]+250)
-                check(center!=background) { "Live center missing" }
+                check(center!=background) { "Live center missing after HWUI composition grace period" }
                 if(legacy) check(corner!=background) { "Baseline square-corner reproduction missing" }
                 else check(corner==background) { "LIVE buffer corner not clipped" }
                 File(out,if(legacy) "095-parent-only.png" else "096-live-clip.png").outputStream().use { shot.compress(Bitmap.CompressFormat.PNG,100,it) }

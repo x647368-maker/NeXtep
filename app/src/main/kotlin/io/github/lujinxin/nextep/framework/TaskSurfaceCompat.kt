@@ -84,8 +84,14 @@ object TaskSurfaceCompat {
         onFailure = { NeXtepLog.warn("task_surface", "Native transaction fitting failed open", it) },
     )
 
-    fun <R> interceptTransactionApply(transaction: Any, proceed: () -> R): R =
-        transactionGuard.intercept(transaction, proceed)
+    fun <R> interceptTransactionApply(transaction: Any, proceed: () -> R): R {
+        // All three ownership maps empty means there is literally no workspace
+        // transform to append. Do not enter the ThreadLocal transaction guard
+        // for unrelated SystemUI frames. Any retained task/slot keeps old path.
+        if (activePresentations.isEmpty() &&
+            preparedPresentations.isEmpty() && slotSurfaces.isEmpty()) return proceed()
+        return transactionGuard.intercept(transaction, proceed)
+    }
 
     fun initialize(classLoader: ClassLoader) {
         hostClassLoader = classLoader

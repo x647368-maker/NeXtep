@@ -1,0 +1,35 @@
+{
+  "purpose": "N3 lock/screen-off energy risk reduction candidate; no claim of measured battery savings. Exact source bytes; reverse all edits before historical freezes.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt": {
+      "previous_blob_sha1": "839b7c8d5c54b833896381575e6b8091da462039",
+      "reviewed_blob_sha1": "0711115f3630575b32c909fe817c767d60442c48",
+      "patches": [
+        {
+          "before": "            val screenReady = isScreenReady()\n            if (!screenReady || isKeyguardLocked(applicationContext)) {",
+          "after": "            val screenReady = isScreenReady()\n            val keyguardLocked = isKeyguardLocked(applicationContext)\n            if (!screenReady || keyguardLocked) {"
+        },
+        {
+          "before": "                // A keyguard-going-away sync can include retained virtual-display\n                // activities. Keeping their outputs OFF until keyguard is gone\n                // makes that sync wait for its five-second draw timeout.\n                // Panels and input remain suspended; only hidden buffers warm up.\n                windowController.updateSuspendedOutputs(screenReady)",
+          "after": "                // Keep the retained task-owning display but disconnect its producer\n                // while physically off or locked. The unlock callback restores it.\n                windowController.updateSuspendedOutputs(\n                    StageLockPowerPolicy.allowSuspendedOutput(screenReady, keyguardLocked))"
+        },
+        {
+          "before": "            updateLockStateObservation()\n        }\n    }\n\n    private fun updateLockStateObservation() {",
+          "after": "            updateLockStateObservation(screenReady, keyguardLocked)\n        }\n    }\n\n    private fun updateLockStateObservation(screenReady: Boolean? = null, keyguardLocked: Boolean? = null) {"
+        },
+        {
+          "before": "        if (::workspaceController.isInitialized && workspaceController.isActive()) {\n            lifecycleHandler.postDelayed(lockStateObserver, 500L)\n        } else {",
+          "after": "        if (::workspaceController.isInitialized && workspaceController.isActive()) {\n            // Display and keyguard callbacks stay immediate. This is fallback only.\n            val ready = screenReady ?: isScreenReady()\n            val locked = keyguardLocked ?: isKeyguardLocked(applicationContext)\n            lifecycleHandler.postDelayed(lockStateObserver,\n                StageLockPowerPolicy.observationIntervalMs(ready, locked))\n        } else {"
+        },
+        {
+          "before": "            val screenReady = isScreenReady()\n            windowController.updateSuspendedOutputs(screenReady)\n            if (locked || !screenReady) {",
+          "after": "            val screenReady = isScreenReady()\n            windowController.updateSuspendedOutputs(\n                StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))\n            if (locked || !screenReady) {"
+        },
+        {
+          "before": "                lifecycleHandler.postDelayed(this, if (locked) 500L else UNLOCK_DISPLAY_RETRY_MS)",
+          "after": "                lifecycleHandler.postDelayed(this,\n                    StageLockPowerPolicy.resumeRetryMs(screenReady, locked))"
+        }
+      ]
+    }
+  }
+}

@@ -192,13 +192,13 @@ class NeXtepWindowController(
                 Intent.ACTION_USER_PRESENT -> Unit
                 else -> return
             }
-            if (!suspended) refreshWallpaperBackdrop()
+            if (workspaceVisible && !suspended) refreshWallpaperBackdrop()
         }
     }
 
     init {
-        // Warm the cache before the first workspace entry, including after unlocking.
-        // Window creation is deliberately lazy; wallpaper observation must not be.
+        // Do not pre-capture bitmap wallpapers at SystemUI startup: the user
+        // may never open workbench in this session. First show() requests it.
         runCatching {
             context.registerReceiver(
                 wallpaperReceiver,
@@ -209,7 +209,7 @@ class NeXtepWindowController(
                 Context.RECEIVER_EXPORTED,
             )
         }.onFailure { NeXtepLog.warn("wallpaper_backdrop", "Wallpaper change listener unavailable", it) }
-        backdropHandler.post { refreshWallpaperBackdrop() }
+        // No background capture until a real workspace has been displayed.
         mainTaskPresenter.onHomePresented = {
             backdropHandler.post {
                 if (!suspended && workspaceVisible) refreshWallpaperBackdrop()
@@ -2283,6 +2283,8 @@ class NeXtepWindowController(
     }
 
     private fun refreshWallpaperBackdrop(attempt: Int = 0) {
+        // Ignore delayed callbacks after hide/lock; no invisible bitmap capture.
+        if (!workspaceVisible || suspended) return
         val geometry = geometry()
         // Y700 wide panel: let the same native wallpaper surface show through
         // both translucent panels. Duplicating screenshots over the live
