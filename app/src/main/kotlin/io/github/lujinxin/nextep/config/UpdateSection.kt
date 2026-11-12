@@ -146,8 +146,8 @@ internal object UpdateSection {
                     check.isEnabled=true
                     result.onSuccess { found ->
                         release=found;download.isEnabled=found!=null
-                        status.text=if(found==null)"已是可验证的最新版本。历史无校验元数据的版本会忽略。" else "发现 ${found.version}，版本码 ${found.metadata.versionCode}"
-                        heroStatus.text=if(found==null)"已是最新版本" else "发现新版本"
+                        status.text=if(found==null)"当前未发现可验证的更高版本；历史无校验元数据的版本会忽略。" else "发现 ${found.version}，版本码 ${found.metadata.versionCode}"
+                        heroStatus.text=if(found==null)"暂无可验证的新版本" else "发现新版本"
                         found?.let(::showRelease)
                     }.onFailure {
                         heroStatus.text="更新检查暂不可用"
