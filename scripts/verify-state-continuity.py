@@ -283,8 +283,28 @@ def undo_unified_update(path,data):
  assert gitblob(before)==spec['previous_blob_sha1'],path
  return before
 
+# N3 screen-off scope: pin full new Git blob; reverse only reviewed, unique
+# lock-output / fallback-probe fragments before the existing frozen SHA chain.
+n3_power_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt'
+n3_power_review=json.loads((root/'scripts/reviewed-n3-lock-power-0.9.34.json').read_text())['files']
+assert set(n3_power_review)=={n3_power_path}
+def undo_n3_lock_power(path,data):
+ if path!=n3_power_path:return data
+ spec=n3_power_review[path]
+ blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert blob==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in spec['patches']:
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ data=source.encode('utf-8')
+ previous=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ assert previous==spec['previous_blob_sha1'],path
+ return data
+
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,(root/path).read_bytes()))))))
+ data=undo_n3_lock_power(path,(root/path).read_bytes())
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,data))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
