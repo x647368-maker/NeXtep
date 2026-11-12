@@ -57,5 +57,23 @@
         "after": "    const val HANDOFF_MS = 2500L\n    // Shell may announce the task before a usable leash is published. Retry\n    // only on subsequent real task callbacks, never by polling.\n    const val MAX_PREFIT_ATTEMPTS = 3"
       }
     ]
+  },
+  "git_blobs": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiHook.kt": {
+      "previous": "b5a34f35fce8918f4b4360dccad7f4120fb6a8e8",
+      "current": "0eae326b93477378175cea7241cc18fea87c8b51"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous": "ef59473617b4e9a7bff7b8acc048567b71cabb87",
+      "current": "bc9857236f980067f0a4bf31580c4d8d5b2679e1"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTabletColdLaunchBridge.kt": {
+      "previous": "ec582c4ae4810924f06d146e021d72fcca7ebda1",
+      "current": "a518e64e4876d7bd33ed9fa57a19aecab07d02bb"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageTabletColdLaunchPolicy.kt": {
+      "previous": "9476073ae1c1b3cb04bc6708687d723b177b5a24",
+      "current": "4e6bd72acb499406a41edfd6d9f8ae36b3b20f27"
+    }
   }
 }
