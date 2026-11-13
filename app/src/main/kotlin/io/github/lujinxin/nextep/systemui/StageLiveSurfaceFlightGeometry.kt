@@ -37,15 +37,18 @@ internal object StageLiveSurfaceFlightGeometry {
             frame.cy-sourceHeight*s*.5f,frame)
     }
 
-    /** Mirror crop is in the original source window's local coordinates. */
+    /** Pure local crop used by JVM tests (Android Rect is a stub on the JVM). */
+    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {
+        fun toAndroidRect() = android.graphics.Rect(left,top,right,bottom)
+    }
     fun localCrop(frame: Box, rootLeft: Int, rootTop: Int, rootWidth: Int,
-                  rootHeight: Int): android.graphics.Rect? {
+                  rootHeight: Int): Crop? {
         if (!frame.valid() || rootWidth < 2 || rootHeight < 2) return null
         val l=(frame.left-rootLeft).toInt()
         val t=(frame.top-rootTop).toInt()
         val r=(frame.right-rootLeft).toInt()
         val b=(frame.bottom-rootTop).toInt()
         if (l < 0 || t < 0 || r > rootWidth || b > rootHeight || r-l < 2 || b-t < 2) return null
-        return android.graphics.Rect(l,t,r,b)
+        return Crop(l,t,r,b)
     }
 }
