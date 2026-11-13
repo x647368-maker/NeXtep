@@ -1,0 +1,43 @@
+{
+  "purpose": "PR59 isolate cold-OEM-mirror preparation recovery and transient ownership fallback. Reversible source-only change before PR58,57,55,54 and frozen tests; no task/surface/VD/input mutation.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
+      "previous_blob_sha1": "92ec02227223cf06ce97b69688e9ed3c0d94e8f7",
+      "patches": [
+        {
+          "before": " * OEM failure or a >28ms mirror setup disables trials until SystemUI restart;\n * ordinary task movement and the PR53 low-cost cue continue normally.",
+          "after": " * A single cold 28ms GPU mirror miss may recover on the next tap; repeated\n * slow attempts or a severe delay disable the private native path for safety.\n * Clear OEM denial still disables for the SystemUI session. The PR53 fallback\n * remains available when live mirroring cannot be used."
+        },
+        {
+          "before": "    private const val PREP_BUDGET_MS=28L\n    private const val VISUAL_LEAD_IN=0.90f",
+          "after": "    private const val PREP_BUDGET_MS=28L\n    private const val SEVERE_PREP_MS=80L\n    private const val VISUAL_LEAD_IN=0.90f"
+        },
+        {
+          "before": "    @Volatile private var disabled=false",
+          "after": "    @Volatile private var disabled=false\n    // Only touched on the SystemUI main thread during an explicit swap.\n    // Warm first-use reflection can exceed a single frame without OEM failure.\n    private var consecutiveSlowPreparations=0"
+        },
+        {
+          "before": "    fun acceptPrepareTime(ms:Long):Boolean {\n        if(ms>PREP_BUDGET_MS) disabled=true\n        return !disabled\n    }",
+          "after": "    fun acceptPrepareTime(ms:Long):Boolean {\n        if (disabled || ms < 0L) return false\n        if (ms <= PREP_BUDGET_MS) {\n            consecutiveSlowPreparations=0\n            return true\n        }\n        consecutiveSlowPreparations++\n        // Never run this attempt if it exceeded 28ms. One ordinary cold miss\n        // is recoverable; a second consecutive miss or severe stall locks out.\n        if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) disabled=true\n        return false\n    }\n\n    /** Do not turn temporary task-leash/geometry readiness into permanent OEM denial. */\n    fun transientMirrorOutcome(outcome:String):Boolean = when (outcome) {\n        \"fallback:detached_or_software\",\n        \"fallback:host_not_full_display\",\n        \"fallback:invalid_bounds\",\n        \"fallback:card_outside_source_root\",\n        \"fallback:no_owned_main_task_mirror\",\n        \"fallback:invalid_native_handles\" -> true\n        else -> false\n    }"
+        },
+        {
+          "before": "    internal fun resetForTests() { disabled=false }",
+          "after": "    internal fun resetForTests() { disabled=false; consecutiveSlowPreparations=0 }"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "c9f1daea27d16438586fb93636f3ccda12ad3761",
+      "patches": [
+        {
+          "before": "            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: GPU mirror unavailable reason=$reason\")\n            StageConcurrentNativeTrialPolicy.disableForSession(\"OEM mirror unavailable: \"+reason)\n            return false",
+          "after": "            NeXtepLog.warn(\"native_swap\", \"PR59 mirror rejected on current tap reason=$reason\")\n            if (StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason)) {\n                // This task's owned leash or card bounds can become ready next tap.\n                // Keep the current fallback but do not lock out the entire session.\n                StageExchangeTelemetry.nativeEvent(\"mirror_transient_retry_next_tap\")\n            } else {\n                StageConcurrentNativeTrialPolicy.disableForSession(\"OEM mirror unavailable: \"+reason)\n            }\n            return false"
+        },
+        {
+          "before": "            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms\")\n            return false",
+          "after": "            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms; native allowed next tap=\" +\n                StageConcurrentNativeTrialPolicy.allowed(true,true,false))\n            return false"
+        }
+      ]
+    }
+  }
+}
