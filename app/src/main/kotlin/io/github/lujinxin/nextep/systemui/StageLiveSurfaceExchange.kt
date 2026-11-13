@@ -58,6 +58,13 @@ internal class StageLiveSurfaceExchange private constructor(
     private var lastProgress = 0f
     private var nativeFrameCount = 0
     private var firstTransactionCommitted = false
+    // Optional SystemUI-only API, resolved ONCE rather than per animation frame.
+    private var cornersSupported = true
+    private val cornerMethod = runCatching {
+        SurfaceControl.Transaction::class.java.getDeclaredMethod(
+            "setCornerRadius", SurfaceControl::class.java, Float::class.javaPrimitiveType,
+        ).apply { isAccessible=true }
+    }.getOrNull()
     private val background = object : View(host.context) {
         private val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(12, 14, 21)
@@ -290,6 +297,21 @@ internal class StageLiveSurfaceExchange private constructor(
         transaction.setPosition(mainMirror,
             outgoing.x-mainCrop.left*outgoing.scale,
             outgoing.y-mainCrop.top*outgoing.scale)
+        // Preserve the previously accepted 24dp-equivalent round cards while
+        // their compositor scale changes. A parent layer's corner radius uses
+        // source-layer units, hence divide by the current uniform scale.
+        if (cornersSupported && cornerMethod != null) {
+            val d=host.resources.displayMetrics.density
+            val sourceRadius=(24f*d / incoming.scale).coerceIn(0f,120f*d)
+            val mainRadius=(24f*d / outgoing.scale).coerceIn(0f,120f*d)
+            runCatching {
+                cornerMethod.invoke(transaction,sourceMirror,sourceRadius)
+                cornerMethod.invoke(transaction,mainMirror,mainRadius)
+            }.onFailure {
+                cornersSupported=false
+                NeXtepLog.warn("native_swap","OEM refused mirrored-card corner rounding",it)
+            }
+        }
     }
 
     private fun finishIfReady(liveReady: () -> Boolean, canRelease: () -> Boolean) {
