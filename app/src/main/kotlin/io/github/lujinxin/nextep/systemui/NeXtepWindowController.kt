@@ -2054,7 +2054,7 @@ class NeXtepWindowController(
         // The ViewRoot surface does not exist until the first traversal.
         // Do not create/parent mirrors immediately after addView(): on ColorOS
         // this produces another silent null and yet another instant swap.
-        overlay.view.postOnAnimation(deadline)
+        overlay.afterFirstCommittedFrame { deadline.run() }
         return true
     }
 

@@ -21,9 +21,37 @@ internal class StageNativeSwapFullscreenHost private constructor(
     val view: FrameLayout,
 ) {
     private var closed=false
+    private var frameDeadline: Runnable? = null
+
+    /** Wait for a genuine RenderThread frame: addView() alone does not make
+     * rootSurfaceControl available on many ColorOS builds. One-shot fallback
+     * cannot keep a window or timer alive after a canceled exchange. */
+    fun afterFirstCommittedFrame(launch: () -> Unit) {
+        if (closed) return
+        var called=false
+        val ready=Runnable {
+            if (closed || called) return@Runnable
+            called=true
+            frameDeadline?.let { view.removeCallbacks(it) }
+            frameDeadline=null
+            launch()
+        }
+        frameDeadline=ready
+        runCatching {
+            val observer=view.viewTreeObserver
+            if (observer.isAlive) observer.registerFrameCommitCallback {
+                view.post(ready)
+            }
+        }.onFailure { NeXtepLog.warn("native_swap","No first-frame commit callback",it) }
+        view.postInvalidateOnAnimation()
+        view.postDelayed(ready, 140L)
+    }
+
     fun close() {
         if (closed) return
         closed=true
+        frameDeadline?.let { view.removeCallbacks(it) }
+        frameDeadline=null
         runCatching { manager.removeViewImmediate(view) }
             .onFailure { NeXtepLog.warn("native_swap","Temporary swap root removal failed",it) }
     }
@@ -41,6 +69,11 @@ internal class StageNativeSwapFullscreenHost private constructor(
                 setBackgroundColor(Color.TRANSPARENT)
                 isClickable=false
                 importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                // A practically invisible 1x1 draw primes the compositor
+                // without a full-screen blur or persistent render loop.
+                addView(View(context).apply {
+                    setBackgroundColor(Color.argb(1,0,0,0))
+                },FrameLayout.LayoutParams(1,1))
             }
             val flags=WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
