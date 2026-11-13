@@ -269,7 +269,7 @@ jobs:
             for variant in google_apis_ps16k google_apis_playstore_ps16k google_apis_playstore google_apis default; do
               candidate="system-images;android-$level;$variant;x86_64"
               if [[ " ${choices[*]} " == *" $candidate "* ]]; then
-                if sdkmanager --channel=3 emulator "$candidate"; then
+                if sdkmanager --channel=3 emulator 'build-tools;36.0.0' "$candidate"; then
                   chosen="$candidate"; break 2
                 fi
               fi
