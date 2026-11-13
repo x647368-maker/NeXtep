@@ -258,36 +258,39 @@ jobs:
           set -euo pipefail
           trap 'tail -160 /tmp/emulator-api37.log 2>/dev/null || true' EXIT
           sudo chmod 666 /dev/kvm
-          # Android 17 images can be preview-channel / device-variant-specific.
-          # Discover the *actual published* API37 system-image package instead
-          # of assuming that google_apis;x86_64 exists on every runner.
+          # Android 17 images use minor SDK revisions (android-37.0,
+          # android-37.2) and usually the google_apis_ps16k flavor.
+          # Confirm the real installed package instead of guessing "37".
           sdkmanager --channel=3 --list > /tmp/atomic-sdk37-list.txt
-          grep -E 'system-images;android-37;[^ ;]+;x86_64' /tmp/atomic-sdk37-list.txt || true
-          mapfile -t choices < <(grep -E '^[[:space:]]+system-images;android-37;[^;[:space:]]+;x86_64' /tmp/atomic-sdk37-list.txt | awk '{print $1}' || true)
-          if [ "${#choices[@]}" -eq 0 ]; then
-            echo "::error::Android 17 / API37 x86_64 system image not published in SDK preview channel for this runner"
-            exit 73
-          fi
+          grep -E 'system-images;android-37([.][0-9]+)?;[^;[:space:]]+;x86_64' /tmp/atomic-sdk37-list.txt || true
+          mapfile -t choices < <(grep -E '^[[:space:]]+system-images;android-37([.][0-9]+)?;[^;[:space:]]+;x86_64' /tmp/atomic-sdk37-list.txt | awk '{print $1}' | sort -rV || true)
           chosen=''
-          for name in google_apis_playstore google_apis default aosp_atd google_atd; do
-            for candidate in "${choices[@]}"; do
-              case "$candidate" in "system-images;android-37;$name;x86_64")
-                if sdkmanager --channel=3 emulator 'build-tools;36.0.0' "$candidate"; then
+          for level in 37.2 37.1 37.0 37; do
+            for variant in google_apis_ps16k google_apis_playstore_ps16k google_apis_playstore google_apis default; do
+              candidate="system-images;android-$level;$variant;x86_64"
+              if printf '%s\\n' "${choices[@]}" | grep -Fxq "$candidate"; then
+                if sdkmanager --channel=3 emulator "$candidate"; then
                   chosen="$candidate"; break 2
                 fi
-              ;; esac
+              fi
             done
           done
           if [ -z "$chosen" ]; then
-            echo "::error::API37 images listed but none of the x86_64 variants could be installed: ${choices[*]}"
-            exit 74
+            echo "::error::Android 17 x86_64 SDK system image missing or unavailable: ${choices[*]}"
+            exit 73
           fi
+          echo "Native GPU test uses $chosen"
           echo "NATIVE_API37_IMAGE=$chosen" >> "$GITHUB_ENV"
           export ANDROID_USER_HOME="$RUNNER_TEMP/atomic-android37-user"
           export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
           mkdir -p "$ANDROID_AVD_HOME"
           echo no | avdmanager create avd --force --name atomic-native37 --path "$ANDROID_AVD_HOME/atomic-native37.avd" --package "$chosen" --device pixel_7
           test -s "$ANDROID_AVD_HOME/atomic-native37.avd/config.ini"
+          # Older avdmanager miswrites minor API targets as "android-0",
+          # causing invisible/corrupt GPU frames despite a successful boot.
+          actual_target="$(printf '%s' "$chosen" | cut -d';' -f2)"
+          sed -i "s/^target=.*/target=$actual_target/" "$ANDROID_AVD_HOME/atomic-native37.ini"
+          grep '^target=' "$ANDROID_AVD_HOME/atomic-native37.ini"
           "$ANDROID_HOME/emulator/emulator" -avd atomic-native37 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 4096 -cores 2 -gpu swiftshader_indirect > /tmp/emulator-api37.log 2>&1 &
           timeout 150 adb wait-for-device
           timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
