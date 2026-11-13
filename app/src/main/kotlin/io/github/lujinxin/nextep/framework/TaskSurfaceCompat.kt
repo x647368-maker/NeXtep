@@ -93,6 +93,15 @@ object TaskSurfaceCompat {
         return transactionGuard.intercept(transaction, proceed)
     }
 
+    /**
+     * Private compositor-flight transactions must NEVER implicitly append
+     * main/slot task transforms on every mirrored animation frame.
+     * The general SystemUI apply hook still handles WM's own transactions;
+     * only our mirrored layers use this scoped ThreadLocal bypass.
+     */
+    internal fun <R> commitMirrorOnly(block: () -> R): R =
+        transactionGuard.ownedTransaction(block)
+
     fun initialize(classLoader: ClassLoader) {
         hostClassLoader = classLoader
         NeXtepLog.info("task_surface", "Host class loader captured: $classLoader")
