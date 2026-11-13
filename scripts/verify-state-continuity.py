@@ -6,7 +6,8 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
-import hashlib# PR65: restore only the reviewed asynchronous layout-wait patch
+import hashlib
+# PR65: restore only the reviewed asynchronous layout-wait patch
 # before PR64 and every older immutable task/geometry audit.
 pr65_review=json.loads((root/'scripts/reviewed-pr65-nonblocking-layout-0.9.42.json').read_text())['files']
 def undo_pr65(path,data):
