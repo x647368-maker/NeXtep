@@ -57,14 +57,27 @@ internal object StageLiveSurfaceFlightGeometry {
         val sourceSmall = fromArea < toArea
         val small = if (sourceSmall) from else to
         val main = if (sourceSmall) to else from
-        val horizontalGap = if (small.right <= main.left || main.right <= small.left) {
-            if (small.right <= main.left) main.left - small.right else small.left - main.right
-        } else -1f
-        val verticalGap = if (small.bottom <= main.top || main.bottom <= small.top) {
-            if (small.bottom <= main.top) main.top - small.bottom else small.top - main.bottom
-        } else -1f
-        if (horizontalGap < 0f && verticalGap < 0f) return null
-        val byHorizontal = horizontalGap >= verticalGap
+        // Real ColorOS cards may slightly OVERLAP in their outer bounding
+        // rectangles because the main area extends under the side rail.
+        // What matters is which region owns the small card's CENTER.
+        // Reject only an actual ambiguous same-region layout, not a 1px
+        // border/shadow intersection of two independently visible cards.
+        val railLeftRight = small.cx < main.left || small.cx > main.right
+        val railTopBottom = small.cy < main.top || small.cy > main.bottom
+        if (!railLeftRight && !railTopBottom) return null
+        val byHorizontal = when {
+            railLeftRight && !railTopBottom -> true
+            railTopBottom && !railLeftRight -> false
+            else -> {
+                // A diagonally separate card uses the axis with greater
+                // normalized off-main distance, not raw rectangle overlap.
+                val xDistance = if (small.cx < main.left) main.left-small.cx
+                    else small.cx-main.right
+                val yDistance = if (small.cy < main.top) main.top-small.cy
+                    else small.cy-main.bottom
+                xDistance / main.width >= yDistance / main.height
+            }
+        }
         val fromScale = min(from.width / sourceWidth, from.height / sourceHeight)
         val toScale = min(to.width / sourceWidth, to.height / sourceHeight)
         if (fromScale <= 0f || toScale <= 0f) return null
