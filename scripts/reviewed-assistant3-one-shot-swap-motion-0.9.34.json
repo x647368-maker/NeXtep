@@ -1,0 +1,30 @@
+{
+  "purpose": "Only a bounded, nonblocking one-shot compositor cue beside PR52 immediate phased move; no captures/host windows/VD/input changes.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "cc5889d2967438acaa8707b9366fd3048039e599",
+      "patches": [
+        {
+          "before": "    private val swapAnimator = WorkspaceSwapAnimator(context)",
+          "after": "    private val swapAnimator = WorkspaceSwapAnimator(context)\n    private val oneShotSwapMotion = StageOneShotSwapMotion(context)"
+        },
+        {
+          "before": "        swapAnimator.cancel()\n        nativeSwapAttempt++",
+          "after": "        swapAnimator.cancel()\n        oneShotSwapMotion.cancel()\n        nativeSwapAttempt++"
+        },
+        {
+          "before": "            val phasedMove = checkNotNull(asyncMove)\n            runCatching {",
+          "after": "            val phasedMove = checkNotNull(asyncMove)\n            // Visual starts without blocking the move: no bitmap, wait or\n            // duplicate SurfaceFlinger mirror. No recurring work in idle state.\n            val slotView=slotWindows.getOrNull(sourceIndex)?.view\n            if(slotView!=null && workspaceVisible && !suspended && !groupInputBlocked) {\n                val started=oneShotSwapMotion.start(slotView,contentHighlightView)\n                NeXtepLog.info(\"swap_feedback\",\"one-shot compositor active=$started\")\n            }\n            runCatching {"
+        },
+        {
+          "before": "                phasedMove { ok ->\n                    NeXtepLog.info(\"swap_latency\",",
+          "after": "                phasedMove { ok ->\n                    if (!ok) oneShotSwapMotion.cancel()\n                    NeXtepLog.info(\"swap_latency\","
+        },
+        {
+          "before": "                NeXtepLog.error(\"swap_latency\", \"Phased tap move could not start\", it)\n                onFinished()",
+          "after": "                NeXtepLog.error(\"swap_latency\", \"Phased tap move could not start\", it)\n                oneShotSwapMotion.cancel()\n                onFinished()"
+        }
+      ]
+    }
+  }
+}

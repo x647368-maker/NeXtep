@@ -102,6 +102,7 @@ class NeXtepWindowController(
     private var slotBackgroundSwipeEnabled = true
     private var frostStrength = 50
     private val swapAnimator = WorkspaceSwapAnimator(context)
+    private val oneShotSwapMotion = StageOneShotSwapMotion(context)
     private val swapCapture = StageAsyncPreviewCapture()
     private var liveSurfaceExchange: StageLiveSurfaceExchange? = null
     // Allocated only for one physical card swap; NEVER a persistent overlay.
@@ -1814,6 +1815,7 @@ class NeXtepWindowController(
         slotCoordinator?.cancelPendingExchange()
         swapCapture.cancel()
         swapAnimator.cancel()
+        oneShotSwapMotion.cancel()
         nativeSwapAttempt++
         liveSurfaceExchange?.stop()
         liveSurfaceExchange = null
@@ -1906,8 +1908,16 @@ class NeXtepWindowController(
             val tappedAt = android.os.SystemClock.uptimeMillis()
             NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
             val phasedMove = checkNotNull(asyncMove)
+            // Visual starts without blocking the move: no bitmap, wait or
+            // duplicate SurfaceFlinger mirror. No recurring work in idle state.
+            val slotView=slotWindows.getOrNull(sourceIndex)?.view
+            if(slotView!=null && workspaceVisible && !suspended && !groupInputBlocked) {
+                val started=oneShotSwapMotion.start(slotView,contentHighlightView)
+                NeXtepLog.info("swap_feedback","one-shot compositor active=$started")
+            }
             runCatching {
                 phasedMove { ok ->
+                    if (!ok) oneShotSwapMotion.cancel()
                     NeXtepLog.info("swap_latency",
                         "Phased task exchange finished ok=$ok elapsedMs=" +
                             (android.os.SystemClock.uptimeMillis() - tappedAt))
@@ -1916,6 +1926,7 @@ class NeXtepWindowController(
                 }
             }.onFailure {
                 NeXtepLog.error("swap_latency", "Phased tap move could not start", it)
+                oneShotSwapMotion.cancel()
                 onFinished()
             }
             return
