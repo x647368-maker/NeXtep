@@ -13,16 +13,27 @@ class StageConcurrentNativeTrialPolicyTest {
     }
     @Test fun trialAlwaysGatedByVisibilityAndSaver() {
         StageConcurrentNativeTrialPolicy.resetForTests()
-        assertEquals(165L, StageConcurrentNativeTrialPolicy.DURATION_MS)
+        assertEquals(195L, StageConcurrentNativeTrialPolicy.DURATION_MS)
         assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(false,true,false))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,false,false))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,true))
     }
+    @Test fun nativeFlightGetsVisibleLeadInBeforeTaskHandoff() {
+        StageConcurrentNativeTrialPolicy.resetForTests()
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(0L,195L,false,0))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(69L,195L,false,0))
+        assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(70L,195L,false,0))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(100L,195L,true,2))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(120L,195L,true,1))
+        assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(110L,195L,true,2))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(-1L,195L,true,2))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(100L,0L,true,2))
+    }
     @Test fun slowPreparationImmediatelyDisablesSubsequentTrials() {
         StageConcurrentNativeTrialPolicy.resetForTests()
-        assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(12))
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(13))
+        assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(28))
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         StageConcurrentNativeTrialPolicy.resetForTests()
         StageConcurrentNativeTrialPolicy.disableForSession("OEM")
