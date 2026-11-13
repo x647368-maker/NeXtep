@@ -57,14 +57,27 @@ internal object StageLiveSurfaceFlightGeometry {
         val sourceSmall = fromArea < toArea
         val small = if (sourceSmall) from else to
         val main = if (sourceSmall) to else from
-        val horizontalGap = if (small.right <= main.left || main.right <= small.left) {
-            if (small.right <= main.left) main.left - small.right else small.left - main.right
-        } else -1f
-        val verticalGap = if (small.bottom <= main.top || main.bottom <= small.top) {
-            if (small.bottom <= main.top) main.top - small.bottom else small.top - main.bottom
-        } else -1f
-        if (horizontalGap < 0f && verticalGap < 0f) return null
-        val byHorizontal = horizontalGap >= verticalGap
+        // Real ColorOS cards may slightly OVERLAP in their outer bounding
+        // rectangles because the main area extends under the side rail.
+        // What matters is which region owns the small card's CENTER.
+        // Reject only an actual ambiguous same-region layout, not a 1px
+        // border/shadow intersection of two independently visible cards.
+        val railLeftRight = small.cx < main.left || small.cx > main.right
+        val railTopBottom = small.cy < main.top || small.cy > main.bottom
+        if (!railLeftRight && !railTopBottom) return null
+        val byHorizontal = when {
+            railLeftRight && !railTopBottom -> true
+            railTopBottom && !railLeftRight -> false
+            else -> {
+                // A diagonally separate card uses the axis with greater
+                // normalized off-main distance, not raw rectangle overlap.
+                val xDistance = if (small.cx < main.left) main.left-small.cx
+                    else small.cx-main.right
+                val yDistance = if (small.cy < main.top) main.top-small.cy
+                    else small.cy-main.bottom
+                xDistance / main.width >= yDistance / main.height
+            }
+        }
         val fromScale = min(from.width / sourceWidth, from.height / sourceHeight)
         val toScale = min(to.width / sourceWidth, to.height / sourceHeight)
         if (fromScale <= 0f || toScale <= 0f) return null
@@ -113,9 +126,11 @@ internal object StageLiveSurfaceFlightGeometry {
         return Placement(scale,box.left,box.top,box)
     }
 
-    private fun overlaps(a:Box,b:Box):Boolean =
-        a.left < b.right && a.right > b.left &&
-        a.top < b.bottom && a.bottom > b.top
+    private fun intersectionArea(a:Box,b:Box):Float {
+        val w=(min(a.right,b.right)-maxOf(a.left,b.left)).coerceAtLeast(0f)
+        val h=(min(a.bottom,b.bottom)-maxOf(a.top,b.top)).coerceAtLeast(0f)
+        return w*h
+    }
 
     /** Strict, real-content no-collision gate. Never trade another slot's pixels
      * or touch mapping for a prettier flight. Unknown geometry falls back to
@@ -129,13 +144,27 @@ internal object StageLiveSurfaceFlightGeometry {
     ):Boolean {
         if(!small.valid() || !main.valid() || sampleCount<4 || sampleCount>240 ||
             otherSlots.any { !it.valid() }) return false
+        val initialUp=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,0f)
+            ?: return false
+        val initialDown=railCorridorFlight(main,small,main.width.toInt(),main.height.toInt(),0f)
+            ?: return false
+        // ColorOS can place the main ViewRoot slightly UNDER the rail by
+        // design. That pre-existing 1-20px edge intersection is not new
+        // animation occlusion. Reject ONLY the added covered area per mirror;
+        // otherwise even frame 0 triggers fallback and the flight disappears.
+        val baseline=otherSlots.map {
+            intersectionArea(initialUp.box,it) to intersectionArea(initialDown.box,it)
+        }
         for(i in 0..sampleCount) {
             val progress=i.toFloat()/sampleCount
             val up=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,progress)
                 ?: return false
             val down=railCorridorFlight(main,small,main.width.toInt(),main.height.toInt(),progress)
                 ?: return false
-            if(otherSlots.any { overlaps(up.box,it) || overlaps(down.box,it) }) return false
+            if(otherSlots.indices.any { index ->
+                intersectionArea(up.box,otherSlots[index]) > baseline[index].first + 1f ||
+                    intersectionArea(down.box,otherSlots[index]) > baseline[index].second + 1f
+            }) return false
         }
         return true
     }

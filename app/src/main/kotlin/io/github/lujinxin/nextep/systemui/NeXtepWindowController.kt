@@ -1936,8 +1936,13 @@ class NeXtepWindowController(
             sourceTaskId=state.taskId,sourceDisplayId=state.displayId,
             mainTaskId=task,
             sourceBounds=source,mainBounds=main,
+            // Only OTHER LIVE APP windows can obstruct the GPU card. PR66
+            // mistakenly treated empty/ready placeholder slot Views as
+            // obstacles and disabled the animation for otherwise safe taps.
             otherSlotBounds=slotWindows.mapIndexedNotNull { index, other ->
-                if (index==slotIndex) null else Rect().takeIf {
+                if (index==slotIndex ||
+                    slotCoordinator?.slotStates()?.getOrNull(index) !is SlotState.Occupied
+                ) null else Rect().takeIf {
                     other.view.getScreenVisibleRect(it)
                 }
             },
@@ -2209,7 +2214,9 @@ class NeXtepWindowController(
                 mainTaskId=task,
                 sourceBounds=source,mainBounds=main,
                 otherSlotBounds=slotWindows.mapIndexedNotNull { index, other ->
-                    if(index==sourceIndex) null else Rect().takeIf {
+                    if(index==sourceIndex ||
+                        slotCoordinator?.slotStates()?.getOrNull(index) !is SlotState.Occupied
+                    ) null else Rect().takeIf {
                         other.view.getScreenVisibleRect(it)
                     }
                 },
