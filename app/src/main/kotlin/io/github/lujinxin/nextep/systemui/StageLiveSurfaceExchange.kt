@@ -33,8 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Original SurfaceControls are never reparented, scaled, hidden or released.
  *
  * In the private overlapping mode, task migration starts after a compositor
- * commitment and visual lead-in, then proceeds concurrently with the rest
- * of the flight. The legacy slow mode still transfers near the end. If the vendor denies mirroring or ownership is stale,
+ * commitment and near-complete visual flight, then begins task migration
+ * while the mirrors hold their final transforms until real buffers settle. The legacy slow mode still transfers near the end. If the vendor denies mirroring or ownership is stale,
  * create() returns null and the old proven exchange path is unchanged.
  */
 internal class StageLiveSurfaceExchange private constructor(
@@ -101,7 +101,9 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val MAX_DURATION_MS = 360L
         private const val HANDOFF_TIMEOUT_MS = 600L
         private const val MAX_LIFETIME_MS = 1800L
-        private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 240L
+        // One bounded wait for the replacement real-task and slot buffers.
+        // Shorter than the overall 1800ms watchdog; no idle polling.
+        private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 480L
         // Do not reparent actual app tasks while either reflected producer is
         // halfway across the display: ColorOS can replace the live buffer
         // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
@@ -328,9 +330,11 @@ internal class StageLiveSurfaceExchange private constructor(
             })
             start()
         }
-        // PR55: PR54 moved task ownership at animator start, before its first
-        // visual frame. Transfer during the flight after a measured lead-in,
-        // or promptly if the compositor fails to acknowledge mirror frames.
+        // PR58: ColorOS can replace a mirrored producer's content as soon as
+        // task migration begins. Keep almost all card travel visible BEFORE
+        // owner changes; then hold endpoint overlays until the new buffers
+        // settle, with a bounded timeout. If compositor commit never arrives,
+        // fail open promptly and preserve the old reliable task swap.
         // No bitmap, second WindowManager root, or persistent background work.
         lastOutcome=if (immediateMove) "active:lead_in_concurrent_gpu_mirrors"
             else "active:two_live_gpu_mirrors"
