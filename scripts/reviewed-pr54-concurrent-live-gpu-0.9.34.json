@@ -1,0 +1,51 @@
+{
+  "purpose": "PR54 private hardware trial: 2 real GPU mirrors using PRE-EXISTING full-screen NeXtepContentPanel; task move at animation start, <=180ms animation, no new WindowManager host or bitmap and automatic slow-device session fallback. PR53 N3 power, frozen task/VD/input/updates untouched.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "f6363486fc4dfa2f487a4bf9cbb4ba76a92ad0ef",
+      "patches": [
+        {
+          "before": "    private fun animateSwap(\n",
+          "after": "    /**\n     * Experimental private-only real two-card swap. Unlike PR50 the existing\n     * ContentPanel already occupies (0,0,screenWidth,screenHeight) and is\n     * touch-transparent. No second WindowManager view or ViewRoot is added.\n     * The coordinator's genuine phased task migration starts at once.\n     */\n    private fun tryConcurrentLiveSwap(\n        slotIndex: Int,\n        moveAsync: ((Boolean) -> Unit) -> Unit,\n        canRelease: () -> Boolean,\n        onFinished: () -> Unit,\n    ): Boolean {\n        if (!StageConcurrentNativeTrialPolicy.allowed(\n                workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,\n                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true))\n            return false\n        val g=geometry()\n        val task=mainTaskPresenter.currentTaskId() ?: return false\n        val slot=slotWindows.getOrNull(slotIndex) ?: return false\n        val state=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied\n            ?: return false\n        val host=records.firstOrNull { it.title==\"NeXtepContentPanel\" }?.view as? FrameLayout\n            ?: return false\n        val point=IntArray(2)\n        host.rootView.getLocationOnScreen(point)\n        if (!StageConcurrentNativeTrialPolicy.fullScreenHost(\n                point[0],point[1],host.rootView.width,host.rootView.height,\n                g.screenWidth,g.screenHeight)) return false\n        val source=Rect()\n        if (!slot.view.getScreenVisibleRect(source)) return false\n        val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)\n        val before=android.os.SystemClock.uptimeMillis()\n        val native=StageLiveSurfaceExchange.create(\n            host=host,sourceSlotView=slot.view,mainTaskId=task,\n            sourceBounds=source,mainBounds=main,\n            fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,\n            backdrop=null,\n        ) ?: run {\n            StageConcurrentNativeTrialPolicy.disableForSession(\"OEM mirror unavailable: \"+\n                StageLiveSurfaceExchange.lastOutcome())\n            return false\n        }\n        val setupMs=android.os.SystemClock.uptimeMillis()-before\n        if (!StageConcurrentNativeTrialPolicy.acceptPrepareTime(setupMs)) {\n            native.stop()\n            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms\")\n            return false\n        }\n        val initialFrame=slot.contentFrameSequence\n        val incoming=state.taskId\n        activeSwapViewport=g\n        deferredSwapGeometryRefresh=false\n        slot.view.beginExchangePreview()\n        val started=native.start(\n            durationMs=StageConcurrentNativeTrialPolicy.DURATION_MS.toInt(),\n            moveAsync={ complete -> moveAsync { ok -> complete(ok) } },\n            move={ true },\n            liveReady={\n                val now=slotCoordinator?.slotStates()?.getOrNull(slotIndex)\n                now is SlotState.Occupied && now.taskId==task &&\n                    slot.view.textureView.isAvailable &&\n                    slot.contentFrameSequence>initialFrame &&\n                    mainTaskPresenter.currentTaskId()==incoming &&\n                    TaskSurfaceCompat.isPresentationSettled(incoming,g)\n            },\n            canRelease=canRelease,\n            immediateMove=true,\n            onFinished={\n                slot.view.endExchangePreview()\n                activeSwapViewport=null\n                liveSurfaceExchange=null\n                val flush=deferredSwapGeometryRefresh\n                deferredSwapGeometryRefresh=false\n                if(flush && workspaceVisible && !suspended) scheduleWindowRefresh()\n                onFinished()\n                if(workspaceVisible && !suspended) scheduleStageFocus()\n            }\n        )\n        if (!started) {\n            slot.view.endExchangePreview()\n            activeSwapViewport=null\n            StageConcurrentNativeTrialPolicy.disableForSession(\"Mirror startup rejected\")\n            return false\n        }\n        liveSurfaceExchange=native\n        oneShotSwapMotion.cancel()\n        NeXtepLog.info(\"native_swap\",\"PR54 concurrent live task flight started; prepMs=$setupMs\")\n        return true\n    }\n\n    private fun animateSwap(\n"
+        },
+        {
+          "before": "            val phasedMove = checkNotNull(asyncMove)\n            // Visual starts without blocking the move: no bitmap, wait or",
+          "after": "            val phasedMove = checkNotNull(asyncMove)\n            // Only the private experimental branch enables an actual two-GPU-\n            // surface flight. Any unsupported or slow OEM falls back within\n            // this same click, without capture or delayed task migration.\n            if (tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return\n            // Visual starts without blocking the move: no bitmap, wait or"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
+      "previous_blob_sha1": "b8ff53efa53ccd25882decfce9f7ed17a20e99b4",
+      "patches": [
+        {
+          "before": "    private var moveCompletedAt = -1L",
+          "after": "    private var moveCompletedAt = -1L\n    private var concurrentHandoff = false"
+        },
+        {
+          "before": "        private const val MAX_LIFETIME_MS = 1800L",
+          "after": "        private const val MAX_LIFETIME_MS = 1800L\n        private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 240L"
+        },
+        {
+          "before": "        onFinished: () -> Unit,\n    ): Boolean {\n        if (finishCallback != null || finished.get()) return false",
+          "after": "        onFinished: () -> Unit,\n        immediateMove: Boolean = false,\n    ): Boolean {\n        if (finishCallback != null || finished.get()) return false\n        concurrentHandoff = immediateMove"
+        },
+        {
+          "before": "            duration=durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)",
+          "after": "            duration=if (immediateMove) durationMs.toLong().coerceIn(125L,180L)\n                else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)"
+        },
+        {
+          "before": "                if (it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&\n                    firstTransactionCommitted && !sentMove) commitMove()",
+          "after": "                if (!immediateMove &&\n                    it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&\n                    firstTransactionCommitted && !sentMove) commitMove()"
+        },
+        {
+          "before": "            start()\n        }\n        lastOutcome=\"active:two_live_gpu_mirrors\"",
+          "after": "            start()\n        }\n        // PR54: visual travels WHILE the coordinator moves real tasks.\n        // The original PR50 94%-of-animation migration delay is never used\n        // in this mode; no frame capture, no 280-360ms transaction wait.\n        if (immediateMove) commitMove()\n        lastOutcome=if (immediateMove) \"active:immediate_two_live_gpu_mirrors\"\n            else \"active:two_live_gpu_mirrors\""
+        },
+        {
+          "before": "            if (ready || elapsed >= HANDOFF_TIMEOUT_MS) {",
+          "after": "            val timeout=if (concurrentHandoff) CONCURRENT_HANDOFF_TIMEOUT_MS\n                else HANDOFF_TIMEOUT_MS\n            if (ready || elapsed >= timeout) {"
+        }
+      ]
+    }
+  }
+}
