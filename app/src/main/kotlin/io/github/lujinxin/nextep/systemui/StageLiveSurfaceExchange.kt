@@ -46,6 +46,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private val slotStart: StageLiveSurfaceFlightGeometry.Box,
     private val mainStart: StageLiveSurfaceFlightGeometry.Box,
     private val backdrop: Drawable?,
+    private val occlusion: StageGpuMirrorOcclusion,
 ) {
     private val ui = Handler(Looper.getMainLooper())
     private val lifetimeWatchdog = Runnable {
@@ -93,7 +94,7 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     val isRunning: Boolean get() = !finished.get() && finishCallback != null
-    val description: String get() = "native_two_mirrors"
+    val description: String get() = "native_two_owned_task_mirrors_atomic_mask"
 
     /** Both views must be attached to a valid, hardware-composited host. */
     companion object {
@@ -119,6 +120,8 @@ internal class StageLiveSurfaceExchange private constructor(
         fun create(
             host: FrameLayout,
             sourceSlotView: View,
+            sourceTaskId: Int,
+            sourceDisplayId: Int,
             mainTaskId: Int,
             sourceBounds: Rect,
             mainBounds: Rect,
@@ -150,36 +153,34 @@ internal class StageLiveSurfaceExchange private constructor(
             )
             if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
                 return markUnavailable("invalid_bounds")
-            val sourceRoot = sourceSlotView.rootView
-            val origin=IntArray(2)
-            sourceRoot.getLocationOnScreen(origin)
-            val localCrop = StageLiveSurfaceFlightGeometry.localCrop(
-                from,origin[0],origin[1],sourceRoot.width,sourceRoot.height,
-            )?.toAndroidRect() ?: return markUnavailable("card_outside_source_root")
-            // Never mirror a different active task. The native presenter
-            // verifies that taskId still owns the exact observed WM leash.
+            // The mirror must follow the app TASK, not the rail's ViewRoot.
+            // That root switches the producer during the two-stage exchange,
+            // which caused PR59 to show the new app twice while still flying.
             val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
                 ?: return markUnavailable("no_owned_main_task_mirror")
-            val incoming = try {
-                createWindowMirror(sourceRoot) ?: run {
-                    outgoing.release()
-                    return markUnavailable("no_sidebar_viewroot_mirror")
-                }
-            } catch (error: Throwable) {
+            val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
+                sourceTaskId, sourceDisplayId,
+            ) ?: run {
                 outgoing.release()
-                NeXtepLog.warn("native_swap", "Side-rail mirror unavailable", error)
-                return markUnavailable("sidebar_reflection_exception")
+                return markUnavailable("slot_task_leash_not_ready")
             }
+            val incoming = slotMirror.surface
+            val localCrop = Rect(slotMirror.crop)
             if (!outgoing.isValid || !incoming.isValid) {
                 outgoing.release()
                 incoming.release()
                 return markUnavailable("invalid_native_handles")
             }
-            lastOutcome="capable:both_live_surface_handles"
+            val masks = StageGpuMirrorOcclusion.create() ?: run {
+                outgoing.release()
+                incoming.release()
+                return markUnavailable("atomic_occlusion_unavailable")
+            }
+            lastOutcome="capable:two_owned_tasks_and_atomic_masks"
             return StageLiveSurfaceExchange(
-                host,incoming,outgoing,localCrop,
+                host, incoming, outgoing, localCrop,
                 Rect(0,0,fullScreenWidth,fullScreenHeight),
-                from,to,backdrop,
+                from,to,backdrop,masks,
             )
         }
 
@@ -227,15 +228,25 @@ internal class StageLiveSurfaceExchange private constructor(
         val root = host.rootSurfaceControl ?: return cleanupWithoutCallback().let { false }
         finishCallback = onFinished
         try {
-            host.addView(background,FrameLayout.LayoutParams(-1,-1))
             val tx = root.buildReparentTransaction(sourceMirror)
                 ?: error("No host transaction for incoming live rail")
             try {
                 val other = root.buildReparentTransaction(mainMirror)
                     ?: error("No host transaction for outgoing live task")
                 try { tx.merge(other) } finally { other.close() }
-                tx.setLayer(sourceMirror,100001)
-                tx.setLayer(mainMirror,100000)
+                // Mask both stationary producer regions in the SAME GPU
+                // transaction as the task mirrors; never allow a third live
+                // original card to peek through in the middle of flight.
+                occlusion.append(
+                    root, tx,
+                    Rect(slotStart.left.toInt(),slotStart.top.toInt(),
+                        slotStart.right.toInt(),slotStart.bottom.toInt()),
+                    Rect(mainStart.left.toInt(),mainStart.top.toInt(),
+                        mainStart.right.toInt(),mainStart.bottom.toInt()),
+                    host.width, host.height,
+                )
+                tx.setLayer(sourceMirror,StageGpuCoverPolicy.SOURCE_MIRROR_LAYER)
+                tx.setLayer(mainMirror,StageGpuCoverPolicy.MAIN_MIRROR_LAYER)
                 tx.setCrop(sourceMirror,sourceCrop)
                 tx.setCrop(mainMirror,mainCrop)
                 tx.setVisibility(sourceMirror,true)
@@ -424,11 +435,13 @@ internal class StageLiveSurfaceExchange private constructor(
             SurfaceControl.Transaction().use { tx ->
                 if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
                 if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
+                occlusion.hide(tx)
                 tx.apply()
             }
         }
         sourceMirror.release()
         mainMirror.release()
+        occlusion.release()
         runCatching { (background.parent as? FrameLayout)?.removeView(background) }
     }
 }
