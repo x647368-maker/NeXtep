@@ -1720,12 +1720,18 @@ class SlotTaskCoordinator(
                     if (preliminary != null) { done(preliminary); return }
                     moveTaskToDisplayNonBlocking(slotTask.taskId, Display.DEFAULT_DISPLAY) { error ->
                         if (error != null) { done(error); return@moveTaskToDisplayNonBlocking }
-                        done(runCatching {
+                        val stale = runCatching {
                             check(token == transitionGeneration && active && !suspended)
-                            restoreTaskLayout(slotTask, slotLayout, restoreResizeMode = false)
-                            taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()
-                            StageExchangeTelemetry.phasedEvent("promote_complete")
-                        }.exceptionOrNull())
+                        }.exceptionOrNull()
+                        if (stale != null) { done(stale); return@moveTaskToDisplayNonBlocking }
+                        restoreTaskLayoutNonBlocking(slotTask, slotLayout, restoreResizeMode = false) { layoutError ->
+                            if (layoutError != null) { done(layoutError); return@restoreTaskLayoutNonBlocking }
+                            done(runCatching {
+                                check(token == transitionGeneration && active && !suspended)
+                                taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()
+                                StageExchangeTelemetry.phasedEvent("promote_complete")
+                            }.exceptionOrNull())
+                        }
                     }
                 }
 
@@ -1743,29 +1749,35 @@ class SlotTaskCoordinator(
                     if (preliminary != null) { done(preliminary); return }
                     moveTaskToDisplayNonBlocking(mainTask.taskId, occupied.displayId) { error ->
                         if (error != null) { done(error); return@moveTaskToDisplayNonBlocking }
-                        done(runCatching {
+                        val preliminary = runCatching {
                             check(token == transitionGeneration && active && !suspended)
                             mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
-                            ensureSlotLayout(slotIndex, mainTask, mainLayout)
-                            mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
-                            val committed = taskRepository.runningTasks()
-                            check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
-                            check(current(mainTask, committed).displayId == occupied.displayId)
-                            record.originalLayout = mainLayout
-                            record.retainedTaskId = mainTask.taskId
-                            record.migrationRecoveryComponent = null
-                            record.migrationRecoveryDeadline = 0L
-                            record.migrationRecoveryAttempts = 0
-                            setState(slotIndex, SlotState.Occupied(occupied.displayId, mainTask.taskId, mainTask.component),
-                                "phased exchange committed")
-                            promotedRecoveryTaskId = slotTask.taskId
-                            promotedRecoveryUserId = slotTask.userId
-                            promotedRecoveryComponent = slotTask.component
-                            promotedRecoveryDeadline = SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
-                            promotedRecoveryAttempts = 0
-                            schedulePromotedTaskRecovery()
-                            StageExchangeTelemetry.phasedEvent("demote_complete")
-                        }.exceptionOrNull())
+                        }.exceptionOrNull()
+                        if (preliminary != null) { done(preliminary); return@moveTaskToDisplayNonBlocking }
+                        ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout) { layoutError ->
+                            if (layoutError != null) { done(layoutError); return@ensureSlotLayoutNonBlocking }
+                            done(runCatching {
+                                check(token == transitionGeneration && active && !suspended)
+                                mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
+                                val committed = taskRepository.runningTasks()
+                                check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
+                                check(current(mainTask, committed).displayId == occupied.displayId)
+                                record.originalLayout = mainLayout
+                                record.retainedTaskId = mainTask.taskId
+                                record.migrationRecoveryComponent = null
+                                record.migrationRecoveryDeadline = 0L
+                                record.migrationRecoveryAttempts = 0
+                                setState(slotIndex, SlotState.Occupied(occupied.displayId, mainTask.taskId, mainTask.component),
+                                    "phased exchange committed")
+                                promotedRecoveryTaskId = slotTask.taskId
+                                promotedRecoveryUserId = slotTask.userId
+                                promotedRecoveryComponent = slotTask.component
+                                promotedRecoveryDeadline = SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
+                                promotedRecoveryAttempts = 0
+                                schedulePromotedTaskRecovery()
+                                StageExchangeTelemetry.phasedEvent("demote_complete")
+                            }.exceptionOrNull())
+                        }
                     }
                 }
 
@@ -2483,6 +2495,135 @@ class SlotTaskCoordinator(
      * ExchangeSession, which retains generation checks and verified rollback.
      * Other moves retain the existing synchronous semantics.
      */
+    /** On the active two-task exchange only, observe the layout without a main-thread sleep. */
+    private fun waitForTaskLayoutNonBlocking(
+        taskId: Int, bounds: Rect, densityDpi: Int, windowingMode: Int,
+        done: (Throwable?) -> Unit,
+    ) {
+        val deadline = SystemClock.uptimeMillis() + TASK_LAYOUT_TIMEOUT_MS
+        fun observe() {
+            val result = runCatching {
+                val snapshot = taskRepository.findTask(taskId)
+                val matches = snapshot != null &&
+                    snapshot.bounds == bounds && snapshot.densityDpi == densityDpi &&
+                    snapshot.windowingMode == windowingMode
+                if (matches) {
+                    StageExchangeTelemetry.phasedEvent("layout_observed")
+                    done(null)
+                } else if (SystemClock.uptimeMillis() >= deadline) {
+                    done(IllegalStateException(
+                        "Async layout not settled task=$taskId bounds=$bounds density=$densityDpi " +
+                            "mode=$windowingMode actual=${snapshot?.bounds}/${snapshot?.densityDpi}/${snapshot?.windowingMode}",
+                    ))
+                } else {
+                    exchangeHandler.postDelayed({ observe() }, TASK_LAYOUT_POLL_MS)
+                }
+            }
+            result.exceptionOrNull()?.let(done)
+        }
+        observe()
+    }
+
+    /** Maintains the exact layout/resize checks of restoreTaskLayout, but yields on confirmation. */
+    private fun restoreTaskLayoutNonBlocking(
+        task: TaskRepository.TaskSnapshot,
+        layout: TaskLayout,
+        restoreResizeMode: Boolean = true,
+        done: (Throwable?) -> Unit,
+    ) {
+        val started = runCatching {
+            val token = task.token ?: error("Task ${task.taskId} has no restore token")
+            val current = taskRepository.findTask(task.taskId)
+            val mainFullscreen = current?.displayId == Display.DEFAULT_DISPLAY &&
+                layout.windowingMode == fullscreenWindowingMode()
+            val expectedBounds = if (mainFullscreen) geometryProvider().let {
+                Rect(0, 0, it.screenWidth, it.screenHeight)
+            } else layout.bounds
+            fun finish() {
+                done(runCatching {
+                    if (restoreResizeMode) layout.resizeMode?.let { resizeMode ->
+                        ActivityTaskManagerCompat.setTaskResizeable(task.taskId, resizeMode).getOrThrow()
+                    }
+                    StageExchangeTelemetry.phasedEvent("restore_layout_complete")
+                }.exceptionOrNull())
+            }
+            if (mainFullscreen && current?.bounds == expectedBounds &&
+                current.densityDpi == layout.densityDpi &&
+                current.windowingMode == layout.windowingMode
+            ) {
+                finish()
+            } else {
+                WindowContainerTransactionCompat.applyTaskLayout(
+                    token = token,
+                    bounds = if (mainFullscreen) Rect() else layout.bounds,
+                    densityDpi = layout.densityDpi,
+                    windowingMode = layout.windowingMode,
+                ).getOrThrow()
+                StageExchangeTelemetry.phasedEvent("restore_layout_submitted")
+                waitForTaskLayoutNonBlocking(task.taskId, expectedBounds,
+                    layout.densityDpi, layout.windowingMode) { error ->
+                    if (error != null) done(error) else finish()
+                }
+            }
+        }
+        started.exceptionOrNull()?.let(done)
+    }
+
+    /** Keeps the old slot geometry, WCT and input/crop application, with async observation. */
+    private fun ensureSlotLayoutNonBlocking(
+        slotIndex: Int, task: TaskRepository.TaskSnapshot,
+        originalLayout: TaskLayout? = null,
+        done: (Throwable?) -> Unit,
+    ) {
+        val started = runCatching {
+            val slotGeometry = slots[slotIndex].geometry()
+                ?: error("Slot $slotIndex geometry is unavailable")
+            val fullscreenMode = fullscreenWindowingMode()
+            val targetBounds = Rect(0, 0, slotGeometry.width, slotGeometry.height)
+            val record = slotRecords[slotIndex]
+            if (record.originalLayout == null) {
+                record.originalLayout = originalLayout ?: if (task.displayId == Display.DEFAULT_DISPLAY)
+                    task.toLayout() else defaultMainLayout(task.resizeMode)
+            }
+            val current = if (task.displayId != slots[slotIndex].displayId())
+                taskRepository.findTask(task.taskId) ?: error("Task ${task.taskId} exited")
+            else task
+            val resizeMismatch = current.resizeMode != TASK_RESIZE_MODE_RESIZEABLE
+            val layoutMismatch = current.bounds != targetBounds ||
+                current.densityDpi != slotGeometry.densityDpi ||
+                current.windowingMode != fullscreenMode
+            fun finish() {
+                done(runCatching {
+                    slots[slotIndex].displayId()?.let { displayId ->
+                        val source = slots[slotIndex].sourceBounds()
+                        TaskSurfaceCompat.fitSlotSurface(task.taskId, displayId,
+                            Rect(source.left, source.top, source.right, source.bottom)).getOrThrow()
+                    }
+                    StageExchangeTelemetry.phasedEvent("slot_layout_complete")
+                }.exceptionOrNull())
+            }
+            if (resizeMismatch) {
+                ActivityTaskManagerCompat.setTaskResizeable(
+                    task.taskId, TASK_RESIZE_MODE_RESIZEABLE,
+                ).getOrThrow()
+            }
+            if (layoutMismatch) {
+                val token = current.token ?: error("Task ${task.taskId} has no slot layout token")
+                WindowContainerTransactionCompat.applyTaskLayout(
+                    token = token, bounds = Rect(),
+                    densityDpi = slotGeometry.densityDpi,
+                    windowingMode = fullscreenMode,
+                ).getOrThrow()
+                StageExchangeTelemetry.phasedEvent("slot_layout_submitted")
+                waitForTaskLayoutNonBlocking(task.taskId, targetBounds,
+                    slotGeometry.densityDpi, fullscreenMode) { error ->
+                    if (error != null) done(error) else finish()
+                }
+            } else finish()
+        }
+        started.exceptionOrNull()?.let(done)
+    }
+
     private fun moveTaskToDisplayNonBlocking(
         taskId: Int, displayId: Int, done: (Throwable?) -> Unit,
     ) {
