@@ -34,14 +34,40 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(-1L,205L,true,3))
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(100L,0L,true,3))
     }
-    @Test fun slowPreparationImmediatelyDisablesSubsequentTrials() {
+    @Test fun coldMirrorPreparationGetsOneBoundedRetry() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(28))
         assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
+        assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(30))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         StageConcurrentNativeTrialPolicy.resetForTests()
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
+        assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(20))
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
+        assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
+        StageConcurrentNativeTrialPolicy.resetForTests()
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(80))
+        assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
+        StageConcurrentNativeTrialPolicy.resetForTests()
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(-1))
+        assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         StageConcurrentNativeTrialPolicy.disableForSession("OEM")
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         StageConcurrentNativeTrialPolicy.resetForTests()
+    }
+
+    @Test fun transientMirrorReadinessDoesNotDisableTheSession() {
+        StageConcurrentNativeTrialPolicy.resetForTests()
+        for (reason in listOf("fallback:detached_or_software",
+            "fallback:host_not_full_display", "fallback:invalid_bounds",
+            "fallback:card_outside_source_root", "fallback:no_owned_main_task_mirror",
+            "fallback:invalid_native_handles")) {
+            assertTrue(StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason))
+        }
+        assertFalse(StageConcurrentNativeTrialPolicy.transientMirrorOutcome("fallback:no_sidebar_viewroot_mirror"))
+        assertFalse(StageConcurrentNativeTrialPolicy.transientMirrorOutcome("fallback:sidebar_reflection_exception"))
+        assertFalse(StageConcurrentNativeTrialPolicy.transientMirrorOutcome("fallback:single_window_root"))
+        assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
     }
 }
