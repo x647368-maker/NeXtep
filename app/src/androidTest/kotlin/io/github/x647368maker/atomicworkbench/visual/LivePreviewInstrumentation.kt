@@ -113,6 +113,7 @@ class LivePreviewInstrumentation : Instrumentation() {
             checks.addAll(RefinementRegression(this).run(activity,root,out))
             checks.add(PhasedPreviewRegression(this).run(activity,root))
             checks.add(StageMainSlotMorphRegression(this).run(activity,root,out))
+            checks.add(StageLiveMirrorPrimitiveRegression(this).run(activity,root,out))
             checks.addAll(TaskMigrationRegression(this).run(activity,out))
             checks.addAll(ShadeRegression(this).run(activity,root,out))
             File(out,"render-results.txt").writeText(checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
