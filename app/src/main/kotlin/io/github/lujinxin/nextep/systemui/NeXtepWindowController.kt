@@ -753,6 +753,7 @@ class NeXtepWindowController(
         return "screen=${live.screenWidth}x${live.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
             (slotCoordinator?.slotDiagnostics() ?: "unavailable") +
             "\\nparallelSceneCached=${remembered != null} ageMs=$msAgo\n" +
+            "nativeSwap=${StageLiveSurfaceExchange.lastOutcome()}\\n" +
             StageNativeParallelDiagnostics.report(selected)
     }
 
