@@ -56,6 +56,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private var moveCompletedAt = -1L
     private var finishCallback: (() -> Unit)? = null
     private var lastProgress = 0f
+    private var nativeFrameCount = 0
+    private var firstTransactionCommitted = false
     private val background = object : View(host.context) {
         private val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(12, 14, 21)
@@ -192,10 +194,20 @@ internal class StageLiveSurfaceExchange private constructor(
                 tx.setVisibility(sourceMirror,true)
                 tx.setVisibility(mainMirror,true)
                 applyFrame(tx,0f)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    // A committed transaction is proof that SurfaceFlinger
+                    // accepted both layer parents, NOT proof of visible pixels.
+                    tx.addTransactionCommittedListener(host.context.mainExecutor) {
+                        firstTransactionCommitted = true
+                        NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
+                    }
+                }
                 tx.apply()
             } finally { tx.close() }
         } catch (error: Throwable) {
             NeXtepLog.warn("native_swap", "Native mirror parenting failed before task move", error)
+            finishCallback = null
+            finished.set(true)
             cleanupWithoutCallback()
             return false
         }
@@ -237,12 +249,17 @@ internal class StageLiveSurfaceExchange private constructor(
                     SurfaceControl.Transaction().use { frame ->
                         applyFrame(frame,fraction)
                         frame.apply()
+                        nativeFrameCount++
                     }
                 }.onFailure { error ->
                     NeXtepLog.warn("native_swap","Real dual-layer frame failed",error)
                     stop()
                 }
-                if (fraction >= MOVE_PROGRESS && !sentMove) commitMove()
+                // PathInterpolator changes the rendered fraction; defer the
+                // real Binder move until the last portion of *wall clock*
+                // motion, so mirrored live apps are actually seen travelling.
+                if (it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
+                    !sentMove) commitMove()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
@@ -294,6 +311,9 @@ internal class StageLiveSurfaceExchange private constructor(
         if (finished.getAndSet(true)) return
         val callback=finishCallback
         finishCallback=null
+        NeXtepLog.info("native_swap",
+            "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
+            "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
         animator?.removeAllListeners()
         animator?.cancel()
         animator=null
