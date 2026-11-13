@@ -1,3 +1,12 @@
+台前调度 v0.9.42-dev（versionCode 57）｜PR65 非阻塞布局确认 P0 私测候选（尚未真机验收）
+
+【真实问题】PR63 真机一加 Ace 7 Pro 录像中主窗飞行中异常放大、卡顿及小窗遮挡，不能以 CI 成功当动画已修好。
+
+【本轮源码优化】在 PR64 的双任务显示迁移异步化基础上，进一步移除其后主线程上的同步布局确认：promote 后旧小窗恢复主屏 layout、demote 后旧主窗恢复虚拟显示 layout，分别用有截止时间的 Handler postDelayed 观察代替反复 SystemClock.sleep(30ms)。真实 taskId/token、窗口 bounds/density/windowingMode/resizeMode 校验与官方 WCT 申请、失败回滚保持原有约束；不删省安全验证，只让开绘制主线程。
+【继承 PR64】双 task 的 ExchangeSession 支持异步结果、一次执行、取消及回滚；GPU 双实时镜像在可见飞行末端再触发真实任务 reparent，不在84%时提前使镜像内容发生形变。
+【仍待验证】SurfaceFlinger 真实任务 leash 的原始 matrix/crop 未逐设备校准，尚无对其他三小窗的硬避障保证；Binder 同步调用和主窗口渲染仍可能掉帧，不能承诺“完全原生丝滑”。测试需分别确认一加 Ace 7 Pro/Find N5、N3、联想 Y700，以及省电和音视频连续性。
+【发布限制】Draft 私测，App/Xposed/loaded_build统一 v0.9.42-dev/57，禁止合并 main、公开 Release 或写入 atomic-update-feed；只用原证书签名安装包给本人验证。
+
 台前调度 v0.9.41-dev（versionCode 56）｜PR64 真机 GPU 动画卡顿与图层交接 P0 专项（内部草稿，未验收）
 
 【一加实测问题】2026-11-14 对 PR63 录像独立逐帧审查，约 6.62–6.85 秒存在主窗旧应用突然放大、短暂重叠及终点内容硬切，整体仍有明显卡顿，不能把 PR63 视作最终版本。
