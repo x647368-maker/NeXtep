@@ -26,8 +26,15 @@ import kotlin.math.abs
  */
 internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: Instrumentation) {
     fun run(activity: Activity, host: FrameLayout, out: File): String {
-        if (Build.VERSION.SDK_INT < 37)
-            return "SKIP native mirror primitive: platform API ${Build.VERSION.SDK_INT} below 37"
+        if (Build.VERSION.SDK_INT < 29) return "SKIP native mirror below API29"
+        return runCatching { probe(activity,host,out) }.getOrElse { error ->
+            if (Build.VERSION.SDK_INT >= 37) throw error
+            "SKIP API${Build.VERSION.SDK_INT} unprivileged mirror reflection: " +
+                "${error.javaClass.simpleName} ${error.message?.take(160)}"
+        }
+    }
+
+    private fun probe(activity: Activity, host: FrameLayout, out: File): String {
         val green=View(activity).apply {setBackgroundColor(Color.rgb(33,194,110))}
         val purple=View(activity).apply {setBackgroundColor(Color.rgb(166,75,205))}
         var first:PopupWindow?=null
@@ -53,12 +60,27 @@ internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: I
             val initialCommitted=CountDownLatch(1)
             instrumentation.runOnMainSync {
                 fun mirror(view:View):SurfaceControl {
-                    val attached=view.rootSurfaceControl ?: error("Root View has no compositor surface")
-                    val method=attached.javaClass.methods.firstOrNull {
+                    val attached=view.rootSurfaceControl ?: error("No ViewRoot compositor")
+                    val public=attached.javaClass.methods.firstOrNull {
                         it.name=="createMirror" && it.parameterCount==0
-                    } ?: error("API37 AttachedSurfaceControl.createMirror missing")
-                    return (method.invoke(attached) as? SurfaceControl)
-                        ?.takeIf {it.isValid} ?: error("SystemUI-style root mirror invalid")
+                    }?.let {runCatching {it.invoke(attached) as? SurfaceControl}.getOrNull()}
+                    if (public?.isValid==true) return public
+                    public?.release()
+                    // API35 fallback. Only SystemUI normally bypasses the
+                    // non-SDK reflection restrictions; SKIP is explicit here.
+                    val accessor=View::class.java.getDeclaredMethod("getViewRootImpl")
+                        .apply {isAccessible=true}
+                    val root=accessor.invoke(view) ?: error("No ViewRootImpl")
+                    val field=generateSequence(root.javaClass as Class<*>?) {it.superclass}
+                        .mapNotNull {runCatching {it.getDeclaredField("mSurfaceControl")}.getOrNull()}
+                        .firstOrNull() ?: error("No SurfaceControl field")
+                    val original=field.apply {isAccessible=true}.get(root) as? SurfaceControl
+                        ?: error("No live SurfaceControl")
+                    val method=SurfaceControl::class.java.getDeclaredMethod(
+                        "mirrorSurface",SurfaceControl::class.java
+                    ).apply {isAccessible=true}
+                    return (method.invoke(null,original) as? SurfaceControl)
+                        ?.takeIf {it.isValid} ?: error("AOSP mirrorSurface unavailable")
                 }
                 m1=mirror(green)
                 m2=mirror(purple)
@@ -134,7 +156,7 @@ internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: I
                 moved.compress(Bitmap.CompressFormat.PNG,100,it)
             }
             moved.recycle()
-            return "PASS API37 SurfaceFlinger live dual-root mirror: both moved in one GPU transaction and updated producer pixels WITHOUT bitmap capture"
+            return "PASS API${Build.VERSION.SDK_INT} SurfaceFlinger live dual-root mirror: both moved in one GPU transaction and updated producer pixels WITHOUT bitmap capture"
         } finally {
             instrumentation.runOnMainSync {
                 runCatching {
