@@ -67,6 +67,12 @@ internal object StageConcurrentNativeTrialPolicy {
             elapsedMs >= durationMs - 16L
     }
 
+    /** Old cards can redraw during the flight. Only a slot buffer seen after
+     * successful real task exchange is evidence of a fresh target frame.
+     */
+    fun freshFrameAfterTaskAck(frameAtAck:Long?, currentFrame:Long):Boolean =
+        frameAtAck != null && currentFrame > frameAtAck
+
     fun disableForSession(reason:String) {
         disabled=true
         // Reason is logged by the caller; no app/process data is collected.
