@@ -59,6 +59,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private var sentMove = false
     private var moveComplete = false
     private var frameComplete = false
+    private var handoffReady = false
+    private var handoffTimedOut = false
     private var moveCompletedAt = -1L
     private var finishCallback: (() -> Unit)? = null
     private var lastProgress = 0f
@@ -363,6 +365,8 @@ internal class StageLiveSurfaceExchange private constructor(
             val elapsed=SystemClock.uptimeMillis()-moveCompletedAt
             val ready=runCatching { canRelease() && liveReady() }.getOrDefault(false)
             if (ready || elapsed >= HANDOFF_TIMEOUT_MS) {
+                handoffReady=ready
+                handoffTimedOut=!ready
                 NeXtepLog.info("native_swap",
                     "Real GPU layer handoff ready=$ready elapsed=${elapsed}ms")
                 host.postOnAnimation { stop() }
@@ -376,9 +380,11 @@ internal class StageLiveSurfaceExchange private constructor(
         val callback=finishCallback
         finishCallback=null
         ui.removeCallbacks(lifetimeWatchdog)
-        lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 && moveComplete)
-            "completed:real_gpu_layers_and_real_task_move"
-        else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount move=$moveComplete"
+        lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 &&
+            moveComplete && handoffReady)
+            "completed:two_gpu_layers_task_move_and_live_handoff"
+        else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
+            "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
         NeXtepLog.info("native_swap",
             "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
             "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
