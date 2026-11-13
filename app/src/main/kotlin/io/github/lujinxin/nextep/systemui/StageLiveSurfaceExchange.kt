@@ -91,7 +91,11 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val MIN_DURATION_MS = 280L
         private const val MAX_DURATION_MS = 360L
         private const val HANDOFF_TIMEOUT_MS = 600L
-        private const val MOVE_PROGRESS = .72f
+        // Do not reparent actual app tasks while either reflected producer is
+        // halfway across the display: ColorOS can replace the live buffer
+        // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
+        // The normal phased transfer begins at the *end* of visual travel.
+        private const val MOVE_PROGRESS = .94f
 
         fun create(
             host: FrameLayout,
@@ -266,7 +270,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 // real Binder move until the last portion of *wall clock*
                 // motion, so mirrored live apps are actually seen travelling.
                 if (it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
-                    !sentMove) commitMove()
+                    firstTransactionCommitted && !sentMove) commitMove()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
