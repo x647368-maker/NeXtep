@@ -12,10 +12,10 @@ package io.github.x647368maker.atomicworkbench.systemui
 internal object StageConcurrentNativeTrialPolicy {
     // Real task owner rebind occurs near the end of a short live GPU flight.
     // OEMs can swap original buffers early when the task move starts.
-    const val DURATION_MS=205L
+    const val DURATION_MS=360L
     private const val PREP_BUDGET_MS=28L
     private const val SEVERE_PREP_MS=80L
-    private const val VISUAL_LEAD_IN=0.90f
+    private const val VISUAL_LEAD_IN=0.84f
     private const val NO_COMMIT_FAIL_OPEN_MS=70L
     @Volatile private var disabled=false
     // Only touched on the SystemUI main thread during an explicit swap.
