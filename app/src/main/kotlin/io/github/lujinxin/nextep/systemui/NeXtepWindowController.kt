@@ -1939,15 +1939,22 @@ class NeXtepWindowController(
         ) ?: run {
             val reason=StageLiveSurfaceExchange.lastOutcome()
             StageExchangeTelemetry.nativeEvent("fallback:mirror:$reason")
-            NeXtepLog.warn("native_swap", "PR55 fallback: GPU mirror unavailable reason=$reason")
-            StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+reason)
+            NeXtepLog.warn("native_swap", "PR59 mirror rejected on current tap reason=$reason")
+            if (StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason)) {
+                // This task's owned leash or card bounds can become ready next tap.
+                // Keep the current fallback but do not lock out the entire session.
+                StageExchangeTelemetry.nativeEvent("mirror_transient_retry_next_tap")
+            } else {
+                StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+reason)
+            }
             return false
         }
         val setupMs=android.os.SystemClock.uptimeMillis()-before
         if (!StageConcurrentNativeTrialPolicy.acceptPrepareTime(setupMs)) {
             native.stop()
             StageExchangeTelemetry.nativeEvent("fallback:prepare_${setupMs}ms")
-            NeXtepLog.warn("native_swap","Mirror preparation exceeded frame budget: $setupMs ms")
+            NeXtepLog.warn("native_swap","Mirror preparation exceeded frame budget: $setupMs ms; native allowed next tap=" +
+                StageConcurrentNativeTrialPolicy.allowed(true,true,false))
             return false
         }
         val initialFrame=slot.contentFrameSequence
