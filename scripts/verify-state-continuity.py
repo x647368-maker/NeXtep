@@ -7,6 +7,22 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# PR64: reverse ONLY SHA-reviewed phased async observation/handoff changes
+# before checking any older protected task, geometry or compositor source.
+pr64_review=json.loads((root/'scripts/reviewed-pr64-nonblocking-handoff-0.9.41.json').read_text())['files']
+def undo_pr64(path,data):
+ if path not in pr64_review:return data
+ spec=pr64_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr64_review:
+ undo_pr64(reviewed_path,(root/reviewed_path).read_bytes())
+
 # PR63: restore exact aspect-lock/frame-pacing changes before PR62/older frozen audits.
 pr63_review=json.loads((root/'scripts/reviewed-pr63-frame-pacing-aspect-lock-0.9.40.json').read_text())['files']
 def undo_pr63(path,data):
@@ -20,7 +36,7 @@ def undo_pr63(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr63_review:
- undo_pr63(reviewed_path,(root/reviewed_path).read_bytes())
+ undo_pr63(reviewed_path,undo_pr64(reviewed_path,(root/reviewed_path).read_bytes()))
 
 # PR62: restore the exact reviewed PRIVATE owned-task GPU flight changes
 # before older source-freeze boundaries. All modified source blobs are checked
@@ -37,7 +53,7 @@ def undo_pr62(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr62_review:
- undo_pr62(reviewed_path,undo_pr63(reviewed_path,(root/reviewed_path).read_bytes()))
+ undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr64(reviewed_path,(root/reviewed_path).read_bytes())))
 
 # PR61: invert reviewed phased timing and privileged-snapshot reuse first.
 pr61_review=json.loads((root/'scripts/reviewed-pr61-phased-async-latency-0.9.38.json').read_text())['files']
@@ -52,7 +68,7 @@ def undo_pr61(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr61_review:
- undo_pr61(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,(root/reviewed_path).read_bytes())))
+ undo_pr61(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr64(reviewed_path,(root/reviewed_path).read_bytes()))))
 
 # PR60 P0: reverse only the reviewed single real swap gate/auxiliary visual removal.
 pr60_review=json.loads((root/'scripts/reviewed-pr60-single-real-swap-0.9.37.json').read_text())['files']
@@ -436,7 +452,7 @@ def undo_y700_handoff(path,data):
  assert gitblob(previous)==handoff_blobs[path]['previous'],path
  return previous
 for source_path in handoff_review:
- undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,undo_parallel_motion(source_path,undo_abc_ui(source_path,undo_update_hero(source_path,undo_total4_gpu_release(source_path,undo_total4_gpu(source_path,undo_total4_entry(source_path,undo_total4_real_swap(source_path,undo_swap_hold(source_path,undo_native_live_exchange(source_path,undo_assistant3_full_host(source_path,undo_pr50_jank(source_path,undo_immediate_tap(source_path,undo_n3_port(source_path,undo_one_shot_swap(source_path,undo_gpu_concurrent(source_path,undo_pr55(source_path,undo_pr57(source_path,undo_pr58(source_path,undo_pr59(source_path,undo_pr60(source_path,undo_pr61(source_path,undo_pr62(source_path,undo_pr63(source_path,(root/source_path).read_bytes())))))))))))))))))))))))))
+ undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,undo_parallel_motion(source_path,undo_abc_ui(source_path,undo_update_hero(source_path,undo_total4_gpu_release(source_path,undo_total4_gpu(source_path,undo_total4_entry(source_path,undo_total4_real_swap(source_path,undo_swap_hold(source_path,undo_native_live_exchange(source_path,undo_assistant3_full_host(source_path,undo_pr50_jank(source_path,undo_immediate_tap(source_path,undo_n3_port(source_path,undo_one_shot_swap(source_path,undo_gpu_concurrent(source_path,undo_pr55(source_path,undo_pr57(source_path,undo_pr58(source_path,undo_pr59(source_path,undo_pr60(source_path,undo_pr61(source_path,undo_pr62(source_path,undo_pr63(source_path,undo_pr64(source_path,(root/source_path).read_bytes()))))))))))))))))))))))))))
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
 # and validate both full Git blob hashes before the v0.9.8 frozen chain.
 cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
@@ -722,7 +738,7 @@ def undo_cooluser_swap(path,data):
  return before
 
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,(root/path).read_bytes()))))))))))))))))))))))))))))))))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,(root/path).read_bytes())))))))))))))))))))))))))))))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -899,7 +915,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,(root/path).read_bytes()))))))))))))))))))))))))))))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,(root/path).read_bytes())))))))))))))))))))))))))))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
@@ -920,14 +936,14 @@ for path,sha in frozen.items():
  elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,(root/path).read_bytes()))))))))))))))))))))))))))
+  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,(root/path).read_bytes())))))))))))))))))))))))))))
   # The exact Git blob SHA-1 pins the reviewed hook's entire contents.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,(root/path).read_bytes())))))))))))))))))))))))))))))
+  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,(root/path).read_bytes()))))))))))))))))))))))))))))))
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
