@@ -1957,20 +1957,30 @@ class NeXtepWindowController(
                 StageConcurrentNativeTrialPolicy.allowed(true,true,false))
             return false
         }
-        val initialFrame=slot.contentFrameSequence
+        // PR59: the previous task may draw many times during the GPU flight;
+        // do not count old frames as new post-migration virtual-display output.
+        var frameAtCompletedMove:Long?=null
         val incoming=state.taskId
         activeSwapViewport=g
         deferredSwapGeometryRefresh=false
         slot.view.beginExchangePreview()
         val started=native.start(
             durationMs=StageConcurrentNativeTrialPolicy.DURATION_MS.toInt(),
-            moveAsync={ complete -> moveAsync { ok -> complete(ok) } },
+            moveAsync={ complete -> moveAsync { ok ->
+                if (ok) {
+                    // SlotTaskCoordinator confirms actual ownership only at
+                    // completion; require a fresh TextureView buffer after it.
+                    frameAtCompletedMove=slot.contentFrameSequence
+                }
+                complete(ok)
+            } },
             move={ true },
             liveReady={
                 val now=slotCoordinator?.slotStates()?.getOrNull(slotIndex)
                 now is SlotState.Occupied && now.taskId==task &&
                     slot.view.textureView.isAvailable &&
-                    slot.contentFrameSequence>initialFrame &&
+                    StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(
+                        frameAtCompletedMove,slot.contentFrameSequence) &&
                     mainTaskPresenter.currentTaskId()==incoming &&
                     TaskSurfaceCompat.isPresentationSettled(incoming,g)
             },
