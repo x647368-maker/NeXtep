@@ -13,7 +13,7 @@ class StageConcurrentNativeTrialPolicyTest {
     }
     @Test fun trialAlwaysGatedByVisibilityAndSaver() {
         StageConcurrentNativeTrialPolicy.resetForTests()
-        assertEquals(205L, StageConcurrentNativeTrialPolicy.DURATION_MS)
+        assertEquals(360L, StageConcurrentNativeTrialPolicy.DURATION_MS)
         assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(false,true,false))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,false,false))
@@ -25,12 +25,12 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(69L,205L,false,0))
         assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(70L,205L,false,0))
         // A committed mirror cannot be replaced in the middle of the flight.
-        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(160L,205L,true,8))
-        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(183L,205L,true,3))
-        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(184L,205L,true,2))
-        assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(184L,205L,true,3))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(280L,360L,true,8))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(301L,360L,true,3))
+        assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(302L,360L,true,2))
+        assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(302L,360L,true,3))
         // Even if frames were throttled, do not strand task ownership.
-        assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(189L,205L,true,0))
+        assertTrue(StageConcurrentNativeTrialPolicy.shouldStartMove(344L,360L,true,0))
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(-1L,205L,true,3))
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(100L,0L,true,3))
     }
