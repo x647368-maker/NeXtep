@@ -1911,7 +1911,12 @@ class NeXtepWindowController(
         host.rootView.getLocationOnScreen(point)
         if (!StageConcurrentNativeTrialPolicy.fullScreenHost(
                 point[0],point[1],host.rootView.width,host.rootView.height,
-                g.screenWidth,g.screenHeight)) return false
+                g.screenWidth,g.screenHeight)) {
+            NeXtepLog.warn("native_swap", "PR55 fallback: host bounds " +
+                "origin=(${point[0]},${point[1]}) view=${host.rootView.width}x${host.rootView.height} " +
+                "display=${g.screenWidth}x${g.screenHeight}")
+            return false
+        }
         val source=Rect()
         if (!slot.view.getScreenVisibleRect(source)) return false
         val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
@@ -1922,8 +1927,9 @@ class NeXtepWindowController(
             fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
             backdrop=null,
         ) ?: run {
-            StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+
-                StageLiveSurfaceExchange.lastOutcome())
+            val reason=StageLiveSurfaceExchange.lastOutcome()
+            NeXtepLog.warn("native_swap", "PR55 fallback: GPU mirror unavailable reason=$reason")
+            StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+reason)
             return false
         }
         val setupMs=android.os.SystemClock.uptimeMillis()-before
@@ -1970,7 +1976,7 @@ class NeXtepWindowController(
         }
         liveSurfaceExchange=native
         oneShotSwapMotion.cancel()
-        NeXtepLog.info("native_swap","PR54 concurrent live task flight started; prepMs=$setupMs")
+        NeXtepLog.info("native_swap","PR55 dual card GPU flight armed; prepMs=$setupMs")
         return true
     }
 
