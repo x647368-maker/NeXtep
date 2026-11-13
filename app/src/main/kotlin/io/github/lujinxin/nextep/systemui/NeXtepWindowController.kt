@@ -2041,15 +2041,17 @@ class NeXtepWindowController(
             // Only the private experimental branch enables an actual two-GPU-
             // surface flight. Any unsupported or slow OEM falls back within
             // this same click, without capture or delayed task migration.
-            if (tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
-            // Visual starts without blocking the move: no bitmap, wait or
-            // duplicate SurfaceFlinger mirror. No recurring work in idle state.
-            val slotView=slotWindows.getOrNull(sourceIndex)?.view
-            if(slotView!=null && workspaceVisible && !suspended && !groupInputBlocked) {
-                val started=oneShotSwapMotion.start(slotView,contentHighlightView)
-                StageExchangeTelemetry.nativeEvent("fallback_one_shot_active=$started")
-                NeXtepLog.info("swap_feedback","one-shot compositor active=$started")
-            }
+            // PR60 P0 (3796.mp4): PR54-59 bypassed the existing default-OFF
+            // real-device native performance gate for ordinary taps. The two
+            // live mirrors, the original app windows and a one-shot peek could
+            // present multiple visible geometry changes during one exchange.
+            // Until an OEM-specific occlusion/frame-timing design is validated,
+            // render NO auxiliary card flight or peek on this critical path.
+            // The real async coordinator below still moves each task ONCE.
+            if (StageNativeSwapPerformanceGate.enabledByDefault() &&
+                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
+            oneShotSwapMotion.cancel()
+            StageExchangeTelemetry.nativeEvent("pr60:single_real_swap_no_extra_visual")
             runCatching {
                 phasedMove { ok ->
                     if (!ok) oneShotSwapMotion.cancel()

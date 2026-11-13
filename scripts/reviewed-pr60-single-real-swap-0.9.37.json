@@ -1,0 +1,14 @@
+{
+  "purpose": "P0 real-device 3796.mp4: stop PR59 repeated morph/overlapping mirror + one-shot peek on normal tap. Restore existing native performance opt-in gate (default off), suppress auxiliary one-shot rebound, preserve true asynchronous coordinator, task identity, VD, input mapping, geometry and other gesture routes.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "95e592fb9021bea132d2c61bb4fc6a885e6cba92",
+      "patches": [
+        {
+          "before": "            if (tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return\n            // Visual starts without blocking the move: no bitmap, wait or\n            // duplicate SurfaceFlinger mirror. No recurring work in idle state.\n            val slotView=slotWindows.getOrNull(sourceIndex)?.view\n            if(slotView!=null && workspaceVisible && !suspended && !groupInputBlocked) {\n                val started=oneShotSwapMotion.start(slotView,contentHighlightView)\n                StageExchangeTelemetry.nativeEvent(\"fallback_one_shot_active=$started\")\n                NeXtepLog.info(\"swap_feedback\",\"one-shot compositor active=$started\")\n            }",
+          "after": "            // PR60 P0 (3796.mp4): PR54-59 bypassed the existing default-OFF\n            // real-device native performance gate for ordinary taps. The two\n            // live mirrors, the original app windows and a one-shot peek could\n            // present multiple visible geometry changes during one exchange.\n            // Until an OEM-specific occlusion/frame-timing design is validated,\n            // render NO auxiliary card flight or peek on this critical path.\n            // The real async coordinator below still moves each task ONCE.\n            if (StageNativeSwapPerformanceGate.enabledByDefault() &&\n                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return\n            oneShotSwapMotion.cancel()\n            StageExchangeTelemetry.nativeEvent(\"pr60:single_real_swap_no_extra_visual\")"
+        }
+      ]
+    }
+  }
+}
