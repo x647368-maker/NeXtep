@@ -119,6 +119,32 @@ class StageLiveSurfaceFlightGeometryTest {
         ))
     }
 
+    @Test fun minorOverlapAtRailBoundaryMustNotEatAnimation() {
+        // PR66 rejected BOTH axes because the 19px rail/main edge overlap
+        // was treated as full collision despite distinct card centers.
+        val selected=b(18f,710f,144f,1090f)
+        val main=b(125f,150f,1060f,2110f)
+        val other=listOf(b(18f,220f,144f,620f),b(18f,1200f,144f,1530f))
+        assertTrue(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            selected, main, 126, 380, other, 80))
+        assertNotNull(StageLiveSurfaceFlightGeometry.railCorridorFlight(
+            selected,main,126,380,.55f))
+    }
+
+    @Test fun liveCardCollisionStillRejectsUnsafeRailPath() {
+        val selected=b(18f,710f,144f,1090f)
+        val main=b(125f,150f,1060f,2110f)
+        assertFalse(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            selected,main,126,380,listOf(b(140f,600f,500f,1100f)),80))
+    }
+
+    @Test fun noOtherOccupiedAppsMustNotBeRejectedByEmptyPlaceholders() {
+        val selected=b(18f,710f,144f,1090f)
+        val main=b(125f,150f,1060f,2110f)
+        assertTrue(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            selected,main,126,380,emptyList(),80))
+    }
+
     @Test fun originalViewRootCropIncludesOnlyTappedCard() {
         val card=b(80f,210f,330f,750f)
         val crop=StageLiveSurfaceFlightGeometry.localCrop(card,50,160,400,1100)!!
