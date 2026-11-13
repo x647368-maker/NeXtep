@@ -1932,7 +1932,9 @@ class NeXtepWindowController(
         val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
         val before=android.os.SystemClock.uptimeMillis()
         val native=StageLiveSurfaceExchange.create(
-            host=host,sourceSlotView=slot.view,mainTaskId=task,
+            host=host,sourceSlotView=slot.view,
+            sourceTaskId=state.taskId,sourceDisplayId=state.displayId,
+            mainTaskId=task,
             sourceBounds=source,mainBounds=main,
             fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
             backdrop=null,
@@ -2048,7 +2050,12 @@ class NeXtepWindowController(
             // Until an OEM-specific occlusion/frame-timing design is validated,
             // render NO auxiliary card flight or peek on this critical path.
             // The real async coordinator below still moves each task ONCE.
-            if (StageNativeSwapPerformanceGate.enabledByDefault() &&
+            // PR62 DRAFT-ONLY: private trial of two TASK-owned live GPU
+            // mirrors + atomic source/destination occlusion. It is separate
+            // from the legacy full-screen root performance gate, which stays
+            // disabled. Any missing leash/color layer stays on the one-move
+            // PR60 fallback without trying bitmap/peek effects.
+            if (StagePrivateDualTaskFlightGate.enabled() &&
                 tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
             oneShotSwapMotion.cancel()
             StageExchangeTelemetry.nativeEvent("pr60:single_real_swap_no_extra_visual")
@@ -2192,7 +2199,9 @@ class NeXtepWindowController(
                 NeXtepLog.warn("native_swap","Temporary full-screen host became stale before mirror attach")
             }
             val native=if(stale) null else StageLiveSurfaceExchange.create(
-                host=overlay.view,sourceSlotView=slot.view,mainTaskId=task,
+                host=overlay.view,sourceSlotView=slot.view,
+                sourceTaskId=state.taskId,sourceDisplayId=state.displayId,
+                mainTaskId=task,
                 sourceBounds=source,mainBounds=main,
                 fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
                 backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
