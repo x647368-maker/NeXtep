@@ -79,6 +79,46 @@ class StageLiveSurfaceFlightGeometryTest {
         }
     }
 
+
+    @Test fun railCorridorProtectsTheOtherThreeLeftSlots() {
+        val selected=b(25f,850f,235f,1220f)
+        val main=b(290f,120f,1030f,2150f)
+        val others=listOf(b(25f,200f,235f,630f),
+            b(25f,1270f,235f,1680f),b(25f,1700f,235f,2090f))
+        assertTrue(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            selected,main,250,440,others,80,
+        ))
+        for (progress in listOf(0f,.1f,.34f,.5f,.66f,.9f,1f)) {
+            val incoming=StageLiveSurfaceFlightGeometry.railCorridorFlight(
+                selected,main,250,440,progress)!!
+            val outgoing=StageLiveSurfaceFlightGeometry.railCorridorFlight(
+                main,selected,740,2030,progress)!!
+            assertEquals(250f/440f,incoming.box.width/incoming.box.height,.003f)
+            assertEquals(740f/2030f,outgoing.box.width/outgoing.box.height,.003f)
+        }
+    }
+
+    @Test fun topRailCorridorAlsoProtectsUnselectedCards() {
+        val selected=b(800f,25f,1100f,220f)
+        val main=b(200f,300f,1500f,1200f)
+        val others=listOf(b(50f,25f,350f,220f),
+            b(400f,25f,700f,220f),b(1200f,25f,1500f,220f))
+        assertTrue(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            selected,main,900,600,others,80,
+        ))
+    }
+
+    @Test fun ambiguousGeometryOrBlockedCorridorMustNotStartNativeFlight() {
+        val selected=b(25f,850f,235f,1220f)
+        val main=b(290f,120f,1030f,2150f)
+        assertFalse(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            selected,main,250,440,listOf(b(260f,730f,850f,1430f)),
+        ))
+        assertFalse(StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+            b(350f,500f,600f,800f),main,250,440,emptyList(),
+        ))
+    }
+
     @Test fun originalViewRootCropIncludesOnlyTappedCard() {
         val card=b(80f,210f,330f,750f)
         val crop=StageLiveSurfaceFlightGeometry.localCrop(card,50,160,400,1100)!!
