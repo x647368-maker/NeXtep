@@ -1695,6 +1695,80 @@ class SlotTaskCoordinator(
             SystemClock::uptimeMillis,
             { action -> exchangeHandler.post(action) },
             object : ExchangeSession.Driver {
+                // PR64: the normal tapped exchange must never sleep through
+                // multiple Choreographer frames on the SystemUI main Looper.
+                // The old synchronous methods below remain for rollback
+                // safety and non-tap/legacy callers.
+                override val nonBlocking: Boolean get() = true
+                override fun promoteAsync(done: (Throwable?) -> Unit) {
+                    val preliminary = runCatching {
+                        StageExchangeTelemetry.phasedEvent("promote_start")
+                        check(token == transitionGeneration && active && !suspended)
+                        check(geometryProvider() == exchangeGeometry)
+                        val before = taskRepository.runningTasks()
+                        check(current(slotTask, before).displayId == occupied.displayId)
+                        check(before.firstOrNull { it.displayId == occupied.displayId }?.taskId == slotTask.taskId)
+                        check(current(mainTask, before).displayId == Display.DEFAULT_DISPLAY)
+                        check(before.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == mainTask.taskId)
+                        check(current(mainTask, before).toLayout() == mainLayout)
+                        mutationStarted = true
+                        if (mainTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE)
+                            ActivityTaskManagerCompat.setTaskResizeable(mainTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                        if (slotTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE)
+                            ActivityTaskManagerCompat.setTaskResizeable(slotTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                    }.exceptionOrNull()
+                    if (preliminary != null) { done(preliminary); return }
+                    moveTaskToDisplayNonBlocking(slotTask.taskId, Display.DEFAULT_DISPLAY) { error ->
+                        if (error != null) { done(error); return@moveTaskToDisplayNonBlocking }
+                        done(runCatching {
+                            check(token == transitionGeneration && active && !suspended)
+                            restoreTaskLayout(slotTask, slotLayout, restoreResizeMode = false)
+                            taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()
+                            StageExchangeTelemetry.phasedEvent("promote_complete")
+                        }.exceptionOrNull())
+                    }
+                }
+
+                override fun demoteAndVerifyAsync(done: (Throwable?) -> Unit) {
+                    val preliminary = runCatching {
+                        StageExchangeTelemetry.phasedEvent("demote_start")
+                        check(token == transitionGeneration && active && !suspended)
+                        check(geometryProvider() == exchangeGeometry)
+                        check(slots[slotIndex].displayId() == occupied.displayId)
+                        val promoted = taskRepository.runningTasks()
+                        check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)
+                        check(current(mainTask, promoted).displayId == Display.DEFAULT_DISPLAY)
+                        check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
+                    }.exceptionOrNull()
+                    if (preliminary != null) { done(preliminary); return }
+                    moveTaskToDisplayNonBlocking(mainTask.taskId, occupied.displayId) { error ->
+                        if (error != null) { done(error); return@moveTaskToDisplayNonBlocking }
+                        done(runCatching {
+                            check(token == transitionGeneration && active && !suspended)
+                            mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
+                            ensureSlotLayout(slotIndex, mainTask, mainLayout)
+                            mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
+                            val committed = taskRepository.runningTasks()
+                            check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
+                            check(current(mainTask, committed).displayId == occupied.displayId)
+                            record.originalLayout = mainLayout
+                            record.retainedTaskId = mainTask.taskId
+                            record.migrationRecoveryComponent = null
+                            record.migrationRecoveryDeadline = 0L
+                            record.migrationRecoveryAttempts = 0
+                            setState(slotIndex, SlotState.Occupied(occupied.displayId, mainTask.taskId, mainTask.component),
+                                "phased exchange committed")
+                            promotedRecoveryTaskId = slotTask.taskId
+                            promotedRecoveryUserId = slotTask.userId
+                            promotedRecoveryComponent = slotTask.component
+                            promotedRecoveryDeadline = SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
+                            promotedRecoveryAttempts = 0
+                            schedulePromotedTaskRecovery()
+                            StageExchangeTelemetry.phasedEvent("demote_complete")
+                        }.exceptionOrNull())
+                    }
+                }
+
                 override fun promote() {
                     StageExchangeTelemetry.phasedEvent("promote_start")
                     check(token == transitionGeneration && active && !suspended)
@@ -2402,6 +2476,62 @@ class SlotTaskCoordinator(
     private fun fullscreenWindowingMode(): Int = ActivityTaskManagerCompat
         .resolveWindowingMode("WINDOWING_MODE_FULLSCREEN")
         ?: WINDOWING_MODE_FULLSCREEN_FALLBACK
+
+    /**
+     * PR64: task state observation yields to the SystemUI frame Looper instead
+     * of blocking for 30ms at every poll. Used only by the owned two-task
+     * ExchangeSession, which retains generation checks and verified rollback.
+     * Other moves retain the existing synchronous semantics.
+     */
+    private fun moveTaskToDisplayNonBlocking(
+        taskId: Int, displayId: Int, done: (Throwable?) -> Unit,
+    ) {
+        val started = runCatching {
+            val before = taskRepository.findTask(taskId)
+            if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) {
+                done(null)
+                return
+            }
+            StageExchangeTelemetry.phasedEvent("display_${displayId}_begin")
+            TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
+            if (displayId == Display.DEFAULT_DISPLAY) {
+                timed("promotion_prepare") {
+                    TaskSurfaceCompat.preparePromotion(taskId, geometryProvider())
+                }.onFailure { NeXtepLog.warn("task_surface", "Early promotion fitting unavailable", it) }
+            } else TaskSurfaceCompat.cancelPreparedPromotion(taskId)
+            try {
+                StageExchangeTelemetry.measure("display_binder") {
+                    ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
+                }
+            } catch (error: Throwable) {
+                TaskSurfaceCompat.cancelDisplayExchange(taskId)
+                throw error
+            }
+            StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_done")
+            val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
+            fun observe() {
+                val result = runCatching {
+                    val current = taskRepository.findTask(taskId)
+                    if (current?.displayId == displayId) {
+                        StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
+                        NeXtepLog.info("task_continuity",
+                            "async_move_observed task=$taskId display=$displayId")
+                        done(null)
+                    } else if (SystemClock.uptimeMillis() >= deadline) {
+                        done(IllegalStateException(
+                            "Async task move did not settle task=$taskId expected=$displayId actual=${current?.displayId}"
+                        ))
+                    } else {
+                        // No sleep: let the compositor draw other frames.
+                        exchangeHandler.postDelayed({ observe() }, DISPLAY_MOVE_POLL_MS)
+                    }
+                }
+                result.exceptionOrNull()?.let(done)
+            }
+            observe()
+        }
+        started.exceptionOrNull()?.let(done)
+    }
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
         // One task snapshot suffices for both the move decision and diagnostics.
