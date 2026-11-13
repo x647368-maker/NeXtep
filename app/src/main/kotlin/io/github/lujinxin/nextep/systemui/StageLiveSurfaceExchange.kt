@@ -48,6 +48,12 @@ internal class StageLiveSurfaceExchange private constructor(
     private val backdrop: Drawable?,
 ) {
     private val ui = Handler(Looper.getMainLooper())
+    private val lifetimeWatchdog = Runnable {
+        if (isRunning) {
+            NeXtepLog.warn("native_swap", "Two-mirror flight exceeded safety lifetime; releasing compositor mirrors")
+            stop()
+        }
+    }
     private val finished = AtomicBoolean(false)
     private var animator: ValueAnimator? = null
     private var sentMove = false
@@ -91,6 +97,7 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val MIN_DURATION_MS = 280L
         private const val MAX_DURATION_MS = 360L
         private const val HANDOFF_TIMEOUT_MS = 600L
+        private const val MAX_LIFETIME_MS = 1800L
         // Do not reparent actual app tasks while either reflected producer is
         // halfway across the display: ColorOS can replace the live buffer
         // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
@@ -215,10 +222,10 @@ internal class StageLiveSurfaceExchange private constructor(
             host.addView(background,FrameLayout.LayoutParams(-1,-1))
             val tx = root.buildReparentTransaction(sourceMirror)
                 ?: error("No host transaction for incoming live rail")
-            val other = root.buildReparentTransaction(mainMirror)
-                ?: error("No host transaction for outgoing live task")
-            try { tx.merge(other) } finally { other.close() }
             try {
+                val other = root.buildReparentTransaction(mainMirror)
+                    ?: error("No host transaction for outgoing live task")
+                try { tx.merge(other) } finally { other.close() }
                 tx.setLayer(sourceMirror,100001)
                 tx.setLayer(mainMirror,100000)
                 tx.setCrop(sourceMirror,sourceCrop)
@@ -270,6 +277,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 finishIfReady(liveReady,canRelease)
             }
         }
+        // One-shot cleanup if a device sleeps/locks between frame callback
+        // and move acknowledgment. No per-frame background polling.
+        ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
         animator=ValueAnimator.ofFloat(0f,1f).apply {
             duration=durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
             interpolator=PathInterpolator(.22f,0f,.12f,1f)
@@ -365,6 +375,7 @@ internal class StageLiveSurfaceExchange private constructor(
         if (finished.getAndSet(true)) return
         val callback=finishCallback
         finishCallback=null
+        ui.removeCallbacks(lifetimeWatchdog)
         lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 && moveComplete)
             "completed:real_gpu_layers_and_real_task_move"
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount move=$moveComplete"
