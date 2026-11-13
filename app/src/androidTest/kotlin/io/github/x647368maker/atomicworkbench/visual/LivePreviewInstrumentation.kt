@@ -25,7 +25,12 @@ import java.util.concurrent.TimeUnit
 
 /** Real Android HWUI + live Surface producer. No root, third-party apps or task mocks. */
 class LivePreviewInstrumentation : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var nativeMirrorOnly = false
+    override fun onCreate(arguments: Bundle?) {
+        super.onCreate(arguments)
+        nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
+        start()
+    }
     override fun onStart() {
         val result=Bundle()
         try {
@@ -36,6 +41,25 @@ class LivePreviewInstrumentation : Instrumentation() {
             waitForIdleSync()
             val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
             val checks=mutableListOf<String>()
+            if (nativeMirrorOnly) {
+                // The API37 job tests the actual compositor primitive, NOT
+                // the full legacy API35 suite. SKIP is a failure in this mode.
+                val status = StageLiveMirrorPrimitiveRegression(this).run(activity,root,out)
+                check(status.startsWith("PASS API37 SurfaceFlinger live dual-root mirror")) {
+                    "API37 live two-surface exchange not verified: $status"
+                }
+                check(File(out,"native-api37-dual-live-surface-mirrors.png").isFile) {
+                    "Dual real GPU surfaces rendered no screenshot"
+                }
+                checks.add(status)
+                File(out,"native-mirror-results.txt").writeText(
+                    checks.joinToString("\n")+"\nNATIVE_MIRROR_PASS\n"
+                )
+                result.putString("stream",checks.joinToString("\n")+"\nNATIVE_MIRROR_PASS\n")
+                runOnMainSync { activity.finish() }
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             checks.add(coldBootstrap(root,activity,out))
             for (legacy in listOf(true,false)) {
                 val ready=CountDownLatch(1)
@@ -113,6 +137,7 @@ class LivePreviewInstrumentation : Instrumentation() {
             checks.addAll(RefinementRegression(this).run(activity,root,out))
             checks.add(PhasedPreviewRegression(this).run(activity,root))
             checks.add(StageMainSlotMorphRegression(this).run(activity,root,out))
+            checks.add(StageLiveMirrorPrimitiveRegression(this).run(activity,root,out))
             checks.addAll(TaskMigrationRegression(this).run(activity,out))
             checks.addAll(ShadeRegression(this).run(activity,root,out))
             File(out,"render-results.txt").writeText(checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")

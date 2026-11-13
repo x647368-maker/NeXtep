@@ -103,13 +103,15 @@ class NeXtepWindowController(
     private var frostStrength = 50
     private val swapAnimator = WorkspaceSwapAnimator(context)
     private val swapCapture = StageAsyncPreviewCapture()
+    private var liveSurfaceExchange: StageLiveSurfaceExchange? = null
     private var activeSwapViewport: WorkspaceGeometry? = null
     private var previewCapturePending = false
     private var deferredSwapGeometryRefresh = false
 
     private fun keepActiveSwapForViewport(now: WorkspaceGeometry): Boolean =
         StageSwapViewportHoldPolicy.retain(
-            swapAnimator.isRunning || previewCapturePending, activeSwapViewport, now,
+            swapAnimator.isRunning || previewCapturePending ||
+                liveSurfaceExchange?.isRunning == true, activeSwapViewport, now,
         )
     private val internalDrag = WorkspaceInternalDragController(
         context, ::geometry, { slotWindows.map { it.view } },
@@ -751,6 +753,7 @@ class NeXtepWindowController(
         return "screen=${live.screenWidth}x${live.screenHeight} dpi=${context.resources.displayMetrics.densityDpi} collapsed=$sidebarCollapsed occupied=${viewport.activeCount} shown=$shownWindowCount\n" +
             (slotCoordinator?.slotDiagnostics() ?: "unavailable") +
             "\\nparallelSceneCached=${remembered != null} ageMs=$msAgo\n" +
+            "nativeSwap=${StageLiveSurfaceExchange.lastOutcome()}\\n" +
             StageNativeParallelDiagnostics.report(selected)
     }
 
@@ -1800,6 +1803,8 @@ class NeXtepWindowController(
         slotCoordinator?.cancelPendingExchange()
         swapCapture.cancel()
         swapAnimator.cancel()
+        liveSurfaceExchange?.stop()
+        liveSurfaceExchange = null
     }
 
     private fun highlightInternalDragTarget(target: WorkspaceInternalDragController.Target?) {
@@ -1870,6 +1875,11 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
     ) {
         val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
+        // Native two-layer flight is attempted BEFORE any bitmap capture.
+        // It mirrors the real existing SurfaceFlinger task + rail surfaces.
+        // No screenshot loop, no root/task reparent, no app restart.
+        if (tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,
+                onFinished,asyncMove,canRelease)) return
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
         }
@@ -1911,6 +1921,100 @@ class NeXtepWindowController(
                 onFinished()
             },
         )
+    }
+
+    /**
+     * Real native dual-card exchange for ColorOS variants that expose live
+     * compositor mirroring. A failed capability check has zero side effects;
+     * the original phased/bitmap route remains available for older devices.
+     *
+     * The real task move is still driven by SlotTaskCoordinator. We do not
+     * mutate input coordinates, the original task leashes or producer displays.
+     */
+    private fun tryLiveSurfaceExchange(
+        sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?, task: Int?,
+        move: () -> Boolean, onFinished: () -> Unit,
+        asyncMove: (((Boolean) -> Unit) -> Unit)?,
+        canRelease: () -> Boolean,
+    ): Boolean {
+        // Never block a 60Hz compositor frame with legacy synchronous Binder
+        // migrations. The normal tap uses the existing phased callback.
+        if (drag != null || targetIndex != null || asyncMove == null || task == null ||
+            !workspaceVisible || suspended || sidebarCollapsed || groupInputBlocked ||
+            !android.animation.ValueAnimator.areAnimatorsEnabled() ||
+            context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true ||
+            !WorkspaceWallpaperBackdrop.canCapture(context) ||
+            liveSurfaceExchange?.isRunning == true) return false
+        val g = geometry()
+        val host = contentHighlightView?.parent as? FrameLayout ?: return false
+        val slot = slotWindows.getOrNull(sourceIndex) ?: return false
+        val state = slotCoordinator?.slotStates()?.getOrNull(sourceIndex) as? SlotState.Occupied
+            ?: return false
+        val source = Rect()
+        if (!slot.view.getScreenVisibleRect(source)) return false
+        val main = Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
+        val native = StageLiveSurfaceExchange.create(
+            host=host, sourceSlotView=slot.view, mainTaskId=task,
+            sourceBounds=source, mainBounds=main,
+            fullScreenWidth=g.screenWidth, fullScreenHeight=g.screenHeight,
+            backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
+        ) ?: return false
+        // Capture the slot frame BEFORE the physical move. Sampling this
+        // baseline in the async callback can miss the FIRST new task frame,
+        // leaving a paused/video task waiting for an unnecessary second frame.
+        val originalSlotFrame = slot.contentFrameSequence
+        val incomingId = state.taskId
+        slot.view.beginExchangePreview()
+        activeSwapViewport = g
+        deferredSwapGeometryRefresh = false
+        // Preserve the card flight during the tiny synchronous interval while
+        // mirrors attach to their SurfaceFlinger root; the animator becomes
+        // observable through liveSurfaceExchange only after start() returns.
+        previewCapturePending = true
+        swapCapture.cancel()
+        val started = native.start(
+            durationMs=SystemUiRuntime.swapAnimationDurationMs(),
+            moveAsync={ done -> asyncMove { ok -> done(ok) } },
+            move=move,
+            liveReady={
+                val now=slotCoordinator?.slotStates()?.getOrNull(sourceIndex)
+                now is SlotState.Occupied &&
+                    now.taskId == task &&
+                    slot.view.textureView.isAvailable &&
+                    slot.contentFrameSequence > originalSlotFrame &&
+                    mainTaskPresenter.currentTaskId() == incomingId &&
+                    TaskSurfaceCompat.isPresentationSettled(incomingId,g)
+            },
+            canRelease=canRelease,
+            onFinished={
+                slot.view.endExchangePreview()
+                liveSurfaceExchange=null
+                activeSwapViewport=null
+                previewCapturePending=false
+                val flush=deferredSwapGeometryRefresh
+                deferredSwapGeometryRefresh=false
+                onFinished()
+                if (flush && workspaceVisible && !suspended)
+                    backdropHandler.post { if (workspaceVisible && !suspended) {
+                        val finalG=geometry()
+                        applyStageStack(finalG)
+                        applyWindowGeometry(finalG,refreshControls=false)
+                    } }
+                scheduleStageFocus()
+            },
+        )
+        if (!started) {
+            slot.view.endExchangePreview()
+            activeSwapViewport=null
+            previewCapturePending=false
+            deferredSwapGeometryRefresh=false
+            return false
+        }
+        liveSurfaceExchange=native
+        previewCapturePending=false
+        NeXtepLog.info("native_swap",
+            "TWO live compositor layers moving task=$task slot=$sourceIndex source=$source main=$main")
+        return true
     }
 
     private fun animateSwapPrepared(

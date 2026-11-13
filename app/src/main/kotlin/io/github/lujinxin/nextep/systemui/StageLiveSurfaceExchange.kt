@@ -1,0 +1,410 @@
+package io.github.x647368maker.atomicworkbench.systemui
+
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.drawable.Drawable
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.SurfaceControl
+import android.view.View
+import android.view.animation.PathInterpolator
+import android.widget.FrameLayout
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import java.util.concurrent.atomic.AtomicBoolean
+
+/**
+ * Experimental real live SurfaceFlinger flight, NOT a bitmap preview.
+ *
+ * Source is a mirror of the current rail-window ViewRoot. Its crop contains
+ * exactly one occupied card and keeps receiving the producer's live buffers.
+ * Target is a mirror of the current physical-display task leash. Both mirrors
+ * are moved in the SAME SurfaceControl.Transaction on each display frame.
+ * Original SurfaceControls are never reparented, scaled, hidden or released.
+ *
+ * The two actual tasks are migrated near the end of the physical animation;
+ * mirrors vanish only after the normal slot/main task buffers are ready (or
+ * a bounded timeout). If the vendor denies mirroring or ownership is stale,
+ * create() returns null and the old proven exchange path is unchanged.
+ */
+internal class StageLiveSurfaceExchange private constructor(
+    private val host: FrameLayout,
+    private val sourceMirror: SurfaceControl,
+    private val mainMirror: SurfaceControl,
+    private val sourceCrop: Rect,
+    private val mainCrop: Rect,
+    private val slotStart: StageLiveSurfaceFlightGeometry.Box,
+    private val mainStart: StageLiveSurfaceFlightGeometry.Box,
+    private val backdrop: Drawable?,
+) {
+    private val ui = Handler(Looper.getMainLooper())
+    private val lifetimeWatchdog = Runnable {
+        if (isRunning) {
+            NeXtepLog.warn("native_swap", "Two-mirror flight exceeded safety lifetime; releasing compositor mirrors")
+            stop()
+        }
+    }
+    private val finished = AtomicBoolean(false)
+    private var animator: ValueAnimator? = null
+    private var sentMove = false
+    private var moveComplete = false
+    private var frameComplete = false
+    private var handoffReady = false
+    private var handoffTimedOut = false
+    private var moveCompletedAt = -1L
+    private var finishCallback: (() -> Unit)? = null
+    private var lastProgress = 0f
+    private var nativeFrameCount = 0
+    private var firstTransactionCommitted = false
+    // Optional SystemUI-only API, resolved ONCE rather than per animation frame.
+    private var cornersSupported = true
+    private val cornerMethod = runCatching {
+        SurfaceControl.Transaction::class.java.getDeclaredMethod(
+            "setCornerRadius", SurfaceControl::class.java, Float::class.javaPrimitiveType,
+        ).apply { isAccessible=true }
+    }.getOrNull()
+    private val background = object : View(host.context) {
+        private val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(12, 14, 21)
+        }
+        private val clip = Path()
+        override fun onDraw(canvas: Canvas) {
+            val save = canvas.save()
+            clip.reset()
+            clip.addRect(slotStart.left,slotStart.top,slotStart.right,slotStart.bottom,Path.Direction.CW)
+            clip.addRect(mainStart.left,mainStart.top,mainStart.right,mainStart.bottom,Path.Direction.CW)
+            canvas.clipPath(clip)
+            canvas.drawRect(0f,0f,width.toFloat(),height.toFloat(),clearPaint)
+            backdrop?.setBounds(0,0,width,height)
+            backdrop?.draw(canvas)
+            canvas.restoreToCount(save)
+        }
+    }
+
+    val isRunning: Boolean get() = !finished.get() && finishCallback != null
+    val description: String get() = "native_two_mirrors"
+
+    /** Both views must be attached to a valid, hardware-composited host. */
+    companion object {
+        private const val MIN_DURATION_MS = 280L
+        private const val MAX_DURATION_MS = 360L
+        private const val HANDOFF_TIMEOUT_MS = 600L
+        private const val MAX_LIFETIME_MS = 1800L
+        // Do not reparent actual app tasks while either reflected producer is
+        // halfway across the display: ColorOS can replace the live buffer
+        // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
+        // The normal phased transfer begins at the *end* of visual travel.
+        private const val MOVE_PROGRESS = .94f
+        @Volatile private var lastOutcome = "not_attempted"
+        fun lastOutcome(): String = lastOutcome
+        private fun markUnavailable(why: String): StageLiveSurfaceExchange? {
+            lastOutcome = "fallback:" + why
+            return null
+        }
+
+        fun create(
+            host: FrameLayout,
+            sourceSlotView: View,
+            mainTaskId: Int,
+            sourceBounds: Rect,
+            mainBounds: Rect,
+            fullScreenWidth: Int,
+            fullScreenHeight: Int,
+            backdrop: Drawable?,
+        ): StageLiveSurfaceExchange? {
+            if (Build.VERSION.SDK_INT < 31 || !host.isAttachedToWindow ||
+                !sourceSlotView.isAttachedToWindow || !host.isHardwareAccelerated
+            ) return markUnavailable("detached_or_software")
+            if (sourceSlotView.rootView === host.rootView)
+                return markUnavailable("single_window_root")
+            // All animation coordinates are physical display pixels. Refuse
+            // composition into an inset/clipped subwindow instead of quietly
+            // drawing invisible motion and misreporting success to the user.
+            val hostOrigin=IntArray(2)
+            host.rootView.getLocationOnScreen(hostOrigin)
+            if (hostOrigin[0] != 0 || hostOrigin[1] != 0 ||
+                host.rootView.width < fullScreenWidth ||
+                host.rootView.height < fullScreenHeight)
+                return markUnavailable("host_not_full_display")
+            val from = StageLiveSurfaceFlightGeometry.Box(
+                sourceBounds.left.toFloat(),sourceBounds.top.toFloat(),
+                sourceBounds.right.toFloat(),sourceBounds.bottom.toFloat(),
+            )
+            val to = StageLiveSurfaceFlightGeometry.Box(
+                mainBounds.left.toFloat(),mainBounds.top.toFloat(),
+                mainBounds.right.toFloat(),mainBounds.bottom.toFloat(),
+            )
+            if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
+                return markUnavailable("invalid_bounds")
+            val sourceRoot = sourceSlotView.rootView
+            val origin=IntArray(2)
+            sourceRoot.getLocationOnScreen(origin)
+            val localCrop = StageLiveSurfaceFlightGeometry.localCrop(
+                from,origin[0],origin[1],sourceRoot.width,sourceRoot.height,
+            )?.toAndroidRect() ?: return markUnavailable("card_outside_source_root")
+            // Never mirror a different active task. The native presenter
+            // verifies that taskId still owns the exact observed WM leash.
+            val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
+                ?: return markUnavailable("no_owned_main_task_mirror")
+            val incoming = try {
+                createWindowMirror(sourceRoot) ?: run {
+                    outgoing.release()
+                    return markUnavailable("no_sidebar_viewroot_mirror")
+                }
+            } catch (error: Throwable) {
+                outgoing.release()
+                NeXtepLog.warn("native_swap", "Side-rail mirror unavailable", error)
+                return markUnavailable("sidebar_reflection_exception")
+            }
+            if (!outgoing.isValid || !incoming.isValid) {
+                outgoing.release()
+                incoming.release()
+                return markUnavailable("invalid_native_handles")
+            }
+            lastOutcome="capable:both_live_surface_handles"
+            return StageLiveSurfaceExchange(
+                host,incoming,outgoing,localCrop,
+                Rect(0,0,fullScreenWidth,fullScreenHeight),
+                from,to,backdrop,
+            )
+        }
+
+        private fun createWindowMirror(view: View): SurfaceControl? = runCatching {
+            val attached = view.rootSurfaceControl ?: return@runCatching null
+            // Android 17/API37 exposes createMirror() on AttachedSurfaceControl.
+            // On older ColorOS system UIs, try the existing reflected ViewRoot
+            // control; failure disables this mode instead of mutating a task.
+            val publicMirror=runCatching {
+                attached.javaClass.methods.firstOrNull {
+                    it.name=="createMirror" && it.parameterCount==0
+                }?.invoke(attached) as? SurfaceControl
+            }.getOrNull()
+            if (publicMirror?.isValid == true) return@runCatching publicMirror
+            publicMirror?.release()
+            val getRoot = View::class.java.getDeclaredMethod("getViewRootImpl")
+                .apply { isAccessible=true }
+            val root=getRoot.invoke(view) ?: return@runCatching null
+            val field=generateSequence(root.javaClass as Class<*>?) { it.superclass }
+                .mapNotNull { klass ->
+                    runCatching { klass.getDeclaredField("mSurfaceControl") }.getOrNull()
+                }.firstOrNull() ?: return@runCatching null
+            val surface=field.apply { isAccessible=true }.get(root) as? SurfaceControl
+                ?: return@runCatching null
+            if (!surface.isValid) return@runCatching null
+            TaskSurfaceCompat.mirrorObservedSurface(surface)
+        }.onFailure { NeXtepLog.warn("native_swap", "ViewRoot live mirror not permitted", it) }.getOrNull()
+    }
+
+    /**
+     * Returns false before task mutation if WM denies either mirror reparent.
+     * Once running, caller's normal coordinator owns rollback on task failures.
+     */
+    fun start(
+        durationMs: Int,
+        moveAsync: (((Boolean) -> Unit) -> Unit)?,
+        move: () -> Boolean,
+        liveReady: () -> Boolean,
+        canRelease: () -> Boolean,
+        onFinished: () -> Unit,
+    ): Boolean {
+        if (finishCallback != null || finished.get()) return false
+        val root = host.rootSurfaceControl ?: return cleanupWithoutCallback().let { false }
+        finishCallback = onFinished
+        try {
+            host.addView(background,FrameLayout.LayoutParams(-1,-1))
+            val tx = root.buildReparentTransaction(sourceMirror)
+                ?: error("No host transaction for incoming live rail")
+            try {
+                val other = root.buildReparentTransaction(mainMirror)
+                    ?: error("No host transaction for outgoing live task")
+                try { tx.merge(other) } finally { other.close() }
+                tx.setLayer(sourceMirror,100001)
+                tx.setLayer(mainMirror,100000)
+                tx.setCrop(sourceMirror,sourceCrop)
+                tx.setCrop(mainMirror,mainCrop)
+                tx.setVisibility(sourceMirror,true)
+                tx.setVisibility(mainMirror,true)
+                applyFrame(tx,0f)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    // A committed transaction is proof that SurfaceFlinger
+                    // accepted both layer parents, NOT proof of visible pixels.
+                    tx.addTransactionCommittedListener(host.context.mainExecutor) {
+                        firstTransactionCommitted = true
+                        NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
+                    }
+                }
+                tx.apply()
+            } finally { tx.close() }
+        } catch (error: Throwable) {
+            NeXtepLog.warn("native_swap", "Native mirror parenting failed before task move", error)
+            finishCallback = null
+            finished.set(true)
+            cleanupWithoutCallback()
+            return false
+        }
+
+        fun commitMove() {
+            if (!isRunning || sentMove) return
+            sentMove = true
+            if (moveAsync != null) {
+                runCatching {
+                    moveAsync { ok ->
+                        ui.post {
+                            if (!isRunning) return@post
+                            if (!ok) { stop(); return@post }
+                            moveComplete = true
+                            moveCompletedAt = SystemClock.uptimeMillis()
+                            finishIfReady(liveReady,canRelease)
+                        }
+                    }
+                }.onFailure {
+                    NeXtepLog.warn("native_swap", "Real phased move failed",it)
+                    stop()
+                }
+            } else {
+                val ok=runCatching(move).getOrDefault(false)
+                if (!ok) { stop(); return }
+                moveComplete=true
+                moveCompletedAt=SystemClock.uptimeMillis()
+                finishIfReady(liveReady,canRelease)
+            }
+        }
+        // One-shot cleanup if a device sleeps/locks between frame callback
+        // and move acknowledgment. No per-frame background polling.
+        ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
+        animator=ValueAnimator.ofFloat(0f,1f).apply {
+            duration=durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
+            interpolator=PathInterpolator(.22f,0f,.12f,1f)
+            addUpdateListener {
+                if (!isRunning) return@addUpdateListener
+                val fraction=(it.animatedValue as Float)
+                lastProgress=fraction
+                runCatching {
+                    SurfaceControl.Transaction().use { frame ->
+                        applyFrame(frame,fraction)
+                        frame.apply()
+                        nativeFrameCount++
+                    }
+                }.onFailure { error ->
+                    NeXtepLog.warn("native_swap","Real dual-layer frame failed",error)
+                    stop()
+                }
+                // PathInterpolator changes the rendered fraction; defer the
+                // real Binder move until the last portion of *wall clock*
+                // motion, so mirrored live apps are actually seen travelling.
+                if (it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
+                    firstTransactionCommitted && !sentMove) commitMove()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (!isRunning) return
+                    frameComplete=true
+                    if (!sentMove) commitMove()
+                    finishIfReady(liveReady,canRelease)
+                }
+            })
+            start()
+        }
+        lastOutcome="active:two_live_gpu_mirrors"
+        NeXtepLog.info("native_swap","Started TWO real GPU mirror surfaces; no bitmap captures or task recreation")
+        return true
+    }
+
+    private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
+        val incoming=StageLiveSurfaceFlightGeometry.flight(
+            slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,
+        ) ?: error("Invalid incoming native transform")
+        // Unlike the sidebar ViewRoot, WM Shell's main-task leash is ALREADY
+        // fitted to its visible main rectangle. Mirroring that hierarchy
+        // preserves the owned task's scale and translation. The outer mirror
+        // therefore starts at identity (1, 0, 0) and moves the *visible main
+        // bounds*, or the main application would shrink a second time.
+        val outgoing=StageLiveSurfaceFlightGeometry.flight(
+            mainStart,slotStart,mainStart.width.toInt(),mainStart.height.toInt(),p,
+        ) ?: error("Invalid outgoing native transform")
+        transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
+        transaction.setPosition(sourceMirror,
+            incoming.x-sourceCrop.left*incoming.scale,
+            incoming.y-sourceCrop.top*incoming.scale)
+        transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)
+        transaction.setPosition(mainMirror,
+            outgoing.x-mainStart.left*outgoing.scale,
+            outgoing.y-mainStart.top*outgoing.scale)
+        // Preserve the previously accepted 24dp-equivalent round cards while
+        // their compositor scale changes. A parent layer's corner radius uses
+        // source-layer units, hence divide by the current uniform scale.
+        val setter=cornerMethod
+        if (cornersSupported && setter != null) {
+            val d=host.resources.displayMetrics.density
+            val sourceRadius=(24f*d / incoming.scale).coerceIn(0f,120f*d)
+            val mainRadius=(24f*d / outgoing.scale).coerceIn(0f,120f*d)
+            runCatching {
+                setter.invoke(transaction,sourceMirror,sourceRadius)
+                setter.invoke(transaction,mainMirror,mainRadius)
+            }.onFailure {
+                cornersSupported=false
+                NeXtepLog.warn("native_swap","OEM refused mirrored-card corner rounding",it)
+            }
+        }
+    }
+
+    private fun finishIfReady(liveReady: () -> Boolean, canRelease: () -> Boolean) {
+        if (!isRunning || !frameComplete || !moveComplete) return
+        fun check() {
+            if (!isRunning) return
+            val elapsed=SystemClock.uptimeMillis()-moveCompletedAt
+            val ready=runCatching { canRelease() && liveReady() }.getOrDefault(false)
+            if (ready || elapsed >= HANDOFF_TIMEOUT_MS) {
+                handoffReady=ready
+                handoffTimedOut=!ready
+                NeXtepLog.info("native_swap",
+                    "Real GPU layer handoff ready=$ready elapsed=${elapsed}ms")
+                host.postOnAnimation { stop() }
+            } else host.postOnAnimation { check() }
+        }
+        check()
+    }
+
+    fun stop() {
+        if (finished.getAndSet(true)) return
+        val callback=finishCallback
+        finishCallback=null
+        ui.removeCallbacks(lifetimeWatchdog)
+        lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 &&
+            moveComplete && handoffReady)
+            "completed:two_gpu_layers_task_move_and_live_handoff"
+        else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
+            "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
+        NeXtepLog.info("native_swap",
+            "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
+            "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
+        animator?.removeAllListeners()
+        animator?.cancel()
+        animator=null
+        cleanupWithoutCallback()
+        callback?.invoke()
+    }
+
+    private fun cleanupWithoutCallback() {
+        runCatching {
+            SurfaceControl.Transaction().use { tx ->
+                if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
+                if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
+                tx.apply()
+            }
+        }
+        sourceMirror.release()
+        mainMirror.release()
+        runCatching { (background.parent as? FrameLayout)?.removeView(background) }
+    }
+}
