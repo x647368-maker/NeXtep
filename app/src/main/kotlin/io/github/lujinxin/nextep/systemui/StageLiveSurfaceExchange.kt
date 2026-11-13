@@ -189,8 +189,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 tx.setLayer(mainMirror,100000)
                 tx.setCrop(sourceMirror,sourceCrop)
                 tx.setCrop(mainMirror,mainCrop)
-                tx.show(sourceMirror)
-                tx.show(mainMirror)
+                tx.setVisibility(sourceMirror,true)
+                tx.setVisibility(mainMirror,true)
                 applyFrame(tx,0f)
                 tx.apply()
             } finally { tx.close() }
@@ -304,8 +304,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private fun cleanupWithoutCallback() {
         runCatching {
             SurfaceControl.Transaction().use { tx ->
-                if (sourceMirror.isValid) tx.hide(sourceMirror)
-                if (mainMirror.isValid) tx.hide(mainMirror)
+                if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
+                if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
                 tx.apply()
             }
         }
