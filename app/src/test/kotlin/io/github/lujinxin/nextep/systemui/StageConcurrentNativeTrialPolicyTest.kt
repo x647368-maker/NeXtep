@@ -57,6 +57,13 @@ class StageConcurrentNativeTrialPolicyTest {
         StageConcurrentNativeTrialPolicy.resetForTests()
     }
 
+    @Test fun slotReadyRequiresPostMoveBuffer() {
+        assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(null,1L))
+        assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,42L))
+        assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,41L))
+        assertTrue(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,43L))
+    }
+
     @Test fun transientMirrorReadinessDoesNotDisableTheSession() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         for (reason in listOf("fallback:detached_or_software",
