@@ -30,8 +30,8 @@ internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: I
             return "SKIP native mirror primitive: platform API ${Build.VERSION.SDK_INT} below 37"
         val green=View(activity).apply {setBackgroundColor(Color.rgb(33,194,110))}
         val purple=View(activity).apply {setBackgroundColor(Color.rgb(166,75,205))}
-        lateinit var first:PopupWindow
-        lateinit var second:PopupWindow
+        var first:PopupWindow?=null
+        var second:PopupWindow?=null
         var m1:SurfaceControl?=null
         var m2:SurfaceControl?=null
         try {
@@ -146,8 +146,8 @@ internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: I
                 }
                 runCatching {m1?.release()}
                 runCatching {m2?.release()}
-                if (::first.isInitialized) first.dismiss()
-                if (::second.isInitialized) second.dismiss()
+                first?.dismiss()
+                second?.dismiss()
             }
         }
     }
