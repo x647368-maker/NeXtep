@@ -13,6 +13,17 @@ internal object StageExchangeTelemetry {
     private val active=ThreadLocal<ExchangeTimingTree?>()
     @Volatile private var completed="尚无本次加载代码的交换样本"
     @Volatile private var handoff=""
+    // Single bounded in-memory route trail; no per-frame writes, file I/O,
+    // background polling, network reports, or screenshots.
+    private val nativeTapId=AtomicLong()
+    @Volatile private var nativePath="尚无本次进程的窗口交换记录"
+    fun beginNativeTap() {
+        nativePath="#${nativeTapId.incrementAndGet()} ${StageRuntimeIdentity.BUILD} tap"
+    }
+    fun nativeEvent(stage:String) {
+        nativePath=(nativePath+" -> "+stage.take(110)).takeLast(680)
+    }
+    fun nativeDescription():String=nativePath
     fun <T> phase(name:String,block:()->T):T = active.get()?.span(name,block) ?: block()
     fun <T> measure(name:String,block:()->T):T {
         val existing=active.get()
@@ -40,5 +51,5 @@ internal object StageExchangeTelemetry {
         handoff="#${serial.get()} 交接：${if(stable)"连续就绪" else "超时回退（不能当作 Surface 已稳定）"} ${elapsed}ms"
         runCatching { NeXtepLog.info("exchange_handoff","${StageRuntimeIdentity.BUILD} $handoff") }
     }
-    fun describe():String="测量代码：${StageRuntimeIdentity.BUILD}\n$completed\n$handoff"
+    fun describe():String="测量代码：${StageRuntimeIdentity.BUILD}\n$completed\n$handoff\n动画路径：$nativePath"
 }
