@@ -206,6 +206,36 @@ object TaskSurfaceCompat {
         cancelPreparedPromotion(taskId)
     }
 
+    /**
+     * Native animated exchange: mirror the *currently owned* real main-task
+     * compositor layer, not a screenshot. The original leash remains parented
+     * and untouched. This is a non-mutating capability gate: never look up
+     * arbitrary tasks, and never use a stale task leash from another display.
+     *
+     * SurfaceFlinger retains the mirror's normal protected-layer restrictions.
+     * We do not clear secure flags, acquire a framebuffer or defeat DRM.
+     */
+    internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
+        val active = activePresentations[taskId] ?: return null
+        if (active.restoring || ownedTaskLeash(taskId) !== active.leash ||
+            !isValid(active.leash)) return null
+        val source = active.leash as? android.view.SurfaceControl ?: return null
+        return mirrorObservedSurface(source)
+    }
+
+    /** Reflect the system-only static method, compatible with old ColorOS. */
+    internal fun mirrorObservedSurface(source: android.view.SurfaceControl): android.view.SurfaceControl? =
+        runCatching {
+            if (!source.isValid) return@runCatching null
+            val method=android.view.SurfaceControl::class.java.getDeclaredMethod(
+                "mirrorSurface", android.view.SurfaceControl::class.java,
+            ).apply { isAccessible=true }
+            val mirror=method.invoke(null,source) as? android.view.SurfaceControl
+            mirror?.takeIf { it.isValid } ?: run { mirror?.release(); null }
+        }.onFailure {
+            NeXtepLog.warn("native_swap", "OS refused mirrored task compositor", it)
+        }.getOrNull()
+
     /** Transient exchange preview, using only this task's layers. Secure layers
      * remain excluded by ScreenCapture's defaults; failure just omits the preview. */
     fun capturePreview(taskId: Int, sourceCrop: Rect? = null, allowHomeRoot: Boolean = false): android.graphics.Bitmap? = runCatching {
