@@ -93,6 +93,15 @@ object TaskSurfaceCompat {
         return transactionGuard.intercept(transaction, proceed)
     }
 
+    /**
+     * Private compositor-flight transactions must NEVER implicitly append
+     * main/slot task transforms on every mirrored animation frame.
+     * The general SystemUI apply hook still handles WM's own transactions;
+     * only our mirrored layers use this scoped ThreadLocal bypass.
+     */
+    internal fun <R> commitMirrorOnly(block: () -> R): R =
+        transactionGuard.ownedTransaction(block)
+
     fun initialize(classLoader: ClassLoader) {
         hostClassLoader = classLoader
         NeXtepLog.info("task_surface", "Host class loader captured: $classLoader")
@@ -227,6 +236,43 @@ object TaskSurfaceCompat {
             !isValid(active.leash)) return null
         val source = active.leash as? android.view.SurfaceControl ?: return null
         return mirrorObservedSurface(source)
+    }
+
+    /**
+     * PR62 private flight: mirror the EXACT occupied virtual-display task,
+     * not the rail window ViewRoot. The rail ViewRoot changes producers when
+     * the swap finishes and can display the wrong app halfway through flight.
+     *
+     * Never look up a different task, reparent a real leash or bypass DRM.
+     * Only an already-observed, currently owned fullscreen slot is eligible.
+     */
+    internal data class OwnedSlotTaskMirror(
+        val surface: android.view.SurfaceControl,
+        val crop: Rect,
+    )
+
+    internal fun createOwnedSlotTaskMirror(
+        taskId: Int,
+        expectedDisplayId: Int,
+    ): OwnedSlotTaskMirror? {
+        if (expectedDisplayId == Display.DEFAULT_DISPLAY ||
+            isDisplayExchanging(taskId)) return null
+        val state = observedStates[taskId] ?: return null
+        if (state.displayId != expectedDisplayId ||
+            state.vendorWindowed ||
+            state.windowingMode != WINDOWING_MODE_FULLSCREEN) return null
+        val observed = observedLeashes[taskId] as? android.view.SurfaceControl ?: return null
+        if (!observed.isValid) return null
+        val fitted = slotSurfaces[taskId]?.takeIf {
+            it.displayId == expectedDisplayId &&
+                it.leash === observed &&
+                it.crop.width() >= 2 && it.crop.height() >= 2
+        }
+        val crop = fitted?.crop?.let(::Rect)
+            ?: Rect(0, 0, state.bounds.width(), state.bounds.height())
+        if (crop.width() < 2 || crop.height() < 2) return null
+        val mirror = mirrorObservedSurface(observed) ?: return null
+        return OwnedSlotTaskMirror(mirror, crop)
     }
 
     /** Reflect the system-only static method, compatible with old ColorOS. */
