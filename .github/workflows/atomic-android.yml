@@ -295,14 +295,15 @@ jobs:
           timeout 150 adb wait-for-device
           timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
           test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
-      - name: Verify genuine API37 dual-mirror GPU layer positions and changing source buffers
-        run: bash scripts/run-visual-regression.sh
+      - name: Verify genuine API37 two live GPU mirrors with a strict dedicated test
+        timeout-minutes: 5
+        run: bash scripts/run-native-mirror-regression.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: atomic-api37-real-mirror-results
           path: |
             visual-results/
-            visual-instrumentation.txt
-            virtual-display-log.txt
+            native-mirror-instrumentation.txt
+            native-mirror-logcat.txt
             /tmp/emulator-api37.log
