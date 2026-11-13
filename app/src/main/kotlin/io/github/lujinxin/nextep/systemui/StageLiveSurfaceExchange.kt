@@ -260,7 +260,7 @@ internal class StageLiveSurfaceExchange private constructor(
                         NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
                     }
                 }
-                tx.apply()
+                TaskSurfaceCompat.commitMirrorOnly { tx.apply() }
             } finally { tx.close() }
         } catch (error: Throwable) {
             NeXtepLog.warn("native_swap", "Native mirror parenting failed before task move", error)
@@ -310,7 +310,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 runCatching {
                     SurfaceControl.Transaction().use { frame ->
                         applyFrame(frame,fraction)
-                        frame.apply()
+                        // Mirrored-card frame transactions must not recompose
+                        // old task-leash transforms through the SystemUI hook.
+                        TaskSurfaceCompat.commitMirrorOnly { frame.apply() }
                         nativeFrameCount++
                     }
                 }.onFailure { error ->
@@ -436,7 +438,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
                 if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
                 occlusion.hide(tx)
-                tx.apply()
+                TaskSurfaceCompat.commitMirrorOnly { tx.apply() }
             }
         }
         sourceMirror.release()
