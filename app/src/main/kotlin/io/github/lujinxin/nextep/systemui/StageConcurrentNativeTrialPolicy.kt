@@ -2,8 +2,10 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 /**
  * Experimental PRIVATE branch trial only. Automatic per-process safety gate.
- * OEM failure or a >28ms mirror setup disables trials until SystemUI restart;
- * ordinary task movement and the PR53 low-cost cue continue normally.
+ * A single cold 28ms GPU mirror miss may recover on the next tap; repeated
+ * slow attempts or a severe delay disable the private native path for safety.
+ * Clear OEM denial still disables for the SystemUI session. The PR53 fallback
+ * remains available when live mirroring cannot be used.
  *
  * Does not inspect manufacturer strings or keep a background timer.
  */
@@ -12,9 +14,13 @@ internal object StageConcurrentNativeTrialPolicy {
     // OEMs can swap original buffers early when the task move starts.
     const val DURATION_MS=205L
     private const val PREP_BUDGET_MS=28L
+    private const val SEVERE_PREP_MS=80L
     private const val VISUAL_LEAD_IN=0.90f
     private const val NO_COMMIT_FAIL_OPEN_MS=70L
     @Volatile private var disabled=false
+    // Only touched on the SystemUI main thread during an explicit swap.
+    // Warm first-use reflection can exceed a single frame without OEM failure.
+    private var consecutiveSlowPreparations=0
 
     fun allowed(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean):Boolean =
         !disabled && visible && animationEnabled && !powerSave
@@ -24,8 +30,27 @@ internal object StageConcurrentNativeTrialPolicy {
             width>=physicalW && height>=physicalH
 
     fun acceptPrepareTime(ms:Long):Boolean {
-        if(ms>PREP_BUDGET_MS) disabled=true
-        return !disabled
+        if (disabled || ms < 0L) return false
+        if (ms <= PREP_BUDGET_MS) {
+            consecutiveSlowPreparations=0
+            return true
+        }
+        consecutiveSlowPreparations++
+        // Never run this attempt if it exceeded 28ms. One ordinary cold miss
+        // is recoverable; a second consecutive miss or severe stall locks out.
+        if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) disabled=true
+        return false
+    }
+
+    /** Do not turn temporary task-leash/geometry readiness into permanent OEM denial. */
+    fun transientMirrorOutcome(outcome:String):Boolean = when (outcome) {
+        "fallback:detached_or_software",
+        "fallback:host_not_full_display",
+        "fallback:invalid_bounds",
+        "fallback:card_outside_source_root",
+        "fallback:no_owned_main_task_mirror",
+        "fallback:invalid_native_handles" -> true
+        else -> false
     }
 
     /**
@@ -47,5 +72,5 @@ internal object StageConcurrentNativeTrialPolicy {
         // Reason is logged by the caller; no app/process data is collected.
     }
 
-    internal fun resetForTests() { disabled=false }
+    internal fun resetForTests() { disabled=false; consecutiveSlowPreparations=0 }
 }
