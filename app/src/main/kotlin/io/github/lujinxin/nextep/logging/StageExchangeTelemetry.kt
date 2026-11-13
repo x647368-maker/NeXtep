@@ -13,6 +13,32 @@ internal object StageExchangeTelemetry {
     private val active=ThreadLocal<ExchangeTimingTree?>()
     @Volatile private var completed="尚无本次加载代码的交换样本"
     @Volatile private var handoff=""
+    // One-shot, in-memory async task timing. No timer, capture, frame loop or I/O.
+    private var phasedStartedAt = 0L
+    private var phasedLastAt = 0L
+    private val phasedSegments = StringBuilder()
+    @Volatile private var phasedReport = "尚无异步任务交换样本"
+    fun beginPhased(label:String) {
+        val t=SystemClock.uptimeMillis()
+        phasedStartedAt=t
+        phasedLastAt=t
+        phasedSegments.setLength(0)
+        phasedSegments.append(label.take(28))
+    }
+    fun phasedEvent(event:String) {
+        if(phasedStartedAt==0L || phasedSegments.length>=850)return
+        val t=SystemClock.uptimeMillis()
+        phasedSegments.append(" / ").append(event.take(36))
+            .append('=').append((t-phasedLastAt).coerceAtLeast(0L)).append("ms")
+        phasedLastAt=t
+    }
+    fun endPhased(success:Boolean) {
+        if(phasedStartedAt==0L)return
+        val ms=(SystemClock.uptimeMillis()-phasedStartedAt).coerceAtLeast(0L)
+        phasedReport="ok=$success total=${ms}ms | $phasedSegments"
+        phasedStartedAt=0L
+        phasedSegments.setLength(0)
+    }
     // Single bounded in-memory route trail; no per-frame writes, file I/O,
     // background polling, network reports, or screenshots.
     private val nativeTapId=AtomicLong()
@@ -51,5 +77,5 @@ internal object StageExchangeTelemetry {
         handoff="#${serial.get()} 交接：${if(stable)"连续就绪" else "超时回退（不能当作 Surface 已稳定）"} ${elapsed}ms"
         runCatching { NeXtepLog.info("exchange_handoff","${StageRuntimeIdentity.BUILD} $handoff") }
     }
-    fun describe():String="测量代码：${StageRuntimeIdentity.BUILD}\n$completed\n$handoff\n动画路径：$nativePath"
+    fun describe():String="测量代码：${StageRuntimeIdentity.BUILD}\n$completed\n$handoff\n异步任务交换：$phasedReport\n动画路径：$nativePath"
 }

@@ -15,6 +15,7 @@ import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
 import io.github.x647368maker.atomicworkbench.framework.UserTargetedActivityLauncher
 import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import io.github.x647368maker.atomicworkbench.task.MainTaskPresentationCoordinator
 import io.github.x647368maker.atomicworkbench.task.TaskRepository
 import io.github.x647368maker.atomicworkbench.trigger.TriggerBroadcastContract
@@ -1607,6 +1608,7 @@ class SlotTaskCoordinator(
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
             ?: return Result.failure(IllegalStateException("Slot changed"))
         val token = ++transitionGeneration
+        StageExchangeTelemetry.beginPhased("slot=$slotIndex")
         transitionInProgress = true
         visualTransitionPending = true
         pendingSelection = null
@@ -1618,6 +1620,7 @@ class SlotTaskCoordinator(
             if (token != transitionGeneration) return
             if (exchangeSession?.settled == false) return
             if (!animationFinished) return
+            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)
             exchangeSession = null
             visualTransitionPending = false
             transitionInProgress = false
@@ -1664,6 +1667,7 @@ class SlotTaskCoordinator(
     }
 
     private fun startPhasedSwap(slotIndex: Int, occupied: SlotState.Occupied, token: Int, expectedMainTaskId: Int?, complete: (Boolean) -> Unit) {
+        StageExchangeTelemetry.phasedEvent("snapshot_start")
         val initialTasks = taskRepository.runningTasks()
         val slotTask = initialTasks.firstOrNull { it.taskId == occupied.taskId } ?: error("Slot task exited")
         val mainTask = initialTasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY } ?: error("Main task exited")
@@ -1675,6 +1679,7 @@ class SlotTaskCoordinator(
         val slotLayout = record.originalLayout ?: defaultMainLayout(slotTask.resizeMode)
         val mainLayout = mainTask.toLayout()
         val exchangeGeometry = geometryProvider()
+        StageExchangeTelemetry.phasedEvent("snapshot_ready")
 
         var mutationStarted = false
         fun current(expected: TaskRepository.TaskSnapshot, tasks: List<TaskRepository.TaskSnapshot>): TaskRepository.TaskSnapshot {
@@ -1691,6 +1696,7 @@ class SlotTaskCoordinator(
             { action -> exchangeHandler.post(action) },
             object : ExchangeSession.Driver {
                 override fun promote() {
+                    StageExchangeTelemetry.phasedEvent("promote_start")
                     check(token == transitionGeneration && active && !suspended)
                     check(geometryProvider() == exchangeGeometry)
                     val before = taskRepository.runningTasks()
@@ -1709,9 +1715,11 @@ class SlotTaskCoordinator(
                     moveTaskToDisplayAndWait(slotTask.taskId, Display.DEFAULT_DISPLAY)
                     restoreTaskLayout(slotTask, slotLayout, restoreResizeMode = false)
                     taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()
+                    StageExchangeTelemetry.phasedEvent("promote_complete")
                 }
 
                 override fun demoteAndVerify() {
+                    StageExchangeTelemetry.phasedEvent("demote_start")
                     check(token == transitionGeneration && active && !suspended)
                     check(geometryProvider() == exchangeGeometry)
                     check(slots[slotIndex].displayId() == occupied.displayId)
@@ -1739,6 +1747,7 @@ class SlotTaskCoordinator(
                     promotedRecoveryDeadline = SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
                     promotedRecoveryAttempts = 0
                     schedulePromotedTaskRecovery()
+                    StageExchangeTelemetry.phasedEvent("demote_complete")
                 }
 
                 override fun restoreAndVerify() {
@@ -2395,8 +2404,10 @@ class SlotTaskCoordinator(
         ?: WINDOWING_MODE_FULLSCREEN_FALLBACK
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
-        if (!TaskContinuityPolicy.shouldMove(taskRepository.findTask(taskId)?.displayId, displayId)) return
+        // One task snapshot suffices for both the move decision and diagnostics.
         val before = taskRepository.findTask(taskId)
+        if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) return
+        StageExchangeTelemetry.phasedEvent("display_${displayId}_begin")
         NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {
@@ -2414,15 +2425,19 @@ class SlotTaskCoordinator(
             TaskSurfaceCompat.cancelDisplayExchange(taskId)
             throw error
         }
+        StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_done")
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-        var observedDisplayId = taskRepository.findTask(taskId)?.displayId
+        var observedTask = taskRepository.findTask(taskId)
         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_observation") {
-        while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {
+        while (observedTask?.displayId != displayId && SystemClock.uptimeMillis() < deadline) {
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
-            observedDisplayId = taskRepository.findTask(taskId)?.displayId
+            observedTask = taskRepository.findTask(taskId)
         }
         }
-        val after = taskRepository.findTask(taskId)
+        // Reuse the last verified observation for diagnostics and final check.
+        val after = observedTask
+        val observedDisplayId = observedTask?.displayId
+        StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
         NeXtepLog.info("task_continuity", "move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         check(observedDisplayId == displayId) {
             "Task $taskId display move did not settle: expected=$displayId " +

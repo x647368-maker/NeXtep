@@ -1,0 +1,63 @@
+{
+  "purpose": "PR61 staged performance diagnosis: restore exact pre-PR61 sources by reversible, SHA-anchored line patches; only trim redundant getRunningTasks lookups and add in-memory asynchronous swap timing.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "previous_blob_sha1": "b606eedc49d5ce9501e09e81e6a5e23defc8d347",
+      "patches": [
+        {
+          "before": "import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat\nimport io.github.x647368maker.atomicworkbench.logging.NeXtepLog\nimport io.github.x647368maker.atomicworkbench.task.MainTaskPresentationCoordinator\nimport io.github.x647368maker.atomicworkbench.task.TaskRepository",
+          "after": "import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat\nimport io.github.x647368maker.atomicworkbench.logging.NeXtepLog\nimport io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry\nimport io.github.x647368maker.atomicworkbench.task.MainTaskPresentationCoordinator\nimport io.github.x647368maker.atomicworkbench.task.TaskRepository"
+        },
+        {
+          "before": "            ?: return Result.failure(IllegalStateException(\"Slot changed\"))\n        val token = ++transitionGeneration\n        transitionInProgress = true\n        visualTransitionPending = true",
+          "after": "            ?: return Result.failure(IllegalStateException(\"Slot changed\"))\n        val token = ++transitionGeneration\n        StageExchangeTelemetry.beginPhased(\"slot=$slotIndex\")\n        transitionInProgress = true\n        visualTransitionPending = true"
+        },
+        {
+          "before": "            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            exchangeSession = null\n            visualTransitionPending = false",
+          "after": "            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            exchangeSession = null\n            visualTransitionPending = false"
+        },
+        {
+          "before": "\n    private fun startPhasedSwap(slotIndex: Int, occupied: SlotState.Occupied, token: Int, expectedMainTaskId: Int?, complete: (Boolean) -> Unit) {\n        val initialTasks = taskRepository.runningTasks()\n        val slotTask = initialTasks.firstOrNull { it.taskId == occupied.taskId } ?: error(\"Slot task exited\")",
+          "after": "\n    private fun startPhasedSwap(slotIndex: Int, occupied: SlotState.Occupied, token: Int, expectedMainTaskId: Int?, complete: (Boolean) -> Unit) {\n        StageExchangeTelemetry.phasedEvent(\"snapshot_start\")\n        val initialTasks = taskRepository.runningTasks()\n        val slotTask = initialTasks.firstOrNull { it.taskId == occupied.taskId } ?: error(\"Slot task exited\")"
+        },
+        {
+          "before": "        val mainLayout = mainTask.toLayout()\n        val exchangeGeometry = geometryProvider()\n\n        var mutationStarted = false",
+          "after": "        val mainLayout = mainTask.toLayout()\n        val exchangeGeometry = geometryProvider()\n        StageExchangeTelemetry.phasedEvent(\"snapshot_ready\")\n\n        var mutationStarted = false"
+        },
+        {
+          "before": "            object : ExchangeSession.Driver {\n                override fun promote() {\n                    check(token == transitionGeneration && active && !suspended)\n                    check(geometryProvider() == exchangeGeometry)",
+          "after": "            object : ExchangeSession.Driver {\n                override fun promote() {\n                    StageExchangeTelemetry.phasedEvent(\"promote_start\")\n                    check(token == transitionGeneration && active && !suspended)\n                    check(geometryProvider() == exchangeGeometry)"
+        },
+        {
+          "before": "                    restoreTaskLayout(slotTask, slotLayout, restoreResizeMode = false)\n                    taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()\n                }\n\n                override fun demoteAndVerify() {\n                    check(token == transitionGeneration && active && !suspended)\n                    check(geometryProvider() == exchangeGeometry)",
+          "after": "                    restoreTaskLayout(slotTask, slotLayout, restoreResizeMode = false)\n                    taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()\n                    StageExchangeTelemetry.phasedEvent(\"promote_complete\")\n                }\n\n                override fun demoteAndVerify() {\n                    StageExchangeTelemetry.phasedEvent(\"demote_start\")\n                    check(token == transitionGeneration && active && !suspended)\n                    check(geometryProvider() == exchangeGeometry)"
+        },
+        {
+          "before": "                    promotedRecoveryAttempts = 0\n                    schedulePromotedTaskRecovery()\n                }\n",
+          "after": "                    promotedRecoveryAttempts = 0\n                    schedulePromotedTaskRecovery()\n                    StageExchangeTelemetry.phasedEvent(\"demote_complete\")\n                }\n"
+        },
+        {
+          "before": "\n    private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {\n        if (!TaskContinuityPolicy.shouldMove(taskRepository.findTask(taskId)?.displayId, displayId)) return\n        val before = taskRepository.findTask(taskId)\n        NeXtepLog.info(\"task_continuity\", \"move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable\")\n        TaskSurfaceCompat.markDisplayExchange(taskId, displayId)",
+          "after": "\n    private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {\n        // One task snapshot suffices for both the move decision and diagnostics.\n        val before = taskRepository.findTask(taskId)\n        if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) return\n        StageExchangeTelemetry.phasedEvent(\"display_${displayId}_begin\")\n        NeXtepLog.info(\"task_continuity\", \"move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable\")\n        TaskSurfaceCompat.markDisplayExchange(taskId, displayId)"
+        },
+        {
+          "before": "            throw error\n        }\n        val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS\n        var observedDisplayId = taskRepository.findTask(taskId)?.displayId\n        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure(\"display_observation\") {\n        while (observedDisplayId != displayId && SystemClock.uptimeMillis() < deadline) {\n            SystemClock.sleep(DISPLAY_MOVE_POLL_MS)\n            observedDisplayId = taskRepository.findTask(taskId)?.displayId\n        }\n        }\n        val after = taskRepository.findTask(taskId)\n        NeXtepLog.info(\"task_continuity\", \"move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable\")\n        check(observedDisplayId == displayId) {",
+          "after": "            throw error\n        }\n        StageExchangeTelemetry.phasedEvent(\"display_${displayId}_binder_done\")\n        val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS\n        var observedTask = taskRepository.findTask(taskId)\n        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure(\"display_observation\") {\n        while (observedTask?.displayId != displayId && SystemClock.uptimeMillis() < deadline) {\n            SystemClock.sleep(DISPLAY_MOVE_POLL_MS)\n            observedTask = taskRepository.findTask(taskId)\n        }\n        }\n        // Reuse the last verified observation for diagnostics and final check.\n        val after = observedTask\n        val observedDisplayId = observedTask?.displayId\n        StageExchangeTelemetry.phasedEvent(\"display_${displayId}_observed\")\n        NeXtepLog.info(\"task_continuity\", \"move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable\")\n        check(observedDisplayId == displayId) {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageExchangeTelemetry.kt": {
+      "previous_blob_sha1": "037a23ca8e74fe807c0a28cbc4e165e3f637c265",
+      "patches": [
+        {
+          "before": "    @Volatile private var completed=\"尚无本次加载代码的交换样本\"\n    @Volatile private var handoff=\"\"\n    // Single bounded in-memory route trail; no per-frame writes, file I/O,\n    // background polling, network reports, or screenshots.",
+          "after": "    @Volatile private var completed=\"尚无本次加载代码的交换样本\"\n    @Volatile private var handoff=\"\"\n    // One-shot, in-memory async task timing. No timer, capture, frame loop or I/O.\n    private var phasedStartedAt = 0L\n    private var phasedLastAt = 0L\n    private val phasedSegments = StringBuilder()\n    @Volatile private var phasedReport = \"尚无异步任务交换样本\"\n    fun beginPhased(label:String) {\n        val t=SystemClock.uptimeMillis()\n        phasedStartedAt=t\n        phasedLastAt=t\n        phasedSegments.setLength(0)\n        phasedSegments.append(label.take(28))\n    }\n    fun phasedEvent(event:String) {\n        if(phasedStartedAt==0L || phasedSegments.length>=850)return\n        val t=SystemClock.uptimeMillis()\n        phasedSegments.append(\" / \").append(event.take(36))\n            .append('=').append((t-phasedLastAt).coerceAtLeast(0L)).append(\"ms\")\n        phasedLastAt=t\n    }\n    fun endPhased(success:Boolean) {\n        if(phasedStartedAt==0L)return\n        val ms=(SystemClock.uptimeMillis()-phasedStartedAt).coerceAtLeast(0L)\n        phasedReport=\"ok=$success total=${ms}ms | $phasedSegments\"\n        phasedStartedAt=0L\n        phasedSegments.setLength(0)\n    }\n    // Single bounded in-memory route trail; no per-frame writes, file I/O,\n    // background polling, network reports, or screenshots."
+        },
+        {
+          "before": "        runCatching { NeXtepLog.info(\"exchange_handoff\",\"${StageRuntimeIdentity.BUILD} $handoff\") }\n    }\n    fun describe():String=\"测量代码：${StageRuntimeIdentity.BUILD}\\n$completed\\n$handoff\\n动画路径：$nativePath\"\n}\n",
+          "after": "        runCatching { NeXtepLog.info(\"exchange_handoff\",\"${StageRuntimeIdentity.BUILD} $handoff\") }\n    }\n    fun describe():String=\"测量代码：${StageRuntimeIdentity.BUILD}\\n$completed\\n$handoff\\n异步任务交换：$phasedReport\\n动画路径：$nativePath\"\n}\n"
+        }
+      ]
+    }
+  }
+}
