@@ -300,13 +300,14 @@ internal class StageLiveSurfaceExchange private constructor(
         // Preserve the previously accepted 24dp-equivalent round cards while
         // their compositor scale changes. A parent layer's corner radius uses
         // source-layer units, hence divide by the current uniform scale.
-        if (cornersSupported && cornerMethod != null) {
+        val setter=cornerMethod
+        if (cornersSupported && setter != null) {
             val d=host.resources.displayMetrics.density
             val sourceRadius=(24f*d / incoming.scale).coerceIn(0f,120f*d)
             val mainRadius=(24f*d / outgoing.scale).coerceIn(0f,120f*d)
             runCatching {
-                cornerMethod.invoke(transaction,sourceMirror,sourceRadius)
-                cornerMethod.invoke(transaction,mainMirror,mainRadius)
+                setter.invoke(transaction,sourceMirror,sourceRadius)
+                setter.invoke(transaction,mainMirror,mainRadius)
             }.onFailure {
                 cornersSupported=false
                 NeXtepLog.warn("native_swap","OEM refused mirrored-card corner rounding",it)
