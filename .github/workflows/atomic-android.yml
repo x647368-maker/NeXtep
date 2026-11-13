@@ -229,3 +229,53 @@ jobs:
             visual-instrumentation.txt
             virtual-display-log.txt
             /tmp/emulator.log
+
+  # Private PR49 only: validate the new API37 AttachedSurfaceControl.createMirror
+  # on a real Android 17 SurfaceFlinger/HWUI emulator. This remains separate
+  # from the established Android15 regression, and is NOT a ColorOS device test.
+  native-api37-mirror:
+    if: ${{ always() && !cancelled() && needs.development.result == 'success' }}
+    needs: development
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: atomic-visual-test-inputs
+          path: app/build/outputs/apk
+      - name: Start isolated Android 17 / API37 live SurfaceFlinger emulator
+        timeout-minutes: 9
+        run: |
+          set -euo pipefail
+          trap 'tail -160 /tmp/emulator-api37.log 2>/dev/null || true' EXIT
+          sudo chmod 666 /dev/kvm
+          sdkmanager 'emulator' 'system-images;android-37;google_apis;x86_64' 'build-tools;36.0.0'
+          export ANDROID_USER_HOME="$RUNNER_TEMP/atomic-android37-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name atomic-native37 --path "$ANDROID_AVD_HOME/atomic-native37.avd" --package 'system-images;android-37;google_apis;x86_64' --device pixel_7
+          test -s "$ANDROID_AVD_HOME/atomic-native37.avd/config.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd atomic-native37 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 4096 -cores 2 -gpu swiftshader_indirect > /tmp/emulator-api37.log 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
+      - name: Verify genuine API37 dual-mirror GPU layer positions and changing source buffers
+        run: bash scripts/run-visual-regression.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-api37-real-mirror-results
+          path: |
+            visual-results/
+            visual-instrumentation.txt
+            virtual-display-log.txt
+            /tmp/emulator-api37.log
