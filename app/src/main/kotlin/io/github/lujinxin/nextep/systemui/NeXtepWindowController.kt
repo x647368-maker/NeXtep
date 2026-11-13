@@ -1959,8 +1959,10 @@ class NeXtepWindowController(
             fullScreenWidth=g.screenWidth, fullScreenHeight=g.screenHeight,
             backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
         ) ?: return false
+        // Capture the slot frame BEFORE the physical move. Sampling this
+        // baseline in the async callback can miss the FIRST new task frame,
+        // leaving a paused/video task waiting for an unnecessary second frame.
         val originalSlotFrame = slot.contentFrameSequence
-        var committedSlotFrame = originalSlotFrame
         val incomingId = state.taskId
         slot.view.beginExchangePreview()
         activeSwapViewport = g
@@ -1972,18 +1974,14 @@ class NeXtepWindowController(
         swapCapture.cancel()
         val started = native.start(
             durationMs=SystemUiRuntime.swapAnimationDurationMs(),
-            moveAsync={ done ->
-                asyncMove { ok ->
-                    committedSlotFrame=slot.contentFrameSequence
-                    done(ok)
-                }
-            },
+            moveAsync={ done -> asyncMove { ok -> done(ok) } },
             move=move,
             liveReady={
                 val now=slotCoordinator?.slotStates()?.getOrNull(sourceIndex)
                 now is SlotState.Occupied &&
+                    now.taskId == task &&
                     slot.view.textureView.isAvailable &&
-                    slot.contentFrameSequence > committedSlotFrame &&
+                    slot.contentFrameSequence > originalSlotFrame &&
                     mainTaskPresenter.currentTaskId() == incomingId &&
                     TaskSurfaceCompat.isPresentationSettled(incomingId,g)
             },
