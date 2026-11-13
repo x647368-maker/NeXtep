@@ -51,6 +51,9 @@ internal object StageConcurrentNativeTrialPolicy {
         "fallback:invalid_bounds",
         "fallback:card_outside_source_root",
         "fallback:no_owned_main_task_mirror",
+        // The slot task leash can arrive one Shell callback later. This is
+        // not a permanent OEM refusal and must not eat all later animations.
+        "fallback:slot_task_leash_not_ready",
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false
