@@ -1,5 +1,5 @@
 {
-  "purpose": "PR59 isolate cold-OEM-mirror preparation recovery and transient ownership fallback. Reversible source-only change before PR58,57,55,54 and frozen tests; no task/surface/VD/input mutation.",
+  "purpose": "PR59 isolate cold-OEM-mirror preparation recovery and transient ownership fallback. Reversible source-only change before PR58,57,55,54 and frozen tests; no task/surface/VD/input mutation. It also requires a new slot buffer after real task exchange confirmation before native mirror handoff.",
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
       "previous_blob_sha1": "92ec02227223cf06ce97b69688e9ed3c0d94e8f7",
@@ -23,6 +23,10 @@
         {
           "before": "    internal fun resetForTests() { disabled=false }",
           "after": "    internal fun resetForTests() { disabled=false; consecutiveSlowPreparations=0 }"
+        },
+        {
+          "before": "    fun disableForSession(reason:String) {",
+          "after": "    /** Old cards can redraw during the flight. Only a slot buffer seen after\n     * successful real task exchange is evidence of a fresh target frame.\n     */\n    fun freshFrameAfterTaskAck(frameAtAck:Long?, currentFrame:Long):Boolean =\n        frameAtAck != null && currentFrame > frameAtAck\n\n    fun disableForSession(reason:String) {"
         }
       ]
     },
@@ -36,6 +40,18 @@
         {
           "before": "            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms\")\n            return false",
           "after": "            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms; native allowed next tap=\" +\n                StageConcurrentNativeTrialPolicy.allowed(true,true,false))\n            return false"
+        },
+        {
+          "before": "        val initialFrame=slot.contentFrameSequence\n        val incoming=state.taskId",
+          "after": "        // PR59: the previous task may draw many times during the GPU flight;\n        // do not count old frames as new post-migration virtual-display output.\n        var frameAtCompletedMove:Long?=null\n        val incoming=state.taskId"
+        },
+        {
+          "before": "            moveAsync={ complete -> moveAsync { ok -> complete(ok) } },\n            move={ true },\n            liveReady={",
+          "after": "            moveAsync={ complete -> moveAsync { ok ->\n                if (ok) {\n                    // SlotTaskCoordinator confirms actual ownership only at\n                    // completion; require a fresh TextureView buffer after it.\n                    frameAtCompletedMove=slot.contentFrameSequence\n                }\n                complete(ok)\n            } },\n            move={ true },\n            liveReady={"
+        },
+        {
+          "before": "                    slot.view.textureView.isAvailable &&\n                    slot.contentFrameSequence>initialFrame &&\n                    mainTaskPresenter.currentTaskId()==incoming &&",
+          "after": "                    slot.view.textureView.isAvailable &&\n                    StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(\n                        frameAtCompletedMove,slot.contentFrameSequence) &&\n                    mainTaskPresenter.currentTaskId()==incoming &&"
         }
       ]
     }
