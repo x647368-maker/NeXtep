@@ -7,6 +7,17 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# Normal two-task exchange must yield while observing OEM task display status.
+# These are source contracts, not evidence of real-device smoothness.
+_pr64_coordinator=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt').read_text()
+_pr64_async=_pr64_coordinator.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
+assert 'SystemClock.sleep(' not in _pr64_async
+assert 'exchangeHandler.postDelayed(' in _pr64_async
+assert 'moveTaskToDisplayNonBlocking(slotTask.taskId, Display.DEFAULT_DISPLAY)' in _pr64_coordinator
+assert 'moveTaskToDisplayNonBlocking(mainTask.taskId, occupied.displayId)' in _pr64_coordinator
+_pr64_session=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/display/ExchangeSession.kt').read_text()
+assert 'driver.promoteAsync' in _pr64_session and 'driver.demoteAndVerifyAsync' in _pr64_session
+
 # PR64: reverse ONLY SHA-reviewed phased async observation/handoff changes
 # before checking any older protected task, geometry or compositor source.
 pr64_review=json.loads((root/'scripts/reviewed-pr64-nonblocking-handoff-0.9.41.json').read_text())['files']
