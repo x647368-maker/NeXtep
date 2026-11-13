@@ -1939,31 +1939,48 @@ class NeXtepWindowController(
         ) ?: run {
             val reason=StageLiveSurfaceExchange.lastOutcome()
             StageExchangeTelemetry.nativeEvent("fallback:mirror:$reason")
-            NeXtepLog.warn("native_swap", "PR55 fallback: GPU mirror unavailable reason=$reason")
-            StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+reason)
+            NeXtepLog.warn("native_swap", "PR59 mirror rejected on current tap reason=$reason")
+            if (StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason)) {
+                // This task's owned leash or card bounds can become ready next tap.
+                // Keep the current fallback but do not lock out the entire session.
+                StageExchangeTelemetry.nativeEvent("mirror_transient_retry_next_tap")
+            } else {
+                StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+reason)
+            }
             return false
         }
         val setupMs=android.os.SystemClock.uptimeMillis()-before
         if (!StageConcurrentNativeTrialPolicy.acceptPrepareTime(setupMs)) {
             native.stop()
             StageExchangeTelemetry.nativeEvent("fallback:prepare_${setupMs}ms")
-            NeXtepLog.warn("native_swap","Mirror preparation exceeded frame budget: $setupMs ms")
+            NeXtepLog.warn("native_swap","Mirror preparation exceeded frame budget: $setupMs ms; native allowed next tap=" +
+                StageConcurrentNativeTrialPolicy.allowed(true,true,false))
             return false
         }
-        val initialFrame=slot.contentFrameSequence
+        // PR59: the previous task may draw many times during the GPU flight;
+        // do not count old frames as new post-migration virtual-display output.
+        var frameAtCompletedMove:Long?=null
         val incoming=state.taskId
         activeSwapViewport=g
         deferredSwapGeometryRefresh=false
         slot.view.beginExchangePreview()
         val started=native.start(
             durationMs=StageConcurrentNativeTrialPolicy.DURATION_MS.toInt(),
-            moveAsync={ complete -> moveAsync { ok -> complete(ok) } },
+            moveAsync={ complete -> moveAsync { ok ->
+                if (ok) {
+                    // SlotTaskCoordinator confirms actual ownership only at
+                    // completion; require a fresh TextureView buffer after it.
+                    frameAtCompletedMove=slot.contentFrameSequence
+                }
+                complete(ok)
+            } },
             move={ true },
             liveReady={
                 val now=slotCoordinator?.slotStates()?.getOrNull(slotIndex)
                 now is SlotState.Occupied && now.taskId==task &&
                     slot.view.textureView.isAvailable &&
-                    slot.contentFrameSequence>initialFrame &&
+                    StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(
+                        frameAtCompletedMove,slot.contentFrameSequence) &&
                     mainTaskPresenter.currentTaskId()==incoming &&
                     TaskSurfaceCompat.isPresentationSettled(incoming,g)
             },
