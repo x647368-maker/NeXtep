@@ -106,10 +106,13 @@ class NeXtepWindowController(
     private var liveSurfaceExchange: StageLiveSurfaceExchange? = null
     // Allocated only for one physical card swap; NEVER a persistent overlay.
     private var nativeSwapHost: StageNativeSwapFullscreenHost? = null
+    private var nativeSwapPreparingSlot: VirtualDisplaySlot? = null
     private var nativeSwapAttempt = 0L
     private fun clearNativeSwapHost() {
         val old = nativeSwapHost
         nativeSwapHost = null
+        nativeSwapPreparingSlot?.view?.endExchangePreview()
+        nativeSwapPreparingSlot = null
         old?.close()
     }
     private var activeSwapViewport: WorkspaceGeometry? = null
@@ -1982,6 +1985,7 @@ class NeXtepWindowController(
         nativeSwapHost=overlay
         val originalSlotFrame=slot.contentFrameSequence
         val incomingId=state.taskId
+        nativeSwapPreparingSlot=slot
         slot.view.beginExchangePreview()
         activeSwapViewport=g
         deferredSwapGeometryRefresh=false
@@ -2007,8 +2011,8 @@ class NeXtepWindowController(
                 backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
             )
             fun restore() {
-                slot.view.endExchangePreview()
                 if (nativeSwapHost === overlay) clearNativeSwapHost()
+                else slot.view.endExchangePreview()
                 activeSwapViewport=null
                 previewCapturePending=false
                 val flush=deferredSwapGeometryRefresh
