@@ -258,11 +258,35 @@ jobs:
           set -euo pipefail
           trap 'tail -160 /tmp/emulator-api37.log 2>/dev/null || true' EXIT
           sudo chmod 666 /dev/kvm
-          sdkmanager 'emulator' 'system-images;android-37;google_apis;x86_64' 'build-tools;36.0.0'
+          # Android 17 images can be preview-channel / device-variant-specific.
+          # Discover the *actual published* API37 system-image package instead
+          # of assuming that google_apis;x86_64 exists on every runner.
+          sdkmanager --channel=3 --list > /tmp/atomic-sdk37-list.txt
+          grep -E 'system-images;android-37;[^ ;]+;x86_64' /tmp/atomic-sdk37-list.txt || true
+          mapfile -t choices < <(grep -E '^  system-images;android-37;[^ ;]+;x86_64[[:space:]]*\\|' /tmp/atomic-sdk37-list.txt | sed -E 's/^[[:space:]]*([^[:space:]]+).*/\\1/' || true)
+          if [ "${#choices[@]}" -eq 0 ]; then
+            echo "::error::Android 17 / API37 x86_64 system image not published in SDK preview channel for this runner"
+            exit 73
+          fi
+          chosen=''
+          for name in google_apis_playstore google_apis default aosp_atd google_atd; do
+            for candidate in "${choices[@]}"; do
+              case "$candidate" in "system-images;android-37;$name;x86_64")
+                if sdkmanager --channel=3 emulator 'build-tools;36.0.0' "$candidate"; then
+                  chosen="$candidate"; break 2
+                fi
+              ;; esac
+            done
+          done
+          if [ -z "$chosen" ]; then
+            echo "::error::API37 images listed but none of the x86_64 variants could be installed: ${choices[*]}"
+            exit 74
+          fi
+          echo "NATIVE_API37_IMAGE=$chosen" >> "$GITHUB_ENV"
           export ANDROID_USER_HOME="$RUNNER_TEMP/atomic-android37-user"
           export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
           mkdir -p "$ANDROID_AVD_HOME"
-          echo no | avdmanager create avd --force --name atomic-native37 --path "$ANDROID_AVD_HOME/atomic-native37.avd" --package 'system-images;android-37;google_apis;x86_64' --device pixel_7
+          echo no | avdmanager create avd --force --name atomic-native37 --path "$ANDROID_AVD_HOME/atomic-native37.avd" --package "$chosen" --device pixel_7
           test -s "$ANDROID_AVD_HOME/atomic-native37.avd/config.ini"
           "$ANDROID_HOME/emulator/emulator" -avd atomic-native37 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 4096 -cores 2 -gpu swiftshader_indirect > /tmp/emulator-api37.log 2>&1 &
           timeout 150 adb wait-for-device
