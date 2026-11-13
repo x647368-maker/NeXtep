@@ -102,6 +102,7 @@ class NeXtepWindowController(
     private var slotBackgroundSwipeEnabled = true
     private var frostStrength = 50
     private val swapAnimator = WorkspaceSwapAnimator(context)
+    private val oneShotSwapMotion = StageOneShotSwapMotion(context)
     private val swapCapture = StageAsyncPreviewCapture()
     private var liveSurfaceExchange: StageLiveSurfaceExchange? = null
     // Allocated only for one physical card swap; NEVER a persistent overlay.
@@ -213,13 +214,13 @@ class NeXtepWindowController(
                 Intent.ACTION_USER_PRESENT -> Unit
                 else -> return
             }
-            if (!suspended) refreshWallpaperBackdrop()
+            if (workspaceVisible && !suspended) refreshWallpaperBackdrop()
         }
     }
 
     init {
-        // Warm the cache before the first workspace entry, including after unlocking.
-        // Window creation is deliberately lazy; wallpaper observation must not be.
+        // Do not pre-capture bitmap wallpapers at SystemUI startup: the user
+        // may never open workbench in this session. First show() requests it.
         runCatching {
             context.registerReceiver(
                 wallpaperReceiver,
@@ -230,7 +231,7 @@ class NeXtepWindowController(
                 Context.RECEIVER_EXPORTED,
             )
         }.onFailure { NeXtepLog.warn("wallpaper_backdrop", "Wallpaper change listener unavailable", it) }
-        backdropHandler.post { refreshWallpaperBackdrop() }
+        // No background capture until a real workspace has been displayed.
         mainTaskPresenter.onHomePresented = {
             backdropHandler.post {
                 if (!suspended && workspaceVisible) refreshWallpaperBackdrop()
@@ -1814,6 +1815,7 @@ class NeXtepWindowController(
         slotCoordinator?.cancelPendingExchange()
         swapCapture.cancel()
         swapAnimator.cancel()
+        oneShotSwapMotion.cancel()
         nativeSwapAttempt++
         liveSurfaceExchange?.stop()
         liveSurfaceExchange = null
@@ -1906,8 +1908,16 @@ class NeXtepWindowController(
             val tappedAt = android.os.SystemClock.uptimeMillis()
             NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
             val phasedMove = checkNotNull(asyncMove)
+            // Visual starts without blocking the move: no bitmap, wait or
+            // duplicate SurfaceFlinger mirror. No recurring work in idle state.
+            val slotView=slotWindows.getOrNull(sourceIndex)?.view
+            if(slotView!=null && workspaceVisible && !suspended && !groupInputBlocked) {
+                val started=oneShotSwapMotion.start(slotView,contentHighlightView)
+                NeXtepLog.info("swap_feedback","one-shot compositor active=$started")
+            }
             runCatching {
                 phasedMove { ok ->
+                    if (!ok) oneShotSwapMotion.cancel()
                     NeXtepLog.info("swap_latency",
                         "Phased task exchange finished ok=$ok elapsedMs=" +
                             (android.os.SystemClock.uptimeMillis() - tappedAt))
@@ -1916,6 +1926,7 @@ class NeXtepWindowController(
                 }
             }.onFailure {
                 NeXtepLog.error("swap_latency", "Phased tap move could not start", it)
+                oneShotSwapMotion.cancel()
                 onFinished()
             }
             return
@@ -2617,6 +2628,8 @@ class NeXtepWindowController(
     }
 
     private fun refreshWallpaperBackdrop(attempt: Int = 0) {
+        // Ignore delayed callbacks after hide/lock; no invisible bitmap capture.
+        if (!workspaceVisible || suspended) return
         val geometry = geometry()
         // Y700 wide panel: let the same native wallpaper surface show through
         // both translucent panels. Duplicating screenshots over the live

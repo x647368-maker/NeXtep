@@ -33,6 +33,7 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceController
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceStateBridge
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 object SystemUiRuntime {
     private val initialized = AtomicBoolean(false)
@@ -46,14 +47,21 @@ object SystemUiRuntime {
     }
     @Volatile private var workspaceConfig = WorkspaceTopConfig()
     @Volatile private var workspaceConfigReady = false
-    private val configRetry = Runnable { refreshWorkspaceConfig() }
+    private val configQueryFailures = AtomicInteger(0)
+    private val configRetry = Runnable { refreshWorkspaceConfig(retryAttempt = true) }
     private val taskRefreshQueued = AtomicBoolean(false)
     private val taskRefresh = Runnable {
         taskRefreshQueued.set(false)
-        if (::windowController.isInitialized) windowController.onTasksChanged()
+        // The queued callback can arrive just after closing or locking.
+        if (isWorkspaceInteractive() && ::windowController.isInitialized)
+            windowController.onTasksChanged()
     }
 
     fun onTasksChanged() {
+        // ShellTaskOrganizer continues reporting system task events when our
+        // workbench is not displayed. No UI refresh is useful in that state;
+        // activation and unlock explicitly reconcile current task ownership.
+        if (!isWorkspaceInteractive()) return
         if (taskRefreshQueued.compareAndSet(false, true)) lifecycleHandler.post(taskRefresh)
     }
     private val configReceiver = object : BroadcastReceiver() {
@@ -62,16 +70,24 @@ object SystemUiRuntime {
         }
     }
 
-    private fun refreshWorkspaceConfig() {
+    private fun refreshWorkspaceConfig(retryAttempt: Boolean = false) {
+        // A real unlock/config change restarts a small retry budget. A scheduled
+        // retry does not: a permanently unavailable provider must not loop forever.
+        if (!retryAttempt) configQueryFailures.set(0)
         lifecycleHandler.removeCallbacks(configRetry)
         configExecutor.execute {
             // Query the module even before the workspace windows exist.
             val queriedConfig = WorkspaceConfigClient.queryOrNull(applicationContext)
             if (queriedConfig == null) {
-                // Credential-protected module settings are unavailable before first unlock.
-                lifecycleHandler.postDelayed(configRetry, 2_000L)
+                // Credential-protected settings may be missing before first unlock.
+                // Never run a 2s retry loop for hours on incompatible OEM hooks.
+                val failedReads = configQueryFailures.incrementAndGet()
+                if (StageConfigRetryBudget.shouldRetry(failedReads)) {
+                    lifecycleHandler.postDelayed(configRetry, 2_000L)
+                }
                 return@execute
             }
+            configQueryFailures.set(0)
             workspaceConfig = queriedConfig
             AppLanguage.updateHostLanguage(queriedConfig.languageTag)
             workspaceConfigReady = true
@@ -101,30 +117,34 @@ object SystemUiRuntime {
         override fun run() {
             if (!::workspaceController.isInitialized || !workspaceController.isActive()) return
             val screenReady = isScreenReady()
-            if (!screenReady || isKeyguardLocked(applicationContext)) {
+            val keyguardLocked = isKeyguardLocked(applicationContext)
+            if (!screenReady || keyguardLocked) {
                 if (!workspaceController.isSuspended()) {
                     workspaceController.suspendForLock()
                     publishWorkspaceSurfaceState(false)
                 }
-                // A keyguard-going-away sync can include retained virtual-display
-                // activities. Keeping their outputs OFF until keyguard is gone
-                // makes that sync wait for its five-second draw timeout.
-                // Panels and input remain suspended; only hidden buffers warm up.
-                windowController.updateSuspendedOutputs(screenReady)
+                // Keep the retained task-owning display but disconnect its producer
+                // while physically off or locked. The unlock callback restores it.
+                windowController.updateSuspendedOutputs(
+                    StageLockPowerPolicy.allowSuspendedOutput(screenReady, keyguardLocked))
             } else if (workspaceController.isSuspended()) {
                 lifecycleHandler.removeCallbacks(resumeAfterUnlock)
                 resumeAfterUnlock.run()
             }
-            updateLockStateObservation()
+            updateLockStateObservation(screenReady, keyguardLocked)
         }
     }
 
-    private fun updateLockStateObservation() {
+    private fun updateLockStateObservation(screenReady: Boolean? = null, keyguardLocked: Boolean? = null) {
         // State transitions can occur inside an observation callback. Remove any
         // queued copy before scheduling, so there is only one fallback chain.
         lifecycleHandler.removeCallbacks(lockStateObserver)
         if (::workspaceController.isInitialized && workspaceController.isActive()) {
-            lifecycleHandler.postDelayed(lockStateObserver, 500L)
+            // Display and keyguard callbacks stay immediate. This is fallback only.
+            val ready = screenReady ?: isScreenReady()
+            val locked = keyguardLocked ?: isKeyguardLocked(applicationContext)
+            lifecycleHandler.postDelayed(lockStateObserver,
+                StageLockPowerPolicy.observationIntervalMs(ready, locked))
         } else {
             lifecycleHandler.removeCallbacks(resumeAfterUnlock)
         }
@@ -135,11 +155,13 @@ object SystemUiRuntime {
             if (!::workspaceController.isInitialized || !workspaceController.isSuspended()) return
             val locked = isKeyguardLocked(applicationContext)
             val screenReady = isScreenReady()
-            windowController.updateSuspendedOutputs(screenReady)
+            windowController.updateSuspendedOutputs(
+                StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))
             if (locked || !screenReady) {
                 // USER_PRESENT can precede the physical display becoming ready.
                 // Keep this attempt alive instead of waiting for another broadcast.
-                lifecycleHandler.postDelayed(this, if (locked) 500L else UNLOCK_DISPLAY_RETRY_MS)
+                lifecycleHandler.postDelayed(this,
+                    StageLockPowerPolicy.resumeRetryMs(screenReady, locked))
                 return
             }
             val resumed = workspaceController.resumeAfterLock()
@@ -283,6 +305,12 @@ object SystemUiRuntime {
 
     fun isWorkspaceActive(): Boolean =
         ::workspaceController.isInitialized && workspaceController.isActive()
+
+    // True only while actual workspace content is visible and unlocked.
+    // Suspended retains task ownership but must not drive shade draw probes.
+    fun isWorkspaceInteractive(): Boolean =
+        ::workspaceController.isInitialized &&
+            workspaceController.isActive() && !workspaceController.isSuspended()
 
     fun prepareDisplayRotation(rotation: Int, generation: Long) {
         // WM can deliver a resize before SystemUI's configuration callback is
