@@ -263,7 +263,7 @@ jobs:
           # of assuming that google_apis;x86_64 exists on every runner.
           sdkmanager --channel=3 --list > /tmp/atomic-sdk37-list.txt
           grep -E 'system-images;android-37;[^ ;]+;x86_64' /tmp/atomic-sdk37-list.txt || true
-          mapfile -t choices < <(grep -E '^  system-images;android-37;[^ ;]+;x86_64[[:space:]]*\\|' /tmp/atomic-sdk37-list.txt | sed -E 's/^[[:space:]]*([^[:space:]]+).*/\\1/' || true)
+          mapfile -t choices < <(grep -E '^[[:space:]]+system-images;android-37;[^;[:space:]]+;x86_64' /tmp/atomic-sdk37-list.txt | awk '{print $1}' || true)
           if [ "${#choices[@]}" -eq 0 ]; then
             echo "::error::Android 17 / API37 x86_64 system image not published in SDK preview channel for this runner"
             exit 73
