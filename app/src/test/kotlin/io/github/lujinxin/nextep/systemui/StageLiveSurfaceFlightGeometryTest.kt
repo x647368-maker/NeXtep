@@ -23,6 +23,25 @@ class StageLiveSurfaceFlightGeometryTest {
         }
     }
 
+    @Test fun mainLeashAlreadyFittedMustStartAtIdentityNotDoubleScale() {
+        // TaskSurfaceCompat has already applied the physical main geometry.
+        // Mirrored task contents therefore appear in this exact visible box.
+        val main=b(310f,190f,1070f,2390f)
+        val small=b(30f,260f,280f,700f)
+        val first=StageLiveSurfaceFlightGeometry.flight(
+            main,small,main.width.toInt(),main.height.toInt(),0f)!!
+        assertEquals(1f,first.scale,.0001f)
+        assertEquals(0f,first.x-main.left*first.scale,.0001f)
+        assertEquals(0f,first.y-main.top*first.scale,.0001f)
+        val last=StageLiveSurfaceFlightGeometry.flight(
+            main,small,main.width.toInt(),main.height.toInt(),1f)!!
+        assertTrue(last.scale in .1f..1f)
+        assertEquals(small.cx,
+            main.cx*last.scale + last.x-main.left*last.scale -
+                main.width*.5f*last.scale + main.width*.5f*last.scale,
+            1f) // sanity of the inverse presentation origin
+    }
+
     @Test fun survivesAllPhoneFoldTabletPhysicalCanvasSizes() {
         for ((w,h) in listOf(1140 to 2616,2616 to 1140,
             2248 to 2480,2480 to 2248,2560 to 1600,1600 to 2560)) {
