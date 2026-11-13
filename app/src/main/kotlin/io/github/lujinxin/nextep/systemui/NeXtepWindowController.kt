@@ -1892,7 +1892,14 @@ class NeXtepWindowController(
         // Native two-layer flight is attempted BEFORE any bitmap capture.
         // It mirrors the real existing SurfaceFlinger task + rail surfaces.
         // No screenshot loop, no root/task reparent, no app restart.
-        if (attemptNative && tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,
+        // P0: PR50 delayed real task migration until 94% of a 280-360ms
+        // native animation and could then await another 600ms for live buffers.
+        // Its extra full-screen WM surface also costs an attach/render pass.
+        // Do NOT attempt it in user builds until a separate device-specific
+        // opt-in passes FPS, input-latency and power checks. Restore the
+        // already existing non-native exchange path without touching tasks.
+        if (attemptNative && StageNativeSwapPerformanceGate.enabledByDefault() &&
+            tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,
                 onFinished,asyncMove,canRelease) {
                 // The vendor denied a live surface or the temporary full-screen
                 // compositor root could not attach. Run the original protected

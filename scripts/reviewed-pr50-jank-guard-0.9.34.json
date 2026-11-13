@@ -1,0 +1,15 @@
+{
+  "purpose": "3731.mp4 P0: user builds must bypass PR50 synchronous full-screen root/mirror setup and >=280ms delayed-task native flight; maintain earlier real-task fallback. Zero changes to task identity/VD/input/layout.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "87cbf427a6cf0a6369c7f1d55ca94713bb746e7a",
+      "reviewed_blob_sha1": "973900117aedcdd7ab272de37be7d95cad9001e4",
+      "patches": [
+        {
+          "before": "        if (attemptNative && tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,\n                onFinished,asyncMove,canRelease) {",
+          "after": "        // P0: PR50 delayed real task migration until 94% of a 280-360ms\n        // native animation and could then await another 600ms for live buffers.\n        // Its extra full-screen WM surface also costs an attach/render pass.\n        // Do NOT attempt it in user builds until a separate device-specific\n        // opt-in passes FPS, input-latency and power checks. Restore the\n        // already existing non-native exchange path without touching tasks.\n        if (attemptNative && StageNativeSwapPerformanceGate.enabledByDefault() &&\n            tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,\n                onFinished,asyncMove,canRelease) {"
+        }
+      ]
+    }
+  }
+}
