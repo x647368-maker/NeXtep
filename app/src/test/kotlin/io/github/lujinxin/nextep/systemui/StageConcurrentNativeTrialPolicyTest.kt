@@ -69,7 +69,7 @@ class StageConcurrentNativeTrialPolicyTest {
         for (reason in listOf("fallback:detached_or_software",
             "fallback:host_not_full_display", "fallback:invalid_bounds",
             "fallback:card_outside_source_root", "fallback:no_owned_main_task_mirror",
-            "fallback:invalid_native_handles")) {
+            "fallback:invalid_native_handles", "fallback:rail_corridor_blocked")) {
             assertTrue(StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason))
         }
         assertFalse(StageConcurrentNativeTrialPolicy.transientMirrorOutcome("fallback:no_sidebar_viewroot_mirror"))
