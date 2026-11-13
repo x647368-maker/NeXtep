@@ -20,7 +20,7 @@ def undo_pr63(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr63_review:
- undo_pr63(reviewed_path,(root/reviewed_path).read_bytes())
+ undo_pr63(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,(root/reviewed_path).read_bytes())))
 
 # PR62: restore the exact reviewed PRIVATE owned-task GPU flight changes
 # before older source-freeze boundaries. All modified source blobs are checked
@@ -37,7 +37,7 @@ def undo_pr62(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr62_review:
- undo_pr62(reviewed_path,(root/reviewed_path).read_bytes())
+ undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,(root/reviewed_path).read_bytes()))))
 
 # PR61: invert reviewed phased timing and privileged-snapshot reuse first.
 pr61_review=json.loads((root/'scripts/reviewed-pr61-phased-async-latency-0.9.38.json').read_text())['files']
@@ -52,7 +52,7 @@ def undo_pr61(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr61_review:
- undo_pr61(reviewed_path,(root/reviewed_path).read_bytes())
+ undo_pr61(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,(root/reviewed_path).read_bytes())))
 
 # PR60 P0: reverse only the reviewed single real swap gate/auxiliary visual removal.
 pr60_review=json.loads((root/'scripts/reviewed-pr60-single-real-swap-0.9.37.json').read_text())['files']
