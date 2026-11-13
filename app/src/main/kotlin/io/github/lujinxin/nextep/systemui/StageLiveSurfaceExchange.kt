@@ -445,7 +445,6 @@ internal class StageLiveSurfaceExchange private constructor(
             }
         }
         sourceMirror.release()
-        mainMirror.release()
         frameTransaction?.let { runCatching { it.close() } }
         frameTransaction=null
         mainMirror.release()
