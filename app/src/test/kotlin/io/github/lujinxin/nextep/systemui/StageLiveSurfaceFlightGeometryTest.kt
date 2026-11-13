@@ -18,7 +18,7 @@ class StageLiveSurfaceFlightGeometryTest {
             // Each real app preserves its own aspect ratio at every frame.
             assertTrue(up.scale>0f && down.scale>0f)
             assertEquals(250f/450f,up.box.width/up.box.height,.002f)
-            assertEquals(1140f/2616f,down.box.width/down.box.height,.002f)
+            assertEquals(main.width/main.height,down.box.width/down.box.height,.002f)
         }
     }
 
