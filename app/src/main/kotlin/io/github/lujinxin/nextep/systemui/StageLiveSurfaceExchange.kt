@@ -57,6 +57,9 @@ internal class StageLiveSurfaceExchange private constructor(
     }
     private val finished = AtomicBoolean(false)
     private var animator: ValueAnimator? = null
+    // Reuse one compositor transaction for the entire flight; avoid allocating
+    // and closing a Binder-backed Transaction on every animation frame.
+    private var frameTransaction: SurfaceControl.Transaction? = null
     private var sentMove = false
     private var moveComplete = false
     private var frameComplete = false
@@ -226,6 +229,7 @@ internal class StageLiveSurfaceExchange private constructor(
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
         val root = host.rootSurfaceControl ?: return cleanupWithoutCallback().let { false }
+        frameTransaction = SurfaceControl.Transaction()
         finishCallback = onFinished
         try {
             val tx = root.buildReparentTransaction(sourceMirror)
@@ -300,19 +304,18 @@ internal class StageLiveSurfaceExchange private constructor(
         // and move acknowledgment. No per-frame background polling.
         ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
         animator=ValueAnimator.ofFloat(0f,1f).apply {
-            duration=if (immediateMove) durationMs.toLong().coerceIn(160L,210L)
+            duration=if (immediateMove) durationMs.toLong().coerceIn(320L,380L)
                 else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
-            interpolator=PathInterpolator(.22f,0f,.12f,1f)
+            interpolator=PathInterpolator(.4f,0f,.2f,1f)
             addUpdateListener {
                 if (!isRunning) return@addUpdateListener
                 val fraction=(it.animatedValue as Float)
                 lastProgress=fraction
                 runCatching {
-                    SurfaceControl.Transaction().use { frame ->
-                        applyFrame(frame,fraction)
-                        frame.apply()
-                        nativeFrameCount++
-                    }
+                    val frame=frameTransaction ?: error("Flight transaction is unavailable")
+                    applyFrame(frame,fraction)
+                    frame.apply()
+                    nativeFrameCount++
                 }.onFailure { error ->
                     NeXtepLog.warn("native_swap","Real dual-layer frame failed",error)
                     stop()
@@ -356,6 +359,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
         val incoming=StageLiveSurfaceFlightGeometry.flight(
             slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,
+            host.resources.displayMetrics.density * 24f,
         ) ?: error("Invalid incoming native transform")
         // Unlike the sidebar ViewRoot, WM Shell's main-task leash is ALREADY
         // fitted to its visible main rectangle. Mirroring that hierarchy
@@ -364,6 +368,7 @@ internal class StageLiveSurfaceExchange private constructor(
         // bounds*, or the main application would shrink a second time.
         val outgoing=StageLiveSurfaceFlightGeometry.flight(
             mainStart,slotStart,mainStart.width.toInt(),mainStart.height.toInt(),p,
+            host.resources.displayMetrics.density * 24f,
         ) ?: error("Invalid outgoing native transform")
         transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
         transaction.setPosition(sourceMirror,
@@ -440,6 +445,9 @@ internal class StageLiveSurfaceExchange private constructor(
             }
         }
         sourceMirror.release()
+        mainMirror.release()
+        frameTransaction?.let { runCatching { it.close() } }
+        frameTransaction=null
         mainMirror.release()
         occlusion.release()
         runCatching { (background.parent as? FrameLayout)?.removeView(background) }
