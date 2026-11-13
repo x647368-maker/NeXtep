@@ -1,0 +1,43 @@
+{
+  "purpose": "PR58 isolated native GPU exchange handoff after >90% visible flight; diagnose 3779.mp4 content jump without moving real app surfaces early. Reversible source audit before prior PR57/PR55/PR54 freeze chain.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
+      "previous_blob_sha1": "a1b6d87d357089ac10eb73f2e5f919b808378fff",
+      "patches": [
+        {
+          "before": "    // Permit a visible dual-card flight without PR50's 280-360ms task wait.\n    const val DURATION_MS=195L",
+          "after": "    // Real task owner rebind occurs near the end of a short live GPU flight.\n    // OEMs can swap original buffers early when the task move starts.\n    const val DURATION_MS=205L"
+        },
+        {
+          "before": "    private const val VISUAL_LEAD_IN=0.56f",
+          "after": "    private const val VISUAL_LEAD_IN=0.90f"
+        },
+        {
+          "before": "        return (nativeFrames >= 2 && elapsedMs >= (durationMs * VISUAL_LEAD_IN).toLong()) ||",
+          "after": "        return (nativeFrames >= 3 && elapsedMs >= (durationMs * VISUAL_LEAD_IN).toLong()) ||"
+        },
+        {
+          "before": "     * Wait for a small visual lead-in before changing real task ownership;",
+          "after": "     * Finish approximately 90% of visible two-card travel before changing real task ownership;"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
+      "previous_blob_sha1": "3736d91eaf7f3b4540b1302a2e2640a426f4e660",
+      "patches": [
+        {
+          "before": "        private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 240L",
+          "after": "        // One bounded wait for the replacement real-task and slot buffers.\n        // Shorter than the overall 1800ms watchdog; no idle polling.\n        private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 480L"
+        },
+        {
+          "before": " * commitment and visual lead-in, then proceeds concurrently with the rest\n * of the flight.",
+          "after": " * commitment and near-complete visual flight, then begins task migration\n * while the mirrors hold their final transforms until real buffers settle."
+        },
+        {
+          "before": "        // PR55: PR54 moved task ownership at animator start, before its first\n        // visual frame. Transfer during the flight after a measured lead-in,\n        // or promptly if the compositor fails to acknowledge mirror frames.",
+          "after": "        // PR58: ColorOS can replace a mirrored producer's content as soon as\n        // task migration begins. Keep almost all card travel visible BEFORE\n        // owner changes; then hold endpoint overlays until the new buffers\n        // settle, with a bounded timeout. If compositor commit never arrives,\n        // fail open promptly and preserve the old reliable task swap."
+        }
+      ]
+    }
+  }
+}
