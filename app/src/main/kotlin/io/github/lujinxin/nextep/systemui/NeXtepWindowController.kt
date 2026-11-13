@@ -1936,6 +1936,11 @@ class NeXtepWindowController(
             sourceTaskId=state.taskId,sourceDisplayId=state.displayId,
             mainTaskId=task,
             sourceBounds=source,mainBounds=main,
+            otherSlotBounds=slotWindows.mapIndexedNotNull { index, other ->
+                if (index==slotIndex) null else Rect().takeIf {
+                    other.view.getScreenVisibleRect(it)
+                }
+            },
             fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
             backdrop=null,
         ) ?: run {
@@ -2203,6 +2208,11 @@ class NeXtepWindowController(
                 sourceTaskId=state.taskId,sourceDisplayId=state.displayId,
                 mainTaskId=task,
                 sourceBounds=source,mainBounds=main,
+                otherSlotBounds=slotWindows.mapIndexedNotNull { index, other ->
+                    if(index==sourceIndex) null else Rect().takeIf {
+                        other.view.getScreenVisibleRect(it)
+                    }
+                },
                 fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
                 backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
             )

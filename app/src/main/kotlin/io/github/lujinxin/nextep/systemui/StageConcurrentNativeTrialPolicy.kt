@@ -51,7 +51,8 @@ internal object StageConcurrentNativeTrialPolicy {
         "fallback:invalid_bounds",
         "fallback:card_outside_source_root",
         "fallback:no_owned_main_task_mirror",
-        "fallback:invalid_native_handles" -> true
+        "fallback:invalid_native_handles",
+        "fallback:rail_corridor_blocked" -> true
         else -> false
     }
 

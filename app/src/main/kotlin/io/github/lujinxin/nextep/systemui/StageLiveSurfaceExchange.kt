@@ -128,6 +128,7 @@ internal class StageLiveSurfaceExchange private constructor(
             mainTaskId: Int,
             sourceBounds: Rect,
             mainBounds: Rect,
+            otherSlotBounds: List<Rect>,
             fullScreenWidth: Int,
             fullScreenHeight: Int,
             backdrop: Drawable?,
@@ -169,6 +170,17 @@ internal class StageLiveSurfaceExchange private constructor(
             }
             val incoming = slotMirror.surface
             val localCrop = Rect(slotMirror.crop)
+            val obstacles = otherSlotBounds.map {
+                StageLiveSurfaceFlightGeometry.Box(
+                    it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat(),
+                )
+            }
+            if (!StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+                    from, to, localCrop.width(), localCrop.height(), obstacles)) {
+                outgoing.release()
+                incoming.release()
+                return markUnavailable("rail_corridor_blocked")
+            }
             if (!outgoing.isValid || !incoming.isValid) {
                 outgoing.release()
                 incoming.release()
@@ -357,19 +369,17 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
-        val incoming=StageLiveSurfaceFlightGeometry.flight(
+        val incoming=StageLiveSurfaceFlightGeometry.railCorridorFlight(
             slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,
-            host.resources.displayMetrics.density * 24f,
-        ) ?: error("Invalid incoming native transform")
+        ) ?: error("Unsafe incoming GPU rail path")
         // Unlike the sidebar ViewRoot, WM Shell's main-task leash is ALREADY
         // fitted to its visible main rectangle. Mirroring that hierarchy
         // preserves the owned task's scale and translation. The outer mirror
         // therefore starts at identity (1, 0, 0) and moves the *visible main
         // bounds*, or the main application would shrink a second time.
-        val outgoing=StageLiveSurfaceFlightGeometry.flight(
+        val outgoing=StageLiveSurfaceFlightGeometry.railCorridorFlight(
             mainStart,slotStart,mainStart.width.toInt(),mainStart.height.toInt(),p,
-            host.resources.displayMetrics.density * 24f,
-        ) ?: error("Invalid outgoing native transform")
+        ) ?: error("Unsafe outgoing GPU rail path")
         transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
         transaction.setPosition(sourceMirror,
             incoming.x-sourceCrop.left*incoming.scale,
