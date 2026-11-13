@@ -1883,6 +1883,97 @@ class NeXtepWindowController(
         animateSwap(drag.slotIndex, targetIndex, drag, move, onFinished)
     }
 
+    /**
+     * Experimental private-only real two-card swap. Unlike PR50 the existing
+     * ContentPanel already occupies (0,0,screenWidth,screenHeight) and is
+     * touch-transparent. No second WindowManager view or ViewRoot is added.
+     * The coordinator's genuine phased task migration starts at once.
+     */
+    private fun tryConcurrentLiveSwap(
+        slotIndex: Int,
+        moveAsync: ((Boolean) -> Unit) -> Unit,
+        canRelease: () -> Boolean,
+        onFinished: () -> Unit,
+    ): Boolean {
+        if (!StageConcurrentNativeTrialPolicy.allowed(
+                workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
+                android.animation.ValueAnimator.areAnimatorsEnabled(),
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true))
+            return false
+        val g=geometry()
+        val task=mainTaskPresenter.currentTaskId() ?: return false
+        val slot=slotWindows.getOrNull(slotIndex) ?: return false
+        val state=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied
+            ?: return false
+        val host=records.firstOrNull { it.title=="NeXtepContentPanel" }?.view as? FrameLayout
+            ?: return false
+        val point=IntArray(2)
+        host.rootView.getLocationOnScreen(point)
+        if (!StageConcurrentNativeTrialPolicy.fullScreenHost(
+                point[0],point[1],host.rootView.width,host.rootView.height,
+                g.screenWidth,g.screenHeight)) return false
+        val source=Rect()
+        if (!slot.view.getScreenVisibleRect(source)) return false
+        val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
+        val before=android.os.SystemClock.uptimeMillis()
+        val native=StageLiveSurfaceExchange.create(
+            host=host,sourceSlotView=slot.view,mainTaskId=task,
+            sourceBounds=source,mainBounds=main,
+            fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
+            backdrop=null,
+        ) ?: run {
+            StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+
+                StageLiveSurfaceExchange.lastOutcome())
+            return false
+        }
+        val setupMs=android.os.SystemClock.uptimeMillis()-before
+        if (!StageConcurrentNativeTrialPolicy.acceptPrepareTime(setupMs)) {
+            native.stop()
+            NeXtepLog.warn("native_swap","Mirror preparation exceeded frame budget: $setupMs ms")
+            return false
+        }
+        val initialFrame=slot.contentFrameSequence
+        val incoming=state.taskId
+        activeSwapViewport=g
+        deferredSwapGeometryRefresh=false
+        slot.view.beginExchangePreview()
+        val started=native.start(
+            durationMs=StageConcurrentNativeTrialPolicy.DURATION_MS.toInt(),
+            moveAsync={ complete -> moveAsync { ok -> complete(ok) } },
+            move={ true },
+            liveReady={
+                val now=slotCoordinator?.slotStates()?.getOrNull(slotIndex)
+                now is SlotState.Occupied && now.taskId==task &&
+                    slot.view.textureView.isAvailable &&
+                    slot.contentFrameSequence>initialFrame &&
+                    mainTaskPresenter.currentTaskId()==incoming &&
+                    TaskSurfaceCompat.isPresentationSettled(incoming,g)
+            },
+            canRelease=canRelease,
+            immediateMove=true,
+            onFinished={
+                slot.view.endExchangePreview()
+                activeSwapViewport=null
+                liveSurfaceExchange=null
+                val flush=deferredSwapGeometryRefresh
+                deferredSwapGeometryRefresh=false
+                if(flush && workspaceVisible && !suspended) scheduleWindowRefresh()
+                onFinished()
+                if(workspaceVisible && !suspended) scheduleStageFocus()
+            }
+        )
+        if (!started) {
+            slot.view.endExchangePreview()
+            activeSwapViewport=null
+            StageConcurrentNativeTrialPolicy.disableForSession("Mirror startup rejected")
+            return false
+        }
+        liveSurfaceExchange=native
+        oneShotSwapMotion.cancel()
+        NeXtepLog.info("native_swap","PR54 concurrent live task flight started; prepMs=$setupMs")
+        return true
+    }
+
     private fun animateSwap(
         sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?,
         move: () -> Boolean, onFinished: () -> Unit,
@@ -1908,6 +1999,10 @@ class NeXtepWindowController(
             val tappedAt = android.os.SystemClock.uptimeMillis()
             NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
             val phasedMove = checkNotNull(asyncMove)
+            // Only the private experimental branch enables an actual two-GPU-
+            // surface flight. Any unsupported or slow OEM falls back within
+            // this same click, without capture or delayed task migration.
+            if (tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
             // Visual starts without blocking the move: no bitmap, wait or
             // duplicate SurfaceFlinger mirror. No recurring work in idle state.
             val slotView=slotWindows.getOrNull(sourceIndex)?.view

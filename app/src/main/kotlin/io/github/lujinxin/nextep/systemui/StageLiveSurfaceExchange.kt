@@ -62,6 +62,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private var handoffReady = false
     private var handoffTimedOut = false
     private var moveCompletedAt = -1L
+    private var concurrentHandoff = false
     private var finishCallback: (() -> Unit)? = null
     private var lastProgress = 0f
     private var nativeFrameCount = 0
@@ -100,6 +101,7 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val MAX_DURATION_MS = 360L
         private const val HANDOFF_TIMEOUT_MS = 600L
         private const val MAX_LIFETIME_MS = 1800L
+        private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 240L
         // Do not reparent actual app tasks while either reflected producer is
         // halfway across the display: ColorOS can replace the live buffer
         // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
@@ -216,8 +218,10 @@ internal class StageLiveSurfaceExchange private constructor(
         liveReady: () -> Boolean,
         canRelease: () -> Boolean,
         onFinished: () -> Unit,
+        immediateMove: Boolean = false,
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
+        concurrentHandoff = immediateMove
         val root = host.rootSurfaceControl ?: return cleanupWithoutCallback().let { false }
         finishCallback = onFinished
         try {
@@ -283,7 +287,8 @@ internal class StageLiveSurfaceExchange private constructor(
         // and move acknowledgment. No per-frame background polling.
         ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
         animator=ValueAnimator.ofFloat(0f,1f).apply {
-            duration=durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
+            duration=if (immediateMove) durationMs.toLong().coerceIn(125L,180L)
+                else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
             interpolator=PathInterpolator(.22f,0f,.12f,1f)
             addUpdateListener {
                 if (!isRunning) return@addUpdateListener
@@ -302,7 +307,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 // PathInterpolator changes the rendered fraction; defer the
                 // real Binder move until the last portion of *wall clock*
                 // motion, so mirrored live apps are actually seen travelling.
-                if (it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
+                if (!immediateMove &&
+                    it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
                     firstTransactionCommitted && !sentMove) commitMove()
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -315,7 +321,12 @@ internal class StageLiveSurfaceExchange private constructor(
             })
             start()
         }
-        lastOutcome="active:two_live_gpu_mirrors"
+        // PR54: visual travels WHILE the coordinator moves real tasks.
+        // The original PR50 94%-of-animation migration delay is never used
+        // in this mode; no frame capture, no 280-360ms transaction wait.
+        if (immediateMove) commitMove()
+        lastOutcome=if (immediateMove) "active:immediate_two_live_gpu_mirrors"
+            else "active:two_live_gpu_mirrors"
         NeXtepLog.info("native_swap","Started TWO real GPU mirror surfaces; no bitmap captures or task recreation")
         return true
     }
@@ -364,7 +375,9 @@ internal class StageLiveSurfaceExchange private constructor(
             if (!isRunning) return
             val elapsed=SystemClock.uptimeMillis()-moveCompletedAt
             val ready=runCatching { canRelease() && liveReady() }.getOrDefault(false)
-            if (ready || elapsed >= HANDOFF_TIMEOUT_MS) {
+            val timeout=if (concurrentHandoff) CONCURRENT_HANDOFF_TIMEOUT_MS
+                else HANDOFF_TIMEOUT_MS
+            if (ready || elapsed >= timeout) {
                 handoffReady=ready
                 handoffTimedOut=!ready
                 NeXtepLog.info("native_swap",
