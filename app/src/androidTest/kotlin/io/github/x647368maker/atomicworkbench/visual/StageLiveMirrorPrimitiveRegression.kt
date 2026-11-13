@@ -106,21 +106,40 @@ internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: I
             check(initialCommitted.await(3,TimeUnit.SECONDS)) {
                 "SurfaceFlinger did not commit both live mirrored root layers"
             }
-            Thread.sleep(220L)
-
             fun matches(c:Int,r:Int,g:Int,b:Int):Boolean =
                 abs(Color.red(c)-r)<28 && abs(Color.green(c)-g)<28 && abs(Color.blue(c)-b)<28
             fun screenshot() = instrumentation.uiAutomation.takeScreenshot()
                 ?: error("No physical compositor screenshot")
-            val firstShot=screenshot()
             val xy=IntArray(2)
             instrumentation.runOnMainSync {host.getLocationOnScreen(xy)}
-            val left=firstShot.getPixel(xy[0]+465,xy[1]+400)
-            val right=firstShot.getPixel(xy[0]+675,xy[1]+400)
-            check(matches(left,33,194,110) && matches(right,166,75,205)) {
-                "Two separate real window mirrors not present at the requested GPU positions"
+            var left=Color.TRANSPARENT
+            var right=Color.TRANSPARENT
+            var lastShot:Bitmap?=null
+            // A transaction-committed callback confirms accepted layer state,
+            // not that the software emulator has presented its first GPU pixels.
+            // Poll a fixed, short budget without relaxing the strict two-mirror
+            // pixel assertion; keep the last real screenshot for triage on fail.
+            for (probeFrame in 1..8) {
+                Thread.sleep(140L)
+                val shot=screenshot()
+                left=shot.getPixel(xy[0]+465,xy[1]+400)
+                right=shot.getPixel(xy[0]+675,xy[1]+400)
+                lastShot?.recycle()
+                lastShot=shot
+                if (matches(left,33,194,110) && matches(right,166,75,205)) break
             }
-            firstShot.recycle()
+            val twoVisible=matches(left,33,194,110) && matches(right,166,75,205)
+            if (!twoVisible) {
+                lastShot?.let { frame ->
+                    File(out,"native-api37-failed-initial-mirror-pixels.png")
+                        .outputStream().use { frame.compress(Bitmap.CompressFormat.PNG,100,it) }
+                }
+            }
+            lastShot?.recycle()
+            check(twoVisible) {
+                "Two separate real window mirrors absent after 8 bounded compositor probes: " +
+                    "left=#${Integer.toHexString(left)} right=#${Integer.toHexString(right)}"
+            }
 
             // A live source changes AFTER the mirror has been created. A static
             // screenshot would stay green: a real mirrored buffer becomes blue.
