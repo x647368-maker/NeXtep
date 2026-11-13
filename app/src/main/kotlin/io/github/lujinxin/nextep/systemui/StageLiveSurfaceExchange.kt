@@ -113,7 +113,7 @@ internal class StageLiveSurfaceExchange private constructor(
             sourceRoot.getLocationOnScreen(origin)
             val localCrop = StageLiveSurfaceFlightGeometry.localCrop(
                 from,origin[0],origin[1],sourceRoot.width,sourceRoot.height,
-            ) ?: return null
+            )?.toAndroidRect() ?: return null
             // Never mirror a different active task. The native presenter
             // verifies that taskId still owns the exact observed WM leash.
             val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId) ?: return null
