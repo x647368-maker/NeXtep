@@ -286,8 +286,13 @@ internal class StageLiveSurfaceExchange private constructor(
         val incoming=StageLiveSurfaceFlightGeometry.flight(
             slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,
         ) ?: error("Invalid incoming native transform")
+        // Unlike the sidebar ViewRoot, WM Shell's main-task leash is ALREADY
+        // fitted to its visible main rectangle. Mirroring that hierarchy
+        // preserves the owned task's scale and translation. The outer mirror
+        // therefore starts at identity (1, 0, 0) and moves the *visible main
+        // bounds*, or the main application would shrink a second time.
         val outgoing=StageLiveSurfaceFlightGeometry.flight(
-            mainStart,slotStart,mainCrop.width(),mainCrop.height(),p,
+            mainStart,slotStart,mainStart.width.toInt(),mainStart.height.toInt(),p,
         ) ?: error("Invalid outgoing native transform")
         transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
         transaction.setPosition(sourceMirror,
@@ -295,8 +300,8 @@ internal class StageLiveSurfaceExchange private constructor(
             incoming.y-sourceCrop.top*incoming.scale)
         transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)
         transaction.setPosition(mainMirror,
-            outgoing.x-mainCrop.left*outgoing.scale,
-            outgoing.y-mainCrop.top*outgoing.scale)
+            outgoing.x-mainStart.left*outgoing.scale,
+            outgoing.y-mainStart.top*outgoing.scale)
         // Preserve the previously accepted 24dp-equivalent round cards while
         // their compositor scale changes. A parent layer's corner radius uses
         // source-layer units, hence divide by the current uniform scale.
