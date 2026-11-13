@@ -170,4 +170,82 @@ class ExchangeSessionTest {
         f.session.cancel(); f.session.start(); f.drain()
         assertEquals(1, f.completions)
     }
+
+    @Test fun nonBlockingDriverYieldsWithoutMovingTwice() {
+        val queue = ArrayDeque<() -> Unit>()
+        var pendingPromote: ((Throwable?) -> Unit)? = null
+        var pendingDemote: ((Throwable?) -> Unit)? = null
+        var promotions = 0
+        var demotions = 0
+        var completed: Boolean? = null
+        val session = ExchangeSession(
+            11, 400L,
+            ExchangeSession.Origin(101, 0, "main", 0, "main"),
+            ExchangeSession.Origin(202, 0, "slot", 7, "slot"),
+            { 0L }, { queue.add(it) },
+            object : ExchangeSession.Driver {
+                override val nonBlocking = true
+                override fun promote() { error("must not use synchronous driver") }
+                override fun demoteAndVerify() { error("must not use synchronous driver") }
+                override fun restoreAndVerify() = Unit
+                override fun promoteAsync(done: (Throwable?) -> Unit) {
+                    promotions++
+                    pendingPromote = done
+                }
+                override fun demoteAndVerifyAsync(done: (Throwable?) -> Unit) {
+                    demotions++
+                    pendingDemote = done
+                }
+            }, { completed = it },
+        )
+        session.start()
+        queue.removeFirst().invoke()
+        assertEquals(ExchangeSession.Phase.PROMOTING, session.phase)
+        assertEquals(1, promotions)
+        assertEquals(0, demotions)
+        assertTrue(queue.isEmpty()) // no blocking poll spins or scheduled fake success
+        pendingPromote!!(null)
+        queue.removeFirst().invoke()
+        assertEquals(ExchangeSession.Phase.DEMOTE_PENDING, session.phase)
+        queue.removeFirst().invoke()
+        assertEquals(ExchangeSession.Phase.DEMOTING, session.phase)
+        assertEquals(1, demotions)
+        assertNull(completed)
+        pendingDemote!!(null)
+        queue.removeFirst().invoke()
+        assertEquals(ExchangeSession.Phase.COMMITTED, session.phase)
+        assertEquals(true, completed)
+        assertEquals(1, promotions)
+        assertEquals(1, demotions)
+    }
+
+    @Test fun cancellationDuringAsyncWaitRollsBackOnlyAfterItsCallback() {
+        val queue = ArrayDeque<() -> Unit>()
+        var pending: ((Throwable?) -> Unit)? = null
+        var rollback = 0
+        var result: Boolean? = null
+        val session = ExchangeSession(
+            12, 400L,
+            ExchangeSession.Origin(101, 0, "main", 0, "main"),
+            ExchangeSession.Origin(202, 0, "slot", 7, "slot"),
+            { 0L }, { queue.add(it) },
+            object : ExchangeSession.Driver {
+                override val nonBlocking = true
+                override fun promote() { error("unexpected") }
+                override fun demoteAndVerify() { error("must not demote after cancellation") }
+                override fun restoreAndVerify() { rollback++ }
+                override fun promoteAsync(done: (Throwable?) -> Unit) { pending = done }
+            }, { result = it },
+        )
+        session.start()
+        queue.removeFirst().invoke()
+        session.cancel()
+        assertEquals(0, rollback)
+        pending!!(null)
+        repeat(4) { if(queue.isNotEmpty())queue.removeFirst().invoke() }
+        assertEquals(ExchangeSession.Phase.RESTORED, session.phase)
+        assertEquals(1, rollback)
+        assertEquals(false, result)
+    }
+
 }

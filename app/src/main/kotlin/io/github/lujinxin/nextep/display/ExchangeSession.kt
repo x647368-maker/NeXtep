@@ -17,6 +17,15 @@ internal class ExchangeSession<L>(
         fun promote()
         fun demoteAndVerify()
         fun restoreAndVerify()
+        // Only the true two-display exchange opts into async completion.
+        // All existing sync drivers/tests retain their exact phase ordering.
+        val nonBlocking: Boolean get() = false
+        fun promoteAsync(done: (Throwable?) -> Unit) {
+            done(runCatching { promote() }.exceptionOrNull())
+        }
+        fun demoteAndVerifyAsync(done: (Throwable?) -> Unit) {
+            done(runCatching { demoteAndVerify() }.exceptionOrNull())
+        }
     }
     private val owner = Thread.currentThread()
     var phase = Phase.PREPARED
@@ -68,14 +77,46 @@ internal class ExchangeSession<L>(
                 when (phase) {
                     Phase.PREPARED -> {
                         phase = Phase.PROMOTING
-                        driver.promote()
-                        phase = Phase.DEMOTE_PENDING
-                        schedule(phase)
+                        if (driver.nonBlocking) {
+                            // Never sleep on the SystemUI animation Looper while
+                            // waiting for the OEM to observe the new display.
+                            driver.promoteAsync { error ->
+                                postTurn {
+                                    checkThread()
+                                    if (phase != Phase.PROMOTING || notified) return@postTurn
+                                    if (error != null) failure = error
+                                    phase = if (error != null || cancelled || now() >= deadline)
+                                        Phase.ROLLBACK_PENDING else Phase.DEMOTE_PENDING
+                                    schedule(phase)
+                                }
+                            }
+                        } else {
+                            driver.promote()
+                            phase = Phase.DEMOTE_PENDING
+                            schedule(phase)
+                        }
                     }
                     Phase.DEMOTE_PENDING -> {
                         phase = Phase.DEMOTING
-                        driver.demoteAndVerify()
-                        phase = Phase.COMMITTED
+                        if (driver.nonBlocking) {
+                            driver.demoteAndVerifyAsync { error ->
+                                postTurn {
+                                    checkThread()
+                                    if (phase != Phase.DEMOTING || notified) return@postTurn
+                                    if (error != null) failure = error
+                                    if (error != null || cancelled || now() >= deadline) {
+                                        phase = Phase.ROLLBACK_PENDING
+                                        schedule(phase)
+                                    } else {
+                                        phase = Phase.COMMITTED
+                                        notifyComplete()
+                                    }
+                                }
+                            }
+                        } else {
+                            driver.demoteAndVerify()
+                            phase = Phase.COMMITTED
+                        }
                     }
                     Phase.ROLLBACK_PENDING -> {
                         phase = Phase.ROLLING_BACK
