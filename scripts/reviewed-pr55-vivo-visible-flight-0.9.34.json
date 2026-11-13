@@ -1,0 +1,47 @@
+{
+  "purpose": "PR55 scoped real task handoff after GPU flight lead-in; reversible before PR54 and v0.9.8 freeze audits. PR53 N3 power, task geometry and inputs protected.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
+      "previous_blob_sha1": "b9490aa647e8a03d09cba94626e609488a499b05",
+      "patches": [
+        {
+          "before": " * The two actual tasks are migrated near the end of the physical animation;\n * mirrors vanish only after the normal slot/main task buffers are ready (or\n * a bounded timeout).",
+          "after": " * In the private overlapping mode, task migration starts after a compositor\n * commitment and visual lead-in, then proceeds concurrently with the rest\n * of the flight. The legacy slow mode still transfers near the end."
+        },
+        {
+          "before": "            duration=if (immediateMove) durationMs.toLong().coerceIn(125L,180L)",
+          "after": "            duration=if (immediateMove) durationMs.toLong().coerceIn(160L,210L)"
+        },
+        {
+          "before": "                if (!immediateMove &&\n                    it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&\n                    firstTransactionCommitted && !sentMove) commitMove()",
+          "after": "                if (immediateMove && !sentMove &&\n                    StageConcurrentNativeTrialPolicy.shouldStartMove(\n                        it.currentPlayTime,it.duration,firstTransactionCommitted,nativeFrameCount)) {\n                    NeXtepLog.info(\"native_swap\",\n                        \"PR55 real task handoff t=${it.currentPlayTime}ms \" +\n                            \"committed=$firstTransactionCommitted frames=$nativeFrameCount\")\n                    commitMove()\n                } else if (!immediateMove &&\n                    it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&\n                    firstTransactionCommitted && !sentMove) commitMove()"
+        },
+        {
+          "before": "        // PR54: visual travels WHILE the coordinator moves real tasks.\n        // The original PR50 94%-of-animation migration delay is never used\n        // in this mode; no frame capture, no 280-360ms transaction wait.\n        if (immediateMove) commitMove()\n        lastOutcome=if (immediateMove) \"active:immediate_two_live_gpu_mirrors\"\n            else \"active:two_live_gpu_mirrors\"\n        NeXtepLog.info(\"native_swap\",\"Started TWO real GPU mirror surfaces; no bitmap captures or task recreation\")",
+          "after": "        // PR55: PR54 moved task ownership at animator start, before its first\n        // visual frame. Transfer during the flight after a measured lead-in,\n        // or promptly if the compositor fails to acknowledge mirror frames.\n        // No bitmap, second WindowManager root, or persistent background work.\n        lastOutcome=if (immediateMove) \"active:lead_in_concurrent_gpu_mirrors\"\n            else \"active:two_live_gpu_mirrors\"\n        NeXtepLog.info(\"native_swap\",\"GPU mirrors submitted; pixel visibility not yet proven\")"
+        },
+        {
+          "before": "            \"completed:two_gpu_layers_task_move_and_live_handoff\"",
+          "after": "            \"completed:gpu_transactions_and_live_handoff_pixels_not_proven\""
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "14fcb9e753b9c7a3b721faa3e1b7cf6b3b47d494",
+      "patches": [
+        {
+          "before": "        if (!StageConcurrentNativeTrialPolicy.fullScreenHost(\n                point[0],point[1],host.rootView.width,host.rootView.height,\n                g.screenWidth,g.screenHeight)) return false",
+          "after": "        if (!StageConcurrentNativeTrialPolicy.fullScreenHost(\n                point[0],point[1],host.rootView.width,host.rootView.height,\n                g.screenWidth,g.screenHeight)) {\n            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: host bounds \" +\n                \"origin=(${point[0]},${point[1]}) view=${host.rootView.width}x${host.rootView.height} \" +\n                \"display=${g.screenWidth}x${g.screenHeight}\")\n            return false\n        }"
+        },
+        {
+          "before": "            StageConcurrentNativeTrialPolicy.disableForSession(\"OEM mirror unavailable: \"+\n                StageLiveSurfaceExchange.lastOutcome())\n            return false",
+          "after": "            val reason=StageLiveSurfaceExchange.lastOutcome()\n            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: GPU mirror unavailable reason=$reason\")\n            StageConcurrentNativeTrialPolicy.disableForSession(\"OEM mirror unavailable: \"+reason)\n            return false"
+        },
+        {
+          "before": "        NeXtepLog.info(\"native_swap\",\"PR54 concurrent live task flight started; prepMs=$setupMs\")",
+          "after": "        NeXtepLog.info(\"native_swap\",\"PR55 dual card GPU flight armed; prepMs=$setupMs\")"
+        }
+      ]
+    }
+  }
+}
