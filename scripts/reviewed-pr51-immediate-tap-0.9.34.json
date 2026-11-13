@@ -1,0 +1,15 @@
+{
+  "purpose": "P0 latency after PR51 real-device feedback: immediate real phased-task move before previews; no task/VD/input mutations; drag/home/legacy unchanged.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "973900117aedcdd7ab272de37be7d95cad9001e4",
+      "reviewed_blob_sha1": "428e3d77fdc9418c90916e205144939dd74e9d3b",
+      "patches": [
+        {
+          "before": "        val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null\n        // Native two-layer flight is attempted BEFORE any bitmap capture.",
+          "after": "        // P0 (3731.mp4 + PR51 real-device feedback): do not capture a\n        // TextureView bitmap or await a screenshot before the real task move.\n        // On the phased tap path the coordinator already owns an asynchronous,\n        // task-identity-preserving exchange session and its rollback.\n        // Launch it immediately. The old preview animation first waited for\n        // off-thread capture, then delayed the Binder move until animation end.\n        // This route draws no extra frame and schedules no background polling.\n        if (StageSwapTapLatencyPolicy.useImmediatePhasedPath(\n                isTap = drag == null && targetIndex == null,\n                asynchronousTaskMove = asyncMove != null,\n                occupiedSlot = slotCoordinator?.slotStates()?.getOrNull(sourceIndex) is SlotState.Occupied\n            )) {\n            swapCapture.cancel()\n            activeSwapViewport = null\n            previewCapturePending = false\n            val tappedAt = android.os.SystemClock.uptimeMillis()\n            NeXtepLog.info(\"swap_latency\", \"Phased tap swap: begin real task move without bitmap capture\")\n            val phasedMove = checkNotNull(asyncMove)\n            runCatching {\n                phasedMove { ok ->\n                    NeXtepLog.info(\"swap_latency\",\n                        \"Phased task exchange finished ok=$ok elapsedMs=\" +\n                            (android.os.SystemClock.uptimeMillis() - tappedAt))\n                    onFinished()\n                    scheduleStageFocus()\n                }\n            }.onFailure {\n                NeXtepLog.error(\"swap_latency\", \"Phased tap move could not start\", it)\n                onFinished()\n            }\n            return\n        }\n        val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null\n        // Native two-layer flight is attempted BEFORE any bitmap capture."
+        }
+      ]
+    }
+  }
+}
