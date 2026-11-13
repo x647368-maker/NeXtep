@@ -96,6 +96,12 @@ internal class StageLiveSurfaceExchange private constructor(
         // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
         // The normal phased transfer begins at the *end* of visual travel.
         private const val MOVE_PROGRESS = .94f
+        @Volatile private var lastOutcome = "not_attempted"
+        fun lastOutcome(): String = lastOutcome
+        private fun markUnavailable(why: String): StageLiveSurfaceExchange? {
+            lastOutcome = "fallback:" + why
+            return null
+        }
 
         fun create(
             host: FrameLayout,
@@ -109,8 +115,18 @@ internal class StageLiveSurfaceExchange private constructor(
         ): StageLiveSurfaceExchange? {
             if (Build.VERSION.SDK_INT < 31 || !host.isAttachedToWindow ||
                 !sourceSlotView.isAttachedToWindow || !host.isHardwareAccelerated
-            ) return null
-            if (sourceSlotView.rootView === host.rootView) return null
+            ) return markUnavailable("detached_or_software")
+            if (sourceSlotView.rootView === host.rootView)
+                return markUnavailable("single_window_root")
+            // All animation coordinates are physical display pixels. Refuse
+            // composition into an inset/clipped subwindow instead of quietly
+            // drawing invisible motion and misreporting success to the user.
+            val hostOrigin=IntArray(2)
+            host.rootView.getLocationOnScreen(hostOrigin)
+            if (hostOrigin[0] != 0 || hostOrigin[1] != 0 ||
+                host.rootView.width < fullScreenWidth ||
+                host.rootView.height < fullScreenHeight)
+                return markUnavailable("host_not_full_display")
             val from = StageLiveSurfaceFlightGeometry.Box(
                 sourceBounds.left.toFloat(),sourceBounds.top.toFloat(),
                 sourceBounds.right.toFloat(),sourceBounds.bottom.toFloat(),
@@ -120,28 +136,33 @@ internal class StageLiveSurfaceExchange private constructor(
                 mainBounds.right.toFloat(),mainBounds.bottom.toFloat(),
             )
             if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
-                return null
+                return markUnavailable("invalid_bounds")
             val sourceRoot = sourceSlotView.rootView
             val origin=IntArray(2)
             sourceRoot.getLocationOnScreen(origin)
             val localCrop = StageLiveSurfaceFlightGeometry.localCrop(
                 from,origin[0],origin[1],sourceRoot.width,sourceRoot.height,
-            )?.toAndroidRect() ?: return null
+            )?.toAndroidRect() ?: return markUnavailable("card_outside_source_root")
             // Never mirror a different active task. The native presenter
             // verifies that taskId still owns the exact observed WM leash.
-            val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId) ?: return null
+            val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
+                ?: return markUnavailable("no_owned_main_task_mirror")
             val incoming = try {
-                createWindowMirror(sourceRoot) ?: run { outgoing.release(); return null }
+                createWindowMirror(sourceRoot) ?: run {
+                    outgoing.release()
+                    return markUnavailable("no_sidebar_viewroot_mirror")
+                }
             } catch (error: Throwable) {
                 outgoing.release()
                 NeXtepLog.warn("native_swap", "Side-rail mirror unavailable", error)
-                return null
+                return markUnavailable("sidebar_reflection_exception")
             }
             if (!outgoing.isValid || !incoming.isValid) {
                 outgoing.release()
                 incoming.release()
-                return null
+                return markUnavailable("invalid_native_handles")
             }
+            lastOutcome="capable:both_live_surface_handles"
             return StageLiveSurfaceExchange(
                 host,incoming,outgoing,localCrop,
                 Rect(0,0,fullScreenWidth,fullScreenHeight),
@@ -282,6 +303,7 @@ internal class StageLiveSurfaceExchange private constructor(
             })
             start()
         }
+        lastOutcome="active:two_live_gpu_mirrors"
         NeXtepLog.info("native_swap","Started TWO real GPU mirror surfaces; no bitmap captures or task recreation")
         return true
     }
@@ -343,6 +365,9 @@ internal class StageLiveSurfaceExchange private constructor(
         if (finished.getAndSet(true)) return
         val callback=finishCallback
         finishCallback=null
+        lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 && moveComplete)
+            "completed:real_gpu_layers_and_real_task_move"
+        else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount move=$moveComplete"
         NeXtepLog.info("native_swap",
             "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
             "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
