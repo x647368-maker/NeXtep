@@ -8,10 +8,11 @@ package io.github.x647368maker.atomicworkbench.systemui
  * Does not inspect manufacturer strings or keep a background timer.
  */
 internal object StageConcurrentNativeTrialPolicy {
-    // Permit a visible dual-card flight without PR50's 280-360ms task wait.
-    const val DURATION_MS=195L
+    // Real task owner rebind occurs near the end of a short live GPU flight.
+    // OEMs can swap original buffers early when the task move starts.
+    const val DURATION_MS=205L
     private const val PREP_BUDGET_MS=28L
-    private const val VISUAL_LEAD_IN=0.56f
+    private const val VISUAL_LEAD_IN=0.90f
     private const val NO_COMMIT_FAIL_OPEN_MS=70L
     @Volatile private var disabled=false
 
@@ -29,7 +30,7 @@ internal object StageConcurrentNativeTrialPolicy {
 
     /**
      * A submitted compositor transaction is not proof of visible pixels.
-     * Wait for a small visual lead-in before changing real task ownership;
+     * Finish approximately 90% of visible two-card travel before changing real task ownership;
      * if SurfaceFlinger never commits, favor prompt task transfer.
      * No captures, timers or Binder calls in this pure policy.
      */
@@ -37,7 +38,7 @@ internal object StageConcurrentNativeTrialPolicy {
                         firstTransactionCommitted:Boolean, nativeFrames:Int):Boolean {
         if (elapsedMs < 0L || durationMs <= 0L) return false
         if (!firstTransactionCommitted) return elapsedMs >= NO_COMMIT_FAIL_OPEN_MS
-        return (nativeFrames >= 2 && elapsedMs >= (durationMs * VISUAL_LEAD_IN).toLong()) ||
+        return (nativeFrames >= 3 && elapsedMs >= (durationMs * VISUAL_LEAD_IN).toLong()) ||
             elapsedMs >= durationMs - 16L
     }
 
