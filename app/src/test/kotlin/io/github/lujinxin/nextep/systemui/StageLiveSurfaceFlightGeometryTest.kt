@@ -15,11 +15,10 @@ class StageLiveSurfaceFlightGeometryTest {
             val down=StageLiveSurfaceFlightGeometry.flight(main,small,1140,2616,p)!!
             assertEquals(small.cx+(main.cx-small.cx)*p,up.box.cx,.02f)
             assertEquals(main.cy+(small.cy-main.cy)*p,down.box.cy,.02f)
-            assertEquals(up.scale,up.scale,0f)
-            // Each layer has exactly ONE scale, rather than independent X/Y.
+            // Each real app preserves its own aspect ratio at every frame.
             assertTrue(up.scale>0f && down.scale>0f)
-            assertEquals(small.width+(main.width-small.width)*p,up.box.width,.02f)
-            assertEquals(main.height+(small.height-main.height)*p,down.box.height,.02f)
+            assertEquals(250f/450f,up.box.width/up.box.height,.002f)
+            assertEquals(1140f/2616f,down.box.width/down.box.height,.002f)
         }
     }
 
@@ -54,6 +53,29 @@ class StageLiveSurfaceFlightGeometryTest {
                 assertTrue(shrink.x.isFinite() && shrink.y.isFinite())
                 assertTrue(grow.scale>0f && shrink.scale>0f)
             }
+        }
+    }
+
+
+    @Test fun oppositeArcsSeparateTheTwoCardsDuringTheCrossing() {
+        val small=b(30f,240f,280f,690f)
+        val main=b(310f,160f,1070f,2360f)
+        val incoming=StageLiveSurfaceFlightGeometry.flight(small,main,250,450,.5f,48f)!!
+        val outgoing=StageLiveSurfaceFlightGeometry.flight(main,small,1140,2616,.5f,48f)!!
+        // Opposite travel directions use opposite perpendicular lanes.
+        val incomingOffset=incoming.box.cy-(small.cy+main.cy)*.5f
+        val outgoingOffset=outgoing.box.cy-(main.cy+small.cy)*.5f
+        assertTrue(incomingOffset*outgoingOffset<0f)
+        assertTrue(kotlin.math.abs(incomingOffset-outgoingOffset)>40f)
+    }
+
+    @Test fun aspectRatioDoesNotMorphAtIntermediateFrames() {
+        val from=b(20f,200f,280f,680f)
+        val to=b(330f,140f,1080f,2350f)
+        val ratio=260f/480f
+        for(p in listOf(0f,.1f,.25f,.5f,.75f,.9f,1f)) {
+            val v=StageLiveSurfaceFlightGeometry.flight(from,to,260,480,p,36f)!!
+            assertEquals(ratio,v.box.width/v.box.height,.002f)
         }
     }
 
