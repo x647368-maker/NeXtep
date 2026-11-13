@@ -104,6 +104,14 @@ class NeXtepWindowController(
     private val swapAnimator = WorkspaceSwapAnimator(context)
     private val swapCapture = StageAsyncPreviewCapture()
     private var liveSurfaceExchange: StageLiveSurfaceExchange? = null
+    // Allocated only for one physical card swap; NEVER a persistent overlay.
+    private var nativeSwapHost: StageNativeSwapFullscreenHost? = null
+    private var nativeSwapAttempt = 0L
+    private fun clearNativeSwapHost() {
+        val old = nativeSwapHost
+        nativeSwapHost = null
+        old?.close()
+    }
     private var activeSwapViewport: WorkspaceGeometry? = null
     private var previewCapturePending = false
     private var deferredSwapGeometryRefresh = false
@@ -1803,8 +1811,10 @@ class NeXtepWindowController(
         slotCoordinator?.cancelPendingExchange()
         swapCapture.cancel()
         swapAnimator.cancel()
+        nativeSwapAttempt++
         liveSurfaceExchange?.stop()
         liveSurfaceExchange = null
+        clearNativeSwapHost()
     }
 
     private fun highlightInternalDragTarget(target: WorkspaceInternalDragController.Target?) {
@@ -1873,13 +1883,20 @@ class NeXtepWindowController(
         move: () -> Boolean, onFinished: () -> Unit,
         asyncMove: (((Boolean) -> Unit) -> Unit)? = null,
         canRelease: () -> Boolean = { true },
+        attemptNative: Boolean = true,
     ) {
         val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
         // Native two-layer flight is attempted BEFORE any bitmap capture.
         // It mirrors the real existing SurfaceFlinger task + rail surfaces.
         // No screenshot loop, no root/task reparent, no app restart.
-        if (tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,
-                onFinished,asyncMove,canRelease)) return
+        if (attemptNative && tryLiveSurfaceExchange(sourceIndex,targetIndex,drag,task,move,
+                onFinished,asyncMove,canRelease) {
+                // The vendor denied a live surface or the temporary full-screen
+                // compositor root could not attach. Run the original protected
+                // path exactly ONCE; do not recursively retry native mirroring.
+                animateSwap(sourceIndex,targetIndex,drag,move,onFinished,
+                    asyncMove,canRelease,attemptNative=false)
+            }) return
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
         }
@@ -1936,84 +1953,108 @@ class NeXtepWindowController(
         move: () -> Boolean, onFinished: () -> Unit,
         asyncMove: (((Boolean) -> Unit) -> Unit)?,
         canRelease: () -> Boolean,
+        onUnavailable: () -> Unit,
     ): Boolean {
-        // Never block a 60Hz compositor frame with legacy synchronous Binder
-        // migrations. The normal tap uses the existing phased callback.
         if (drag != null || targetIndex != null || asyncMove == null || task == null ||
             !workspaceVisible || suspended || sidebarCollapsed || groupInputBlocked ||
             !android.animation.ValueAnimator.areAnimatorsEnabled() ||
             context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true ||
             !WorkspaceWallpaperBackdrop.canCapture(context) ||
-            liveSurfaceExchange?.isRunning == true) return false
+            liveSurfaceExchange?.isRunning == true || nativeSwapHost != null) return false
         val g = geometry()
-        val host = contentHighlightView?.parent as? FrameLayout ?: return false
         val slot = slotWindows.getOrNull(sourceIndex) ?: return false
         val state = slotCoordinator?.slotStates()?.getOrNull(sourceIndex) as? SlotState.Occupied
             ?: return false
         val source = Rect()
         if (!slot.view.getScreenVisibleRect(source)) return false
         val main = Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
-        val native = StageLiveSurfaceExchange.create(
-            host=host, sourceSlotView=slot.view, mainTaskId=task,
-            sourceBounds=source, mainBounds=main,
-            fullScreenWidth=g.screenWidth, fullScreenHeight=g.screenHeight,
-            backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
-        ) ?: return false
-        // Capture the slot frame BEFORE the physical move. Sampling this
-        // baseline in the async callback can miss the FIRST new task frame,
-        // leaving a paused/video task waiting for an unnecessary second frame.
-        val originalSlotFrame = slot.contentFrameSequence
-        val incomingId = state.taskId
+        val type=SystemUiWindowTypeResolver.resolve() ?: return false
+
+        // PR49 accidentally used NeXtepContentPanel as host: that window is
+        // ONLY contentWidth x contentHeight, while its native gate requires a
+        // full physical display. Every phone then failed host_not_full_display
+        // before the SurfaceFlinger flight could even start.
+        // Instead mount a ONE-SHOT, non-touchable screen-wide root, with zero
+        // idle frame callbacks, and remove it immediately on finish/failure.
+        val overlay=StageNativeSwapFullscreenHost.open(context,windowManager,type,
+            g.screenWidth,g.screenHeight) ?: return false
+        val token=++nativeSwapAttempt
+        nativeSwapHost=overlay
+        val originalSlotFrame=slot.contentFrameSequence
+        val incomingId=state.taskId
         slot.view.beginExchangePreview()
-        activeSwapViewport = g
-        deferredSwapGeometryRefresh = false
-        // Preserve the card flight during the tiny synchronous interval while
-        // mirrors attach to their SurfaceFlinger root; the animator becomes
-        // observable through liveSurfaceExchange only after start() returns.
-        previewCapturePending = true
+        activeSwapViewport=g
+        deferredSwapGeometryRefresh=false
+        previewCapturePending=true
         swapCapture.cancel()
-        val started = native.start(
-            durationMs=SystemUiRuntime.swapAnimationDurationMs(),
-            moveAsync={ done -> asyncMove { ok -> done(ok) } },
-            move=move,
-            liveReady={
-                val now=slotCoordinator?.slotStates()?.getOrNull(sourceIndex)
-                now is SlotState.Occupied &&
-                    now.taskId == task &&
-                    slot.view.textureView.isAvailable &&
-                    slot.contentFrameSequence > originalSlotFrame &&
-                    mainTaskPresenter.currentTaskId() == incomingId &&
-                    TaskSurfaceCompat.isPresentationSettled(incomingId,g)
-            },
-            canRelease=canRelease,
-            onFinished={
+
+        var attempted=false
+        val deadline = Runnable {
+            if (attempted || token!=nativeSwapAttempt || nativeSwapHost !== overlay)
+                return@Runnable
+            attempted=true
+            val stale=!workspaceVisible || suspended || groupInputBlocked ||
+                mainTaskPresenter.currentTaskId()!=task ||
+                (slotCoordinator?.slotStates()?.getOrNull(sourceIndex) as? SlotState.Occupied)?.taskId!=incomingId ||
+                !StageSwapViewportHoldPolicy.retain(true,g,geometry())
+            if (stale) {
+                NeXtepLog.warn("native_swap","Temporary full-screen host became stale before mirror attach")
+            }
+            val native=if(stale) null else StageLiveSurfaceExchange.create(
+                host=overlay.view,sourceSlotView=slot.view,mainTaskId=task,
+                sourceBounds=source,mainBounds=main,
+                fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
+                backdrop=WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
+            )
+            fun restore() {
                 slot.view.endExchangePreview()
-                liveSurfaceExchange=null
+                if (nativeSwapHost === overlay) clearNativeSwapHost()
                 activeSwapViewport=null
                 previewCapturePending=false
                 val flush=deferredSwapGeometryRefresh
                 deferredSwapGeometryRefresh=false
-                onFinished()
-                if (flush && workspaceVisible && !suspended)
-                    backdropHandler.post { if (workspaceVisible && !suspended) {
-                        val finalG=geometry()
-                        applyStageStack(finalG)
-                        applyWindowGeometry(finalG,refreshControls=false)
-                    } }
-                scheduleStageFocus()
-            },
-        )
-        if (!started) {
-            slot.view.endExchangePreview()
-            activeSwapViewport=null
+                if (flush && workspaceVisible && !suspended) scheduleWindowRefresh()
+            }
+            if (native==null) {
+                restore()
+                if (!stale) onUnavailable()
+                else onFinished()
+                return@Runnable
+            }
+            val started=native.start(
+                durationMs=SystemUiRuntime.swapAnimationDurationMs(),
+                moveAsync={done -> asyncMove { ok -> done(ok) }},
+                move=move,
+                liveReady={
+                    val now=slotCoordinator?.slotStates()?.getOrNull(sourceIndex)
+                    now is SlotState.Occupied &&
+                        now.taskId==task && slot.view.textureView.isAvailable &&
+                        slot.contentFrameSequence>originalSlotFrame &&
+                        mainTaskPresenter.currentTaskId()==incomingId &&
+                        TaskSurfaceCompat.isPresentationSettled(incomingId,g)
+                },
+                canRelease=canRelease,
+                onFinished={
+                    restore()
+                    liveSurfaceExchange=null
+                    onFinished()
+                    if (workspaceVisible && !suspended) scheduleStageFocus()
+                },
+            )
+            if (!started) {
+                restore()
+                onUnavailable()
+                return@Runnable
+            }
+            liveSurfaceExchange=native
             previewCapturePending=false
-            deferredSwapGeometryRefresh=false
-            return false
+            NeXtepLog.info("native_swap",
+                "Full-screen ephemeral SurfaceFlinger host ACTIVE task=$task slot=$sourceIndex from=$source to=$main")
         }
-        liveSurfaceExchange=native
-        previewCapturePending=false
-        NeXtepLog.info("native_swap",
-            "TWO live compositor layers moving task=$task slot=$sourceIndex source=$source main=$main")
+        // The ViewRoot surface does not exist until the first traversal.
+        // Do not create/parent mirrors immediately after addView(): on ColorOS
+        // this produces another silent null and yet another instant swap.
+        overlay.view.postOnAnimation(deadline)
         return true
     }
 
