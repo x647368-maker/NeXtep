@@ -15,8 +15,10 @@ internal object StageConcurrentNativeTrialPolicy {
     const val DURATION_MS=360L
     private const val PREP_BUDGET_MS=28L
     private const val SEVERE_PREP_MS=80L
-    private const val VISUAL_LEAD_IN=0.84f
-    private const val NO_COMMIT_FAIL_OPEN_MS=70L
+    // Do not reparent the real source task while its mirror is still flying.
+    // The display move may mutate the leash subtree or buffer/crop on ColorOS.
+    private const val MIN_FRAME_COUNT=3
+    private const val FINAL_FRAME_TOLERANCE_MS=6L
     @Volatile private var disabled=false
     // Only touched on the SystemUI main thread during an explicit swap.
     // Warm first-use reflection can exceed a single frame without OEM failure.
@@ -62,9 +64,12 @@ internal object StageConcurrentNativeTrialPolicy {
     fun shouldStartMove(elapsedMs:Long, durationMs:Long,
                         firstTransactionCommitted:Boolean, nativeFrames:Int):Boolean {
         if (elapsedMs < 0L || durationMs <= 0L) return false
-        if (!firstTransactionCommitted) return elapsedMs >= NO_COMMIT_FAIL_OPEN_MS
-        return (nativeFrames >= 3 && elapsedMs >= (durationMs * VISUAL_LEAD_IN).toLong()) ||
-            elapsedMs >= durationMs - 16L
+        // Starting at 84% used to mutate the producer while the mirror was
+        // still in motion (PR63 6.62-6.85s scale snap). The onAnimationEnd
+        // callback ALWAYS starts the real move even without a commit event,
+        // so a missing compositor callback cannot strand the task.
+        return firstTransactionCommitted && nativeFrames >= MIN_FRAME_COUNT &&
+            elapsedMs >= durationMs - FINAL_FRAME_TOLERANCE_MS
     }
 
     /** Old cards can redraw during the flight. Only a slot buffer seen after
