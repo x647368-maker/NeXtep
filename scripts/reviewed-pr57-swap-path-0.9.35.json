@@ -1,0 +1,71 @@
+{
+  "purpose": "Bounded no-polling PR57 tap-route diagnostics for 3779.mp4 (Ace7 Pro); reversible before PR55 freeze. No task/surface/input mutation.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageExchangeTelemetry.kt": {
+      "previous_blob_sha1": "f13a20d26f59256428ef7c48662090b59173a6b8",
+      "patches": [
+        {
+          "before": "    @Volatile private var handoff=\"\"\n    fun <T> phase",
+          "after": "    @Volatile private var handoff=\"\"\n    // Single bounded in-memory route trail; no per-frame writes, file I/O,\n    // background polling, network reports, or screenshots.\n    private val nativeTapId=AtomicLong()\n    @Volatile private var nativePath=\"尚无本次进程的窗口交换记录\"\n    fun beginNativeTap() {\n        nativePath=\"#${nativeTapId.incrementAndGet()} ${StageRuntimeIdentity.BUILD} tap\"\n    }\n    fun nativeEvent(stage:String) {\n        nativePath=(nativePath+\" -> \"+stage.take(110)).takeLast(680)\n    }\n    fun nativeDescription():String=nativePath\n    fun <T> phase"
+        },
+        {
+          "before": "    fun describe():String=\"测量代码：${StageRuntimeIdentity.BUILD}\\n$completed\\n$handoff\"",
+          "after": "    fun describe():String=\"测量代码：${StageRuntimeIdentity.BUILD}\\n$completed\\n$handoff\\n动画路径：$nativePath\""
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "7864caf18936398b6d19ae8812bda0957814514d",
+      "patches": [
+        {
+          "before": "import io.github.x647368maker.atomicworkbench.logging.NeXtepLog\nimport io.github.x647368maker.atomicworkbench.safety.FeatureGate",
+          "after": "import io.github.x647368maker.atomicworkbench.logging.NeXtepLog\nimport io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry\nimport io.github.x647368maker.atomicworkbench.safety.FeatureGate"
+        },
+        {
+          "before": "                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true))\n            return false\n        val g=geometry()",
+          "after": "                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true)) {\n            StageExchangeTelemetry.nativeEvent(\"fallback:disabled_or_power_saver\")\n            return false\n        }\n        val g=geometry()"
+        },
+        {
+          "before": "        val task=mainTaskPresenter.currentTaskId() ?: return false\n        val slot=slotWindows.getOrNull(slotIndex) ?: return false",
+          "after": "        val task=mainTaskPresenter.currentTaskId() ?: run {\n            StageExchangeTelemetry.nativeEvent(\"fallback:no_main_task\")\n            return false\n        }\n        val slot=slotWindows.getOrNull(slotIndex) ?: return false"
+        },
+        {
+          "before": "            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: host bounds \" +",
+          "after": "            StageExchangeTelemetry.nativeEvent(\"fallback:host_bounds\")\n            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: host bounds \" +"
+        },
+        {
+          "before": "        if (!slot.view.getScreenVisibleRect(source)) return false\n        val main=Rect",
+          "after": "        if (!slot.view.getScreenVisibleRect(source)) {\n            StageExchangeTelemetry.nativeEvent(\"fallback:slot_bounds_missing\")\n            return false\n        }\n        val main=Rect"
+        },
+        {
+          "before": "            val reason=StageLiveSurfaceExchange.lastOutcome()\n            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: GPU mirror unavailable reason=$reason\")",
+          "after": "            val reason=StageLiveSurfaceExchange.lastOutcome()\n            StageExchangeTelemetry.nativeEvent(\"fallback:mirror:$reason\")\n            NeXtepLog.warn(\"native_swap\", \"PR55 fallback: GPU mirror unavailable reason=$reason\")"
+        },
+        {
+          "before": "            native.stop()\n            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms\")",
+          "after": "            native.stop()\n            StageExchangeTelemetry.nativeEvent(\"fallback:prepare_${setupMs}ms\")\n            NeXtepLog.warn(\"native_swap\",\"Mirror preparation exceeded frame budget: $setupMs ms\")"
+        },
+        {
+          "before": "                slot.view.endExchangePreview()\n                activeSwapViewport=null\n                liveSurfaceExchange=null",
+          "after": "                slot.view.endExchangePreview()\n                StageExchangeTelemetry.nativeEvent(\"native_finished:\"+StageLiveSurfaceExchange.lastOutcome())\n                activeSwapViewport=null\n                liveSurfaceExchange=null"
+        },
+        {
+          "before": "            StageConcurrentNativeTrialPolicy.disableForSession(\"Mirror startup rejected\")\n            return false",
+          "after": "            StageExchangeTelemetry.nativeEvent(\"fallback:mirror_start_rejected\")\n            StageConcurrentNativeTrialPolicy.disableForSession(\"Mirror startup rejected\")\n            return false"
+        },
+        {
+          "before": "        liveSurfaceExchange=native\n        oneShotSwapMotion.cancel()\n        NeXtepLog.info(\"native_swap\",\"PR55 dual card GPU flight armed; prepMs=$setupMs\")",
+          "after": "        liveSurfaceExchange=native\n        oneShotSwapMotion.cancel()\n        StageExchangeTelemetry.nativeEvent(\"native_armed:prepare_${setupMs}ms\")\n        NeXtepLog.info(\"native_swap\",\"PR55 dual card GPU flight armed; prepMs=$setupMs\")"
+        },
+        {
+          "before": "            val tappedAt = android.os.SystemClock.uptimeMillis()\n            NeXtepLog.info(\"swap_latency\", \"Phased tap swap: begin real task move without bitmap capture\")",
+          "after": "            val tappedAt = android.os.SystemClock.uptimeMillis()\n            StageExchangeTelemetry.beginNativeTap()\n            NeXtepLog.info(\"swap_latency\", \"Phased tap swap: begin real task move without bitmap capture\")"
+        },
+        {
+          "before": "                val started=oneShotSwapMotion.start(slotView,contentHighlightView)\n                NeXtepLog.info(\"swap_feedback\",\"one-shot compositor active=$started\")",
+          "after": "                val started=oneShotSwapMotion.start(slotView,contentHighlightView)\n                StageExchangeTelemetry.nativeEvent(\"fallback_one_shot_active=$started\")\n                NeXtepLog.info(\"swap_feedback\",\"one-shot compositor active=$started\")"
+        }
+      ]
+    }
+  }
+}
