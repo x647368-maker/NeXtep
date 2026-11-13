@@ -32,9 +32,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * are moved in the SAME SurfaceControl.Transaction on each display frame.
  * Original SurfaceControls are never reparented, scaled, hidden or released.
  *
- * The two actual tasks are migrated near the end of the physical animation;
- * mirrors vanish only after the normal slot/main task buffers are ready (or
- * a bounded timeout). If the vendor denies mirroring or ownership is stale,
+ * In the private overlapping mode, task migration starts after a compositor
+ * commitment and visual lead-in, then proceeds concurrently with the rest
+ * of the flight. The legacy slow mode still transfers near the end. If the vendor denies mirroring or ownership is stale,
  * create() returns null and the old proven exchange path is unchanged.
  */
 internal class StageLiveSurfaceExchange private constructor(
@@ -287,7 +287,7 @@ internal class StageLiveSurfaceExchange private constructor(
         // and move acknowledgment. No per-frame background polling.
         ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
         animator=ValueAnimator.ofFloat(0f,1f).apply {
-            duration=if (immediateMove) durationMs.toLong().coerceIn(125L,180L)
+            duration=if (immediateMove) durationMs.toLong().coerceIn(160L,210L)
                 else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
             interpolator=PathInterpolator(.22f,0f,.12f,1f)
             addUpdateListener {
@@ -307,7 +307,14 @@ internal class StageLiveSurfaceExchange private constructor(
                 // PathInterpolator changes the rendered fraction; defer the
                 // real Binder move until the last portion of *wall clock*
                 // motion, so mirrored live apps are actually seen travelling.
-                if (!immediateMove &&
+                if (immediateMove && !sentMove &&
+                    StageConcurrentNativeTrialPolicy.shouldStartMove(
+                        it.currentPlayTime,it.duration,firstTransactionCommitted,nativeFrameCount)) {
+                    NeXtepLog.info("native_swap",
+                        "PR55 real task handoff t=${it.currentPlayTime}ms " +
+                            "committed=$firstTransactionCommitted frames=$nativeFrameCount")
+                    commitMove()
+                } else if (!immediateMove &&
                     it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
                     firstTransactionCommitted && !sentMove) commitMove()
             }
@@ -321,13 +328,13 @@ internal class StageLiveSurfaceExchange private constructor(
             })
             start()
         }
-        // PR54: visual travels WHILE the coordinator moves real tasks.
-        // The original PR50 94%-of-animation migration delay is never used
-        // in this mode; no frame capture, no 280-360ms transaction wait.
-        if (immediateMove) commitMove()
-        lastOutcome=if (immediateMove) "active:immediate_two_live_gpu_mirrors"
+        // PR55: PR54 moved task ownership at animator start, before its first
+        // visual frame. Transfer during the flight after a measured lead-in,
+        // or promptly if the compositor fails to acknowledge mirror frames.
+        // No bitmap, second WindowManager root, or persistent background work.
+        lastOutcome=if (immediateMove) "active:lead_in_concurrent_gpu_mirrors"
             else "active:two_live_gpu_mirrors"
-        NeXtepLog.info("native_swap","Started TWO real GPU mirror surfaces; no bitmap captures or task recreation")
+        NeXtepLog.info("native_swap","GPU mirrors submitted; pixel visibility not yet proven")
         return true
     }
 
@@ -395,7 +402,7 @@ internal class StageLiveSurfaceExchange private constructor(
         ui.removeCallbacks(lifetimeWatchdog)
         lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 &&
             moveComplete && handoffReady)
-            "completed:two_gpu_layers_task_move_and_live_handoff"
+            "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
         NeXtepLog.info("native_swap",
