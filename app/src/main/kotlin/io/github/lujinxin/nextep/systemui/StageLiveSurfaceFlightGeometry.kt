@@ -37,6 +37,109 @@ internal object StageLiveSurfaceFlightGeometry {
         return Placement(scale, box.left, box.top, box)
     }
 
+    /**
+     * PR66: protect the remaining three slot cards. Avoid a straight diagonal
+     * sweep that can cover every slot between the selected card and the main
+     * task. The card remains small while crossing the rail boundary, and only
+     * changes size inside the main task's own column/row.
+     *
+     * No extra frames or surfaces: one affine transform per original GPU card.
+     */
+    fun railCorridorFlight(
+        from: Box, to: Box, sourceWidth: Int, sourceHeight: Int,
+        progress: Float,
+    ): Placement? {
+        if (!from.valid() || !to.valid() || sourceWidth < 2 || sourceHeight < 2 ||
+            !progress.isFinite()) return null
+        val fromArea = from.width * from.height
+        val toArea = to.width * to.height
+        if (fromArea == toArea) return null
+        val sourceSmall = fromArea < toArea
+        val small = if (sourceSmall) from else to
+        val main = if (sourceSmall) to else from
+        val horizontalGap = if (small.right <= main.left || main.right <= small.left) {
+            if (small.right <= main.left) main.left - small.right else small.left - main.right
+        } else -1f
+        val verticalGap = if (small.bottom <= main.top || main.bottom <= small.top) {
+            if (small.bottom <= main.top) main.top - small.bottom else small.top - main.bottom
+        } else -1f
+        if (horizontalGap < 0f && verticalGap < 0f) return null
+        val byHorizontal = horizontalGap >= verticalGap
+        val fromScale = min(from.width / sourceWidth, from.height / sourceHeight)
+        val toScale = min(to.width / sourceWidth, to.height / sourceHeight)
+        if (fromScale <= 0f || toScale <= 0f) return null
+        val t = progress.coerceIn(0f,1f)
+        // Smoothstep is stationary at the phase boundary, avoiding a sharp
+        // 90-degree velocity kink while keeping the whole motion monotonic.
+        fun smooth(x: Float): Float {
+            val u=x.coerceIn(0f,1f)
+            return u*u*(3f-2f*u)
+        }
+        fun blend(a:Float,b:Float,u:Float) = a+(b-a)*u
+        val cx:Float
+        val cy:Float
+        val scale:Float
+        if (sourceSmall) {
+            val split=.34f
+            if(t<split) {
+                val u=smooth(t/split)
+                cx=if(byHorizontal) blend(small.cx,main.cx,u) else small.cx
+                cy=if(byHorizontal) small.cy else blend(small.cy,main.cy,u)
+                scale=fromScale
+            } else {
+                val u=smooth((t-split)/(1f-split))
+                cx=if(byHorizontal) main.cx else blend(small.cx,main.cx,u)
+                cy=if(byHorizontal) blend(small.cy,main.cy,u) else main.cy
+                scale=blend(fromScale,toScale,u)
+            }
+        } else {
+            val split=.66f
+            if(t<split) {
+                val u=smooth(t/split)
+                cx=if(byHorizontal) main.cx else blend(main.cx,small.cx,u)
+                cy=if(byHorizontal) blend(main.cy,small.cy,u) else main.cy
+                scale=blend(fromScale,toScale,u)
+            } else {
+                val u=smooth((t-split)/(1f-split))
+                cx=if(byHorizontal) blend(main.cx,small.cx,u) else small.cx
+                cy=if(byHorizontal) small.cy else blend(main.cy,small.cy,u)
+                scale=toScale
+            }
+        }
+        if (!scale.isFinite() || scale<=0f || scale>10f) return null
+        val w=sourceWidth*scale
+        val h=sourceHeight*scale
+        val box=Box(cx-w*.5f,cy-h*.5f,cx+w*.5f,cy+h*.5f)
+        return Placement(scale,box.left,box.top,box)
+    }
+
+    private fun overlaps(a:Box,b:Box):Boolean =
+        a.left < b.right && a.right > b.left &&
+        a.top < b.bottom && a.bottom > b.top
+
+    /** Strict, real-content no-collision gate. Never trade another slot's pixels
+     * or touch mapping for a prettier flight. Unknown geometry falls back to
+     * the existing single real task swap without this GPU flight.
+     */
+    fun corridorAvoidsOtherSlots(
+        small:Box, main:Box,
+        smallCropWidth:Int,smallCropHeight:Int,
+        otherSlots:List<Box>,
+        sampleCount:Int=24,
+    ):Boolean {
+        if(!small.valid() || !main.valid() || sampleCount<4 || sampleCount>240 ||
+            otherSlots.any { !it.valid() }) return false
+        for(i in 0..sampleCount) {
+            val progress=i.toFloat()/sampleCount
+            val up=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,progress)
+                ?: return false
+            val down=railCorridorFlight(main,small,main.width.toInt(),main.height.toInt(),progress)
+                ?: return false
+            if(otherSlots.any { overlaps(up.box,it) || overlaps(down.box,it) }) return false
+        }
+        return true
+    }
+
     data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {
         fun toAndroidRect() = android.graphics.Rect(left,top,right,bottom)
     }
