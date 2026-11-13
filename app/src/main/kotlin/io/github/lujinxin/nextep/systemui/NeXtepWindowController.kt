@@ -1888,6 +1888,38 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
         attemptNative: Boolean = true,
     ) {
+        // P0 (3731.mp4 + PR51 real-device feedback): do not capture a
+        // TextureView bitmap or await a screenshot before the real task move.
+        // On the phased tap path the coordinator already owns an asynchronous,
+        // task-identity-preserving exchange session and its rollback.
+        // Launch it immediately. The old preview animation first waited for
+        // off-thread capture, then delayed the Binder move until animation end.
+        // This route draws no extra frame and schedules no background polling.
+        if (StageSwapTapLatencyPolicy.useImmediatePhasedPath(
+                isTap = drag == null && targetIndex == null,
+                asynchronousTaskMove = asyncMove != null,
+                occupiedSlot = slotCoordinator?.slotStates()?.getOrNull(sourceIndex) is SlotState.Occupied
+            )) {
+            swapCapture.cancel()
+            activeSwapViewport = null
+            previewCapturePending = false
+            val tappedAt = android.os.SystemClock.uptimeMillis()
+            NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
+            val phasedMove = checkNotNull(asyncMove)
+            runCatching {
+                phasedMove { ok ->
+                    NeXtepLog.info("swap_latency",
+                        "Phased task exchange finished ok=$ok elapsedMs=" +
+                            (android.os.SystemClock.uptimeMillis() - tappedAt))
+                    onFinished()
+                    scheduleStageFocus()
+                }
+            }.onFailure {
+                NeXtepLog.error("swap_latency", "Phased tap move could not start", it)
+                onFinished()
+            }
+            return
+        }
         val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
         // Native two-layer flight is attempted BEFORE any bitmap capture.
         // It mirrors the real existing SurfaceFlinger task + rail surfaces.
