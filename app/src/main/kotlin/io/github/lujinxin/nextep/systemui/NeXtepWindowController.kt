@@ -1965,7 +1965,10 @@ class NeXtepWindowController(
         slot.view.beginExchangePreview()
         activeSwapViewport = g
         deferredSwapGeometryRefresh = false
-        previewCapturePending = false
+        // Preserve the card flight during the tiny synchronous interval while
+        // mirrors attach to their SurfaceFlinger root; the animator becomes
+        // observable through liveSurfaceExchange only after start() returns.
+        previewCapturePending = true
         swapCapture.cancel()
         val started = native.start(
             durationMs=SystemUiRuntime.swapAnimationDurationMs(),
@@ -2005,10 +2008,12 @@ class NeXtepWindowController(
         if (!started) {
             slot.view.endExchangePreview()
             activeSwapViewport=null
+            previewCapturePending=false
             deferredSwapGeometryRefresh=false
             return false
         }
         liveSurfaceExchange=native
+        previewCapturePending=false
         NeXtepLog.info("native_swap",
             "TWO live compositor layers moving task=$task slot=$sourceIndex source=$source main=$main")
         return true
