@@ -100,6 +100,19 @@ internal object StageConcurrentNativeTrialPolicy {
             elapsedMs >= durationMs - FINAL_FRAME_TOLERANCE_MS
     }
 
+    // A terminal geometry submission is explicit; never rely solely on
+    // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI.
+    fun terminalFrameDue(playTimeMs: Long, durationMs: Long, fraction: Float,
+                         firstCommitted: Boolean, frames: Int): Boolean =
+        durationMs > 0L && (fraction >= 1f || playTimeMs >= durationMs ||
+            shouldStartMove(playTimeMs,durationMs,firstCommitted,frames))
+
+    /** Single active-swap fallback based on the actual animator scale.
+     * Keep original lifetime watchdog as an upper bound. */
+    fun terminalDeadlineDelay(durationMs: Long, scale: Float): Long =
+        ((durationMs * (if (scale.isFinite()) scale.coerceIn(0f,4f) else 1f)).toLong() +
+            64L).coerceIn(64L,1500L)
+
     /** Old cards can redraw during the flight. Only a slot buffer seen after
      * successful real task exchange is evidence of a fresh target frame.
      */
