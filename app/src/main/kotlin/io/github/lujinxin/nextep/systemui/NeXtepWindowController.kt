@@ -1980,6 +1980,14 @@ class NeXtepWindowController(
         // PR59: the previous task may draw many times during the GPU flight;
         // do not count old frames as new post-migration virtual-display output.
         var outputAtConfirmedMove: VirtualDisplaySlot.OutputFrameMark?=null
+        fun outputHasFreshFrame():Boolean {
+            val mark=outputAtConfirmedMove ?: return false
+            val current=slot.outputFrameMark() ?: return false
+            return StageConcurrentNativeTrialPolicy.freshFrameOnConfirmedOutput(
+                StageConcurrentNativeTrialPolicy.sameOutput(
+                    mark.displayId,current.displayId,mark.texture,current.texture,mark.surface,current.surface),
+                mark.sequence,current.sequence)
+        }
         var lastTargetWait=""
         val incoming=state.taskId
         activeSwapViewport=g
@@ -1989,10 +1997,17 @@ class NeXtepWindowController(
             durationMs=StageConcurrentNativeTrialPolicy.DURATION_MS.toInt(),
             moveAsync={ complete -> moveAsync { ok ->
                 if (ok) {
-                    // SlotTaskCoordinator confirms actual ownership only at
-                    // completion; require a fresh TextureView buffer after it.
-                    outputAtConfirmedMove=slotCoordinator?.confirmedOutputMark(slotIndex,task)
-                        ?: slot.outputFrameMark()
+                    // Use the earlier verified ownership/layout checkpoint
+                    // only for exactly the same live output as the final ACK.
+                    val atAck=slot.outputFrameMark()
+                    val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
+                    outputAtConfirmedMove=earlier?.takeIf {
+                        atAck!=null && StageConcurrentNativeTrialPolicy.sameOutput(
+                            it.displayId,atAck.displayId,it.texture,atAck.texture,it.surface,atAck.surface)
+                    } ?: atAck
+                    StageExchangeTelemetry.nativeEvent(
+                        if (outputAtConfirmedMove!=null && outputAtConfirmedMove===earlier)
+                            "slot_buffer_baseline=verified_layout" else "slot_buffer_baseline=final_ack",traceId)
                 }
                 complete(ok)
             } },
@@ -2002,8 +2017,7 @@ class NeXtepWindowController(
                 val reason=when {
                     now !is SlotState.Occupied || now.taskId!=task -> "slot_owner"
                     !slot.view.textureView.isAvailable -> "slot_texture"
-                    !StageConcurrentNativeTrialPolicy.freshFrameOnConfirmedOutput(
-                        outputAtConfirmedMove,slot.outputFrameMark()) -> "slot_post_ack_buffer"
+                    !outputHasFreshFrame() -> "slot_post_ack_buffer"
                     mainTaskPresenter.currentTaskId()!=incoming -> "main_owner"
                     !TaskSurfaceCompat.isPresentationSettled(incoming,g) -> "main_geometry"
                     else -> "ready"
