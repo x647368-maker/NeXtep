@@ -171,6 +171,29 @@ internal object StageLiveSurfaceFlightGeometry {
         return true
     }
 
+    // A source buffer cannot exactly fit a differently shaped destination
+    // without either cropping or non-uniform scaling. Measure the remaining
+    // physical edge gap so handoff can reveal the real reflowed destination.
+    fun endpointGapPx(target: Box, fitted: Box): Float = maxOf(
+        kotlin.math.abs(target.left - fitted.left),
+        kotlin.math.abs(target.top - fitted.top),
+        kotlin.math.abs(target.right - fitted.right),
+        kotlin.math.abs(target.bottom - fitted.bottom),
+    )
+
+    data class RevealAlpha(val cover: Float, val mirror: Float)
+
+    // First remove the opaque covers, THEN fade the mirrors over the real
+    // destination. Never compound a translucent mirror with a dark cover.
+    // Both cards use one transaction and one shared progress.
+    fun handoffReveal(progress: Float): RevealAlpha {
+        val p = if (progress.isFinite()) progress.coerceIn(0f, 1f) else 0f
+        return RevealAlpha(
+            cover = (1f - 2f * p).coerceIn(0f, 1f),
+            mirror = (2f - 2f * p).coerceIn(0f, 1f),
+        )
+    }
+
     data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {
         fun toAndroidRect() = android.graphics.Rect(left,top,right,bottom)
     }
