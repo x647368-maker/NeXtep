@@ -16,7 +16,7 @@ internal object StageSnapshotMotion {
     }
     data class Pose(val cx:Float,val cy:Float,val scale:Float)
     data class Flight(val from:Box,val to:Box,val width:Int,val height:Int,
-                      val arc:Float,val growing:Boolean){
+                      val arc:Float,val growing:Boolean,val sizeBias:Float=0f){
         private val s0=min(from.w/width,from.h/height)
         private val s1=min(to.w/width,to.h/height)
         private val dx=to.cx-from.cx
@@ -31,7 +31,11 @@ internal object StageSnapshotMotion {
             val bend=sin(PI.toFloat()*p).let{it*it}*arc
             // Small card grows slightly later; outgoing card shrinks earlier.
             // Both have strictly monotonic size and zero overshoot.
-            val u=if(growing) p*p*(2f-p) else 1f-(1f-p)*(1f-p)*(1f+p)
+            val q=if(growing)p else 1f-p
+            val gentle=q*q*(2f-q)
+            val compact=q*q*q
+            val fraction=gentle+(compact-gentle)*sizeBias
+            val u=if(growing)fraction else 1f-fraction
             return Pose(from.cx+dx*p-dy/length*bend,
                 from.cy+dy*p+dx/length*bend,s0+(s1-s0)*u)
         }
@@ -46,6 +50,68 @@ internal object StageSnapshotMotion {
         val large=if(growing)to else from
         val arc=minOf(min(small.w,small.h)*.40f,min(large.w,large.h)*.10f,distance*.12f)
         return Flight(from,to,width,height,arc,growing)
+    }
+    data class PairFlight(val up:Flight,val down:Flight)
+    private fun rectangle(f:Flight,p:Float):Box{
+        val c=f.pose(p)
+        val hw=f.width*c.scale*.5f
+        val hh=f.height*c.scale*.5f
+        return Box(c.cx-hw,c.cy-hh,c.cx+hw,c.cy+hh)
+    }
+    private fun area(b:Box)=max(0f,b.w)*max(0f,b.h)
+    private fun intersect(a:Box,b:Box)=Box(max(a.left,b.left),max(a.top,b.top),
+        min(a.right,b.right),min(a.bottom,b.bottom))
+    // Protected rail rectangles are disjoint in normal layouts; even if
+    // transiently overlapping, the conservative estimate cannot overclaim pixels.
+    private fun visible(box:Box,screen:Box,excluded:List<Box>):Float{
+        val clipped=intersect(box,screen)
+        return (area(clipped)-excluded.sumOf{area(intersect(clipped,it)).toDouble()}.toFloat()).coerceAtLeast(0f)
+    }
+    internal fun visibleFractions(pair:PairFlight,p:Float,screen:Box,excluded:List<Box>):Pair<Float,Float>{
+        val a=rectangle(pair.up,p)
+        val b=rectangle(pair.down,p)
+        val up=visible(a,screen,excluded)/area(a).coerceAtLeast(1f)
+        val down=(visible(b,screen,excluded)-visible(intersect(a,b),screen,excluded))
+            .coerceAtLeast(0f)/area(b).coerceAtLeast(1f)
+        return up.coerceIn(0f,1f) to down.coerceIn(0f,1f)
+    }
+    private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float):Float{
+        var minUp=1f;var minDown=1f;var totalUp=0f;var totalDown=0f
+        for(i in 1..15){
+            val (u,d)=visibleFractions(pair,i/16f,screen,excluded)
+            minUp=min(minUp,u);minDown=min(minDown,d)
+            totalUp+=u;totalDown+=d
+        }
+        return 2f*minUp+3f*minDown+(totalUp+totalDown)/15f-
+            .08f*abs(pair.up.arc)/baseArc.coerceAtLeast(1f)-.12f*pair.up.sizeBias
+    }
+    /**
+     * Pick a bounded corridor ONCE per exchange, not on each render frame.
+     * Both cards retain uniform scale, exact endpoints and strictly advancing
+     * center-line progress. Estimate visibility against the actual viewport,
+     * protected slots and front card instead of always choosing one bend.
+     */
+    fun pairedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,
+                      screen:Box,excluded:List<Box>):PairFlight?{
+        val u=flight(small,main,iw,ih)?:return null
+        val d=flight(main,small,ow,oh)?:return null
+        val original=PairFlight(u,d)
+        if(!screen.valid())return original
+        var best=original
+        var bestScore=score(best,screen,excluded,u.arc)
+        val maxArc=minOf(min(screen.w,screen.h)*.22f,
+            min(main.w,main.h)*.34f,hypot(main.cx-small.cx,main.cy-small.cy)*.32f)
+        for(factor in floatArrayOf(1f,-1f,2f,-2f,3f,-3f)){
+            val arc=(u.arc*factor).coerceIn(-maxArc,maxArc)
+            for(bias in floatArrayOf(0f,.35f,.70f)){
+                val candidate=PairFlight(u.copy(arc=arc,sizeBias=bias),d.copy(arc=arc,sizeBias=bias))
+                val rating=score(candidate,screen,excluded,u.arc)
+                if(rating>bestScore+.0001f){
+                    best=candidate;bestScore=rating
+                }
+            }
+        }
+        return best
     }
     /** Hardware animator interpolates scalar start/end. For parallel axes
      * use a subpixel terminal delta, then restore exact endpoint on commit.
