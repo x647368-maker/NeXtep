@@ -139,7 +139,7 @@ internal class InteractionRegression(private val inst: Instrumentation) {
         val frameClass=TaskSurfaceCompat::class.java.declaredClasses.first{it.simpleName=="SurfaceFrame"}
         val ctor=frameClass.getDeclaredConstructor(Float::class.javaPrimitiveType,Float::class.javaPrimitiveType,Float::class.javaPrimitiveType,Float::class.javaPrimitiveType,Rect::class.java).apply{isAccessible=true}
         val cropMethod=TaskSurfaceCompat::class.java.getDeclaredMethod("sourceCrop",WorkspaceGeometry::class.java).apply{isAccessible=true}
-        val write=TaskSurfaceCompat::class.java.getDeclaredMethod("writeFrame",Any::class.java,Any::class.java,frameClass).apply{isAccessible=true}
+        val write=TaskSurfaceCompat::class.java.getDeclaredMethod("writeFrame",Any::class.java,Int::class.javaPrimitiveType,Any::class.java,frameClass).apply{isAccessible=true}
         TaskSurfaceCompat::class.java.getDeclaredField("displayDensity").apply{isAccessible=true;setFloat(TaskSurfaceCompat,3.2f)}
         val origin=IntArray(2);ui{surfaceView.getLocationOnScreen(origin)}
         var seen:PointF?=null;var current:WorkspaceGeometry?=null
@@ -168,7 +168,7 @@ internal class InteractionRegression(private val inst: Instrumentation) {
             check(crop==Rect(0,0,w,h))
             if(i<2)log.add("SURFACE priority=$priority source=${w}x$h crop=$crop content=${g.contentWidth}x${g.contentHeight}@${g.contentLeft},${g.contentTop} scale=${g.contentScale}")
             val frame=ctor.newInstance(g.contentScale,g.contentScale,g.contentTranslationX,g.contentTranslationY,crop)
-            ui{SurfaceControl.Transaction().use {t->write.invoke(TaskSurfaceCompat,t,surfaceView.surfaceControl,frame);t.apply()}}
+            ui{SurfaceControl.Transaction().use {t->write.invoke(TaskSurfaceCompat,t,-1,surfaceView.surfaceControl,frame);t.apply()}}
             Thread.sleep(180)
             val shot=inst.uiAutomation.takeScreenshot() ?: error("No compositor screenshot")
             val points=listOf(Triple(12f,h/2f,Color.RED),Triple(w-12f,h/2f,Color.GREEN),Triple(w/2f,12f,Color.BLUE),Triple(w/2f,h-12f,Color.YELLOW))
