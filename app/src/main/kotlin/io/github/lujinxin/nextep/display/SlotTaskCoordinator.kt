@@ -1758,8 +1758,10 @@ class SlotTaskCoordinator(
                         check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
+                    var observedFront:TaskRepository.TaskSnapshot?=null
                     moveTaskToDisplayNonBlocking(mainTask, occupied.displayId,
-                        observedDemotionSlot=slotIndex) { result ->
+                        observedDemotionSlot=slotIndex,
+                        onObservedDestinationFront={observedFront=it}) { result ->
                         val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val preliminary = runCatching {
                             check(token == transitionGeneration && active && !suspended)
@@ -1770,6 +1772,18 @@ class SlotTaskCoordinator(
                             if (layoutError != null) { done(layoutError); return@ensureSlotLayoutNonBlocking }
                             done(runCatching {
                                 check(token == transitionGeneration && active && !suspended)
+                                // Sample immediately after the exact verified foreground task's
+                                // existing target layout fit, BEFORE main presentation work.
+                                // A WCT/layout mismatch cannot opt into this checkpoint.
+                                val earlyCanvas=slots[slotIndex].geometry()
+                                val earlyMark=if(observedFront===observed && earlyCanvas!=null &&
+                                    observed.resizeMode==TASK_RESIZE_MODE_RESIZEABLE &&
+                                    !observed.vendorWindowed && observed.windowingMode==fullscreenWindowingMode() &&
+                                    observed.bounds==Rect(0,0,earlyCanvas.width,earlyCanvas.height) &&
+                                    observed.densityDpi==earlyCanvas.densityDpi &&
+                                    observed.displayId==occupied.displayId) {
+                                    slots[slotIndex].outputFrameMark()?.takeIf{it.displayId==occupied.displayId}
+                                } else null
                                 mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
                                 val committed = taskRepository.runningTasks()
                                 check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
@@ -1785,7 +1799,17 @@ class SlotTaskCoordinator(
                                     parked.densityDpi==canvas.densityDpi) {
                                     slots[slotIndex].outputFrameMark()?.takeIf {
                                         it.displayId==occupied.displayId
-                                    }?.let { ConfirmedOutput(token,slotIndex,mainTask.taskId,it) }
+                                    }?.let { finalMark ->
+                                        val earlier=earlyMark?.takeIf {
+                                            it.displayId==finalMark.displayId &&
+                                            it.texture===finalMark.texture && it.surface===finalMark.surface &&
+                                            it.sequence<=finalMark.sequence &&
+                                            earlyCanvas==canvas
+                                        }
+                                        if(earlier!=null)
+                                            StageExchangeTelemetry.phasedEvent("slot_early_verified_output_mark")
+                                        ConfirmedOutput(token,slotIndex,mainTask.taskId,earlier?:finalMark)
+                                    }
                                 } else null
                                 StageExchangeTelemetry.phasedEvent(if (confirmedOutput!=null)
                                     "slot_verified_output_mark" else "slot_output_mark_deferred")
@@ -2658,6 +2682,7 @@ class SlotTaskCoordinator(
     private fun moveTaskToDisplayNonBlocking(
         expected: TaskRepository.TaskSnapshot, displayId: Int,
         observedDemotionSlot: Int? = null,
+        onObservedDestinationFront: ((TaskRepository.TaskSnapshot)->Unit)? = null,
         done: (Result<TaskRepository.TaskSnapshot>) -> Unit,
     ) {
         val taskId=expected.taskId
@@ -2701,9 +2726,16 @@ class SlotTaskCoordinator(
             val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
             fun observe() {
                 val result = runCatching {
-                    val current = taskRepository.findTask(taskId)
+                    // findTask already reads the full running task list. Keep
+                    // the same single observation but reuse its foreground proof
+                    // for the optional early buffer checkpoint, not another query.
+                    val running=taskRepository.runningTasks()
+                    val current=running.firstOrNull{it.taskId==taskId}
                     if (current != null) checkIdentity(current)
                     if (current != null && current.displayId == displayId) {
+                        if(onObservedDestinationFront!=null &&
+                            running.firstOrNull{it.displayId==displayId}?.taskId==taskId)
+                            onObservedDestinationFront.invoke(current)
                         StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
                         NeXtepLog.info("task_continuity",
                             "async_move_observed task=$taskId display=$displayId")
