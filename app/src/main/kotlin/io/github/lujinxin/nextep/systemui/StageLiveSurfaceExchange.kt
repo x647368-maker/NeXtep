@@ -61,6 +61,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private val lifetimeWatchdog = Runnable {
         if (isRunning) {
             trace("lifetime_watchdog frame=$frameComplete move=$moveComplete check=$handoffCheckStarted")
+            if (moveComplete && !handoffReady) handoffTimedOut=true
             NeXtepLog.warn("native_swap", "Two-mirror flight exceeded safety lifetime; releasing compositor mirrors")
             stop()
         }
@@ -70,6 +71,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private var revealAnimator: ValueAnimator? = null
     private var handoffCheckStarted = false
     private var handoffCheck: Runnable? = null
+    private var flightDeadline: Runnable? = null
+    private var deferredMove: Runnable? = null
     private var lastHandoffWait = ""
     private var endpointGap = 0f
     // Reuse one compositor transaction for the entire flight; avoid allocating
@@ -396,55 +399,82 @@ internal class StageLiveSurfaceExchange private constructor(
         // One-shot cleanup if a device sleeps/locks between frame callback
         // and move acknowledgment. No per-frame background polling.
         ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
-        animator=ValueAnimator.ofFloat(0f,1f).apply {
-            duration=if (immediateMove) durationMs.toLong().coerceIn(320L,380L)
-                else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
+        val flightDuration=if (immediateMove) durationMs.toLong().coerceIn(320L,380L)
+            else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
+        fun submitFlightFrame(fraction: Float): Boolean {
+            if (!isRunning) return false
+            return runCatching {
+                val frame=frameTransaction ?: error("Flight transaction is unavailable")
+                applyFrame(frame,fraction)
+                frame.apply()
+                lastProgress=fraction
+                val now=SystemClock.uptimeMillis()
+                if(previousFrameAtMs>0L) {
+                    val gap=now-previousFrameAtMs
+                    if(gap>biggestFrameGapMs)biggestFrameGapMs=gap
+                    if(gap>24L)gapsOver24Ms++
+                }
+                previousFrameAtMs=now
+                nativeFrameCount++
+                true
+            }.getOrElse { error ->
+                NeXtepLog.warn("native_swap","Real dual-layer frame failed",error)
+                stop()
+                false
+            }
+        }
+        fun completeFlight(reason: String) {
+            if (!isRunning || frameComplete) return
+            // Force the exact final geometry in one existing dual-mirror
+            // transaction BEFORE mutating either live task producer.
+            // Transaction.apply is submission, not proof of visible pixels.
+            if (!submitFlightFrame(1f)) return
+            frameComplete=true
+            trace("flight_complete:$reason@${SystemClock.uptimeMillis()-startedAtMs}ms")
+            flightDeadline?.let { ui.removeCallbacks(it) }
+            flightDeadline=null
+            if (!sentMove) {
+                // Leave the animator update/listener stack before the real
+                // move performs task Binder work. At most one deferred move.
+                val movePost=Runnable {
+                    deferredMove=null
+                    if (isRunning) commitMove()
+                }
+                deferredMove=movePost
+                ui.post(movePost)
+            } else finishIfReady(liveReady,canRelease)
+        }
+        // Independent one-shot fallback for missing terminal update/listener.
+        // During a real flight only; cancelled on completion or cleanup.
+        val deadline=Runnable { completeFlight("deadline") }
+        flightDeadline=deadline
+        ui.postDelayed(deadline,StageConcurrentNativeTrialPolicy.terminalDeadlineDelay(
+            flightDuration,ValueAnimator.getDurationScale()))
+        val flightAnimator=ValueAnimator.ofFloat(0f,1f).apply {
+            duration=flightDuration
             interpolator=PathInterpolator(.4f,0f,.2f,1f)
             addUpdateListener {
-                if (!isRunning) return@addUpdateListener
-                val fraction=(it.animatedValue as Float)
-                lastProgress=fraction
-                runCatching {
-                    val frame=frameTransaction ?: error("Flight transaction is unavailable")
-                    applyFrame(frame,fraction)
-                    frame.apply()
-                    val now=SystemClock.uptimeMillis()
-                    if(previousFrameAtMs>0L) {
-                        val gap=now-previousFrameAtMs
-                        if(gap>biggestFrameGapMs)biggestFrameGapMs=gap
-                        if(gap>24L)gapsOver24Ms++
-                    }
-                    previousFrameAtMs=now
-                    nativeFrameCount++
-                }.onFailure { error ->
-                    NeXtepLog.warn("native_swap","Real dual-layer frame failed",error)
-                    stop()
+                if (!isRunning || frameComplete) return@addUpdateListener
+                val fraction=it.animatedValue as Float
+                if (immediateMove && StageConcurrentNativeTrialPolicy.terminalFrameDue(
+                        it.currentPlayTime,it.duration,fraction,firstTransactionCommitted,nativeFrameCount)) {
+                    completeFlight("terminal_update")
+                    return@addUpdateListener
                 }
-                // PathInterpolator changes the rendered fraction; defer the
-                // real Binder move until the last portion of *wall clock*
-                // motion, so mirrored live apps are actually seen travelling.
-                if (immediateMove && !sentMove &&
-                    StageConcurrentNativeTrialPolicy.shouldStartMove(
-                        it.currentPlayTime,it.duration,firstTransactionCommitted,nativeFrameCount)) {
-                    NeXtepLog.info("native_swap",
-                        "PR55 real task handoff t=${it.currentPlayTime}ms " +
-                            "committed=$firstTransactionCommitted frames=$nativeFrameCount")
-                    commitMove()
-                } else if (!immediateMove &&
+                if (!submitFlightFrame(fraction)) return@addUpdateListener
+                if (!immediateMove &&
                     it.currentPlayTime >= (it.duration*MOVE_PROGRESS).toLong() &&
                     firstTransactionCommitted && !sentMove) commitMove()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    if (!isRunning) return
-                    frameComplete=true
-                    trace("flight_complete@${SystemClock.uptimeMillis()-startedAtMs}ms")
-                    if (!sentMove) commitMove()
-                    finishIfReady(liveReady,canRelease)
+                    completeFlight("animator_end")
                 }
             })
-            start()
         }
+        // Assign before start: synchronous callbacks must see the owned animator.
+        animator=flightAnimator
+        flightAnimator.start()
         // PR58: ColorOS can replace a mirrored producer's content as soon as
         // task migration begins. Keep almost all card travel visible BEFORE
         // owner changes; then hold endpoint overlays until the new buffers
@@ -589,6 +619,10 @@ internal class StageLiveSurfaceExchange private constructor(
         ui.removeCallbacks(lifetimeWatchdog)
         handoffCheck?.let { ui.removeCallbacks(it) }
         handoffCheck=null
+        flightDeadline?.let { ui.removeCallbacks(it) }
+        flightDeadline=null
+        deferredMove?.let { ui.removeCallbacks(it) }
+        deferredMove=null
         lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 &&
             moveComplete && handoffReady)
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
@@ -601,6 +635,7 @@ internal class StageLiveSurfaceExchange private constructor(
             "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
             "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
         animator?.removeAllListeners()
+        animator?.removeAllUpdateListeners()
         animator?.cancel()
         animator=null
         revealAnimator?.removeAllListeners()
