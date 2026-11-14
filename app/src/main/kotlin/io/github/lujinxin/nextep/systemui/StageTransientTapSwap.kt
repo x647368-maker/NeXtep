@@ -374,10 +374,11 @@ internal class StageTransientTapSwap(private val context:Context) {
             isClickable=false
             setWillNotDraw(false)
             clipChildren=false;clipToPadding=false
-            // Incoming remains below the shrinking outgoing card where paths
-            // cross; the opposing arcs expose both without hiding other slots.
-            addView(upView,LayoutParams(incoming.width,incoming.height,android.view.Gravity.TOP or android.view.Gravity.LEFT))
+            // Keep the tapped app visible when the cards cross. The old
+            // main shrinks underneath instead of occluding the incoming card
+            // until a sudden late z-reveal. Other slots retain strict clipping.
             addView(downView,LayoutParams(outgoing.width,outgoing.height,android.view.Gravity.TOP or android.view.Gravity.LEFT))
+            addView(upView,LayoutParams(incoming.width,incoming.height,android.view.Gravity.TOP or android.view.Gravity.LEFT))
             progress=0f
         }
         override fun onDraw(canvas:Canvas){
@@ -404,7 +405,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             progress=0f
             val a=up ?: error("Invalid incoming geometry")
             val b=down ?: error("Invalid outgoing geometry")
-            val easing=PathInterpolator(.28f,.05f,.22f,1f)
+            val easing=PathInterpolator(.32f,.08f,.36f,1f)
             // Build every animator before starting any; an unsupported
             // reflection path leaves no partially animated card.
             val native=runCatching{
