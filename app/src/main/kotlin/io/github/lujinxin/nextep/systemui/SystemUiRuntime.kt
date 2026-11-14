@@ -284,6 +284,9 @@ object SystemUiRuntime {
                         putBoolean("suspended", workspaceController.isSuspended())
                         putLong("task_queries", WorkspaceEnergyDiagnostics.taskQueries.get())
                         putLong("preview_captures", WorkspaceEnergyDiagnostics.previewCaptures.get())
+                        // Same on-demand protected snapshot; no new receiver or sampling loop.
+                        putString("exchange_diagnostics",
+                            io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.describe())
                     }
                 }
             }.onFailure { NeXtepLog.warn("energy_monitor", "Runtime snapshot unavailable", it) }
