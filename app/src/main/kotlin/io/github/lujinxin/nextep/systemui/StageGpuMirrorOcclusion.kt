@@ -98,6 +98,11 @@ internal class StageGpuMirrorOcclusion private constructor(
         configure(mainCover, main, StageGpuCoverPolicy.MAIN_COVER_LAYER)
     }
 
+    fun setRevealAlpha(transaction: SurfaceControl.Transaction, alpha: Float) {
+        transaction.setAlpha(sourceCover, alpha)
+        transaction.setAlpha(mainCover, alpha)
+    }
+
     fun hide(transaction: SurfaceControl.Transaction) {
         if (sourceCover.isValid) transaction.setVisibility(sourceCover, false)
         if (mainCover.isValid) transaction.setVisibility(mainCover, false)
