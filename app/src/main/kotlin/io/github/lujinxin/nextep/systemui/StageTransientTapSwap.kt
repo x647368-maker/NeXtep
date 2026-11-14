@@ -47,11 +47,12 @@ internal class StageTransientTapSwap(private val context:Context) {
               slotCrop:Rect,mainCrop:Rect,backdrop:Drawable?,
               valid:()->Boolean,moveAsync:((Boolean)->Unit)->Unit,
               liveReady:()->Boolean,trace:(String)->Unit,onFinished:()->Unit,
-              onVisualStart:()->Unit={},onVisualEnd:()->Unit={}):Boolean {
+              onVisualStart:()->Unit={},onVisualEnd:()->Unit={},
+              mainReady:()->Boolean={false}):Boolean {
         if(active!=null || !host.isAttachedToWindow || !host.isHardwareAccelerated ||
             slot.isEmpty || main.isEmpty || slotCrop.isEmpty || mainCrop.isEmpty) return false
         val a=Attempt(host,Rect(slot),Rect(main),otherSlots.map(::Rect),incoming,outgoing,
-            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd)
+            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady)
         active=a
         a.begin()
         return true
@@ -63,7 +64,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val slotCrop:Rect,val mainCrop:Rect,val backdrop:Drawable?,
         val valid:()->Boolean,val moveAsync:((Boolean)->Unit)->Unit,
         val liveReady:()->Boolean,val trace:(String)->Unit,val onFinished:()->Unit,
-        val onVisualStart:()->Unit,val onVisualEnd:()->Unit,
+        val onVisualStart:()->Unit,val onVisualEnd:()->Unit,val mainReady:()->Boolean,
     ) {
         private var waitingCapture=true
         private var waitingCommit=false
@@ -79,6 +80,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var terminalCommit:Runnable?=null
         private var terminalTimeout:Runnable?=null
         private val handoff=StageStableHandoff()
+        private val mainHandoff=StageStableHandoff()
+        private var mainRevealed=false
         private var handoffBegan=0L
         private fun current()=active===this
         private fun stillValid()=runCatching(valid).getOrDefault(false) && host.isAttachedToWindow
@@ -98,7 +101,18 @@ internal class StageTransientTapSwap(private val context:Context) {
                 when(handoff.decide(ready,elapsed>=StageTransientTapPolicy.HANDOFF_BUDGET_MS)){
                     StageStableHandoff.Decision.READY->finish("ready")
                     StageStableHandoff.Decision.TIMEOUT->finish("handoff_timeout")
-                    StageStableHandoff.Decision.WAIT->host.postOnAnimation(this)
+                    StageStableHandoff.Decision.WAIT->{
+                        // Handoff begins only after successful task ACK AND terminal
+                        // animation commit. A settled main must not be held hostage
+                        // by the other producer's late output. Keep the slot's own
+                        // cover and strict freshness gate intact.
+                        if(!mainRevealed && mainHandoff.observe(runCatching(mainReady).getOrDefault(false))){
+                            view?.revealMain()
+                            mainRevealed=true
+                            trace("snapshot_main_revealed")
+                        }
+                        host.postOnAnimation(this)
+                    }
                 }
             }
         }
@@ -175,7 +189,10 @@ internal class StageTransientTapSwap(private val context:Context) {
                 finish("visual_start_failed");return
             }
             val backend=v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
-                if(current())awaitTerminalFrame(v)
+                if(current()){
+                    trace("snapshot_motion_animators_end")
+                    awaitTerminalFrame(v)
+                }
             }
             trace("snapshot_motion_backend="+backend)
             // RenderThread needs a submitted animation frame BEFORE the
@@ -325,8 +342,20 @@ internal class StageTransientTapSwap(private val context:Context) {
         private val up=StageSnapshotMotion.flight(small,large,incoming.width,incoming.height)
         private val down=StageSnapshotMotion.flight(large,small,outgoing.width,outgoing.height)
         val safe=up!=null && down!=null
+        private val slotRect=Rect(slot)
         private val mask=Path().apply{
             addRect(RectF(slot),Path.Direction.CW);addRect(RectF(main),Path.Direction.CW)
+        }
+        private var mainRevealed=false
+        // Only invoked by the post-terminal, post-ACK handoff gate.
+        // Remove BOTH the incoming preview and its opaque background in
+        // the same View traversal. The outgoing preview remains in its slot.
+        internal fun revealMain(){
+            if(mainRevealed || released || progress!=1f)return
+            mainRevealed=true
+            upView.visibility=View.INVISIBLE
+            mask.reset();mask.addRect(RectF(slotRect),Path.Direction.CW)
+            invalidate()
         }
         private val upView=CardView(context,incoming,main)
         private val downView=CardView(context,outgoing,main)
@@ -365,6 +394,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(released)return
             val save=canvas.save()
             excluded.forEach{canvas.clipOutRect(it)}
+            if(mainRevealed)canvas.clipRect(slotRect)
             super.dispatchDraw(canvas)
             canvas.restoreToCount(save)
             if(canvas.isHardwareAccelerated && safe)drawn=true
