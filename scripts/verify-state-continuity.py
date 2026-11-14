@@ -46,8 +46,9 @@ _pr87_swap=(k/'systemui/StageTransientTapSwap.kt').read_text()
 _pr87_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
 assert '?: atStart.copy(sequence=ackSequence)' in _pr87_controller
 assert 'if(ownerStillMatches)requestSlotLatch()' in _pr87_controller
-assert 'val smooth=q*q*(3f-2f*q)' in _pr87
-assert 'val smoother=q*q*q*(q*(q*6f-15f)+10f)' in _pr87
+assert 'val gentle=q*q*(2f-q)' in _pr87
+assert 'val compact=q*q*q' in _pr87
+assert 'val fraction=gentle+(compact-gentle)*sizeBias' in _pr87
 assert 'for(i in 1..31)' in _pr87
 assert 'import android.animation.AnimatorSet' in _pr87_swap
 assert 'synchronizedSet.playTogether(list)' in _pr87_swap

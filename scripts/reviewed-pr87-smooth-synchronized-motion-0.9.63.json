@@ -4,10 +4,6 @@
       "previous_blob_sha1": "fe467ff92080659bc8af4d7a79bdb5b34c359907",
       "patches": [
         {
-          "before": "            // Small card grows slightly later; outgoing card shrinks earlier.\n            // Both have strictly monotonic size and zero overshoot.\n            val q=if(growing)p else 1f-p\n            val gentle=q*q*(2f-q)\n            val compact=q*q*q\n            val fraction=gentle+(compact-gentle)*sizeBias\n            val u=if(growing)fraction else 1f-fraction",
-          "after": "            // Both cards share one symmetric scale-progress curve. This avoids\n            // the incoming card appearing to pause while the outgoing card\n            // shrinks immediately, and gives zero scale velocity at both ends.\n            val q=if(growing)p else 1f-p\n            val smooth=q*q*(3f-2f*q)\n            val smoother=q*q*q*(q*(q*6f-15f)+10f)\n            val fraction=smooth+(smoother-smooth)*sizeBias\n            val u=if(growing)fraction else 1f-fraction"
-        },
-        {
           "before": "        for(i in 1..15){\n            val (u,d)=visibleFractions(pair,i/16f,screen,excluded)\n            minUp=min(minUp,u);minDown=min(minDown,d)\n            totalUp+=u;totalDown+=d\n        }\n        return 2f*minUp+3f*minDown+(totalUp+totalDown)/15f-",
           "after": "        // 31 interior samples catch brief overlap/occlusion between key poses.\n        for(i in 1..31){\n            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)\n            minUp=min(minUp,u);minDown=min(minDown,d)\n            totalUp+=u;totalDown+=d\n        }\n        return 2f*minUp+3f*minDown+(totalUp+totalDown)/31f-"
         }

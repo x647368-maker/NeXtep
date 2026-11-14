@@ -29,13 +29,13 @@ internal object StageSnapshotMotion {
             // Sin^2 has zero slope at both endpoints; opposite travel directions
             // imply opposite lateral offsets. No stationary phase or 90deg bend.
             val bend=sin(PI.toFloat()*p).let{it*it}*arc
-            // Both cards share one symmetric scale-progress curve. This avoids
-            // the incoming card appearing to pause while the outgoing card
-            // shrinks immediately, and gives zero scale velocity at both ends.
+            // Preserve the visibility-tested stagger: the outgoing card
+            // contracts on a different phase from the incoming card's growth.
+            // The corridor scorer evaluates the pair together to limit occlusion.
             val q=if(growing)p else 1f-p
-            val smooth=q*q*(3f-2f*q)
-            val smoother=q*q*q*(q*(q*6f-15f)+10f)
-            val fraction=smooth+(smoother-smooth)*sizeBias
+            val gentle=q*q*(2f-q)
+            val compact=q*q*q
+            val fraction=gentle+(compact-gentle)*sizeBias
             val u=if(growing)fraction else 1f-fraction
             return Pose(from.cx+dx*p-dy/length*bend,
                 from.cy+dy*p+dx/length*bend,s0+(s1-s0)*u)
