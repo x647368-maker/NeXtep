@@ -150,7 +150,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(a==null || b==null || SystemClock.uptimeMillis()>=deadline){
                 a?.recycle();b?.recycle();direct("capture_unavailable");return
             }
-            val v=FlightView(context,a,b,slot,main,others,backdrop)
+            val v=FlightView(context,a,b,slot,main,others,backdrop,Rect(0,0,host.width,host.height))
             if(!v.safe){v.release();direct("corridor_unavailable");return}
             view=v
             val added=runCatching{
@@ -334,13 +334,17 @@ internal class StageTransientTapSwap(private val context:Context) {
      * property transforms, not the removed multi-phase renderer.
      */
     internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
-                             slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?):FrameLayout(context){
+                             slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?,
+                             viewport:Rect):FrameLayout(context){
         private fun box(r:Rect)=StageSnapshotMotion.Box(r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
         private val small=box(slot)
         private val large=box(main)
         private val excluded=others.map(::Rect)
-        private val up=StageSnapshotMotion.flight(small,large,incoming.width,incoming.height)
-        private val down=StageSnapshotMotion.flight(large,small,outgoing.width,outgoing.height)
+        private val pair=StageSnapshotMotion.pairedFlights(small,large,
+            incoming.width,incoming.height,outgoing.width,outgoing.height,
+            box(viewport),excluded.map(::box))
+        private val up=pair?.up
+        private val down=pair?.down
         val safe=up!=null && down!=null
         private val slotRect=Rect(slot)
         private val mask=Path().apply{
