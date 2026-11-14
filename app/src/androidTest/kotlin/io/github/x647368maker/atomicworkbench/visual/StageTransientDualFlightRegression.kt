@@ -77,18 +77,56 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             // deterministic position samples. No screenshot is used as a
             // task migration acknowledgment; only renderer pixels are tested.
             val done=java.util.concurrent.CountDownLatch(1)
+            val ipcEntered=java.util.concurrent.CountDownLatch(1)
+            val releaseIpc=java.util.concurrent.CountDownLatch(1)
+            val ipcDone=java.util.concurrent.CountDownLatch(1)
             var backend=""
-            instrumentation.runOnMainSync {
-                flight.progress=0f
-                backend=flight.startMotion(360L,{}){done.countDown()}
+            try {
+                instrumentation.runOnMainSync {
+                    val lane=io.github.x647368maker.atomicworkbench.display.StageExchangeBinderLane { action ->
+                        host.post { action() }
+                    }
+                    flight.progress=0f
+                    // Longer test-only duration leaves enough real screenshot
+                    // sampling time in slower emulators. Production is still 300ms.
+                    backend=flight.startMotion(1400L,{}){done.countDown()}
+                    check(lane.submit({
+                        ipcEntered.countDown()
+                        check(releaseIpc.await(8,java.util.concurrent.TimeUnit.SECONDS))
+                    }){it.getOrThrow();ipcDone.countDown()})
+                }
+                check(ipcEntered.await(2,java.util.concurrent.TimeUnit.SECONDS))
+                check(backend=="render_thread" || backend=="ui_transform")
+                var middleSeen=false
+                repeat(5){
+                    if(done.count>0 && !middleSeen){
+                        Thread.sleep(100)
+                        val shot=checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+                        try {
+                            var greenMoved=0;var oldVisible=0
+                            for(y in small.top until main.bottom step 12)
+                                for(x in small.left until main.right step 12){
+                                    val c=pixel(shot,x,y)
+                                    if(!small.contains(x,y) && similar(c,green))greenMoved++
+                                    if(similar(c,orange))oldVisible++
+                                }
+                            if(done.count>0 && greenMoved>3 && oldVisible>3)middleSeen=true
+                            check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
+                        } finally {shot.recycle()}
+                    }
+                }
+                check(middleSeen){"No composed moving two-card pixels while isolated IPC was blocked"}
+                check(done.await(4,java.util.concurrent.TimeUnit.SECONDS)){"Motion was blocked by simulated IPC"}
+                check(ipcDone.count==1L){"Worker unexpectedly completed before explicit release"}
+                frame(1f){shot->
+                    check(similar(pixel(shot,small.centerX(),small.centerY()),orange))
+                    check(similar(pixel(shot,main.centerX(),main.centerY()),green))
+                    check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
+                }
+            } finally {
+                releaseIpc.countDown()
             }
-            check(backend=="render_thread" || backend=="ui_transform")
-            check(done.await(3,java.util.concurrent.TimeUnit.SECONDS)){"Actual flight never ended"}
-            frame(1f){shot->
-                check(similar(pixel(shot,small.centerX(),small.centerY()),orange))
-                check(similar(pixel(shot,main.centerX(),main.centerY()),green))
-                check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
-            }
+            check(ipcDone.await(3,java.util.concurrent.TimeUnit.SECONDS))
             // A late slot buffer must not retain an already verified main
             // endpoint or its background mask. Test actual composed pixels.
             instrumentation.runOnMainSync { flight.revealMain() }
@@ -108,6 +146,6 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             Thread.sleep(200)
             instrumentation.runOnMainSync {flight.release()}
         }
-        return "PASS production transient HWUI flight: both directions, endpoint colors, unaffected rail, independent main reveal"
+        return "PASS production transient HWUI flight: both directions, endpoint colors, unaffected rail, independent main reveal, moving pixels under blocked simulated IPC"
     }
 }
