@@ -26,7 +26,9 @@ for reviewed_path in pr84_review:
 _pr84=(k/'systemui/StageTransientTapSwap.kt').read_text()
 _pr84_motion=(k/'systemui/StageSnapshotMotion.kt').read_text()
 assert 'StageSnapshotMotion.pairedFlights(' in _pr84
-assert 'box(viewport),excluded.map(::box)' in _pr84
+assert 'motionBox(viewport),others.map(::motionBox)' in _pr84
+assert 'runCatching{planFlight(a,b,slot,main,others,viewport)}' in _pr84
+assert 'FlightView(context,a,b,slot,main,others,backdrop,viewport,plan)' in _pr84
 assert 'excluded.forEach{canvas.clipOutRect(it)}' in _pr84
 assert 'snapshot_motion_backend=' in _pr84
 assert 'fun pairedFlights(' in _pr84_motion and 'visibleFractions(' in _pr84_motion
