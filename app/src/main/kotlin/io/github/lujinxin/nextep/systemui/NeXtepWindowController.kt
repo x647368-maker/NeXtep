@@ -2042,6 +2042,14 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
         attemptNative: Boolean = true,
     ) {
+        if (attemptNative && (drag != null || targetIndex != null || asyncMove == null)) {
+            val operation = when {
+                drag != null -> "drag_swap"
+                targetIndex != null -> "slot_to_slot"
+                else -> "legacy_swap"
+            }
+            StageExchangeTelemetry.beginNativeTap(operation)
+        }
         // P0 (3731.mp4 + PR51 real-device feedback): do not capture a
         // TextureView bitmap or await a screenshot before the real task move.
         // On the phased tap path the coordinator already owns an asynchronous,
