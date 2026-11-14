@@ -81,6 +81,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var motionDeadline:Runnable?=null
         private var terminalCommit:Runnable?=null
         private var terminalTimeout:Runnable?=null
+        private var terminalRetry:Runnable?=null
+        private val terminalRecovery=StageTerminalCommitRecovery()
         private val handoff=StageStableHandoff()
         private val mainHandoff=StageStableHandoff()
         private var mainRevealed=false
@@ -240,12 +242,11 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         private fun awaitTerminalFrame(v:FlightView){
             if(!current() || terminalCommit!=null || flightDone)return
-            v.progress=1f
-            v.invalidate()
-            val observer=host.viewTreeObserver
+            v.prepareTerminalFrame()
             val callback=Runnable {
                 ui.post {
-                    if(!current() || flightDone)return@post
+                    if(!current() || flightDone ||
+                        !terminalRecovery.accept(v.terminalFrameDrawn && v.isAttachedToWindow))return@post
                     clearTerminalCallbacks()
                     flightDone=true
                     trace("snapshot_flight_end")
@@ -259,17 +260,35 @@ internal class StageTransientTapSwap(private val context:Context) {
                     finish("terminal_commit_timeout")
                 }
             }
-            terminalCommit=callback;terminalTimeout=timeout
+            fun registerAndRender(){
+                // Register BEFORE dirtying the endpoint. An animator's end
+                // callback alone is not proof of an HWUI terminal frame.
+                runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}
+                    .onFailure{trace("snapshot_terminal_callback_unavailable")}
+                v.invalidate()
+                host.invalidate()
+            }
+            val retry=Runnable{
+                if(current() && !flightDone && terminalRecovery.retry()){
+                    runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(callback)}
+                    trace("snapshot_terminal_commit_retry")
+                    registerAndRender()
+                }
+            }
+            terminalCommit=callback;terminalTimeout=timeout;terminalRetry=retry
+            // One bounded re-arm, within the existing deadline, not a loop.
+            ui.postDelayed(retry,StageTerminalCommitRecovery.RETRY_MS)
             ui.postDelayed(timeout,StageTransientTapPolicy.FIRST_COMMIT_BUDGET_MS)
-            runCatching{observer.registerFrameCommitCallback(callback)}
-                .onFailure{trace("snapshot_terminal_callback_unavailable")}
+            registerAndRender()
         }
         private fun clearTerminalCallbacks(){
             terminalCommit?.let{cb->
                 runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
             }
             terminalTimeout?.let{ui.removeCallbacks(it)}
-            terminalCommit=null;terminalTimeout=null
+            terminalRetry?.let{ui.removeCallbacks(it)}
+            terminalRecovery.close()
+            terminalCommit=null;terminalTimeout=null;terminalRetry=null
         }
         private fun direct(why:String){
             if(!current() || moveStarted)return
@@ -387,6 +406,14 @@ internal class StageTransientTapSwap(private val context:Context) {
             }
         var drawn=false
             private set
+        var terminalFrameDrawn=false
+            private set
+        private var terminalFrameRequested=false
+        fun prepareTerminalFrame(){
+            terminalFrameDrawn=false
+            terminalFrameRequested=true
+            progress=1f
+        }
         private var released=false
         init{
             importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -437,7 +464,12 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(mainRevealed)canvas.clipRect(slotRect)
             super.dispatchDraw(canvas)
             canvas.restoreToCount(save)
-            if(canvas.isHardwareAccelerated && safe)drawn=true
+            if(canvas.isHardwareAccelerated && safe){
+                drawn=true
+                // Only the explicitly requested exact endpoint counts, not
+                // a cached first or intermediate animation frame.
+                if(terminalFrameRequested && progress==1f)terminalFrameDrawn=true
+            }
         }
         fun startMotion(duration:Long,trace:(String)->Unit,onEnd:()->Unit):String{
             stopMotion()

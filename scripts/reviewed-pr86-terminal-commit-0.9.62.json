@@ -1,0 +1,46 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt": {
+      "previous_blob_sha1": "67a2443f5b6f24a213192fb52681b3acb79d0d81",
+      "patches": [
+        {
+          "before": "        private var terminalTimeout:Runnable?=null\n",
+          "after": "        private var terminalTimeout:Runnable?=null\n        private var terminalRetry:Runnable?=null\n        private val terminalRecovery=StageTerminalCommitRecovery()\n"
+        },
+        {
+          "before": "            v.progress=1f\n            v.invalidate()\n            val observer=host.viewTreeObserver\n            val callback=Runnable {\n                ui.post {\n                    if(!current() || flightDone)return@post\n                    clearTerminalCallbacks()\n                    flightDone=true\n                    trace(\"snapshot_flight_end\")\n                    trace(\"snapshot_terminal_commit\")\n                    maybeHandoff()\n                }\n            }\n            val timeout=Runnable{\n                if(current() && !flightDone){\n                    trace(\"snapshot_terminal_commit_timeout\")\n                    finish(\"terminal_commit_timeout\")\n                }\n            }\n            terminalCommit=callback;terminalTimeout=timeout\n            ui.postDelayed(timeout,StageTransientTapPolicy.FIRST_COMMIT_BUDGET_MS)\n            runCatching{observer.registerFrameCommitCallback(callback)}\n                .onFailure{trace(\"snapshot_terminal_callback_unavailable\")}",
+          "after": "            v.prepareTerminalFrame()\n            val callback=Runnable {\n                ui.post {\n                    if(!current() || flightDone ||\n                        !terminalRecovery.accept(v.terminalFrameDrawn && v.isAttachedToWindow))return@post\n                    clearTerminalCallbacks()\n                    flightDone=true\n                    trace(\"snapshot_flight_end\")\n                    trace(\"snapshot_terminal_commit\")\n                    maybeHandoff()\n                }\n            }\n            val timeout=Runnable{\n                if(current() && !flightDone){\n                    trace(\"snapshot_terminal_commit_timeout\")\n                    finish(\"terminal_commit_timeout\")\n                }\n            }\n            fun registerAndRender(){\n                // Register BEFORE dirtying the endpoint. An animator's end\n                // callback alone is not proof of an HWUI terminal frame.\n                runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}\n                    .onFailure{trace(\"snapshot_terminal_callback_unavailable\")}\n                v.invalidate()\n                host.invalidate()\n            }\n            val retry=Runnable{\n                if(current() && !flightDone && terminalRecovery.retry()){\n                    runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(callback)}\n                    trace(\"snapshot_terminal_commit_retry\")\n                    registerAndRender()\n                }\n            }\n            terminalCommit=callback;terminalTimeout=timeout;terminalRetry=retry\n            // One bounded re-arm, within the existing deadline, not a loop.\n            ui.postDelayed(retry,StageTerminalCommitRecovery.RETRY_MS)\n            ui.postDelayed(timeout,StageTransientTapPolicy.FIRST_COMMIT_BUDGET_MS)\n            registerAndRender()"
+        },
+        {
+          "before": "            terminalTimeout?.let{ui.removeCallbacks(it)}\n            terminalCommit=null;terminalTimeout=null",
+          "after": "            terminalTimeout?.let{ui.removeCallbacks(it)}\n            terminalRetry?.let{ui.removeCallbacks(it)}\n            terminalRecovery.close()\n            terminalCommit=null;terminalTimeout=null;terminalRetry=null"
+        },
+        {
+          "before": "        var drawn=false\n            private set\n        private var released=false",
+          "after": "        var drawn=false\n            private set\n        var terminalFrameDrawn=false\n            private set\n        private var terminalFrameRequested=false\n        fun prepareTerminalFrame(){\n            terminalFrameDrawn=false\n            terminalFrameRequested=true\n            progress=1f\n        }\n        private var released=false"
+        },
+        {
+          "before": "            if(canvas.isHardwareAccelerated && safe)drawn=true\n        }\n        fun startMotion",
+          "after": "            if(canvas.isHardwareAccelerated && safe){\n                drawn=true\n                // Only the explicitly requested exact endpoint counts, not\n                // a cached first or intermediate animation frame.\n                if(terminalFrameRequested && progress==1f)terminalFrameDrawn=true\n            }\n        }\n        fun startMotion"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "3d63b8ea837c17938be5f3555bf4d5621e8e6ac3",
+      "patches": [
+        {
+          "before": "        var slotLatchRequested=false\n        fun verifiedMainEndpoint():Boolean =",
+          "after": "        var slotLatchRequested=false\n        fun requestSlotLatch(){\n            if(slotLatchRequested)return\n            slotLatchRequested=true\n            slot.view.textureView.postInvalidateOnAnimation()\n            StageExchangeTelemetry.nativeEvent(\"snapshot_slot_latch_requested\",traceId)\n        }\n        fun verifiedMainEndpoint():Boolean ="
+        },
+        {
+          "before": "                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack\n                    }\n                    done(ok)",
+          "after": "                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack\n                        // The move is genuinely confirmed. Ask for the same\n                        // single traversal now instead of waiting for the\n                        // visual terminal callback; never count it as output.\n                        val baseline=outputAtConfirmedMove\n                        if(baseline!=null && ack!=null && same(baseline,ack) &&\n                            ack.sequence<=baseline.sequence &&\n                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&\n                            mainTaskPresenter.currentTaskId()==state.taskId){\n                            requestSlotLatch()\n                        }\n                    }\n                    done(ok)"
+        },
+        {
+          "before": "                if(wait==\"slot_buffer\" && !slotLatchRequested){\n                    slotLatchRequested=true\n                    // One UI traversal only. This does not change the producer,\n                    // sequence, owner or buffer readiness test; no invented ACK.\n                    slot.view.textureView.postInvalidateOnAnimation()\n                    StageExchangeTelemetry.nativeEvent(\"snapshot_slot_latch_requested\",traceId)\n                }",
+          "after": "                // If ACK did not request it, retain the original one-shot fallback.\n                if(wait==\"slot_buffer\")requestSlotLatch()"
+        }
+      ]
+    }
+  }
+}

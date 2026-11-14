@@ -2098,6 +2098,12 @@ class NeXtepWindowController(
         var outputAtConfirmedMove:VirtualDisplaySlot.OutputFrameMark?=null
         var reason=""
         var slotLatchRequested=false
+        fun requestSlotLatch(){
+            if(slotLatchRequested)return
+            slotLatchRequested=true
+            slot.view.textureView.postInvalidateOnAnimation()
+            StageExchangeTelemetry.nativeEvent("snapshot_slot_latch_requested",traceId)
+        }
         fun verifiedMainEndpoint():Boolean =
             canRelease() &&
                 (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&
@@ -2129,6 +2135,16 @@ class NeXtepWindowController(
                         val ack=slot.outputFrameMark()
                         val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
                         outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack
+                        // The move is genuinely confirmed. Ask for the same
+                        // single traversal now instead of waiting for the
+                        // visual terminal callback; never count it as output.
+                        val baseline=outputAtConfirmedMove
+                        if(baseline!=null && ack!=null && same(baseline,ack) &&
+                            ack.sequence<=baseline.sequence &&
+                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&
+                            mainTaskPresenter.currentTaskId()==state.taskId){
+                            requestSlotLatch()
+                        }
                     }
                     done(ok)
                 }
@@ -2145,13 +2161,8 @@ class NeXtepWindowController(
                     !TaskSurfaceCompat.isPresentationSettled(state.taskId,g)->"main_geometry"
                     else->"ready"
                 }
-                if(wait=="slot_buffer" && !slotLatchRequested){
-                    slotLatchRequested=true
-                    // One UI traversal only. This does not change the producer,
-                    // sequence, owner or buffer readiness test; no invented ACK.
-                    slot.view.textureView.postInvalidateOnAnimation()
-                    StageExchangeTelemetry.nativeEvent("snapshot_slot_latch_requested",traceId)
-                }
+                // If ACK did not request it, retain the original one-shot fallback.
+                if(wait=="slot_buffer")requestSlotLatch()
                 if(wait!=reason){reason=wait;StageExchangeTelemetry.nativeEvent("snapshot_wait="+wait,traceId)}
                 wait=="ready"
             },
