@@ -24,6 +24,7 @@ internal object WorkspaceEnergyContract {
         val slotFrames: Long,
         val taskQueries: Long,
         val previewCaptures: Long,
+        val exchangeDiagnostics: String? = null,
     )
 
     fun register(context: Context, handler: Handler, snapshot: () -> Bundle) {
@@ -53,7 +54,8 @@ internal object WorkspaceEnergyContract {
                 val value = if (resultCode == RESULT_SNAPSHOT && data?.getInt("version") == 1) {
                     Snapshot(data.getInt("pid"), data.getLong("elapsed_ms"), data.getLong("cpu_ms"),
                         data.getBoolean("active"), data.getBoolean("suspended"), data.getInt("slot_count"),
-                        data.getLong("slot_frames"), data.getLong("task_queries"), data.getLong("preview_captures"))
+                        data.getLong("slot_frames"), data.getLong("task_queries"), data.getLong("preview_captures"),
+                        data.getString("exchange_diagnostics"))
                 } else null
                 complete(value)
             }
