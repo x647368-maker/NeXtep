@@ -1801,10 +1801,10 @@ class SlotTaskCoordinator(
                                         it.displayId==occupied.displayId
                                     }?.let { finalMark ->
                                         val earlier=earlyMark?.takeIf {
-                                            it.displayId==finalMark.displayId &&
-                                            it.texture===finalMark.texture && it.surface===finalMark.surface &&
-                                            it.sequence<=finalMark.sequence &&
-                                            earlyCanvas==canvas
+                                            StageEarlySlotOutputPolicy.allowEarlier(
+                                                it.displayId,finalMark.displayId,it.texture,finalMark.texture,
+                                                it.surface,finalMark.surface,it.sequence,finalMark.sequence,
+                                                earlyCanvas==canvas)
                                         }
                                         if(earlier!=null)
                                             StageExchangeTelemetry.phasedEvent("slot_early_verified_output_mark")
