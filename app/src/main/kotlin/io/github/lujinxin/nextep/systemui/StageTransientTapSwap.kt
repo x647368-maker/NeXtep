@@ -43,11 +43,12 @@ internal class StageTransientTapSwap(private val context:Context) {
               incoming:TaskSurfaceCompat.MirrorSourceStamp,outgoing:TaskSurfaceCompat.MirrorSourceStamp,
               slotCrop:Rect,mainCrop:Rect,backdrop:Drawable?,
               valid:()->Boolean,moveAsync:((Boolean)->Unit)->Unit,
-              liveReady:()->Boolean,trace:(String)->Unit,onFinished:()->Unit):Boolean {
+              liveReady:()->Boolean,trace:(String)->Unit,onFinished:()->Unit,
+              onVisualStart:()->Unit={},onVisualEnd:()->Unit={}):Boolean {
         if(active!=null || !host.isAttachedToWindow || !host.isHardwareAccelerated ||
             slot.isEmpty || main.isEmpty || slotCrop.isEmpty || mainCrop.isEmpty) return false
         val a=Attempt(host,Rect(slot),Rect(main),otherSlots.map(::Rect),incoming,outgoing,
-            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished)
+            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd)
         active=a
         a.begin()
         return true
@@ -59,6 +60,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val slotCrop:Rect,val mainCrop:Rect,val backdrop:Drawable?,
         val valid:()->Boolean,val moveAsync:((Boolean)->Unit)->Unit,
         val liveReady:()->Boolean,val trace:(String)->Unit,val onFinished:()->Unit,
+        val onVisualStart:()->Unit,val onVisualEnd:()->Unit,
     ) {
         private var waitingCapture=true
         private var waitingCommit=false
@@ -67,6 +69,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var flightDone=false
         private var fallback=false
         private var handoffStarted=false
+        private var visualOwned=false
         private var view:FlightView?=null
         private var animator:ValueAnimator?=null
         private val handoff=StageStableHandoff()
@@ -100,10 +103,18 @@ internal class StageTransientTapSwap(private val context:Context) {
             ui.postDelayed(lifetime,StageTransientTapPolicy.MAX_ATTEMPT_MS)
             runCatching {
                 worker.execute {
-                    val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop)
-                    val b=if(a!=null && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline))
-                        TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop) else null
-                    ui.post { captured(a,b,deadline) }
+                    var incomingFailure="none"
+                    var outgoingFailure="not_attempted"
+                    val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    val b=if(a!=null && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
+                        outgoingFailure="none"
+                        TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
+                    } else null
+                    ui.post {
+                        if(current() && waitingCapture && (a==null || b==null))
+                            trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
+                        captured(a,b,deadline)
+                    }
                 }
             }.onFailure {
                 waitingCapture=false
@@ -151,6 +162,12 @@ internal class StageTransientTapSwap(private val context:Context) {
                 finish("stale_at_commit");return
             }
             trace("snapshot_first_frame_committed")
+            // Prevent the slot's independent entrance/exit animation from
+            // running underneath the two-card flight and exposing a second scale.
+            visualOwned=true
+            runCatching(onVisualStart).onFailure {
+                finish("visual_start_failed");return
+            }
             animator=ValueAnimator.ofFloat(0f,1f).apply {
                 duration=StageTransientTapPolicy.FLIGHT_MS
                 interpolator=PathInterpolator(.22f,0f,.12f,1f)
@@ -206,6 +223,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             animator?.removeAllUpdateListeners()
             animator?.cancel()
             animator=null
+            if(visualOwned){visualOwned=false;runCatching(onVisualEnd)}
             val old=view ?: return
             view=null
             runCatching{host.removeView(old)}
@@ -235,7 +253,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
     }
 
-    private class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
+    internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
                              slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?):View(context){
         private fun box(r:Rect)=StageLiveSurfaceFlightGeometry.Box(r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
         private val small=box(slot)
