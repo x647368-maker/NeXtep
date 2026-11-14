@@ -29,9 +29,8 @@ internal object StageSnapshotMotion {
             // Sin^2 has zero slope at both endpoints; opposite travel directions
             // imply opposite lateral offsets. No stationary phase or 90deg bend.
             val bend=sin(PI.toFloat()*p).let{it*it}*arc
-            // Preserve the visibility-tested stagger: the outgoing card
-            // contracts on a different phase from the incoming card's growth.
-            // The corridor scorer evaluates the pair together to limit occlusion.
+            // Small card grows slightly later; outgoing card shrinks earlier.
+            // Both have strictly monotonic size and zero overshoot.
             val q=if(growing)p else 1f-p
             val gentle=q*q*(2f-q)
             val compact=q*q*q
