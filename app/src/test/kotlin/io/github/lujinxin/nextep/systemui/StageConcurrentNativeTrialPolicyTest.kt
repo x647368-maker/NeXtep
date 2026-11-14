@@ -97,6 +97,22 @@ class StageConcurrentNativeTrialPolicyTest {
         assertTrue(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,43L))
     }
 
+    @Test fun acknowledgedMoveNeverDependsOnAViewOrMissingAnimatorEndForever() {
+        val p=StageConcurrentNativeTrialPolicy
+        assertEquals(StageConcurrentNativeTrialPolicy.HandoffAction.WAIT,
+            p.handoffAction(0,480,false,true,true))
+        assertEquals(StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED,
+            p.handoffAction(480,480,false,true,true))
+        assertEquals(StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED,
+            p.handoffAction(480,480,true,true,false))
+        assertEquals(StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED,
+            p.handoffAction(480,480,true,false,true))
+        assertEquals(StageConcurrentNativeTrialPolicy.HandoffAction.READY,
+            p.handoffAction(80,480,true,true,true))
+        assertEquals(116L,p.nextHandoffCheck(100,580))
+        assertEquals(580L,p.nextHandoffCheck(578,580))
+    }
+
     @Test fun transientMirrorReadinessDoesNotDisableTheSession() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         for (reason in listOf("fallback:detached_or_software",

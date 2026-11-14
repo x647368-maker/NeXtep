@@ -1,7 +1,7 @@
 id=atomic_workbench
 name=台前调度
-version=0.9.48-dev
-versionCode=63
+version=0.9.49-dev
+versionCode=64
 author=x647368-maker; based on lujinxin/NeXtep
 description=Experimental four-slot Android workspace; device validation pending
 minApiVersion=101
