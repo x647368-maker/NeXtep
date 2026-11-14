@@ -78,6 +78,10 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var handoffStarted=false
         private var visualOwned=false
         private var view:FlightView?=null
+        private val firstRecovery=StageTerminalCommitRecovery()
+        private var firstCommit:Runnable?=null
+        private var firstObserver:android.view.ViewTreeObserver?=null
+        private var firstRetry:Runnable?=null
         private var motionCommit:Runnable?=null
         private var motionDeadline:Runnable?=null
         private var terminalCommit:Runnable?=null
@@ -130,17 +134,27 @@ internal class StageTransientTapSwap(private val context:Context) {
                 worker.execute {
                     var incomingFailure="none"
                     var outgoingFailure="not_attempted"
+                    val captureStarted=SystemClock.uptimeMillis()
                     val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    val firstCaptured=SystemClock.uptimeMillis()
                     val b=if(a!=null && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
                         outgoingFailure="none"
                         TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
                     } else null
+                    val bothCaptured=SystemClock.uptimeMillis()
                     // Plan once on the already active snapshot worker, using
                     // immutable copies of the viewport and protected slot geometry.
                     val plan=if(a!=null && b!=null && SystemClock.uptimeMillis()<deadline)
                         runCatching{planFlight(a,b,slot,main,others,viewport)}.getOrNull()
                     else null
+                    val plannedAt=SystemClock.uptimeMillis()
                     ui.post {
+                        // One bounded timing record, no per-frame trace or new worker.
+                        // Split actual capture/planning from main-loop callback delay.
+                        if(current() && waitingCapture)
+                            trace("snapshot_cost_ms="+(firstCaptured-captureStarted)+"/"+
+                                (bothCaptured-firstCaptured)+"/"+(plannedAt-bothCaptured)+"/"+
+                                (SystemClock.uptimeMillis()-plannedAt))
                         if(current() && waitingCapture && (a==null || b==null))
                             trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
                         captured(a,b,deadline,plan)
@@ -171,22 +185,55 @@ internal class StageTransientTapSwap(private val context:Context) {
             trace("snapshot_pair_ready")
             waitingCommit=true
             ui.postDelayed(commitTimeout,StageTransientTapPolicy.FIRST_COMMIT_BUDGET_MS)
-            runCatching {
-                host.viewTreeObserver.registerFrameCommitCallback {
-                    ui.post {
-                        if(current() && waitingCommit && v.drawn && v.isAttachedToWindow) {
-                            waitingCommit=false
-                            ui.removeCallbacks(commitTimeout)
-                            beginFlight(v)
-                        }
+            armFirstFrame(v)
+        }
+        private fun armFirstFrame(v:FlightView){
+            val callback=Runnable{
+                ui.post {
+                    if(current() && waitingCommit &&
+                        firstRecovery.accept(v.drawn && v.isAttachedToWindow)){
+                        waitingCommit=false
+                        clearFirstCallbacks()
+                        beginFlight(v)
                     }
                 }
+            }
+            fun registerAndRender(){
+                val observer=host.viewTreeObserver
+                firstObserver=observer
+                observer.registerFrameCommitCallback(callback)
                 v.invalidate()
-            }.onFailure{
+                host.invalidate()
+            }
+            val retry=Runnable{
+                if(current() && waitingCommit && firstRecovery.retry()){
+                    firstObserver?.let{observer->
+                        runCatching{if(observer.isAlive)observer.unregisterFrameCommitCallback(callback)}
+                    }
+                    trace("snapshot_first_commit_retry")
+                    runCatching{registerAndRender()}
+                        .onFailure{trace("snapshot_first_retry_unavailable")}
+                }
+            }
+            firstCommit=callback;firstRetry=retry
+            // Exactly one re-arm inside the existing 110ms first-frame budget.
+            // Neither retry nor timeout creates permission to start a flight.
+            ui.postDelayed(retry,StageTerminalCommitRecovery.RETRY_MS)
+            runCatching{registerAndRender()}.onFailure{
                 waitingCommit=false
-                ui.removeCallbacks(commitTimeout)
+                clearFirstCallbacks()
                 direct("commit_unavailable")
             }
+        }
+        private fun clearFirstCallbacks(){
+            val observer=firstObserver
+            firstCommit?.let{cb->
+                runCatching{if(observer?.isAlive==true)observer.unregisterFrameCommitCallback(cb)}
+            }
+            firstRetry?.let{ui.removeCallbacks(it)}
+            ui.removeCallbacks(commitTimeout)
+            firstRecovery.close()
+            firstCommit=null;firstObserver=null;firstRetry=null
         }
         private fun beginFlight(v:FlightView){
             if(!StageTransientTapPolicy.canStartMove(stillValid(),v.drawn,moveStarted)){
@@ -322,6 +369,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             checkHandoff.run()
         }
         private fun removeVisual(){
+            clearFirstCallbacks()
             clearMotionCallbacks()
             clearTerminalCallbacks()
             view?.stopMotion()

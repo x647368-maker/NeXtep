@@ -13,7 +13,29 @@ pr85_review=json.loads((root/'scripts/reviewed-pr85-endpoint-backdrop-0.9.61.jso
 pr86_review=json.loads((root/'scripts/reviewed-pr86-terminal-commit-0.9.62.json').read_text())['files']
 # PR87b: symmetric scale curves, synchronized RenderThread channels and denser route scoring.
 pr87_smooth_review=json.loads((root/'scripts/reviewed-pr87-smooth-synchronized-motion-0.9.63.json').read_text())['files']
+# PR88 exact fragment normalization preserves all earlier reviewed hashes.
+pr88_review=json.loads((root/'scripts/reviewed-pr88-first-frame-recovery-0.9.64.json').read_text())['files']
+def undo_pr88(path,data):
+ if path not in pr88_review:return data
+ spec=pr88_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr88_review:
+ undo_pr88(reviewed_path,(root/reviewed_path).read_bytes())
+_pr88=(k/'systemui/StageTransientTapSwap.kt').read_text()
+assert 'firstRecovery.accept(v.drawn && v.isAttachedToWindow)' in _pr88
+assert 'firstRecovery.retry()' in _pr88
+assert 'firstRetry?.let{ui.removeCallbacks(it)}' in _pr88
+assert 'firstRecovery.close()' in _pr88
+assert 'snapshot_cost_ms=' in _pr88
 def undo_pr87_smooth(path,data):
+ data=undo_pr88(path,data)
  if path not in pr87_smooth_review:return data
  spec=pr87_smooth_review[path]
  source=data.decode('utf-8')

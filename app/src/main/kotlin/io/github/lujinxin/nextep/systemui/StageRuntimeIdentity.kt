@@ -5,7 +5,7 @@ import android.os.*
 
 /** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */
 internal object StageRuntimeIdentity {
-    const val BUILD = "0.9.63-dev/78"
+    const val BUILD = "0.9.64-dev/79"
     const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_30"
     const val AUDIT_ACTION="io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1"
     private var registered=false
