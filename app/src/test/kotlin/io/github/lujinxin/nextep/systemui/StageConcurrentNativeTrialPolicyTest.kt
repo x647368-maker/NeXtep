@@ -57,6 +57,22 @@ class StageConcurrentNativeTrialPolicyTest {
         StageConcurrentNativeTrialPolicy.resetForTests()
     }
 
+    @Test fun diagnoseDifferentGateReasonsWithoutChangingExistingSafetyPolicy() {
+        StageConcurrentNativeTrialPolicy.resetForTests()
+        assertEquals("allowed",StageConcurrentNativeTrialPolicy.gateReason(true,true,false))
+        assertEquals("workspace_or_sidebar_not_ready",
+            StageConcurrentNativeTrialPolicy.gateReason(false,true,false))
+        assertEquals("system_animators_disabled",
+            StageConcurrentNativeTrialPolicy.gateReason(true,false,false))
+        assertEquals("power_saver",StageConcurrentNativeTrialPolicy.gateReason(true,true,true))
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(81))
+        val reason=StageConcurrentNativeTrialPolicy.gateReason(true,true,false)
+        assertTrue(reason.contains("prepare_timeout_81ms"))
+        assertTrue(reason.contains("session_disabled"))
+        assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
+        StageConcurrentNativeTrialPolicy.resetForTests()
+    }
+
     @Test fun slotReadyRequiresPostMoveBuffer() {
         assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(null,1L))
         assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,42L))

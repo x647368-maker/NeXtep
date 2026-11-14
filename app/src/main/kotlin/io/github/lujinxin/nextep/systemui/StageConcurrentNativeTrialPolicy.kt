@@ -20,6 +20,8 @@ internal object StageConcurrentNativeTrialPolicy {
     private const val MIN_FRAME_COUNT=3
     private const val FINAL_FRAME_TOLERANCE_MS=6L
     @Volatile private var disabled=false
+    @Volatile private var disabledReason="none"
+    @Volatile private var lastPrepareMs=-1L
     // Only touched on the SystemUI main thread during an explicit swap.
     // Warm first-use reflection can exceed a single frame without OEM failure.
     private var consecutiveSlowPreparations=0
@@ -27,11 +29,21 @@ internal object StageConcurrentNativeTrialPolicy {
     fun allowed(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean):Boolean =
         !disabled && visible && animationEnabled && !powerSave
 
+    /** Read-only, explicit reason for a missing animation. Never consumes a retry. */
+    fun gateReason(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean):String = when {
+        disabled -> "session_disabled:$disabledReason"
+        !visible -> "workspace_or_sidebar_not_ready"
+        !animationEnabled -> "system_animators_disabled"
+        powerSave -> "power_saver"
+        else -> "allowed"
+    }
+
     fun fullScreenHost(x:Int,y:Int,width:Int,height:Int,physicalW:Int,physicalH:Int):Boolean =
         x==0 && y==0 && physicalW>1 && physicalH>1 &&
             width>=physicalW && height>=physicalH
 
     fun acceptPrepareTime(ms:Long):Boolean {
+        lastPrepareMs=ms
         if (disabled || ms < 0L) return false
         if (ms <= PREP_BUDGET_MS) {
             consecutiveSlowPreparations=0
@@ -40,7 +52,10 @@ internal object StageConcurrentNativeTrialPolicy {
         consecutiveSlowPreparations++
         // Never run this attempt if it exceeded 28ms. One ordinary cold miss
         // is recoverable; a second consecutive miss or severe stall locks out.
-        if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) disabled=true
+        if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) {
+            disabled=true
+            disabledReason="prepare_timeout_${ms}ms_streak${consecutiveSlowPreparations}"
+        }
         return false
     }
 
@@ -83,9 +98,13 @@ internal object StageConcurrentNativeTrialPolicy {
         frameAtAck != null && currentFrame > frameAtAck
 
     fun disableForSession(reason:String) {
+        disabledReason=reason.take(100)
         disabled=true
         // Reason is logged by the caller; no app/process data is collected.
     }
 
-    internal fun resetForTests() { disabled=false; consecutiveSlowPreparations=0 }
+    internal fun resetForTests() {
+        disabled=false; disabledReason="none"; lastPrepareMs=-1L
+        consecutiveSlowPreparations=0
+    }
 }
