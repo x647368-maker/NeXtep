@@ -353,15 +353,17 @@ internal class StageTransientTapSwap(private val context:Context) {
                             value:(StageSnapshotMotion.Pose)->Float):Animator{
                     val from=value(flight.start)
                     val exact=value(flight.end)
-                    val to=StageSnapshotMotion.hardwareEnd(from,exact)
+                    val to=StageSnapshotMotion.hardwareEnd(from,exact,
+                        if(name.startsWith("SCALE")) .0001f else .25f)
                     val anim=ctor.newInstance(klass.getField(name).getInt(null),to) as Animator
-                    target.invoke(anim,view)
+                    animations.add(anim)
                     startValue.invoke(anim,from)
                     anim.duration=duration
                     anim.interpolator=TimeInterpolator{t->
                         val raw=t.coerceIn(0f,1f)
                         if(raw>=1f)1f else (value(flight.pose(easing.getInterpolation(raw)))-from)/(to-from)
                     }
+                    target.invoke(anim,view)
                     return anim
                 }
                 val list=mutableListOf<Animator>()
@@ -371,7 +373,6 @@ internal class StageTransientTapSwap(private val context:Context) {
                     list+=channel(v,f,"SCALE_X"){it.scale}
                     list+=channel(v,f,"SCALE_Y"){it.scale}
                 }
-                animations.addAll(list)
                 var remaining=list.size
                 list.forEach{anim->
                     anim.addListener(object:AnimatorListenerAdapter(){
