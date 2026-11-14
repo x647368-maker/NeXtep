@@ -145,6 +145,43 @@ class StageLiveSurfaceFlightGeometryTest {
             selected,main,126,380,emptyList(),80))
     }
 
+    @Test fun mainMirrorCropAndPlacementUseTheSameCoordinateSpace() {
+        val g=StageLiveSurfaceFlightGeometry
+        for ((w,h) in listOf(1140 to 2616,2248 to 2480,2560 to 1600,
+            2616 to 1140,2480 to 2248,1600 to 2560)) {
+            // Exact proportional main view with a nonzero screen origin.
+            val main=b(50f,60f,50f+w*.65f,60f+h*.65f)
+            val slot=b(w*.8f,h*.3f,w*.95f,h*.5f)
+            for(detached in listOf(false,true)) {
+                val crop=g.mainMirrorCrop(main,w,h,detached)!!
+                if(detached) {
+                    assertEquals(0,crop.left)
+                    assertEquals(w,crop.right)
+                } else {
+                    assertEquals(50,crop.left)
+                    assertEquals(main.right.toInt(),crop.right)
+                }
+                for(i in 0..120) {
+                    val p=g.railCorridorFlight(main,slot,crop.right-crop.left,
+                        crop.bottom-crop.top,i/120f)!!
+                    val x=g.mirrorPosition(p.x,crop.left,p.scale)
+                    val y=g.mirrorPosition(p.y,crop.top,p.scale)
+                    assertEquals(p.box.left,x+crop.left*p.scale,.01f)
+                    assertEquals(p.box.right,x+crop.right*p.scale,.02f)
+                    assertEquals(p.box.top,y+crop.top*p.scale,.01f)
+                    assertEquals(p.box.bottom,y+crop.bottom*p.scale,.02f)
+                    if(i==0) {
+                        assertEquals(main.cx,p.box.cx,.02f)
+                        assertEquals(main.cy,p.box.cy,.02f)
+                        assertEquals(main.width,p.box.width,2f)
+                        assertEquals(main.height,p.box.height,2f)
+                    }
+                }
+            }
+        }
+        assertNull(g.mainMirrorCrop(b(-1f,0f,400f,800f),1140,2616,false))
+    }
+
     @Test fun originalViewRootCropIncludesOnlyTappedCard() {
         val card=b(80f,210f,330f,750f)
         val crop=StageLiveSurfaceFlightGeometry.localCrop(card,50,160,400,1100)!!
