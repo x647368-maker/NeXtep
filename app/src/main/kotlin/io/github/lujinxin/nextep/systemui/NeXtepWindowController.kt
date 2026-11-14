@@ -1896,6 +1896,7 @@ class NeXtepWindowController(
         canRelease: () -> Boolean,
         onFinished: () -> Unit,
     ): Boolean {
+        val traceId=StageExchangeTelemetry.currentNativeTapId()
         if (!StageConcurrentNativeTrialPolicy.allowed(
                 workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
                 android.animation.ValueAnimator.areAnimatorsEnabled(),
@@ -2007,9 +2008,10 @@ class NeXtepWindowController(
             immediateMove=true,
             onFinished={
                 slot.view.endExchangePreview()
-                StageExchangeTelemetry.nativeEvent("native_finished:"+StageLiveSurfaceExchange.lastOutcome())
+                StageExchangeTelemetry.nativeEvent(
+                    "native_finished:"+StageLiveSurfaceExchange.lastOutcome(),traceId)
                 StageExchangeTelemetry.endNativeTap(
-                    "gpu_" + StageLiveSurfaceExchange.lastOutcome().take(48))
+                    "gpu_" + StageLiveSurfaceExchange.lastOutcome().take(48),traceId)
                 activeSwapViewport=null
                 liveSurfaceExchange=null
                 val flush=deferredSwapGeometryRefresh
@@ -2057,6 +2059,7 @@ class NeXtepWindowController(
             previewCapturePending = false
             val tappedAt = android.os.SystemClock.uptimeMillis()
             StageExchangeTelemetry.beginNativeTap()
+            val tapTraceId=StageExchangeTelemetry.currentNativeTapId()
             NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
             val phasedMove = checkNotNull(asyncMove)
             // Only the private experimental branch enables an actual two-GPU-
@@ -2084,16 +2087,16 @@ class NeXtepWindowController(
                     NeXtepLog.info("swap_latency",
                         "Phased task exchange finished ok=$ok elapsedMs=" +
                             (android.os.SystemClock.uptimeMillis() - tappedAt))
-                    StageExchangeTelemetry.nativeEvent("fallback_move_ack_ok=$ok")
-                    StageExchangeTelemetry.endNativeTap("fallback_real_move_$ok")
+                    StageExchangeTelemetry.nativeEvent("fallback_move_ack_ok=$ok",tapTraceId)
+                    StageExchangeTelemetry.endNativeTap("fallback_real_move_$ok",tapTraceId)
                     onFinished()
                     scheduleStageFocus()
                 }
             }.onFailure {
                 NeXtepLog.error("swap_latency", "Phased tap move could not start", it)
                 oneShotSwapMotion.cancel()
-                StageExchangeTelemetry.nativeEvent("fallback_move_exception")
-                StageExchangeTelemetry.endNativeTap("fallback_exception")
+                StageExchangeTelemetry.nativeEvent("fallback_move_exception",tapTraceId)
+                StageExchangeTelemetry.endNativeTap("fallback_exception",tapTraceId)
                 onFinished()
             }
             return
