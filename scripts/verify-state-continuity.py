@@ -200,7 +200,26 @@ for reviewed_path in pr65_review:
 
 # Normal two-task exchange must yield while observing OEM task display status.
 # These are source contracts, not evidence of real-device smoothness.
-_pr64_coordinator=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt').read_text()
+_pr76_coordinator_path='app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt'
+_pr76_coordinator=(root/_pr76_coordinator_path).read_text()
+_pr76_async=_pr76_coordinator.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
+assert 'SystemClock.sleep(' not in _pr76_async
+assert 'exchangeHandler.postDelayed(' in _pr76_async
+assert 'moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY)' in _pr76_coordinator
+assert 'moveTaskToDisplayNonBlocking(mainTask, occupied.displayId)' in _pr76_coordinator
+assert 'checkIdentity(current)' in _pr76_async and 'done(Result.success(current))' in _pr76_async
+assert 'confirmedOutput=if (canvas != null' in _pr76_coordinator
+assert 'parked.bounds==Rect(0,0,canvas.width,canvas.height)' in _pr76_coordinator
+assert 'parked.densityDpi==canvas.densityDpi' in _pr76_coordinator
+assert 'exchangeSession?.phase==ExchangeSession.Phase.COMMITTED' in _pr76_coordinator
+_pr76_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
+assert 'confirmedOutputMark(slotIndex,task)' in _pr76_controller
+assert 'StageConcurrentNativeTrialPolicy.sameOutput(' in _pr76_controller
+assert 'StageConcurrentNativeTrialPolicy.freshFrameOnConfirmedOutput(' in _pr76_controller
+_pr76_slot=(k/'display/VirtualDisplaySlot.kt').read_text()
+assert 'outputConnected && boundTexture === texture' in _pr76_slot
+# The exact reviewed predecessor still must satisfy every PR64 guard.
+_pr64_coordinator=undo_pr76(_pr76_coordinator_path,(root/_pr76_coordinator_path).read_bytes()).decode('utf-8')
 _pr64_async=_pr64_coordinator.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
 assert 'SystemClock.sleep(' not in _pr64_async
 assert 'exchangeHandler.postDelayed(' in _pr64_async
