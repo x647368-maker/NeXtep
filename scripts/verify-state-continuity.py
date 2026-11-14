@@ -19,7 +19,32 @@ pr88_review=json.loads((root/'scripts/reviewed-pr88-first-frame-recovery-0.9.64.
 pr89_review=json.loads((root/'scripts/reviewed-pr89-foreground-binder-0.9.65.json').read_text())['files']
 # PR90 confines layout submission to the existing lane and retains owner validation.
 pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').read_text())['files']
+# PR91: cancel only forward observation, never release a submitted IPC early.
+pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
+def undo_pr91(path,data):
+ if path not in pr91_review:return data
+ spec=pr91_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr91_review:
+ undo_pr91(reviewed_path,(root/reviewed_path).read_bytes())
+_pr91=(k/'display/SlotTaskCoordinator.kt').read_text()
+_pr91_session=(k/'display/ExchangeSession.kt').read_text()
+_pr91_move=_pr91.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
+assert 'exchangeSession?.acceptsForwardWork==true' in _pr91
+assert _pr91.count('stillCurrent=::forwardCurrent')==4
+assert '!cancelled && now() < deadline' in _pr91_session
+assert _pr91_move.count('check(stillCurrent())')==4
+assert _pr91_move.index('Stale exchange during display observation')<_pr91_move.index('taskRepository.runningTasks()')
+assert 'else runCatching{afterBinder()}.onFailure{done(Result.failure(it))}' in _pr91_move
 def undo_pr90(path,data):
+ data=undo_pr91(path,data)
  if path not in pr90_review:return data
  spec=pr90_review[path]
  source=data.decode('utf-8')

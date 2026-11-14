@@ -1,3 +1,7 @@
+台前调度 v0.9.67-dev（versionCode 82）｜失效交换会话停止观察专项
+
+v80、v81 已通过完整 CI。源码发现 cancelPendingExchange 对尚未完成的 ExchangeSession 仅设置取消状态，不必改变 generation；此前显示器迁移 IPC 返回后的观察循环可能在取消、旋转换布局或会话总超时后继续查询，直到局部观察超时。新增 owner-only forward permission，结合 generation、active、suspended、固定交换视口与显示器身份；提交前和真实 Binder 返回后、每次显示观察与其后校验失效状态；布局/前台回调同用许可。失效仅停止前向工作，等待真实已提交 IPC 返回后才走旧 rollback，保留所有任务/显示器预留，不新增查询或轮询，不改变布局、轨迹、Surface、真实缓冲门槛。新增取消、总期限和晚到回复模型测试；不宣称已测得节电或提速。未改 main、未发布，待完整 CI 与真机验收。
+
 台前调度 v0.9.66-dev（versionCode 81）｜布局事务 Binder 隔离专项候选
 
 在 v80 前台调用隔离基础上，将正常双任务异步交换中两处原有 WindowOrganizer.applyTransaction 布局提交移至同一单飞 Binder lane；仅移动系统 IPC，不改变 WCT 内容、顺序、尺寸、DPI、模式、Surface 写入、原有同步回滚或其他入口。提交前及真实返回后在 owner 检查会话 generation、active、suspended、几何与相关显示器身份；布局观察另外要求任务 token、userId、displayId 一致，取消或身份变化走原回滚，不抢先释放任务。仍需真实返回和原观察匹配才继续。不新增常驻线程、系统调用次数、轮询频率或截图次数。v80 的 HWUI 最新查询尚未返回，v81 为叠加隔离候选；必须分别核验完整 CI 与真机，不宣称实际提速、不改 main、不公开发布。

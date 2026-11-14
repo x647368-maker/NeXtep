@@ -36,6 +36,15 @@ internal class ExchangeSession<L>(
     private var notified = false
     val settled get() = phase == Phase.COMMITTED || phase == Phase.RESTORED
 
+    // Owner-only permission for continuing forward work after an actual IPC.
+    // Cancellation does not release reservations or fabricate an IPC reply.
+    val acceptsForwardWork: Boolean
+        get() {
+            checkThread()
+            return !cancelled && now() < deadline &&
+                (phase == Phase.PROMOTING || phase == Phase.DEMOTING)
+        }
+
     fun start() {
         checkThread()
         if (phase != Phase.PREPARED) return

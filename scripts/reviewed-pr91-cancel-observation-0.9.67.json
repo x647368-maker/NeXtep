@@ -1,0 +1,78 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/ExchangeSession.kt": {
+      "previous_blob_sha1": "4855c74984a3ffc285829027d7ac5b8ec9b09904",
+      "patches": [
+        {
+          "before": "    val settled get() = phase == Phase.COMMITTED || phase == Phase.RESTORED\n\n    fun start() {",
+          "after": "    val settled get() = phase == Phase.COMMITTED || phase == Phase.RESTORED\n\n    // Owner-only permission for continuing forward work after an actual IPC.\n    // Cancellation does not release reservations or fabricate an IPC reply.\n    val acceptsForwardWork: Boolean\n        get() {\n            checkThread()\n            return !cancelled && now() < deadline &&\n                (phase == Phase.PROMOTING || phase == Phase.DEMOTING)\n        }\n\n    fun start() {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "previous_blob_sha1": "c5e8c0307f4d24d77e88c0499ae1222c5414bf8c",
+      "patches": [
+        {
+          "before": "        var mutationStarted = false\n        fun current(expected: TaskRepository.TaskSnapshot, tasks: List<TaskRepository.TaskSnapshot>): TaskRepository.TaskSnapshot {",
+          "after": "        var mutationStarted = false\n        fun forwardCurrent():Boolean =\n            token==transitionGeneration && active && !suspended &&\n                exchangeSession?.acceptsForwardWork==true &&\n                geometryProvider()==exchangeGeometry &&\n                slots[slotIndex].displayId()==occupied.displayId\n        fun current(expected: TaskRepository.TaskSnapshot, tasks: List<TaskRepository.TaskSnapshot>): TaskRepository.TaskSnapshot {"
+        },
+        {
+          "before": "                        StageExchangeTelemetry.phasedEvent(\"promote_start\")\n                        check(token == transitionGeneration && active && !suspended)\n                        check(geometryProvider() == exchangeGeometry)\n                        val before = taskRepository.runningTasks()\n                        val checkedSlot=current(slotTask,before)",
+          "after": "                        StageExchangeTelemetry.phasedEvent(\"promote_start\")\n                        check(token == transitionGeneration && active && !suspended)\n                        check(forwardCurrent())\n                        check(geometryProvider() == exchangeGeometry)\n                        val before = taskRepository.runningTasks()\n                        val checkedSlot=current(slotTask,before)"
+        },
+        {
+          "before": "                    moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY,\n                        sameTurnSource=sameTurnSource) { result ->",
+          "after": "                    moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY,\n                        sameTurnSource=sameTurnSource, stillCurrent=::forwardCurrent) { result ->"
+        },
+        {
+          "before": "                            observed=observed, stillCurrent={token==transitionGeneration && active && !suspended &&\n                                geometryProvider()==exchangeGeometry}) { layoutError ->",
+          "after": "                            observed=observed, stillCurrent=::forwardCurrent) { layoutError ->"
+        },
+        {
+          "before": "                            val staleBeforeFront=runCatching {\n                                check(token == transitionGeneration && active && !suspended)\n                            }.exceptionOrNull()",
+          "after": "                            val staleBeforeFront=runCatching {\n                                check(token == transitionGeneration && active && !suspended)\n                                check(forwardCurrent())\n                            }.exceptionOrNull()"
+        },
+        {
+          "before": "                                        frontResult.getOrThrow()\n                                        check(token == transitionGeneration && active && !suspended)\n                                        StageExchangeTelemetry.phasedEvent(\"promote_complete\")",
+          "after": "                                        frontResult.getOrThrow()\n                                        check(token == transitionGeneration && active && !suspended)\n                                        check(forwardCurrent())\n                                        StageExchangeTelemetry.phasedEvent(\"promote_complete\")"
+        },
+        {
+          "before": "                        val promoted = taskRepository.runningTasks()\n                        check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)\n                        val checkedMain=current(mainTask,promoted)",
+          "after": "                        check(forwardCurrent())\n                        val promoted = taskRepository.runningTasks()\n                        check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)\n                        val checkedMain=current(mainTask,promoted)"
+        },
+        {
+          "before": "                        observedDemotionSlot=slotIndex,\n                        onObservedDestinationFront={observedFront=it}) { result ->",
+          "after": "                        observedDemotionSlot=slotIndex,\n                        onObservedDestinationFront={observedFront=it},\n                        stillCurrent=::forwardCurrent) { result ->"
+        },
+        {
+          "before": "                            stillCurrent={token==transitionGeneration && active && !suspended &&\n                                geometryProvider()==exchangeGeometry &&\n                                slots[slotIndex].displayId()==occupied.displayId}) { layoutError ->",
+          "after": "                            stillCurrent=::forwardCurrent) { layoutError ->"
+        },
+        {
+          "before": "                                check(token == transitionGeneration && active && !suspended)\n                                // Sample immediately after the exact verified foreground task's",
+          "after": "                                check(token == transitionGeneration && active && !suspended)\n                                check(forwardCurrent())\n                                // Sample immediately after the exact verified foreground task's"
+        },
+        {
+          "before": "        observedDemotionSlot: Int? = null,\n        onObservedDestinationFront: ((TaskRepository.TaskSnapshot)->Unit)? = null,\n        done: (Result<TaskRepository.TaskSnapshot>) -> Unit,",
+          "after": "        observedDemotionSlot: Int? = null,\n        onObservedDestinationFront: ((TaskRepository.TaskSnapshot)->Unit)? = null,\n        stillCurrent: () -> Boolean,\n        done: (Result<TaskRepository.TaskSnapshot>) -> Unit,"
+        },
+        {
+          "before": "        val started = runCatching {\n            // The two callers may pass only their just-validated immutable",
+          "after": "        val started = runCatching {\n            check(stillCurrent()) {\"Stale exchange before display move\"}\n            // The two callers may pass only their just-validated immutable"
+        },
+        {
+          "before": "            fun afterBinder() {\n                StageExchangeTelemetry.phasedEvent(\"display_${displayId}_binder_done\")\n                val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS",
+          "after": "            fun afterBinder() {\n                StageExchangeTelemetry.phasedEvent(\"display_${displayId}_binder_done\")\n                check(stillCurrent()) {\"Stale exchange after actual display Binder reply\"}\n                val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS"
+        },
+        {
+          "before": "                val result = runCatching {\n                    // findTask already reads the full running task list. Keep",
+          "after": "                val result = runCatching {\n                    check(stillCurrent()) {\"Stale exchange during display observation\"}\n                    // findTask already reads the full running task list. Keep"
+        },
+        {
+          "before": "                    val running=taskRepository.runningTasks()\n                    val current=running.firstOrNull{it.taskId==taskId}",
+          "after": "                    val running=taskRepository.runningTasks()\n                    check(stillCurrent()) {\"Exchange expired during display observation\"}\n                    val current=running.firstOrNull{it.taskId==taskId}"
+        }
+      ]
+    }
+  }
+}
