@@ -2596,8 +2596,13 @@ class SlotTaskCoordinator(
                 done(runCatching {
                     slots[slotIndex].displayId()?.let { displayId ->
                         val source = slots[slotIndex].sourceBounds()
-                        TaskSurfaceCompat.fitSlotSurface(task.taskId, displayId,
-                            Rect(source.left, source.top, source.right, source.bottom)).getOrThrow()
+                        val crop=Rect(source.left, source.top, source.right, source.bottom)
+                        if (TaskSurfaceCompat.isDisplayExchanging(task.taskId)) {
+                            val fitted=TaskSurfaceCompat.fitVerifiedExchangeSlot(task.taskId,displayId,
+                                crop,targetBounds,task.token)
+                            StageExchangeTelemetry.phasedEvent(
+                                if(fitted) "slot_destination_fit_submitted" else "slot_destination_fit_deferred")
+                        } else TaskSurfaceCompat.fitSlotSurface(task.taskId,displayId,crop).getOrThrow()
                     }
                     StageExchangeTelemetry.phasedEvent("slot_layout_complete")
                 }.exceptionOrNull())
