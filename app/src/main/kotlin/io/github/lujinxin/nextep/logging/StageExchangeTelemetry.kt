@@ -57,6 +57,7 @@ internal object StageExchangeTelemetry {
         nativePath="#${nativeTapId.incrementAndGet()} ${StageRuntimeIdentity.BUILD} op=${operation.take(20)}"
     }
     fun nativeEvent(stage:String) {
+        if (nativeStartedAt==0L) beginNativeTap("other_swap")
         val elapsed=(SystemClock.uptimeMillis()-nativeStartedAt).coerceAtLeast(0L)
         val event=" -> ${stage.take(150)}@${elapsed}ms"
         val next=nativePath+event
