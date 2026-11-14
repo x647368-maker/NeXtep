@@ -126,7 +126,10 @@ def undo_pr84(path,data):
 for reviewed_path in pr84_review:
  undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))
 _pr84=pr85_prior('systemui/StageTransientTapSwap.kt')
-_pr84_motion=undo_pr87('app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',\n    (root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt').read_bytes()).decode('utf-8')
+_pr84_motion=undo_pr87(
+    'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',
+    (root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt').read_bytes()
+).decode('utf-8')
 assert 'StageSnapshotMotion.pairedFlights(' in _pr84
 assert 'motionBox(viewport),others.map(::motionBox)' in _pr84
 assert 'runCatching{planFlight(a,b,slot,main,others,viewport)}' in _pr84
