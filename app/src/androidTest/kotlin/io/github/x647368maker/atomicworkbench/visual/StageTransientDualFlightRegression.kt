@@ -16,6 +16,8 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
         val green=Color.rgb(34,194,102)
         val orange=Color.rgb(239,119,39)
         val purple=Color.rgb(91,50,167)
+        val clearDesktop=Color.rgb(28,88,165)
+        val frostedRail=Color.rgb(89,143,168)
         lateinit var flight:StageTransientTapSwap.FlightView
         lateinit var small:Rect
         lateinit var main:Rect
@@ -35,7 +37,9 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             other=box(.76f,.06f,.94f,.23f)
             val a=Bitmap.createBitmap(small.width(),small.height(),Bitmap.Config.ARGB_8888).apply{eraseColor(green)}
             val b=Bitmap.createBitmap(main.width(),main.height(),Bitmap.Config.ARGB_8888).apply{eraseColor(orange)}
-            flight=StageTransientTapSwap.FlightView(activity,a,b,small,main,listOf(other),null,Rect(0,0,w,h))
+            flight=StageTransientTapSwap.FlightView(activity,a,b,small,main,listOf(other),
+                android.graphics.drawable.ColorDrawable(frostedRail),Rect(0,0,w,h),
+                mainBackdrop=android.graphics.drawable.ColorDrawable(clearDesktop))
             check(flight.safe){"Production flight rejected a separated top rail"}
             host.addView(flight,FrameLayout.LayoutParams(-1,-1))
         }
@@ -75,6 +79,17 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             frame(1f){shot->
                 check(similar(pixel(shot,small.centerX(),small.centerY()),orange))
                 check(similar(pixel(shot,main.centerX(),main.centerY()),green))
+                check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
+            }
+            // When the cards move away, exposed pixels must match each
+            // endpoint's material, never share the rail's frosted backdrop.
+            frame(.5f){shot->
+                check(similar(pixel(shot,main.right-4,main.bottom-4),clearDesktop)) {
+                    "Exposed main endpoint used the rail backdrop"
+                }
+                check(similar(pixel(shot,small.left+4,small.top+4),frostedRail)) {
+                    "Selected rail lost its original backdrop"
+                }
                 check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
             }
             // Run the production renderer's real animated path as well as
@@ -137,6 +152,9 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             frame(1f){shot->
                 check(similar(pixel(shot,main.centerX(),main.centerY()),purple)) {
                     "Main preview/mask still covers ready live endpoint"
+                }
+                check(similar(pixel(shot,main.right-4,main.bottom-4),purple)) {
+                    "Main backdrop remained after independent endpoint reveal"
                 }
                 check(similar(pixel(shot,small.centerX(),small.centerY()),orange)) {
                     "Independent main reveal removed unready slot preview"
