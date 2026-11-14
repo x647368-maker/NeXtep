@@ -48,7 +48,12 @@ internal class StageLiveSurfaceExchange private constructor(
     private val mainStart: StageLiveSurfaceFlightGeometry.Box,
     private val backdrop: Drawable?,
     private val occlusion: StageGpuMirrorOcclusion,
+    private val coveredFlight: Boolean,
 ) {
+    private val incomingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(
+        sourceCrop.left,sourceCrop.top,sourceCrop.right,sourceCrop.bottom)
+    private val outgoingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(
+        mainCrop.left,mainCrop.top,mainCrop.right,mainCrop.bottom)
     private val ui = Handler(Looper.getMainLooper())
     private val traceAttemptId = StageExchangeTelemetry.currentNativeTapId()
     private fun trace(stage: String) =
@@ -220,6 +225,12 @@ internal class StageLiveSurfaceExchange private constructor(
                 incoming.release()
                 return markUnavailable("rail_corridor_blocked")
             }
+            val incomingCrop = StageLiveSurfaceFlightGeometry.Crop(
+                localCrop.left, localCrop.top, localCrop.right, localCrop.bottom)
+            val coveredFlight = StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
+                from, to, incomingCrop, outgoingCrop, obstacles)
+            StageExchangeTelemetry.nativeEvent(
+                "mirror_crop_mode=" + if (coveredFlight) "covered_safe" else "contain_reveal")
             if (!outgoing.isValid || !incoming.isValid) {
                 outgoing.release()
                 incoming.release()
@@ -234,7 +245,7 @@ internal class StageLiveSurfaceExchange private constructor(
             return StageLiveSurfaceExchange(
                 host, incoming, outgoing, localCrop,
                 outgoingCrop.toAndroidRect(),
-                from,to,backdrop,masks,
+                from,to,backdrop,masks,coveredFlight,
             )
         }
 
@@ -279,10 +290,10 @@ internal class StageLiveSurfaceExchange private constructor(
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
-        val finalIncoming = StageLiveSurfaceFlightGeometry.railCorridorFlight(
-            slotStart, mainStart, sourceCrop.width(), sourceCrop.height(), 1f)
-        val finalOutgoing = StageLiveSurfaceFlightGeometry.railCorridorFlight(
-            mainStart, slotStart, mainCrop.width(), mainCrop.height(), 1f)
+        val finalIncoming = StageLiveSurfaceFlightGeometry.mirrorFrame(
+            slotStart, mainStart, incomingGeometryCrop, 1f, coveredFlight)
+        val finalOutgoing = StageLiveSurfaceFlightGeometry.mirrorFrame(
+            mainStart, slotStart, outgoingGeometryCrop, 1f, coveredFlight)
         if (finalIncoming == null || finalOutgoing == null) {
             finished.set(true)
             cleanupWithoutCallback()
@@ -330,6 +341,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     // A committed transaction is proof that SurfaceFlinger
                     // accepted both layer parents, NOT proof of visible pixels.
                     tx.addTransactionCommittedListener(host.context.mainExecutor) {
+                        if (finished.get()) return@addTransactionCommittedListener
                         firstTransactionCommitted = true
                         trace(
                             "first_gpu_transaction_committed@${SystemClock.uptimeMillis()-startedAtMs}ms")
@@ -442,23 +454,22 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
-        val incoming=StageLiveSurfaceFlightGeometry.railCorridorFlight(
-            slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,
+        val incoming=StageLiveSurfaceFlightGeometry.mirrorFrame(
+            slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,
         ) ?: error("Unsafe incoming GPU rail path")
-        // Both crop and transform use the SAME root coordinate convention.
-        // Detached: raw source pixels; retained: fitted physical pixels.
-        // The crop bounds the actual mirror, not merely our mathematical card.
-        val outgoing=StageLiveSurfaceFlightGeometry.railCorridorFlight(
-            mainStart,slotStart,mainCrop.width(),mainCrop.height(),p,
+        val outgoing=StageLiveSurfaceFlightGeometry.mirrorFrame(
+            mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,
         ) ?: error("Unsafe outgoing GPU rail path")
+        // Both task mirrors are updated by the same GPU transaction. Cover
+        // mode changes only their transient crop, never original task bounds.
+        if (coveredFlight) {
+            transaction.setCrop(sourceMirror,incoming.crop.toAndroidRect())
+            transaction.setCrop(mainMirror,outgoing.crop.toAndroidRect())
+        }
         transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
-        transaction.setPosition(sourceMirror,
-            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.x,sourceCrop.left,incoming.scale),
-            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.y,sourceCrop.top,incoming.scale))
+        transaction.setPosition(sourceMirror,incoming.x,incoming.y)
         transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)
-        transaction.setPosition(mainMirror,
-            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.x,mainCrop.left,outgoing.scale),
-            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.y,mainCrop.top,outgoing.scale))
+        transaction.setPosition(mainMirror,outgoing.x,outgoing.y)
         // Preserve the previously accepted 24dp-equivalent round cards while
         // their compositor scale changes. A parent layer's corner radius uses
         // source-layer units, hence divide by the current uniform scale.
