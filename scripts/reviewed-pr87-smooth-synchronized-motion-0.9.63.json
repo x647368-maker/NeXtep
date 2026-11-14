@@ -1,0 +1,43 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt": {
+      "previous_blob_sha1": "fe467ff92080659bc8af4d7a79bdb5b34c359907",
+      "patches": [
+        {
+          "before": "            // Small card grows slightly later; outgoing card shrinks earlier.\n            // Both have strictly monotonic size and zero overshoot.\n            val q=if(growing)p else 1f-p\n            val gentle=q*q*(2f-q)\n            val compact=q*q*q\n            val fraction=gentle+(compact-gentle)*sizeBias\n            val u=if(growing)fraction else 1f-fraction",
+          "after": "            // Both cards share one symmetric scale-progress curve. This avoids\n            // the incoming card appearing to pause while the outgoing card\n            // shrinks immediately, and gives zero scale velocity at both ends.\n            val q=if(growing)p else 1f-p\n            val smooth=q*q*(3f-2f*q)\n            val smoother=q*q*q*(q*(q*6f-15f)+10f)\n            val fraction=smooth+(smoother-smooth)*sizeBias\n            val u=if(growing)fraction else 1f-fraction"
+        },
+        {
+          "before": "        for(i in 1..15){\n            val (u,d)=visibleFractions(pair,i/16f,screen,excluded)\n            minUp=min(minUp,u);minDown=min(minDown,d)\n            totalUp+=u;totalDown+=d\n        }\n        return 2f*minUp+3f*minDown+(totalUp+totalDown)/15f-",
+          "after": "        // 31 interior samples catch brief overlap/occlusion between key poses.\n        for(i in 1..31){\n            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)\n            minUp=min(minUp,u);minDown=min(minDown,d)\n            totalUp+=u;totalDown+=d\n        }\n        return 2f*minUp+3f*minDown+(totalUp+totalDown)/31f-"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt": {
+      "previous_blob_sha1": "fb58af8ad7dbf7b7b18ca864db70900f982395bf",
+      "patches": [
+        {
+          "before": "import android.animation.AnimatorListenerAdapter\nimport android.animation.ValueAnimator",
+          "after": "import android.animation.AnimatorListenerAdapter\nimport android.animation.AnimatorSet\nimport android.animation.ValueAnimator"
+        },
+        {
+          "before": "                    animations.add(anim)\n                    startValue.invoke(anim,from)",
+          "after": "                    startValue.invoke(anim,from)"
+        },
+        {
+          "before": "                var remaining=list.size\n                list.forEach{anim->\n                    anim.addListener(object:AnimatorListenerAdapter(){\n                        override fun onAnimationEnd(animation:Animator){\n                            if(--remaining==0){\n                                animations.clear()\n                                progress=1f\n                                onEnd()\n                            }\n                        }\n                    })\n                }\n                list.forEach{it.start()}\n                true",
+          "after": "                // Start all eight RenderNode property channels as one set.\n                // Independent start() calls can land on different frame pulses,\n                // briefly desynchronizing translation and scale between the cards.\n                val synchronizedSet=AnimatorSet()\n                synchronizedSet.playTogether(list)\n                synchronizedSet.addListener(object:AnimatorListenerAdapter(){\n                    override fun onAnimationEnd(animation:Animator){\n                        animations.clear()\n                        progress=1f\n                        onEnd()\n                    }\n                })\n                animations.add(synchronizedSet)\n                synchronizedSet.start()\n                true"
+        }
+      ]
+    },
+    "RELEASE_NOTES.md": {
+      "previous_blob_sha1": "a9fa33f752ec03f388ca0a9cd7143ddb19a9b86c",
+      "patches": [
+        {
+          "before": "台前调度 v0.9.63-dev（versionCode 78）｜PR87 交换方向一致性专项私测\n\n",
+          "after": "台前调度 v0.9.63-dev（versionCode 78）｜PR87 交换方向一致性与运动连续性专项私测\n\n本轮在轨迹固定基础上继续修复：incoming/outgoing 原先采用不对称的 gentle/compact 尺寸曲线，可能出现小窗增长滞后、主窗提前缩小；改为两端零速度且互为镜像的 smoothstep/smootherstep 混合曲线。RenderThread 原先八个 X/Y/SCALE 属性动画独立 start，改为 AnimatorSet 同步启动，统一终点回调。走廊遮挡评分由15增至31个内部采样点，减少短暂遮挡漏检。保留300ms、原始 bitmap 尺寸/等比缩放、任务迁移、真实缓冲校验及全部布局冻结。新增尺度对称、端点速度、方向与多宽高比回归。CI/模拟器通过不等于 ColorOS 真机通过；未交付 APK、未发布，等待用户后续验收。\n\n"
+        }
+      ]
+    }
+  }
+}

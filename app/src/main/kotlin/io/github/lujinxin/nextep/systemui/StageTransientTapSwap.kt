@@ -2,6 +2,7 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.AnimatorSet
 import android.animation.ValueAnimator
 import android.animation.TimeInterpolator
 import android.content.Context
@@ -491,7 +492,6 @@ internal class StageTransientTapSwap(private val context:Context) {
                     val to=StageSnapshotMotion.hardwareEnd(from,exact,
                         if(name.startsWith("SCALE")) .0001f else .25f)
                     val anim=ctor.newInstance(klass.getField(name).getInt(null),to) as Animator
-                    animations.add(anim)
                     startValue.invoke(anim,from)
                     anim.duration=duration
                     anim.interpolator=TimeInterpolator{t->
@@ -508,19 +508,20 @@ internal class StageTransientTapSwap(private val context:Context) {
                     list+=channel(v,f,"SCALE_X"){it.scale}
                     list+=channel(v,f,"SCALE_Y"){it.scale}
                 }
-                var remaining=list.size
-                list.forEach{anim->
-                    anim.addListener(object:AnimatorListenerAdapter(){
-                        override fun onAnimationEnd(animation:Animator){
-                            if(--remaining==0){
-                                animations.clear()
-                                progress=1f
-                                onEnd()
-                            }
-                        }
-                    })
-                }
-                list.forEach{it.start()}
+                // Start all eight RenderNode property channels as one set.
+                // Independent start() calls can land on different frame pulses,
+                // briefly desynchronizing translation and scale between the cards.
+                val synchronizedSet=AnimatorSet()
+                synchronizedSet.playTogether(list)
+                synchronizedSet.addListener(object:AnimatorListenerAdapter(){
+                    override fun onAnimationEnd(animation:Animator){
+                        animations.clear()
+                        progress=1f
+                        onEnd()
+                    }
+                })
+                animations.add(synchronizedSet)
+                synchronizedSet.start()
                 true
             }.getOrElse{
                 stopMotion()

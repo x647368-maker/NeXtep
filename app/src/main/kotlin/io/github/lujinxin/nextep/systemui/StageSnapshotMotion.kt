@@ -29,12 +29,13 @@ internal object StageSnapshotMotion {
             // Sin^2 has zero slope at both endpoints; opposite travel directions
             // imply opposite lateral offsets. No stationary phase or 90deg bend.
             val bend=sin(PI.toFloat()*p).let{it*it}*arc
-            // Small card grows slightly later; outgoing card shrinks earlier.
-            // Both have strictly monotonic size and zero overshoot.
+            // Both cards share one symmetric scale-progress curve. This avoids
+            // the incoming card appearing to pause while the outgoing card
+            // shrinks immediately, and gives zero scale velocity at both ends.
             val q=if(growing)p else 1f-p
-            val gentle=q*q*(2f-q)
-            val compact=q*q*q
-            val fraction=gentle+(compact-gentle)*sizeBias
+            val smooth=q*q*(3f-2f*q)
+            val smoother=q*q*q*(q*(q*6f-15f)+10f)
+            val fraction=smooth+(smoother-smooth)*sizeBias
             val u=if(growing)fraction else 1f-fraction
             return Pose(from.cx+dx*p-dy/length*bend,
                 from.cy+dy*p+dx/length*bend,s0+(s1-s0)*u)
@@ -77,12 +78,13 @@ internal object StageSnapshotMotion {
     }
     private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float):Float{
         var minUp=1f;var minDown=1f;var totalUp=0f;var totalDown=0f
-        for(i in 1..15){
-            val (u,d)=visibleFractions(pair,i/16f,screen,excluded)
+        // 31 interior samples catch brief overlap/occlusion between key poses.
+        for(i in 1..31){
+            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)
             minUp=min(minUp,u);minDown=min(minDown,d)
             totalUp+=u;totalDown+=d
         }
-        return 2f*minUp+3f*minDown+(totalUp+totalDown)/15f-
+        return 2f*minUp+3f*minDown+(totalUp+totalDown)/31f-
             .08f*abs(pair.up.arc)/baseArc.coerceAtLeast(1f)-.12f*pair.up.sizeBias
     }
     /**
