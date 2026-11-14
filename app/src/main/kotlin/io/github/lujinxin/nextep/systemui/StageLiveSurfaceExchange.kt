@@ -60,6 +60,7 @@ internal class StageLiveSurfaceExchange private constructor(
         StageExchangeTelemetry.nativeEvent(stage, traceAttemptId)
     private val lifetimeWatchdog = Runnable {
         if (isRunning) {
+            trace("lifetime_watchdog frame=$frameComplete move=$moveComplete check=$handoffCheckStarted")
             NeXtepLog.warn("native_swap", "Two-mirror flight exceeded safety lifetime; releasing compositor mirrors")
             stop()
         }
@@ -68,6 +69,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private var animator: ValueAnimator? = null
     private var revealAnimator: ValueAnimator? = null
     private var handoffCheckStarted = false
+    private var handoffCheck: Runnable? = null
+    private var lastHandoffWait = ""
     private var endpointGap = 0f
     // Reuse one compositor transaction for the entire flight; avoid allocating
     // and closing a Binder-backed Transaction on every animation frame.
@@ -435,6 +438,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 override fun onAnimationEnd(animation: Animator) {
                     if (!isRunning) return
                     frameComplete=true
+                    trace("flight_complete@${SystemClock.uptimeMillis()-startedAtMs}ms")
                     if (!sentMove) commitMove()
                     finishIfReady(liveReady,canRelease)
                 }
@@ -489,27 +493,56 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     private fun finishIfReady(liveReady: () -> Boolean, canRelease: () -> Boolean) {
-        if (!isRunning || !frameComplete || !moveComplete || handoffCheckStarted) return
+        // Task migration may detach/reparent the old host. View.postOnAnimation
+        // can queue work until attachment; it is NOT a reliable release timer.
+        // Arm from the real move ACK even if an animator-end callback was lost.
+        if (!isRunning || !moveComplete || handoffCheckStarted) return
         handoffCheckStarted = true
-        fun check() {
-            if (!isRunning) return
-            val elapsed=SystemClock.uptimeMillis()-moveCompletedAt
-            val ready=runCatching { canRelease() && liveReady() }.getOrDefault(false)
-            val timeout=if (concurrentHandoff) CONCURRENT_HANDOFF_TIMEOUT_MS
-                else HANDOFF_TIMEOUT_MS
-            if (ready || elapsed >= timeout) {
-                handoffReady=ready
-                handoffTimedOut=!ready
-                trace(
-                    "handoff_${if(ready)"ready" else "timeout"}@${SystemClock.uptimeMillis()-startedAtMs}ms")
-                NeXtepLog.info("native_swap",
-                    "Real GPU layer handoff ready=$ready elapsed=${elapsed}ms")
-                if (ready && endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {
-                    revealReadyDestination(liveReady, canRelease)
-                } else host.postOnAnimation { stop() }
-            } else host.postOnAnimation { check() }
+        val timeout=if (concurrentHandoff) CONCURRENT_HANDOFF_TIMEOUT_MS
+            else HANDOFF_TIMEOUT_MS
+        val deadline=moveCompletedAt + timeout
+        trace("handoff_check_begin frame=$frameComplete host_attached=${host.isAttachedToWindow}")
+        val check = object : Runnable {
+            override fun run() {
+                if (!isRunning) return
+                val now=SystemClock.uptimeMillis()
+                val releasable=frameComplete && runCatching { canRelease() }.getOrDefault(false)
+                val live=releasable && runCatching { liveReady() }.getOrDefault(false)
+                val reason=when {
+                    !frameComplete -> "flight_end_missing"
+                    !releasable -> "session_unsettled"
+                    !live -> "target_not_ready"
+                    else -> "ready"
+                }
+                if (reason != lastHandoffWait) {
+                    lastHandoffWait=reason
+                    trace("handoff_state=$reason host_attached=${host.isAttachedToWindow}")
+                }
+                when (StageConcurrentNativeTrialPolicy.handoffAction(
+                    now-moveCompletedAt,timeout,frameComplete,releasable,live)) {
+                    StageConcurrentNativeTrialPolicy.HandoffAction.WAIT ->
+                        ui.postAtTime(this,StageConcurrentNativeTrialPolicy.nextHandoffCheck(
+                            SystemClock.uptimeMillis(),deadline))
+                    StageConcurrentNativeTrialPolicy.HandoffAction.READY -> {
+                        handoffReady=true
+                        trace("handoff_ready@${now-startedAtMs}ms")
+                        if (endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {
+                            revealReadyDestination(liveReady,canRelease)
+                        } else stop()
+                    }
+                    StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED -> {
+                        handoffTimedOut=true
+                        trace("handoff_timeout:$reason@${now-startedAtMs}ms")
+                        // Do not classify a timed-out visual handoff as ready.
+                        // Real ownership is already confirmed; release boundedly,
+                        // leaving the existing task/session reconciliation intact.
+                        stop()
+                    }
+                }
+            }
         }
-        check()
+        handoffCheck=check
+        check.run()
     }
 
     // An aspect-mismatched live buffer cannot cover both target dimensions
@@ -554,6 +587,8 @@ internal class StageLiveSurfaceExchange private constructor(
         val callback=finishCallback
         finishCallback=null
         ui.removeCallbacks(lifetimeWatchdog)
+        handoffCheck?.let { ui.removeCallbacks(it) }
+        handoffCheck=null
         lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 &&
             moveComplete && handoffReady)
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
