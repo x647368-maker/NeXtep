@@ -2135,8 +2135,8 @@ class NeXtepWindowController(
                         // Capture the monotonic producer-frame counter at ACK even
                         // when the output Surface is temporarily unavailable. Keep
                         // the pre-move producer identity as a strict fallback.
-                        val ackSequence=slot.contentFrameSequence
                         val ack=slot.outputFrameMark()
+                        val ackSequence=slot.contentFrameSequence
                         val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
                         outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack
                             ?: atStart.copy(sequence=ackSequence)
