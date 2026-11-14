@@ -47,12 +47,14 @@ internal object StageExchangeTelemetry {
         val id=swapTrace.begin(operation)
         nativePath="#$id ${StageRuntimeIdentity.BUILD} $operation"
     }
-    fun nativeEvent(stage:String) {
-        swapTrace.event(stage)
-        nativePath=(nativePath+" -> "+stage.take(110)).takeLast(680)
+    fun currentNativeTapId(): Long? = swapTrace.activeId()
+    fun nativeEvent(stage:String, attemptId:Long?=null) {
+        if (swapTrace.event(stage,attemptId)) {
+            nativePath=(nativePath+" -> "+stage.take(110)).takeLast(680)
+        }
     }
-    fun endNativeTap(result:String) {
-        swapTrace.finish(result)
+    fun endNativeTap(result:String, attemptId:Long?=null) {
+        swapTrace.finish(result,attemptId)
     }
     fun nativeDescription():String=swapTrace.describe()
     fun <T> phase(name:String,block:()->T):T = active.get()?.span(name,block) ?: block()
