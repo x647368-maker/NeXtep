@@ -217,6 +217,43 @@ class StageLiveSurfaceFlightGeometryTest {
         }
     }
 
+    @Test fun safeDynamicCropClosesBothEndpointGapsWithoutStretching() {
+        val g=StageLiveSurfaceFlightGeometry
+        val small=b(25f,850f,235f,1220f)
+        val main=b(290f,120f,1030f,2150f)
+        val a=StageLiveSurfaceFlightGeometry.Crop(0,0,210,370)
+        val z=StageLiveSurfaceFlightGeometry.Crop(290,120,1030,2150)
+        assertTrue(g.canUseCoveredFlight(small,main,a,z,emptyList()))
+        for ((from,to,crop) in listOf(Triple(small,main,a),Triple(main,small,z))) {
+            val original=g.mirrorFrame(from,to,crop,0f,false)!!
+            assertEquals(original,g.mirrorFrame(from,to,crop,0f,true))
+            for(i in 0..120) {
+                val f=g.mirrorFrame(from,to,crop,i/120f,true)!!
+                assertTrue(f.crop.left>=crop.left && f.crop.top>=crop.top &&
+                    f.crop.right<=crop.right && f.crop.bottom<=crop.bottom)
+                assertEquals(f.box.left,f.x+f.crop.left*f.scale,.01f)
+                assertEquals(f.box.right,f.x+f.crop.right*f.scale,.02f)
+                assertEquals(f.box.top,f.y+f.crop.top*f.scale,.01f)
+                assertEquals(f.box.bottom,f.y+f.crop.bottom*f.scale,.02f)
+            }
+            val last=g.mirrorFrame(from,to,crop,1f,true)!!
+            assertTrue(g.endpointGapPx(to,last.box)<4f)
+            assertTrue(g.endpointGapPx(to,g.mirrorFrame(from,to,crop,1f,false)!!.box)>30f)
+        }
+    }
+
+    @Test fun ambiguousSourceOrUnsafeSweptEnvelopeRetainsContainReveal() {
+        val g=StageLiveSurfaceFlightGeometry
+        val small=b(25f,850f,235f,1220f)
+        val main=b(290f,120f,1030f,2150f)
+        val a=StageLiveSurfaceFlightGeometry.Crop(0,0,210,370)
+        val z=StageLiveSurfaceFlightGeometry.Crop(290,120,1030,2150)
+        assertFalse(g.canUseCoveredFlight(small,main,
+            StageLiveSurfaceFlightGeometry.Crop(0,0,500,800),z,emptyList()))
+        assertFalse(g.canUseCoveredFlight(small,main,a,z,
+            listOf(b(260f,730f,850f,1430f))))
+    }
+
     @Test fun invalidFramesFallBackWithoutChangingOriginalSurfaces() {
         assertNull(StageLiveSurfaceFlightGeometry.flight(
             b(0f,0f,0f,20f),b(10f,20f,200f,300f),500,800,.5f))
