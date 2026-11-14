@@ -27,7 +27,7 @@ for reviewed_path in pr68_review:
 _pr68=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageSwapTraceBuffer.kt').read_text()
 assert 'maxRecords: Int = 5' in _pr68 and 'maxEvents: Int = 28' in _pr68
 assert 'fun begin(operation: String)' in _pr68
-assert 'fun finish(result: String)' in _pr68
+assert 'fun finish(result: String, expectedId: Long? = null)' in _pr68
 assert not any(word in _pr68 for word in ('Bitmap', 'captureLayers', 'FileOutputStream', 'HttpURLConnection'))
 _pr68_native=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt').read_text()
 assert 'main_transform:' not in _pr68_native or 'describeOwnedMainPresentation(' in _pr68_native
