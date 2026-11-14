@@ -131,7 +131,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
                 saveDocument.launch("台前调度-故障报告.txt")
         }}
         body.addView(exportButton,LinearLayout.LayoutParams(-1,-2))
-        body.addView(line("报告含机型、系统、测试前后电量温度、小窗数量和有限运行计数，以及你选择的类别／说明。不含完整崩溃堆栈，不能单独证明软件耗电多少。报告不会自动上传。"))
+        body.addView(line("报告含机型、系统、测试前后电量温度、小窗数量、运行计数及结束时最近五次动画交换诊断，以及你选择的类别／说明。不含完整崩溃堆栈，不能单独证明软件耗电多少。报告不会自动上传。"))
         body.addView(Button(this).apply{text="返回台前调度";setOnClickListener{finish()}})
         val scroll=ScrollView(this).apply{isFillViewport=true;addView(body)}
         ViewCompat.setOnApplyWindowInsetsListener(scroll){ view,insets ->
