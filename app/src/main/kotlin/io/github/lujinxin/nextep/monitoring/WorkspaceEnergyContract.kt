@@ -43,7 +43,10 @@ internal object WorkspaceEnergyContract {
         }, IntentFilter(ACTION), TriggerBroadcastContract.CONTROL_PERMISSION, handler, Context.RECEIVER_EXPORTED)
     }
 
-    fun query(context: Context, includeExchangeDiagnostics: Boolean = false, onResult: (Snapshot?) -> Unit) {
+    fun query(context: Context, onResult: (Snapshot?) -> Unit) =
+        query(context, false, onResult)
+
+    fun query(context: Context, includeExchangeDiagnostics: Boolean, onResult: (Snapshot?) -> Unit) {
         val handler = Handler(Looper.getMainLooper())
         var completed = false
         fun complete(value: Snapshot?) {
