@@ -48,8 +48,8 @@ internal object StageSnapshotMotion {
         return Flight(from,to,width,height,arc,growing)
     }
     /** Hardware animator interpolates scalar start/end. For parallel axes
-     * use a one-pixel terminal delta, then restore exact endpoint on commit.
+     * use a subpixel terminal delta, then restore exact endpoint on commit.
      * This permits the same small arc even when center coordinates coincide. */
-    fun hardwareEnd(start:Float,end:Float):Float=
-        if(abs(end-start)<1f)start+1f else end
+    fun hardwareEnd(start:Float,end:Float,epsilon:Float):Float=
+        if(abs(end-start)<epsilon)start+epsilon else end
 }
