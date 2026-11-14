@@ -105,6 +105,7 @@ class NeXtepWindowController(
     private val swapAnimator = WorkspaceSwapAnimator(context)
     private val oneShotSwapMotion = StageOneShotSwapMotion(context)
     private val swapCapture = StageAsyncPreviewCapture()
+    private val transientTapSwap = StageTransientTapSwap(context)
     private var liveSurfaceExchange: StageLiveSurfaceExchange? = null
     // Allocated only for one physical card swap; NEVER a persistent overlay.
     private var nativeSwapHost: StageNativeSwapFullscreenHost? = null
@@ -124,7 +125,7 @@ class NeXtepWindowController(
     private fun keepActiveSwapForViewport(now: WorkspaceGeometry): Boolean =
         StageSwapViewportHoldPolicy.retain(
             swapAnimator.isRunning || previewCapturePending ||
-                liveSurfaceExchange?.isRunning == true, activeSwapViewport, now,
+                liveSurfaceExchange?.isRunning == true || transientTapSwap.isRunning, activeSwapViewport, now,
         )
     private val internalDrag = WorkspaceInternalDragController(
         context, ::geometry, { slotWindows.map { it.view } },
@@ -1815,6 +1816,7 @@ class NeXtepWindowController(
         slotCoordinator?.onSlotDragEnded()
         slotCoordinator?.cancelPendingExchange()
         swapCapture.cancel()
+        transientTapSwap.cancel()
         swapAnimator.cancel()
         oneShotSwapMotion.cancel()
         nativeSwapAttempt++
@@ -2059,6 +2061,105 @@ class NeXtepWindowController(
         return true
     }
 
+    /** PR79 private trial: short-lived independent task pixels, never a
+     * migrating live mirror. The original coordinator and output proof are reused. */
+    private fun tryTransientTapSwap(
+        slotIndex:Int, moveAsync:((Boolean)->Unit)->Unit,
+        canRelease:()->Boolean, onFinished:()->Unit,
+    ):Boolean {
+        if (!workspaceVisible || suspended || sidebarCollapsed || groupInputBlocked ||
+            !android.animation.ValueAnimator.areAnimatorsEnabled() ||
+            context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true ||
+            !WorkspaceWallpaperBackdrop.canCapture(context) || swapAnimator.isRunning ||
+            transientTapSwap.isRunning || liveSurfaceExchange?.isRunning==true) return false
+        val g=geometry()
+        val task=mainTaskPresenter.currentTaskId() ?: return false
+        val slot=slotWindows.getOrNull(slotIndex) ?: return false
+        val state=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied ?: return false
+        val host=records.firstOrNull { it.title=="NeXtepContentPanel" }?.view as? FrameLayout ?: return false
+        val origin=IntArray(2)
+        host.rootView.getLocationOnScreen(origin)
+        if(!StageConcurrentNativeTrialPolicy.fullScreenHost(origin[0],origin[1],
+                host.rootView.width,host.rootView.height,g.screenWidth,g.screenHeight)) return false
+        val source=Rect()
+        if(!slot.view.getScreenVisibleRect(source))return false
+        val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
+        val slotCanvas=slot.sourceBounds()
+        val slotCrop=Rect(0,0,slotCanvas.width,slotCanvas.height)
+        val mainCrop=Rect(0,0,g.screenWidth,g.screenHeight)
+        val incoming=TaskSurfaceCompat.mirrorSourceStamp(state.taskId,state.displayId) ?: return false
+        val outgoing=TaskSurfaceCompat.mirrorSourceStamp(task,0) ?: return false
+        val atStart=slot.outputFrameMark() ?: return false
+        if(!TaskSurfaceCompat.isPresentationSettled(task,g))return false
+        fun same(a:VirtualDisplaySlot.OutputFrameMark,b:VirtualDisplaySlot.OutputFrameMark?):Boolean =
+            b!=null && StageConcurrentNativeTrialPolicy.sameOutput(a.displayId,b.displayId,
+                a.texture,b.texture,a.surface,b.surface)
+        val traceId=StageExchangeTelemetry.currentNativeTapId()
+        var outputAtConfirmedMove:VirtualDisplaySlot.OutputFrameMark?=null
+        var reason=""
+        activeSwapViewport=g
+        previewCapturePending=true
+        deferredSwapGeometryRefresh=false
+        homePreviewGeneration.incrementAndGet()
+        val started=transientTapSwap.start(
+            host,source,main,slotWindows.mapIndexedNotNull { index,other ->
+                if(index==slotIndex || slotCoordinator?.slotStates()?.getOrNull(index) !is SlotState.Occupied)
+                    null else Rect().takeIf { other.view.getScreenVisibleRect(it) }
+            },incoming,outgoing,slotCrop,mainCrop,
+            WorkspaceWallpaperBackdrop.crop(wallpaperBitmap,0,0,frostStrength),
+            valid={
+                workspaceVisible && !suspended && !groupInputBlocked &&
+                    mainTaskPresenter.currentTaskId()==task &&
+                    slotCoordinator?.slotStates()?.getOrNull(slotIndex)==state &&
+                    StageSwapViewportHoldPolicy.retain(true,g,geometry()) &&
+                    WorkspaceWallpaperBackdrop.canCapture(context) &&
+                    same(atStart,slot.outputFrameMark()) &&
+                    incoming.sameSource(TaskSurfaceCompat.mirrorSourceStamp(state.taskId,state.displayId)) &&
+                    outgoing.sameSource(TaskSurfaceCompat.mirrorSourceStamp(task,0))
+            },
+            moveAsync={ done ->
+                moveAsync { ok ->
+                    if(ok){
+                        val ack=slot.outputFrameMark()
+                        val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
+                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack
+                    }
+                    done(ok)
+                }
+            },
+            liveReady={
+                val mark=outputAtConfirmedMove
+                val now=slot.outputFrameMark()
+                val occupied=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied
+                val wait=when{
+                    !canRelease()->"exchange_pending"
+                    occupied?.taskId!=task->"slot_owner"
+                    mark==null || now==null || !same(mark,now) || now.sequence<=mark.sequence->"slot_buffer"
+                    mainTaskPresenter.currentTaskId()!=state.taskId->"main_owner"
+                    !TaskSurfaceCompat.isPresentationSettled(state.taskId,g)->"main_geometry"
+                    else->"ready"
+                }
+                if(wait!=reason){reason=wait;StageExchangeTelemetry.nativeEvent("snapshot_wait="+wait,traceId)}
+                wait=="ready"
+            },
+            trace={StageExchangeTelemetry.nativeEvent(it,traceId)},
+            onFinished={
+                previewCapturePending=false
+                activeSwapViewport=null
+                val flush=deferredSwapGeometryRefresh
+                deferredSwapGeometryRefresh=false
+                StageExchangeTelemetry.endNativeTap("snapshot_trial_finished",traceId)
+                if(flush && workspaceVisible && !suspended)scheduleWindowRefresh()
+                onFinished()
+                if(workspaceVisible && !suspended)scheduleStageFocus()
+            }
+        )
+        if(!started){
+            previewCapturePending=false;activeSwapViewport=null
+        }
+        return started
+    }
+
     private fun animateSwap(
         sourceIndex: Int, targetIndex: Int?, drag: SlotTaskDrag?,
         move: () -> Boolean, onFinished: () -> Unit,
@@ -2101,7 +2202,11 @@ class NeXtepWindowController(
             // from the legacy full-screen root performance gate, which stays
             // disabled. Any missing leash/color layer stays on the one-move
             // PR60 fallback without trying bitmap/peek effects.
-            if (StagePrivateDualTaskFlightGate.enabled() &&
+            // The user explicitly authorized temporary, in-memory snapshot motion.
+            // This private branch never starts the migrating-mirror flight.
+            if (StageTransientTapPolicy.privateTrialEnabled()) {
+                if (tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
+            } else if (StagePrivateDualTaskFlightGate.enabled() &&
                 tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
             oneShotSwapMotion.cancel()
             StageExchangeTelemetry.nativeEvent("pr60:single_real_swap_no_extra_visual")
