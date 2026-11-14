@@ -1,0 +1,91 @@
+{
+  "purpose": "Exact private endpoint reveal behavior, no changes to original task surfaces or layout.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt": {
+      "previous_blob_sha1": "ef291813e522bec596ee13cc45c71a7e512a2e31",
+      "reviewed_blob_sha1": "8849f80b22e3ce76c8ce78db6294c421023f954c",
+      "patches": [
+        {
+          "before": "    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {",
+          "after": "    // A source buffer cannot exactly fit a differently shaped destination\n    // without either cropping or non-uniform scaling. Measure the remaining\n    // physical edge gap so handoff can reveal the real reflowed destination.\n    fun endpointGapPx(target: Box, fitted: Box): Float = maxOf(\n        kotlin.math.abs(target.left - fitted.left),\n        kotlin.math.abs(target.top - fitted.top),\n        kotlin.math.abs(target.right - fitted.right),\n        kotlin.math.abs(target.bottom - fitted.bottom),\n    )\n\n    data class RevealAlpha(val cover: Float, val mirror: Float)\n\n    // First remove the opaque covers, THEN fade the mirrors over the real\n    // destination. Never compound a translucent mirror with a dark cover.\n    // Both cards use one transaction and one shared progress.\n    fun handoffReveal(progress: Float): RevealAlpha {\n        val p = if (progress.isFinite()) progress.coerceIn(0f, 1f) else 0f\n        return RevealAlpha(\n            cover = (1f - 2f * p).coerceIn(0f, 1f),\n            mirror = (2f - 2f * p).coerceIn(0f, 1f),\n        )\n    }\n\n    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {"
+        },
+        {
+          "before": "    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {",
+          "after": "    data class MirrorFrame(val scale: Float, val x: Float, val y: Float,\n                           val crop: Crop, val box: Box)\n\n    private fun coveredViewport(from: Box, to: Box, center: Box, p: Float): Box {\n        val growing = from.width * from.height < to.width * to.height\n        val phase = (if (growing) (p - .34f) / .66f else p / .66f).coerceIn(0f, 1f)\n        val u = phase * phase * (3f - 2f * phase)\n        val w = from.width + (to.width - from.width) * u\n        val h = from.height + (to.height - from.height) * u\n        return Box(center.cx - w * .5f, center.cy - h * .5f,\n                   center.cx + w * .5f, center.cy + h * .5f)\n    }\n\n    // The crop and position are in the same mirror-root coordinates selected\n    // by PR71. Only temporary mirror pixels are clipped, never the real task.\n    // Round crop dimensions INWARD so rounding cannot spill outside the\n    // collision envelope; at progress 0 preserve the complete old source.\n    fun mirrorFrame(from: Box, to: Box, source: Crop, progress: Float,\n                    covered: Boolean): MirrorFrame? {\n        val sw = source.right - source.left\n        val sh = source.bottom - source.top\n        val fit = railCorridorFlight(from, to, sw, sh, progress) ?: return null\n        if (!covered || progress <= 0f) return MirrorFrame(\n            fit.scale, mirrorPosition(fit.x, source.left, fit.scale),\n            mirrorPosition(fit.y, source.top, fit.scale), source, fit.box)\n        val viewport = coveredViewport(from, to, fit.box, progress)\n        if (!viewport.valid()) return null\n        val scale = maxOf(viewport.width / sw, viewport.height / sh)\n        if (!scale.isFinite() || scale <= 0f || scale > 10f) return null\n        val cw = kotlin.math.floor((viewport.width / scale).toDouble()).toInt().coerceAtMost(sw)\n        val ch = kotlin.math.floor((viewport.height / scale).toDouble()).toInt().coerceAtMost(sh)\n        if (cw < 2 || ch < 2) return null\n        val l = source.left + (sw - cw) / 2\n        val t = source.top + (sh - ch) / 2\n        val crop = Crop(l, t, l + cw, t + ch)\n        val x = viewport.cx - (l.toFloat() + cw * .5f) * scale\n        val y = viewport.cy - (t.toFloat() + ch * .5f) * scale\n        val w = cw * scale\n        val h = ch * scale\n        return MirrorFrame(scale, x, y, crop, Box(\n            viewport.cx - w * .5f, viewport.cy - h * .5f,\n            viewport.cx + w * .5f, viewport.cy + h * .5f))\n    }\n\n    // A dual cover flight is optional; do not start one when its source\n    // would abruptly crop on frame zero. The two monotonic rail phases have\n    // affine edges in the same smoothstep parameter. Envelopes formed by\n    // their endpoints conservatively bound ALL intermediate covered frames.\n    // A rejected cover falls back to PR72's existing contain/reveal path.\n    fun canUseCoveredFlight(small: Box, main: Box, smallCrop: Crop, mainCrop: Crop,\n                            others: List<Box>): Boolean {\n        if (others.any { !it.valid() }) return false\n        fun safe(from: Box, to: Box, crop: Crop): Boolean {\n            val first = mirrorFrame(from, to, crop, 0f, false) ?: return false\n            if (endpointGapPx(from, first.box) > 2f) return false\n            val split = if (from.width * from.height < to.width * to.height) .34f else .66f\n            val points = listOf(0f, split, 1f)\n            val envelopes = points.map { p ->\n                val fit = railCorridorFlight(from, to, crop.right-crop.left,\n                    crop.bottom-crop.top, p) ?: return false\n                if (mirrorFrame(from, to, crop, p, true) == null) return false\n                coveredViewport(from, to, fit.box, p)\n            }\n            for (i in 0 until envelopes.lastIndex) {\n                val a = envelopes[i]\n                val b = envelopes[i+1]\n                val sweep = Box(min(a.left,b.left), min(a.top,b.top),\n                    maxOf(a.right,b.right), maxOf(a.bottom,b.bottom))\n                if (others.any { intersectionArea(sweep,it) >\n                        intersectionArea(first.box,it) + 1f }) return false\n            }\n            return true\n        }\n        return safe(small,main,smallCrop) && safe(main,small,mainCrop)\n    }\n\n    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageGpuMirrorOcclusion.kt": {
+      "previous_blob_sha1": "ccd6a7ae40b51f6023da98623717d8f137918f7f",
+      "reviewed_blob_sha1": "f07f177d1987b19257a1490d72e188ad50008afc",
+      "patches": [
+        {
+          "before": "    fun hide(transaction: SurfaceControl.Transaction) {",
+          "after": "    fun setRevealAlpha(transaction: SurfaceControl.Transaction, alpha: Float) {\n        transaction.setAlpha(sourceCover, alpha)\n        transaction.setAlpha(mainCover, alpha)\n    }\n\n    fun hide(transaction: SurfaceControl.Transaction) {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
+      "previous_blob_sha1": "dc8d1cb5f016556bab2c0171f84f9be5463c2ddc",
+      "reviewed_blob_sha1": "303f3ced4d6b6c71ad6a4e4346988250d1c67d08",
+      "patches": [
+        {
+          "before": "    private var animator: ValueAnimator? = null",
+          "after": "    private var animator: ValueAnimator? = null\n    private var revealAnimator: ValueAnimator? = null\n    private var handoffCheckStarted = false\n    private var endpointGap = 0f"
+        },
+        {
+          "before": "        private const val MAX_LIFETIME_MS = 1800L",
+          "after": "        private const val MAX_LIFETIME_MS = 1800L\n        private const val READY_REVEAL_MS = 96L\n        private const val ENDPOINT_GAP_PX = 2f"
+        },
+        {
+          "before": "        concurrentHandoff = immediateMove\n        startedAtMs = SystemClock.uptimeMillis()",
+          "after": "        concurrentHandoff = immediateMove\n        val finalIncoming = StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            slotStart, mainStart, sourceCrop.width(), sourceCrop.height(), 1f)\n        val finalOutgoing = StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            mainStart, slotStart, mainCrop.width(), mainCrop.height(), 1f)\n        if (finalIncoming == null || finalOutgoing == null) {\n            finished.set(true)\n            cleanupWithoutCallback()\n            return false\n        }\n        val incomingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart, finalIncoming.box)\n        val outgoingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart, finalOutgoing.box)\n        endpointGap = maxOf(incomingGap, outgoingGap)\n        trace(\"endpoint_gap_px up=${incomingGap.toInt()} down=${outgoingGap.toInt()}\" +\n            \" up_fit=${finalIncoming.box.width.toInt()}x${finalIncoming.box.height.toInt()}\" +\n            \" down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}\")\n        startedAtMs = SystemClock.uptimeMillis()"
+        },
+        {
+          "before": "        if (!isRunning || !frameComplete || !moveComplete) return\n        fun check() {",
+          "after": "        if (!isRunning || !frameComplete || !moveComplete || handoffCheckStarted) return\n        handoffCheckStarted = true\n        fun check() {"
+        },
+        {
+          "before": "                host.postOnAnimation { stop() }\n            } else host.postOnAnimation { check() }",
+          "after": "                if (ready && endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {\n                    revealReadyDestination(liveReady, canRelease)\n                } else host.postOnAnimation { stop() }\n            } else host.postOnAnimation { check() }"
+        },
+        {
+          "before": "    fun stop() {",
+          "after": "    // An aspect-mismatched live buffer cannot cover both target dimensions\n    // without stretching/cropping. Once the real task is confirmed ready,\n    // reveal it over a short bounded GPU-only handoff rather than a hard cut.\n    // No new surfaces, screenshots, task resizes or work while idle.\n    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean) {\n        if (!isRunning || revealAnimator != null) return\n        if (!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {\n            stop()\n            return\n        }\n        trace(\"endpoint_reveal_start gap=${endpointGap.toInt()}px\")\n        val reveal = ValueAnimator.ofFloat(0f, 1f).apply {\n            duration = READY_REVEAL_MS\n            interpolator = PathInterpolator(.2f, 0f, .2f, 1f)\n            addUpdateListener {\n                if (!isRunning) return@addUpdateListener\n                val alpha = StageLiveSurfaceFlightGeometry.handoffReveal(it.animatedValue as Float)\n                runCatching {\n                    val tx = frameTransaction ?: error(\"Handoff transaction unavailable\")\n                    occlusion.setRevealAlpha(tx, alpha.cover)\n                    tx.setAlpha(sourceMirror, alpha.mirror)\n                    tx.setAlpha(mainMirror, alpha.mirror)\n                    tx.apply()\n                }.onFailure { stop() }\n            }\n            addListener(object : AnimatorListenerAdapter() {\n                override fun onAnimationEnd(animation: Animator) {\n                    if (!isRunning) return\n                    trace(\"endpoint_reveal_end\")\n                    stop()\n                }\n            })\n        }\n        revealAnimator = reveal\n        reveal.start()\n    }\n\n    fun stop() {"
+        },
+        {
+          "before": "        animator=null\n        cleanupWithoutCallback()",
+          "after": "        animator=null\n        revealAnimator?.removeAllListeners()\n        revealAnimator?.removeAllUpdateListeners()\n        revealAnimator?.cancel()\n        revealAnimator=null\n        cleanupWithoutCallback()"
+        },
+        {
+          "before": "    private val occlusion: StageGpuMirrorOcclusion,\n) {",
+          "after": "    private val occlusion: StageGpuMirrorOcclusion,\n    private val coveredFlight: Boolean,\n) {"
+        },
+        {
+          "before": "            if (!outgoing.isValid || !incoming.isValid) {",
+          "after": "            val incomingCrop = StageLiveSurfaceFlightGeometry.Crop(\n                localCrop.left, localCrop.top, localCrop.right, localCrop.bottom)\n            val coveredFlight = StageLiveSurfaceFlightGeometry.canUseCoveredFlight(\n                from, to, incomingCrop, outgoingCrop, obstacles)\n            StageExchangeTelemetry.nativeEvent(\n                \"mirror_crop_mode=\" + if (coveredFlight) \"covered_safe\" else \"contain_reveal\")\n            if (!outgoing.isValid || !incoming.isValid) {"
+        },
+        {
+          "before": "                from,to,backdrop,masks,\n            )",
+          "after": "                from,to,backdrop,masks,coveredFlight,\n            )"
+        },
+        {
+          "before": "        val finalIncoming = StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            slotStart, mainStart, sourceCrop.width(), sourceCrop.height(), 1f)\n        val finalOutgoing = StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            mainStart, slotStart, mainCrop.width(), mainCrop.height(), 1f)",
+          "after": "        val finalIncoming = StageLiveSurfaceFlightGeometry.mirrorFrame(\n            slotStart, mainStart, incomingGeometryCrop, 1f, coveredFlight)\n        val finalOutgoing = StageLiveSurfaceFlightGeometry.mirrorFrame(\n            mainStart, slotStart, outgoingGeometryCrop, 1f, coveredFlight)"
+        },
+        {
+          "before": "    private val ui = Handler(Looper.getMainLooper())",
+          "after": "    private val incomingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(\n        sourceCrop.left,sourceCrop.top,sourceCrop.right,sourceCrop.bottom)\n    private val outgoingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(\n        mainCrop.left,mainCrop.top,mainCrop.right,mainCrop.bottom)\n    private val ui = Handler(Looper.getMainLooper())"
+        },
+        {
+          "before": "        val incoming=StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,\n        ) ?: error(\"Unsafe incoming GPU rail path\")\n        // Both crop and transform use the SAME root coordinate convention.\n        // Detached: raw source pixels; retained: fitted physical pixels.\n        // The crop bounds the actual mirror, not merely our mathematical card.\n        val outgoing=StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            mainStart,slotStart,mainCrop.width(),mainCrop.height(),p,\n        ) ?: error(\"Unsafe outgoing GPU rail path\")\n        transaction.setScale(sourceMirror,incoming.scale,incoming.scale)\n        transaction.setPosition(sourceMirror,\n            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.x,sourceCrop.left,incoming.scale),\n            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.y,sourceCrop.top,incoming.scale))\n        transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)\n        transaction.setPosition(mainMirror,\n            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.x,mainCrop.left,outgoing.scale),\n            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.y,mainCrop.top,outgoing.scale))",
+          "after": "        val incoming=StageLiveSurfaceFlightGeometry.mirrorFrame(\n            slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,\n        ) ?: error(\"Unsafe incoming GPU rail path\")\n        val outgoing=StageLiveSurfaceFlightGeometry.mirrorFrame(\n            mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,\n        ) ?: error(\"Unsafe outgoing GPU rail path\")\n        // Both task mirrors are updated by the same GPU transaction. Cover\n        // mode changes only their transient crop, never original task bounds.\n        if (coveredFlight) {\n            transaction.setCrop(sourceMirror,incoming.crop.toAndroidRect())\n            transaction.setCrop(mainMirror,outgoing.crop.toAndroidRect())\n        }\n        transaction.setScale(sourceMirror,incoming.scale,incoming.scale)\n        transaction.setPosition(sourceMirror,incoming.x,incoming.y)\n        transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)\n        transaction.setPosition(mainMirror,outgoing.x,outgoing.y)"
+        },
+        {
+          "before": "                    tx.addTransactionCommittedListener(host.context.mainExecutor) {\n                        firstTransactionCommitted = true",
+          "after": "                    tx.addTransactionCommittedListener(host.context.mainExecutor) {\n                        if (finished.get()) return@addTransactionCommittedListener\n                        firstTransactionCommitted = true"
+        }
+      ]
+    }
+  }
+}

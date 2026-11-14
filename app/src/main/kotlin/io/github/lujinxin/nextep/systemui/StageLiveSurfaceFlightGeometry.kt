@@ -171,6 +171,105 @@ internal object StageLiveSurfaceFlightGeometry {
         return true
     }
 
+    // A source buffer cannot exactly fit a differently shaped destination
+    // without either cropping or non-uniform scaling. Measure the remaining
+    // physical edge gap so handoff can reveal the real reflowed destination.
+    fun endpointGapPx(target: Box, fitted: Box): Float = maxOf(
+        kotlin.math.abs(target.left - fitted.left),
+        kotlin.math.abs(target.top - fitted.top),
+        kotlin.math.abs(target.right - fitted.right),
+        kotlin.math.abs(target.bottom - fitted.bottom),
+    )
+
+    data class RevealAlpha(val cover: Float, val mirror: Float)
+
+    // First remove the opaque covers, THEN fade the mirrors over the real
+    // destination. Never compound a translucent mirror with a dark cover.
+    // Both cards use one transaction and one shared progress.
+    fun handoffReveal(progress: Float): RevealAlpha {
+        val p = if (progress.isFinite()) progress.coerceIn(0f, 1f) else 0f
+        return RevealAlpha(
+            cover = (1f - 2f * p).coerceIn(0f, 1f),
+            mirror = (2f - 2f * p).coerceIn(0f, 1f),
+        )
+    }
+
+    data class MirrorFrame(val scale: Float, val x: Float, val y: Float,
+                           val crop: Crop, val box: Box)
+
+    private fun coveredViewport(from: Box, to: Box, center: Box, p: Float): Box {
+        val growing = from.width * from.height < to.width * to.height
+        val phase = (if (growing) (p - .34f) / .66f else p / .66f).coerceIn(0f, 1f)
+        val u = phase * phase * (3f - 2f * phase)
+        val w = from.width + (to.width - from.width) * u
+        val h = from.height + (to.height - from.height) * u
+        return Box(center.cx - w * .5f, center.cy - h * .5f,
+                   center.cx + w * .5f, center.cy + h * .5f)
+    }
+
+    // The crop and position are in the same mirror-root coordinates selected
+    // by PR71. Only temporary mirror pixels are clipped, never the real task.
+    // Round crop dimensions INWARD so rounding cannot spill outside the
+    // collision envelope; at progress 0 preserve the complete old source.
+    fun mirrorFrame(from: Box, to: Box, source: Crop, progress: Float,
+                    covered: Boolean): MirrorFrame? {
+        val sw = source.right - source.left
+        val sh = source.bottom - source.top
+        val fit = railCorridorFlight(from, to, sw, sh, progress) ?: return null
+        if (!covered || progress <= 0f) return MirrorFrame(
+            fit.scale, mirrorPosition(fit.x, source.left, fit.scale),
+            mirrorPosition(fit.y, source.top, fit.scale), source, fit.box)
+        val viewport = coveredViewport(from, to, fit.box, progress)
+        if (!viewport.valid()) return null
+        val scale = maxOf(viewport.width / sw, viewport.height / sh)
+        if (!scale.isFinite() || scale <= 0f || scale > 10f) return null
+        val cw = kotlin.math.floor((viewport.width / scale).toDouble()).toInt().coerceAtMost(sw)
+        val ch = kotlin.math.floor((viewport.height / scale).toDouble()).toInt().coerceAtMost(sh)
+        if (cw < 2 || ch < 2) return null
+        val l = source.left + (sw - cw) / 2
+        val t = source.top + (sh - ch) / 2
+        val crop = Crop(l, t, l + cw, t + ch)
+        val x = viewport.cx - (l.toFloat() + cw * .5f) * scale
+        val y = viewport.cy - (t.toFloat() + ch * .5f) * scale
+        val w = cw * scale
+        val h = ch * scale
+        return MirrorFrame(scale, x, y, crop, Box(
+            viewport.cx - w * .5f, viewport.cy - h * .5f,
+            viewport.cx + w * .5f, viewport.cy + h * .5f))
+    }
+
+    // A dual cover flight is optional; do not start one when its source
+    // would abruptly crop on frame zero. The two monotonic rail phases have
+    // affine edges in the same smoothstep parameter. Envelopes formed by
+    // their endpoints conservatively bound ALL intermediate covered frames.
+    // A rejected cover falls back to PR72's existing contain/reveal path.
+    fun canUseCoveredFlight(small: Box, main: Box, smallCrop: Crop, mainCrop: Crop,
+                            others: List<Box>): Boolean {
+        if (others.any { !it.valid() }) return false
+        fun safe(from: Box, to: Box, crop: Crop): Boolean {
+            val first = mirrorFrame(from, to, crop, 0f, false) ?: return false
+            if (endpointGapPx(from, first.box) > 2f) return false
+            val split = if (from.width * from.height < to.width * to.height) .34f else .66f
+            val points = listOf(0f, split, 1f)
+            val envelopes = points.map { p ->
+                val fit = railCorridorFlight(from, to, crop.right-crop.left,
+                    crop.bottom-crop.top, p) ?: return false
+                if (mirrorFrame(from, to, crop, p, true) == null) return false
+                coveredViewport(from, to, fit.box, p)
+            }
+            for (i in 0 until envelopes.lastIndex) {
+                val a = envelopes[i]
+                val b = envelopes[i+1]
+                val sweep = Box(min(a.left,b.left), min(a.top,b.top),
+                    maxOf(a.right,b.right), maxOf(a.bottom,b.bottom))
+                if (others.any { intersectionArea(sweep,it) >
+                        intersectionArea(first.box,it) + 1f }) return false
+            }
+            return true
+        }
+        return safe(small,main,smallCrop) && safe(main,small,mainCrop)
+    }
+
     data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {
         fun toAndroidRect() = android.graphics.Rect(left,top,right,bottom)
     }
