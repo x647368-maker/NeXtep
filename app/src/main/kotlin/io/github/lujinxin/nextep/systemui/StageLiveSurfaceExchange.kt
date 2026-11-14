@@ -49,6 +49,9 @@ internal class StageLiveSurfaceExchange private constructor(
     private val backdrop: Drawable?,
     private val occlusion: StageGpuMirrorOcclusion,
     private val coveredFlight: Boolean,
+    private val incomingStamp: TaskSurfaceCompat.MirrorSourceStamp?,
+    private val outgoingStamp: TaskSurfaceCompat.MirrorSourceStamp?,
+    private val detachedRoot: Boolean,
 ) {
     private val incomingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(
         sourceCrop.left,sourceCrop.top,sourceCrop.right,sourceCrop.bottom)
@@ -75,6 +78,55 @@ internal class StageLiveSurfaceExchange private constructor(
     private var deferredMove: Runnable? = null
     private var lastHandoffWait = ""
     private var endpointGap = 0f
+    private var heldWriter: TaskSurfaceCompat.HeldMirrorWriter? = null
+    private val incomingRebased=AtomicBoolean(false)
+    private val outgoingRebased=AtomicBoolean(false)
+    private val endpointWriteFailed=AtomicBoolean(false)
+
+    // After the terminal frame, the source producer can change its bounds
+    // AND its local root transform. Keep the mirror in the same destination
+    // card using the exact owned frame written in the native transaction.
+    // No visibility/alpha changes, no screenshot, no original-task mutation.
+    private fun armHeldEndpointWriter() {
+        val inStamp=incomingStamp ?: return
+        val outStamp=outgoingStamp ?: return
+        if (heldWriter!=null || !isRunning) return
+        val density=host.resources.displayMetrics.density
+        val radiusSetter=cornerMethod
+        val writer=TaskSurfaceCompat.HeldMirrorWriter { transaction, frame ->
+            if (finished.get() || endpointWriteFailed.get()) return@HeldMirrorWriter
+            val incoming=frame.taskId==inStamp.taskId
+            val stamp=if(incoming) inStamp else outStamp
+            val expectedDisplay=if(incoming) outStamp.displayId else inStamp.displayId
+            if (frame.taskId!=stamp.taskId || frame.displayId!=expectedDisplay ||
+                frame.token!=stamp.token || frame.leash!==stamp.leash) return@HeldMirrorWriter
+            val mirror=if(incoming) sourceMirror else mainMirror
+            if(!mirror.isValid) return@HeldMirrorWriter
+            val target=if(incoming) mainStart else slotStart
+            val fit=StageHeldEndpointPolicy.fit(
+                target.left,target.top,target.right,target.bottom,
+                frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
+                frame.scale,frame.x,frame.y,detachedRoot) ?: return@HeldMirrorWriter
+            runCatching {
+                if (finished.get() || !mirror.isValid) return@runCatching
+                // Crop and transform are submitted with the task's new frame.
+                // Keep corner radius optional (the same OEM API as the flight).
+                transaction.setCrop(mirror,Rect(fit.left,fit.top,fit.right,fit.bottom))
+                transaction.setScale(mirror,fit.scale,fit.scale)
+                transaction.setPosition(mirror,fit.x,fit.y)
+                if(radiusSetter!=null) runCatching {
+                    radiusSetter.invoke(transaction,mirror,(24f*density/fit.scale).coerceIn(0f,120f*density))
+                }
+                (if(incoming) incomingRebased else outgoingRebased).set(true)
+            }.onFailure { endpointWriteFailed.set(true) }
+        }
+        if(TaskSurfaceCompat.registerHeldMirrorWriter(writer)) heldWriter=writer
+    }
+
+    private fun disarmHeldEndpointWriter() {
+        heldWriter?.let(TaskSurfaceCompat::unregisterHeldMirrorWriter)
+        heldWriter=null
+    }
     // Reuse one compositor transaction for the entire flight; avoid allocating
     // and closing a Binder-backed Transaction on every animation frame.
     private var frameTransaction: SurfaceControl.Transaction? = null
@@ -208,6 +260,8 @@ internal class StageLiveSurfaceExchange private constructor(
             // which caused PR59 to show the new app twice while still flying.
             StageExchangeTelemetry.nativeEvent(
                 TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
+            val outgoingBefore=TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)
+            val incomingBefore=TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)
             val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
                 ?: return markUnavailable("no_owned_main_task_mirror")
             val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
@@ -252,6 +306,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 host, incoming, outgoing, localCrop,
                 outgoingCrop.toAndroidRect(),
                 from,to,backdrop,masks,coveredFlight,
+                incomingBefore?.takeIf { it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)) },
+                outgoingBefore?.takeIf { it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)) },
+                detached==true,
             )
         }
 
@@ -367,6 +424,7 @@ internal class StageLiveSurfaceExchange private constructor(
         fun commitMove() {
             if (!isRunning || sentMove) return
             sentMove = true
+            if (concurrentHandoff && frameComplete) armHeldEndpointWriter()
             trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
             if (moveAsync != null) {
@@ -614,6 +672,7 @@ internal class StageLiveSurfaceExchange private constructor(
 
     fun stop() {
         if (finished.getAndSet(true)) return
+        disarmHeldEndpointWriter()
         val callback=finishCallback
         finishCallback=null
         ui.removeCallbacks(lifetimeWatchdog)
@@ -631,6 +690,8 @@ internal class StageLiveSurfaceExchange private constructor(
         trace(
             "gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
             " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
+        if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
+            " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
         NeXtepLog.info("native_swap",
             "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
             "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
@@ -647,6 +708,7 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     private fun cleanupWithoutCallback() {
+        disarmHeldEndpointWriter()
         runCatching {
             SurfaceControl.Transaction().use { tx ->
                 if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
