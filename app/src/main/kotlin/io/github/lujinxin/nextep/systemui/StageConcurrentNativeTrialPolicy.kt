@@ -2,9 +2,9 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 /**
  * Experimental PRIVATE branch trial only. Automatic per-process safety gate.
- * A single cold 28ms GPU mirror miss may recover on the next tap; repeated
- * slow attempts or a severe delay disable the private native path for safety.
- * Clear OEM denial still disables for the SystemUI session. The PR53 fallback
+ * Slow mirror setup rejects that ONE attempt, never every later exchange.
+ * An explicit unrecoverable OEM refusal may still disable this private path
+ * for the SystemUI session, with an inspectable reason. The PR53 fallback
  * remains available when live mirroring cannot be used.
  *
  * Does not inspect manufacturer strings or keep a background timer.
@@ -14,15 +14,13 @@ internal object StageConcurrentNativeTrialPolicy {
     // OEMs can swap original buffers early when the task move starts.
     const val DURATION_MS=360L
     private const val PREP_BUDGET_MS=28L
-    private const val SEVERE_PREP_MS=80L
     // Do not reparent the real source task while its mirror is still flying.
     // The display move may mutate the leash subtree or buffer/crop on ColorOS.
     private const val MIN_FRAME_COUNT=3
     private const val FINAL_FRAME_TOLERANCE_MS=6L
     @Volatile private var disabled=false
-    // Only touched on the SystemUI main thread during an explicit swap.
-    // Warm first-use reflection can exceed a single frame without OEM failure.
-    private var consecutiveSlowPreparations=0
+    @Volatile private var disabledReason=""
+    fun reasonIfDisabled():String = if (disabled) disabledReason else ""
 
     fun allowed(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean):Boolean =
         !disabled && visible && animationEnabled && !powerSave
@@ -32,16 +30,10 @@ internal object StageConcurrentNativeTrialPolicy {
             width>=physicalW && height>=physicalH
 
     fun acceptPrepareTime(ms:Long):Boolean {
-        if (disabled || ms < 0L) return false
-        if (ms <= PREP_BUDGET_MS) {
-            consecutiveSlowPreparations=0
-            return true
-        }
-        consecutiveSlowPreparations++
-        // Never run this attempt if it exceeded 28ms. One ordinary cold miss
-        // is recoverable; a second consecutive miss or severe stall locks out.
-        if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) disabled=true
-        return false
+        // A missed frame is NOT proof that this device cannot mirror tasks.
+        // Reject the expensive attempt, but allow a warm attempt next tap.
+        // No background polling, hot loop or forced animation on slow devices.
+        return !disabled && ms >= 0L && ms <= PREP_BUDGET_MS
     }
 
     /** Do not turn temporary task-leash/geometry readiness into permanent OEM denial. */
@@ -83,9 +75,9 @@ internal object StageConcurrentNativeTrialPolicy {
         frameAtAck != null && currentFrame > frameAtAck
 
     fun disableForSession(reason:String) {
+        disabledReason=reason.take(100)
         disabled=true
-        // Reason is logged by the caller; no app/process data is collected.
     }
 
-    internal fun resetForTests() { disabled=false; consecutiveSlowPreparations=0 }
+    internal fun resetForTests() { disabled=false; disabledReason="" }
 }
