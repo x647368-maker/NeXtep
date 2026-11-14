@@ -48,11 +48,11 @@ internal class StageTransientTapSwap(private val context:Context) {
               valid:()->Boolean,moveAsync:((Boolean)->Unit)->Unit,
               liveReady:()->Boolean,trace:(String)->Unit,onFinished:()->Unit,
               onVisualStart:()->Unit={},onVisualEnd:()->Unit={},
-              mainReady:()->Boolean={false}):Boolean {
+              mainReady:()->Boolean={false},mainBackdrop:Drawable?=null):Boolean {
         if(active!=null || !host.isAttachedToWindow || !host.isHardwareAccelerated ||
             slot.isEmpty || main.isEmpty || slotCrop.isEmpty || mainCrop.isEmpty) return false
         val a=Attempt(host,Rect(slot),Rect(main),otherSlots.map(::Rect),incoming,outgoing,
-            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady)
+            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady,mainBackdrop)
         active=a
         a.begin()
         return true
@@ -65,6 +65,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val valid:()->Boolean,val moveAsync:((Boolean)->Unit)->Unit,
         val liveReady:()->Boolean,val trace:(String)->Unit,val onFinished:()->Unit,
         val onVisualStart:()->Unit,val onVisualEnd:()->Unit,val mainReady:()->Boolean,
+        val mainBackdrop:Drawable?,
     ) {
         private val viewport=Rect(0,0,host.width,host.height)
         private var waitingCapture=true
@@ -157,7 +158,7 @@ internal class StageTransientTapSwap(private val context:Context) {
                 a?.recycle();b?.recycle();direct("capture_unavailable");return
             }
             if(plan==null){a.recycle();b.recycle();direct("corridor_unavailable");return}
-            val v=FlightView(context,a,b,slot,main,others,backdrop,viewport,plan)
+            val v=FlightView(context,a,b,slot,main,others,backdrop,viewport,plan,mainBackdrop)
             if(!v.safe){v.release();direct("corridor_unavailable");return}
             view=v
             val added=runCatching{
@@ -350,7 +351,8 @@ internal class StageTransientTapSwap(private val context:Context) {
     }
     internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
                              slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?,
-                             viewport:Rect,planned:StageSnapshotMotion.PairFlight?=null):FrameLayout(context){
+                             viewport:Rect,planned:StageSnapshotMotion.PairFlight?=null,
+                             private val mainBackdrop:Drawable?=null):FrameLayout(context){
         private val excluded=others.map(::Rect)
         // Production always receives the precomputed worker result. The default
         // is retained for the isolated renderer's instrumentation harness.
@@ -359,6 +361,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         private val down=pair?.down
         val safe=up!=null && down!=null
         private val slotRect=Rect(slot)
+        private val mainRect=Rect(main)
         private val mask=Path().apply{
             addRect(RectF(slot),Path.Direction.CW);addRect(RectF(main),Path.Direction.CW)
         }
@@ -404,7 +407,27 @@ internal class StageTransientTapSwap(private val context:Context) {
             excluded.forEach{canvas.clipOutRect(it)}
             canvas.clipPath(mask)
             canvas.drawColor(Color.rgb(12,14,21))
-            backdrop?.setBounds(0,0,width,height);backdrop?.draw(canvas)
+            if(mainBackdrop==null){
+                // Preserve the exact previous fallback on unsupported,
+                // uncached or mismatched wallpaper configurations.
+                backdrop?.setBounds(0,0,width,height);backdrop?.draw(canvas)
+            } else {
+                // The main region normally reveals the unfrosted desktop.
+                // Keep the rail's existing material only in the selected
+                // slot, rather than painting a rectangular full-main blur.
+                if(!mainRevealed){
+                    val mainSave=canvas.save()
+                    canvas.clipRect(mainRect)
+                    canvas.clipOutRect(slotRect)
+                    mainBackdrop.setBounds(0,0,width,height)
+                    mainBackdrop.draw(canvas)
+                    canvas.restoreToCount(mainSave)
+                }
+                val slotSave=canvas.save()
+                canvas.clipRect(slotRect)
+                backdrop?.setBounds(0,0,width,height);backdrop?.draw(canvas)
+                canvas.restoreToCount(slotSave)
+            }
             canvas.restoreToCount(save)
         }
         override fun dispatchDraw(canvas:Canvas){
