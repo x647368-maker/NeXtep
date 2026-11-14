@@ -1980,6 +1980,7 @@ class NeXtepWindowController(
         // PR59: the previous task may draw many times during the GPU flight;
         // do not count old frames as new post-migration virtual-display output.
         var frameAtCompletedMove:Long?=null
+        var lastTargetWait=""
         val incoming=state.taskId
         activeSwapViewport=g
         deferredSwapGeometryRefresh=false
@@ -1997,12 +1998,20 @@ class NeXtepWindowController(
             move={ true },
             liveReady={
                 val now=slotCoordinator?.slotStates()?.getOrNull(slotIndex)
-                now is SlotState.Occupied && now.taskId==task &&
-                    slot.view.textureView.isAvailable &&
-                    StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(
-                        frameAtCompletedMove,slot.contentFrameSequence) &&
-                    mainTaskPresenter.currentTaskId()==incoming &&
-                    TaskSurfaceCompat.isPresentationSettled(incoming,g)
+                val reason=when {
+                    now !is SlotState.Occupied || now.taskId!=task -> "slot_owner"
+                    !slot.view.textureView.isAvailable -> "slot_texture"
+                    !StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(
+                        frameAtCompletedMove,slot.contentFrameSequence) -> "slot_post_ack_buffer"
+                    mainTaskPresenter.currentTaskId()!=incoming -> "main_owner"
+                    !TaskSurfaceCompat.isPresentationSettled(incoming,g) -> "main_geometry"
+                    else -> "ready"
+                }
+                if (reason != lastTargetWait) {
+                    lastTargetWait=reason
+                    StageExchangeTelemetry.nativeEvent("target_wait=$reason",traceId)
+                }
+                reason=="ready"
             },
             canRelease=canRelease,
             immediateMove=true,
