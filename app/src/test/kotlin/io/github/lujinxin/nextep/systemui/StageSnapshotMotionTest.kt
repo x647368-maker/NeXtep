@@ -90,6 +90,54 @@ class StageSnapshotMotionTest {
             }
         }
     }
+    @Test fun sameSlotKeepsExactCenterRouteAcrossTaskAspectChanges(){
+        val phone=b(0f,0f,1080f,2354f)
+        val leftMain=b(264f,390f,1074f,2136f)
+        val rightMain=b(6f,390f,816f,2136f)
+        val topMain=b(180f,714f,900f,2262f)
+        val left=(0..3).map { i->b(30f,312f+444*i,246f,732f+444*i) }
+        val right=(0..3).map { i->b(834f,312f+444*i,1050f,732f+444*i) }
+        val top=(0..3).map { i->b(126f+216*i,312f,318f+216*i,672f) }
+        val fold=b(0f,0f,2048f,2248f)
+        val foldSlots=(0..3).map { i->b(20f,100f+510*i,280f,570f+510*i) }
+        val tablet=b(0f,0f,2560f,1600f)
+        val tabletSlots=(0..3).map { i->b(30f,180f+330*i,350f,470f+330*i) }
+        data class Layout(val screen:StageSnapshotMotion.Box,val main:StageSnapshotMotion.Box,
+            val slots:List<StageSnapshotMotion.Box>)
+        val layouts=listOf(Layout(phone,leftMain,left),Layout(phone,rightMain,right),
+            Layout(phone,topMain,top),Layout(fold,b(300f,160f,2020f,2200f),foldSlots),
+            Layout(tablet,b(400f,160f,2450f,1440f),tabletSlots))
+        val dimensions=listOf(1080 to 2354,2354 to 1080,1440 to 1440,720 to 1600)
+        for(layout in layouts) for(small in layout.slots){
+            val excluded=layout.slots.filter{it!=small}
+            val reference=checkNotNull(StageSnapshotMotion.pairedFlights(small,layout.main,
+                1080,2354,1080,2354,layout.screen,excluded))
+            for((iw,ih) in dimensions) for((ow,oh) in dimensions){
+                val actual=checkNotNull(StageSnapshotMotion.pairedFlights(small,layout.main,
+                    iw,ih,ow,oh,layout.screen,excluded))
+                assertEquals(reference.up.arc,actual.up.arc,0f)
+                assertEquals(reference.down.arc,actual.down.arc,0f)
+                assertEquals(reference.up.sizeBias,actual.up.sizeBias,0f)
+                assertEquals(iw,actual.up.width);assertEquals(ih,actual.up.height)
+                assertEquals(ow,actual.down.width);assertEquals(oh,actual.down.height)
+                for((now,prior) in listOf(actual.up to reference.up,actual.down to reference.down)){
+                    assertEquals(min(now.from.w/now.width,now.from.h/now.height),now.start.scale,.00001f)
+                    assertEquals(min(now.to.w/now.width,now.to.h/now.height),now.end.scale,.00001f)
+                    var last=now.start
+                    for(i in 0..60){
+                        val p=i/60f
+                        val pose=now.pose(p)
+                        val target=prior.pose(p)
+                        assertEquals(target.cx,pose.cx,.001f)
+                        assertEquals(target.cy,pose.cy,.001f)
+                        if(i>0)assertTrue((pose.cx-last.cx)*(now.to.cx-now.from.cx)+
+                            (pose.cy-last.cy)*(now.to.cy-now.from.cy)>0f)
+                        last=pose
+                    }
+                }
+            }
+        }
+    }
     @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){
         assertEquals(100.25f,StageSnapshotMotion.hardwareEnd(100f,100f,.25f),.00001f)
         assertEquals(.5001f,StageSnapshotMotion.hardwareEnd(.5f,.5f,.0001f),.00001f)
