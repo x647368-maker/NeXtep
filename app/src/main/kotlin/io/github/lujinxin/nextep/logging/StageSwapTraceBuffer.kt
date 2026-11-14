@@ -54,6 +54,10 @@ internal class StageSwapTraceBuffer(
 
     private fun finishLocked(result: String) {
         val attempt = active ?: return
+        // Even after a very noisy OEM callback sequence, the final outcome
+        // must never be silently lost to the per-attempt event cap.
+        if (attempt.events.size >= maxEvents && attempt.events.isNotEmpty())
+            attempt.events.removeAt(attempt.events.lastIndex)
         eventLocked("end:${result.take(40)}")
         val report = "#${attempt.id} ${attempt.operation} " + attempt.events.joinToString(" > ")
         completed.addLast(report.take(1000))
