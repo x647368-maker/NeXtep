@@ -185,7 +185,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         val token=session.begin(BatterySample.read(this),chosen,minutes,version,
             note.text.toString(),StageIssueSceneSnapshot.read(this))
         StageIssueEventObserver.enable(this)
-        WorkspaceEnergyContract.query(this){ snapshot ->
+        WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true){ snapshot ->
             session.setStartRuntime(token,snapshot)
             if(!isDestroyed)render()
         }
@@ -211,7 +211,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         session.saveNote(note.text.toString())
         val token=session.currentToken()
         render()
-        WorkspaceEnergyContract.query(this){snap->
+        WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true){snap->
             if(session.active() && session.currentToken()==token)
                 session.finish(session.storedVersion(),session.storedNote(),
                     BatterySample.read(this),snap,mode)
