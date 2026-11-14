@@ -165,6 +165,8 @@ internal class StageLiveSurfaceExchange private constructor(
             // The mirror must follow the app TASK, not the rail's ViewRoot.
             // That root switches the producer during the two-stage exchange,
             // which caused PR59 to show the new app twice while still flying.
+            StageExchangeTelemetry.nativeEvent(
+                TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
             val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
                 ?: return markUnavailable("no_owned_main_task_mirror")
             val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
