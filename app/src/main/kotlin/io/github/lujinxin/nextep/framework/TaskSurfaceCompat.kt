@@ -19,6 +19,7 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Reflective SystemUI/WM Shell bridge for transforming a real task leash.
@@ -80,6 +81,56 @@ object TaskSurfaceCompat {
     private val exchangeDisplays = ConcurrentHashMap<Int, Int>()
     private val observedStates = ConcurrentHashMap<Int, TaskInfoCompat.WindowState>()
     private val observedLeashes = ConcurrentHashMap<Int, Any>()
+
+    internal data class MirrorSourceStamp(val taskId: Int, val displayId: Int,
+                                           val token: Any, val leash: Any) {
+        fun sameSource(other: MirrorSourceStamp?): Boolean =
+            other!=null && taskId==other.taskId && displayId==other.displayId &&
+                token==other.token && leash===other.leash
+    }
+
+    internal data class MirrorDestinationFrame(
+        val taskId: Int, val displayId: Int, val token: Any, val leash: Any,
+        val crop: Rect, val scale: Float, val x: Float, val y: Float,
+    )
+
+    internal fun mirrorSourceStamp(taskId: Int, displayId: Int): MirrorSourceStamp? {
+        val state=observedStates[taskId] ?: return null
+        val leash=observedLeashes[taskId] ?: return null
+        val token=state.token ?: return null
+        if (state.displayId!=displayId || state.vendorWindowed ||
+            state.windowingMode!=WINDOWING_MODE_FULLSCREEN || !isValid(leash)) return null
+        return MirrorSourceStamp(taskId,displayId,token,leash)
+    }
+
+    // A single flight may append endpoint-only geometry to existing owned
+    // SurfaceControl transactions. No polling, query, task move or visibility
+    // write is introduced. Idle transactions have only this null check.
+    internal fun interface HeldMirrorWriter {
+        fun append(transaction: android.view.SurfaceControl.Transaction, frame: MirrorDestinationFrame)
+    }
+    private val heldMirrorWriter=AtomicReference<HeldMirrorWriter?>(null)
+    internal fun registerHeldMirrorWriter(writer: HeldMirrorWriter): Boolean =
+        heldMirrorWriter.compareAndSet(null,writer)
+    internal fun unregisterHeldMirrorWriter(writer: HeldMirrorWriter) {
+        heldMirrorWriter.compareAndSet(writer,null)
+    }
+
+    private fun appendHeldMirrorFrame(transaction: Any, taskId: Int, leash: Any, frame: SurfaceFrame) {
+        val writer=heldMirrorWriter.get() ?: return
+        val tx=transaction as? android.view.SurfaceControl.Transaction ?: return
+        val state=observedStates[taskId] ?: return
+        val token=state.token ?: return
+        val crop=frame.crop ?: return
+        if (!isDisplayExchanging(taskId) || exchangeDisplays[taskId]!=state.displayId ||
+            state.vendorWindowed || state.windowingMode!=WINDOWING_MODE_FULLSCREEN ||
+            state.bounds!=crop || crop.isEmpty || observedLeashes[taskId]!==leash ||
+            !isValid(leash) || frame.scaleX!=frame.scaleY) return
+        if (heldMirrorWriter.get() !== writer) return
+        // Endpoint fitting is optional; never abort a real task transaction.
+        runCatching { writer.append(tx,MirrorDestinationFrame(
+            taskId,state.displayId,token,leash,crop,frame.scaleX,frame.positionX,frame.positionY)) }
+    }
     private data class MethodKey(val type: Class<*>, val name: String, val arguments: List<Class<*>?>)
     private val methodCache = ConcurrentHashMap<MethodKey, Method>()
     @Volatile private var displayDensity = 1f
@@ -226,7 +277,7 @@ object TaskSurfaceCompat {
         transactionGuard.ownedTransaction {
             try {
                 if (!exchanging || verifiedDemotedSlot(taskId,slot,observedStates[taskId])) {
-                    writeFrame(transaction, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
+                    writeFrame(transaction, taskId, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
                     io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
                     slot.lastAppliedAt = now
                     if (exchanging) io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phasedEvent("observed_slot_fit_submitted")
@@ -829,7 +880,7 @@ object TaskSurfaceCompat {
         }.newInstance()
         transactionGuard.ownedTransaction {
             try {
-                writeFrame(transaction, leash, frame)
+                writeFrame(transaction, taskId, leash, frame)
                 io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
             } finally {
                 invokeOptional(transaction, "close")
@@ -846,7 +897,7 @@ object TaskSurfaceCompat {
                 ownedTaskLeash(presentation.taskId) !== presentation.leash ||
                 !isValid(presentation.leash)
             ) return@forEach
-            writeFrame(transaction, presentation.leash, presentation.frame)
+            writeFrame(transaction, presentation.taskId, presentation.leash, presentation.frame)
         }
         preparedPresentations.values.forEach { presentation ->
             if (SystemClock.uptimeMillis() > presentation.reapplyUntil) {
@@ -859,7 +910,7 @@ object TaskSurfaceCompat {
                 ownedTaskLeash(presentation.taskId) !== presentation.leash ||
                 !isValid(presentation.leash)
             ) return@forEach
-            writeFrame(transaction, presentation.leash, presentation.frame)
+            writeFrame(transaction, presentation.taskId, presentation.leash, presentation.frame)
         }
         slotSurfaces.forEach { (taskId, slot) ->
             val state = observedStates[taskId] ?: return@forEach
@@ -870,7 +921,7 @@ object TaskSurfaceCompat {
             ) return@forEach
             // A queued Shell finish may still contain the former main transform.
             // Preserve its visibility/layer writes, but commit local slot coordinates.
-            writeFrame(transaction, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
+            writeFrame(transaction, taskId, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
         }
     }
 
@@ -883,7 +934,7 @@ object TaskSurfaceCompat {
         return observedLeashes[taskId]
     }
 
-    private fun writeFrame(transaction: Any, leash: Any, frame: SurfaceFrame) {
+    private fun writeFrame(transaction: Any, taskId: Int, leash: Any, frame: SurfaceFrame) {
         setCrop(transaction, leash, frame.crop)
         val crop = frame.crop
         val corner = WindowCornerPolicy.sourceRadius(frame.scaleX, frame.scaleY,
@@ -894,6 +945,7 @@ object TaskSurfaceCompat {
             invokeRequired(transaction, "setScale", leash, frame.scaleX, frame.scaleY)
         }
         invokeRequired(transaction, "setPosition", leash, frame.positionX, frame.positionY)
+        appendHeldMirrorFrame(transaction,taskId,leash,frame)
     }
 
     private fun sourceCrop(geometry: WorkspaceGeometry) = Rect(
