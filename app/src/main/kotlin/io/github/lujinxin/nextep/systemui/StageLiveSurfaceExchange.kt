@@ -433,12 +433,12 @@ internal class StageLiveSurfaceExchange private constructor(
         ) ?: error("Unsafe outgoing GPU rail path")
         transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
         transaction.setPosition(sourceMirror,
-            incoming.x-sourceCrop.left*incoming.scale,
-            incoming.y-sourceCrop.top*incoming.scale)
+            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.x,sourceCrop.left,incoming.scale),
+            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.y,sourceCrop.top,incoming.scale))
         transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)
         transaction.setPosition(mainMirror,
-            outgoing.x-mainCrop.left*outgoing.scale,
-            outgoing.y-mainCrop.top*outgoing.scale)
+            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.x,mainCrop.left,outgoing.scale),
+            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.y,mainCrop.top,outgoing.scale))
         // Preserve the previously accepted 24dp-equivalent round cards while
         // their compositor scale changes. A parent layer's corner radius uses
         // source-layer units, hence divide by the current uniform scale.
