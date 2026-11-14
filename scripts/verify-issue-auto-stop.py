@@ -31,5 +31,20 @@ assert "unregisterReceiver" in event and "unregisterActivityLifecycleCallbacks" 
 assert "while (true)" not in event
 assert ".postDelayed(" not in event
 assert "WakeLock" not in event
-assert "query(this)" in activity and "query(context.applicationContext)" in alarm
+# Keep the three original user/session-triggered queries, now with an explicit
+# opt-in trace flag at start/end. The ordinary marker must remain lightweight.
+assert activity.count("WorkspaceEnergyContract.query(") == 3
+assert activity.count("WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true)") == 2
+assert activity.count("WorkspaceEnergyContract.query(this)") == 1
+assert alarm.count("WorkspaceEnergyContract.query(") == 1
+assert "WorkspaceEnergyContract.query(context.applicationContext, includeExchangeDiagnostics = true)" in alarm
+contract = (root / "app/src/main/kotlin/io/github/lujinxin/nextep/monitoring/WorkspaceEnergyContract.kt").read_text()
+assert 'intent.getBooleanExtra("include_exchange_diagnostics", false)' in contract
+assert 'query(context, false, onResult)' in contract
+assert contract.count("StageExchangeTelemetry.describe()") == 1
+assert 'TriggerBroadcastContract.CONTROL_PERMISSION' in contract
+assert 'snapshot?.processId, snapshot?.exchangeDiagnostics' in session
+assert 'StageIssueReportPolicy.exchangeSection(' in session
+assert 'data.getString("exchange_diagnostics")' in contract
+assert 'result.putString("exchange_diagnostics",' in contract
 print("PASS: opt-in diagnostics use one non-wakeup alarm, a UI callback, no background poller or exported receiver")

@@ -52,7 +52,7 @@ class StageIssueTimeoutReceiver : BroadcastReceiver() {
         val result = goAsync()
         // One on-demand snapshot, with 1.5s fallback. No permanent monitors.
         runCatching {
-            WorkspaceEnergyContract.query(context.applicationContext) { snapshot ->
+            WorkspaceEnergyContract.query(context.applicationContext, includeExchangeDiagnostics = true) { snapshot ->
                 try {
                     val current = StageIssueSession(context)
                     if (current.active() && current.currentToken() == token && current.isDue()) {

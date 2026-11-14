@@ -53,6 +53,23 @@ class StageSwapTraceBufferTest {
         assertTrue(traces.contains("end:ok"))
     }
 
+    @Test fun longTraceRetainsTailAndExactFinalOutcome() {
+        var clock=0L
+        val recorder=StageSwapTraceBuffer({clock})
+        val id=recorder.begin("tap_swap")
+        repeat(26) {
+            clock+=10
+            recorder.event("stage_$it-"+"x".repeat(78),id)
+        }
+        recorder.finish("handoff_timeout",id)
+        val trace=recorder.describe()
+        assertTrue(trace.length>1000)
+        assertTrue(trace.contains("stage_0"))
+        assertTrue(trace.contains("stage_25"))
+        assertTrue(trace.contains("end:handoff_timeout"))
+        assertTrue(trace.length<4000)
+    }
+
     @Test fun boundsEventNamesAndCapsTheirNumber() {
         var time = 0L
         val recorder = StageSwapTraceBuffer({ time }, maxRecords=2, maxEvents=4)

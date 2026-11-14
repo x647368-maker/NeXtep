@@ -108,6 +108,9 @@ internal class StageIssueSession(context: Context) {
                 .putLong("start_task", snapshot.taskQueries)
                 .putLong("start_frames", snapshot.slotFrames)
                 .putLong("start_captures", snapshot.previewCaptures)
+            StageIssueReportPolicy.lastSwapId(snapshot.exchangeDiagnostics)?.let {
+                edit.putLong("start_swap_id", it)
+            }
         }
         edit.apply()
     }
@@ -177,6 +180,10 @@ internal class StageIssueSession(context: Context) {
             appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台。")
             appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
+            appendLine(StageIssueReportPolicy.exchangeSection(
+                preferences.getInt("start_pid", -1),
+                preferences.getLong("start_swap_id", -1L).takeIf { it >= 0L },
+                snapshot?.processId, snapshot?.exchangeDiagnostics))
             appendLine("手动标记：${labels.size}次（不要求使用）")
             for (index in labels.indices) {
                 appendLine("标记#${index+1}：${preferences.getString("marker_${index+1}","不可用")}")

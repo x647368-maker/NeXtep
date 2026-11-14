@@ -30,6 +30,25 @@ class StageIssueReportPolicyTest {
         assertEquals(StageIssueReportPolicy.MAX_DESCRIPTION_CHARS,text.length)
         assertEquals("用户未填写",StageIssueReportPolicy.note(""))
     }
+    @Test fun faultReportContainsFullTraceAndLastOutcome() {
+        val diag="测量代码：0.9.46-dev/61\n最近5次动画路径：\n" +
+            (1..5).joinToString("\n") { "#$it tap_swap " + "phase@10ms > ".repeat(200) + "end:timeout@480ms" }
+        val section=StageIssueReportPolicy.exchangeSection(11,2L,11,diag)
+        assertEquals(5L,StageIssueReportPolicy.lastSwapId(diag))
+        assertTrue(section.contains("起始快照最后交换编号：2"))
+        assertTrue(section.contains(diag))
+        assertTrue(section.contains("end:timeout@480ms"))
+        assertTrue(section.length+12_000+StageIssueReportPolicy.MAX_DESCRIPTION_CHARS < StageIssueReportPolicy.MAX_REPORT_CHARS)
+    }
+
+    @Test fun reportDistinguishesUnavailableOrReplacedSystemUi() {
+        assertTrue(StageIssueReportPolicy.exchangeSection(11,null,null,null).contains("不可用"))
+        assertTrue(StageIssueReportPolicy.exchangeSection(11,5L,12,"最近5次动画路径：\n#1 tap_swap").contains("进程号已变化"))
+        assertTrue(StageIssueReportPolicy.exchangeSection(11,null,11,null).contains("未提供交换记录"))
+        assertNull(StageIssueReportPolicy.lastSwapId("测量代码：0.9.46-dev/61\n#99 unrelated"))
+        assertTrue(StageIssueReportPolicy.exchangeSection(11,null,11,"x".repeat(24_001)).contains("未完整导出"))
+    }
+
     @Test fun negativeAndResetElapsedUnusable() {
         assertNull(StageIssueReportPolicy.elapsedMs(-1,10))
         assertNull(StageIssueReportPolicy.elapsedMs(10,3))
