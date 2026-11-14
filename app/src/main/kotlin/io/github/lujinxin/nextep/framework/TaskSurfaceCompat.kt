@@ -114,7 +114,15 @@ object TaskSurfaceCompat {
     fun observeTaskInfo(info: ActivityManager.RunningTaskInfo, leash: Any? = null) {
         val state=TaskInfoCompat.readWindowState(info)
         state?.let { observeTaskState(info.taskId, it) }
-        if (leash != null) observedLeashes[info.taskId] = leash
+        if (leash != null) {
+            observedLeashes[info.taskId] = leash
+            pendingDemotedFits[info.taskId]?.takeIf { it.leash !== leash }?.let { fit ->
+                pendingDemotedFits.remove(info.taskId,fit)
+                slotSurfaces[info.taskId]?.takeIf { it.confirmedDemotion===fit }?.let {
+                    slotSurfaces.remove(info.taskId,it)
+                }
+            }
+        }
         // Consume the existing Shell observation; never query ATM or the
         // organizer from the callback or SurfaceControl commit hook.
         if (state != null) observeDemotedFit(info.taskId,state)
@@ -149,9 +157,10 @@ object TaskSurfaceCompat {
         // Callback matched the original leash, destination token, full
         // local canvas and density. Cache only: existing native transactions
         // and the existing final slot-fit operation perform the actual reset.
-        if (pendingDemotedFits[taskId] !== fit) return
+        if (pendingDemotedFits[taskId] !== fit || observedStates[taskId] !== state) return
         slotSurfaces.compute(taskId) { _, previous ->
-            if (pendingDemotedFits[taskId] !== fit || !matchesDemotedFit(taskId,fit,state)) previous
+            if (pendingDemotedFits[taskId] !== fit || observedStates[taskId] !== state ||
+                !matchesDemotedFit(taskId,fit,state)) previous
             else if (previous?.confirmedDemotion===fit) previous
             else SlotSurface(fit.displayId,fit.leash,Rect(fit.crop),fit)
         }
@@ -191,12 +200,14 @@ object TaskSurfaceCompat {
         require(displayId != Display.DEFAULT_DISPLAY)
         // Keep the reservation. The only exception is the exact original
         // leash already confirmed in destination coordinates by Shell itself.
+        val exchanging=isDisplayExchanging(taskId)
+        if (exchanging && pendingDemotedFits[taskId]==null) return@runCatching
         val observed = observedStates[taskId]
         val cached = slotSurfaces[taskId]?.takeIf {
             it.displayId == displayId && it.crop == crop && observed?.displayId == displayId &&
                 observedLeashes[taskId] === it.leash && isValid(it.leash)
         }
-        if (isDisplayExchanging(taskId) &&
+        if (exchanging &&
             (cached==null || !verifiedDemotedSlot(taskId,cached,observed))) return@runCatching
         val slot = cached ?: run {
             val state = findLiveTaskState(taskId) ?: return@runCatching
@@ -214,9 +225,12 @@ object TaskSurfaceCompat {
             .getDeclaredConstructor().newInstance()
         transactionGuard.ownedTransaction {
             try {
-                writeFrame(transaction, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
-                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
-                slot.lastAppliedAt = now
+                if (!exchanging || verifiedDemotedSlot(taskId,slot,observedStates[taskId])) {
+                    writeFrame(transaction, slot.leash, SurfaceFrame(1f, 1f, 0f, 0f, slot.crop))
+                    io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
+                    slot.lastAppliedAt = now
+                    if (exchanging) io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phasedEvent("observed_slot_fit_submitted")
+                }
             } finally {
                 invokeOptional(transaction, "close")
             }
@@ -248,7 +262,11 @@ object TaskSurfaceCompat {
 
     fun markDisplayExchange(taskId: Int, destinationDisplayId: Int) {
         val now = SystemClock.uptimeMillis()
-        pendingDemotedFits.remove(taskId)
+        pendingDemotedFits.remove(taskId)?.let { fit ->
+            slotSurfaces[taskId]?.takeIf { it.confirmedDemotion===fit }?.let {
+                slotSurfaces.remove(taskId,it)
+            }
+        }
         displayExchanges.entries.removeIf {
             if (it.value >= now) false else {
                 exchangeDisplays.remove(it.key)
