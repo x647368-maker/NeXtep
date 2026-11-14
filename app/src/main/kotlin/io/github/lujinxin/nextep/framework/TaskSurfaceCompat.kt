@@ -461,6 +461,53 @@ object TaskSurfaceCompat {
         retainPreviewForAcceleratedCanvas(bitmap)
     }.onFailure { NeXtepLog.warn("task_preview", "Task preview unavailable taskId=$taskId", it) }.getOrNull()
 
+    /**
+     * One-shot, user-triggered transition capture of an already observed task.
+     * A slot is not a physical display task: use its exact cached leash rather
+     * than the legacy findTaskLeash() (which requires display 0 by default).
+     * No organizer query, display screenshot, protected-layer override or disk I/O.
+     */
+    internal fun captureObservedSwapPreview(stamp: MirrorSourceStamp, crop: Rect): android.graphics.Bitmap? {
+        fun valid(): Boolean = stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)) &&
+            !isDisplayExchanging(stamp.taskId) && observedStates[stamp.taskId]?.bounds==crop
+        if (crop.isEmpty || !valid()) return null
+        return runCatching {
+            WorkspaceEnergyDiagnostics.previewCaptures.incrementAndGet()
+            val type=Class.forName("android.window.ScreenCaptureInternal")
+            val surface=Class.forName("android.view.SurfaceControl")
+            val builderType=Class.forName("android.window.ScreenCaptureInternal\$LayerCaptureArgs\$Builder")
+            val builder=builderType.getConstructor(surface).newInstance(stamp.leash)
+            builderType.getMethod("setFrameScale",Float::class.javaPrimitiveType).invoke(builder,1f)
+            builderType.getMethod("setChildrenOnly",Boolean::class.javaPrimitiveType).invoke(builder,true)
+            builderType.getMethod("setSourceCrop",Rect::class.java).invoke(builder,crop)
+            val args=builderType.getMethod("build").invoke(builder)
+            val result=type.methods.firstOrNull {
+                it.name=="captureLayers" && it.parameterCount==1 && it.parameterTypes[0].isInstance(args)
+            }?.invoke(null,args) ?: return@runCatching null
+            // Secure/protected layer capture flags remain at the platform defaults.
+            if (result.javaClass.methods.firstOrNull {
+                    it.name=="containsSecureLayers" && it.parameterCount==0
+                }?.invoke(result)==true) {
+                (runCatching { result.javaClass.getMethod("getHardwareBuffer").invoke(result) }.getOrNull()
+                    as? android.hardware.HardwareBuffer)?.close()
+                return@runCatching null
+            }
+            val buffer=runCatching { result.javaClass.getMethod("getHardwareBuffer").invoke(result) }.getOrNull()
+                as? android.hardware.HardwareBuffer
+            try {
+                val bitmap=result.javaClass.getMethod("asBitmap").invoke(result) as? android.graphics.Bitmap
+                    ?: return@runCatching null
+                if (!valid() || bitmap.width!=crop.width() || bitmap.height!=crop.height()) {
+                    bitmap.recycle()
+                    return@runCatching null
+                }
+                retainPreviewForAcceleratedCanvas(bitmap)
+            } finally {
+                buffer?.close()
+            }
+        }.onFailure { NeXtepLog.warn("swap_snapshot","Owned task preview unavailable",it) }.getOrNull()
+    }
+
     /** Ownership of the result transfers to the short-lived HWUI exchange overlay. */
     internal fun retainPreviewForAcceleratedCanvas(bitmap: android.graphics.Bitmap): android.graphics.Bitmap? =
         if (bitmap.config == android.graphics.Bitmap.Config.HARDWARE) bitmap
