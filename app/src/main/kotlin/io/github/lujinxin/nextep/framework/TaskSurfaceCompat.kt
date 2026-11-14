@@ -221,6 +221,24 @@ object TaskSurfaceCompat {
      * SurfaceFlinger retains the mirror's normal protected-layer restrictions.
      * We do not clear secure flags, acquire a framebuffer or defeat DRM.
      */
+    /**
+     * Read-only source transform telemetry for private GPU-swap diagnostics.
+     * This is the task OWNED by the workbench; no other task, pixel or app
+     * content is inspected. It describes the source leash transform, NOT the
+     * actual presented pixels of its new mirror.
+     */
+    internal fun describeOwnedMainFrame(taskId: Int): String {
+        val owner=activePresentations[taskId] ?: return "main_frame_unavailable"
+        if (owner.restoring || ownedTaskLeash(taskId) !== owner.leash)
+            return "main_frame_stale"
+        val frame=owner.frame
+        val crop=frame.crop
+        return "mainSource scale=${frame.scaleX},${frame.scaleY} " +
+            "pos=${frame.positionX},${frame.positionY} " +
+            "crop=${crop?.width()}x${crop?.height()} " +
+            "origin=${crop?.left},${crop?.top}"
+    }
+
     internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
         val active = activePresentations[taskId] ?: return null
         if (active.restoring || ownedTaskLeash(taskId) !== active.leash ||

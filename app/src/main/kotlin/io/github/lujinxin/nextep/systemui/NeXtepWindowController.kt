@@ -1896,11 +1896,15 @@ class NeXtepWindowController(
         canRelease: () -> Boolean,
         onFinished: () -> Unit,
     ): Boolean {
+        val nativeVisible=workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked
+        val animationsEnabled=android.animation.ValueAnimator.areAnimatorsEnabled()
+        val isPowerSave=context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true
         if (!StageConcurrentNativeTrialPolicy.allowed(
-                workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
-                android.animation.ValueAnimator.areAnimatorsEnabled(),
-                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true)) {
-            StageExchangeTelemetry.nativeEvent("fallback:disabled_or_power_saver")
+                nativeVisible, animationsEnabled, isPowerSave)) {
+            StageExchangeTelemetry.nativeEvent(
+                "fallback:gate visible=$nativeVisible animations=$animationsEnabled saver=$isPowerSave " +
+                    "reason=${StageConcurrentNativeTrialPolicy.reasonIfDisabled()}"
+            )
             return false
         }
         val g=geometry()
@@ -1930,6 +1934,11 @@ class NeXtepWindowController(
             return false
         }
         val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
+        StageExchangeTelemetry.nativeEvent(
+            "bounds slot=${source.width()}x${source.height()}@${source.left},${source.top} " +
+                "main=${main.width()}x${main.height()}@${main.left},${main.top} " +
+                "otherOccupied=${slotCoordinator?.slotStates()?.count { it is SlotState.Occupied }}"
+        )
         val before=android.os.SystemClock.uptimeMillis()
         val native=StageLiveSurfaceExchange.create(
             host=host,sourceSlotView=slot.view,
@@ -2014,7 +2023,9 @@ class NeXtepWindowController(
             slot.view.endExchangePreview()
             activeSwapViewport=null
             StageExchangeTelemetry.nativeEvent("fallback:mirror_start_rejected")
-            StageConcurrentNativeTrialPolicy.disableForSession("Mirror startup rejected")
+            // A startup/parenting failure might be a transient Shell leash
+            // race; it is not proof that every subsequent animation is unsafe.
+            StageExchangeTelemetry.nativeEvent("mirror_start_failed_retry_next_tap")
             return false
         }
         liveSurfaceExchange=native
@@ -2031,6 +2042,14 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
         attemptNative: Boolean = true,
     ) {
+        if (attemptNative && (drag != null || targetIndex != null || asyncMove == null)) {
+            val operation = when {
+                drag != null -> "drag_swap"
+                targetIndex != null -> "slot_to_slot"
+                else -> "legacy_swap"
+            }
+            StageExchangeTelemetry.beginNativeTap(operation)
+        }
         // P0 (3731.mp4 + PR51 real-device feedback): do not capture a
         // TextureView bitmap or await a screenshot before the real task move.
         // On the phased tap path the coordinator already owns an asynchronous,
@@ -2047,7 +2066,7 @@ class NeXtepWindowController(
             activeSwapViewport = null
             previewCapturePending = false
             val tappedAt = android.os.SystemClock.uptimeMillis()
-            StageExchangeTelemetry.beginNativeTap()
+            StageExchangeTelemetry.beginNativeTap("tap_swap_slot_$sourceIndex")
             NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
             val phasedMove = checkNotNull(asyncMove)
             // Only the private experimental branch enables an actual two-GPU-
@@ -2068,7 +2087,7 @@ class NeXtepWindowController(
             if (StagePrivateDualTaskFlightGate.enabled() &&
                 tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
             oneShotSwapMotion.cancel()
-            StageExchangeTelemetry.nativeEvent("pr60:single_real_swap_no_extra_visual")
+            StageExchangeTelemetry.nativeEvent("fallback_route:single_real_task_swap_no_flight")
             runCatching {
                 phasedMove { ok ->
                     if (!ok) oneShotSwapMotion.cancel()

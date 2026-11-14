@@ -34,26 +34,21 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(-1L,205L,true,3))
         assertFalse(StageConcurrentNativeTrialPolicy.shouldStartMove(100L,0L,true,3))
     }
-    @Test fun coldMirrorPreparationGetsOneBoundedRetry() {
+    @Test fun coldMirrorPreparationNeverDisablesFutureNormalSwaps() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(28))
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
+        for (slowMs in listOf(29L, 30L, 80L, 200L, 500L)) {
+            assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(slowMs))
+            assertTrue("Slow setup must not cause permanent no-animation", 
+                StageConcurrentNativeTrialPolicy.allowed(true,true,false))
+            assertEquals("",StageConcurrentNativeTrialPolicy.reasonIfDisabled())
+        }
+        assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(20L))
+        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(-1L))
         assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(30))
+        StageConcurrentNativeTrialPolicy.disableForSession("verified OEM refusal")
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
-        StageConcurrentNativeTrialPolicy.resetForTests()
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
-        assertTrue(StageConcurrentNativeTrialPolicy.acceptPrepareTime(20))
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(29))
-        assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
-        StageConcurrentNativeTrialPolicy.resetForTests()
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(80))
-        assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
-        StageConcurrentNativeTrialPolicy.resetForTests()
-        assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(-1))
-        assertTrue(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
-        StageConcurrentNativeTrialPolicy.disableForSession("OEM")
-        assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
+        assertEquals("verified OEM refusal", StageConcurrentNativeTrialPolicy.reasonIfDisabled())
         StageConcurrentNativeTrialPolicy.resetForTests()
     }
 

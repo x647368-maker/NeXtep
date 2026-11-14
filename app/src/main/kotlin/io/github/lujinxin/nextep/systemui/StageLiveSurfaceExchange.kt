@@ -21,6 +21,7 @@ import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -70,6 +71,9 @@ internal class StageLiveSurfaceExchange private constructor(
     private var finishCallback: (() -> Unit)? = null
     private var lastProgress = 0f
     private var nativeFrameCount = 0
+    private var lastAnimationCallbackAt = 0L
+    private var worstAnimationCallbackGapMs = 0L
+    private var slowAnimationCallbackGaps = 0
     private var firstTransactionCommitted = false
     // Optional SystemUI-only API, resolved ONCE rather than per animation frame.
     private var cornersSupported = true
@@ -170,6 +174,12 @@ internal class StageLiveSurfaceExchange private constructor(
             }
             val incoming = slotMirror.surface
             val localCrop = Rect(slotMirror.crop)
+            StageExchangeTelemetry.nativeEvent(TaskSurfaceCompat.describeOwnedMainFrame(mainTaskId))
+            StageExchangeTelemetry.nativeEvent(
+                "rawMirrorCrop slot=${localCrop.width()}x${localCrop.height()} " +
+                    "main=${fullScreenWidth}x${fullScreenHeight} " +
+                    "requestedVisibleMain=${mainBounds.width()}x${mainBounds.height()}"
+            )
             val obstacles = otherSlotBounds.map {
                 StageLiveSurfaceFlightGeometry.Box(
                     it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat(),
@@ -273,6 +283,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     // accepted both layer parents, NOT proof of visible pixels.
                     tx.addTransactionCommittedListener(host.context.mainExecutor) {
                         firstTransactionCommitted = true
+                        StageExchangeTelemetry.nativeEvent("sf_transaction_committed_not_pixel_present")
                         NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
                     }
                 }
@@ -289,11 +300,15 @@ internal class StageLiveSurfaceExchange private constructor(
         fun commitMove() {
             if (!isRunning || sentMove) return
             sentMove = true
+            StageExchangeTelemetry.nativeEvent(
+                "task_move_requested progress=$lastProgress frames=$nativeFrameCount"
+            )
             if (moveAsync != null) {
                 runCatching {
                     moveAsync { ok ->
                         ui.post {
                             if (!isRunning) return@post
+                            StageExchangeTelemetry.nativeEvent("task_move_ack_ok=$ok")
                             if (!ok) { stop(); return@post }
                             moveComplete = true
                             moveCompletedAt = SystemClock.uptimeMillis()
@@ -323,6 +338,16 @@ internal class StageLiveSurfaceExchange private constructor(
                 if (!isRunning) return@addUpdateListener
                 val fraction=(it.animatedValue as Float)
                 lastProgress=fraction
+                // Animator callback gaps are NOT the actual rendered GPU FPS.
+                // Cheap counters only: no String allocations on normal frames.
+                val frameAt=SystemClock.uptimeMillis()
+                if (lastAnimationCallbackAt > 0L) {
+                    val gap=(frameAt-lastAnimationCallbackAt).coerceAtLeast(0L)
+                    worstAnimationCallbackGapMs=maxOf(worstAnimationCallbackGapMs,gap)
+                    if(gap>=33L) slowAnimationCallbackGaps++
+                }
+                lastAnimationCallbackAt=frameAt
+                if(nativeFrameCount==0) StageExchangeTelemetry.nativeEvent("first_anim_callback")
                 runCatching {
                     val frame=frameTransaction ?: error("Flight transaction is unavailable")
                     applyFrame(frame,fraction)
@@ -350,6 +375,10 @@ internal class StageLiveSurfaceExchange private constructor(
                 override fun onAnimationEnd(animation: Animator) {
                     if (!isRunning) return
                     frameComplete=true
+                    StageExchangeTelemetry.nativeEvent(
+                        "animation_end submittedFrames=$nativeFrameCount " +
+                            "maxCallbackGap=${worstAnimationCallbackGapMs}ms gapOver33=$slowAnimationCallbackGaps"
+                    )
                     if (!sentMove) commitMove()
                     finishIfReady(liveReady,canRelease)
                 }
@@ -417,6 +446,9 @@ internal class StageLiveSurfaceExchange private constructor(
             if (ready || elapsed >= timeout) {
                 handoffReady=ready
                 handoffTimedOut=!ready
+                StageExchangeTelemetry.nativeEvent(
+                    "buffer_handoff_probe ready=$ready timeout=$handoffTimedOut elapsed=${elapsed}ms"
+                )
                 NeXtepLog.info("native_swap",
                     "Real GPU layer handoff ready=$ready elapsed=${elapsed}ms")
                 host.postOnAnimation { stop() }
@@ -435,6 +467,10 @@ internal class StageLiveSurfaceExchange private constructor(
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
+        StageExchangeTelemetry.nativeEvent(
+            "mirror_release submitted=$nativeFrameCount committed=$firstTransactionCommitted " +
+                "move=$moveComplete handoff=$handoffReady timeout=$handoffTimedOut"
+        )
         NeXtepLog.info("native_swap",
             "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
             "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
