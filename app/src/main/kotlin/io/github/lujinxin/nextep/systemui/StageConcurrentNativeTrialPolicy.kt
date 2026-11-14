@@ -3,7 +3,7 @@ package io.github.x647368maker.atomicworkbench.systemui
 /**
  * Experimental PRIVATE branch trial only. Automatic per-process safety gate.
  * A single cold 28ms GPU mirror miss may recover on the next tap; repeated
- * slow attempts or a severe delay disable the private native path for safety.
+ * slow attempts or a severe delay cause a bounded on-demand cooldown.
  * Clear OEM denial still disables for the SystemUI session. The PR53 fallback
  * remains available when live mirroring cannot be used.
  *
@@ -15,6 +15,11 @@ internal object StageConcurrentNativeTrialPolicy {
     const val DURATION_MS=360L
     private const val PREP_BUDGET_MS=28L
     private const val SEVERE_PREP_MS=80L
+    private const val SLOW_COOLDOWN_MS=1500L
+    private const val SEVERE_COOLDOWN_MS=4000L
+    @Volatile private var retryAtMs=0L
+    @Volatile private var cooldownReason="none"
+    private fun monotonicMs():Long = System.nanoTime()/1_000_000L
     // Do not reparent the real source task while its mirror is still flying.
     // The display move may mutate the leash subtree or buffer/crop on ColorOS.
     private const val MIN_FRAME_COUNT=3
@@ -26,12 +31,15 @@ internal object StageConcurrentNativeTrialPolicy {
     // Warm first-use reflection can exceed a single frame without OEM failure.
     private var consecutiveSlowPreparations=0
 
-    fun allowed(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean):Boolean =
-        !disabled && visible && animationEnabled && !powerSave
+    fun allowed(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean,
+                nowMs:Long=monotonicMs()):Boolean =
+        !disabled && nowMs>=retryAtMs && visible && animationEnabled && !powerSave
 
     /** Read-only, explicit reason for a missing animation. Never consumes a retry. */
-    fun gateReason(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean):String = when {
+    fun gateReason(visible:Boolean, animationEnabled:Boolean, powerSave:Boolean,
+                   nowMs:Long=monotonicMs()):String = when {
         disabled -> "session_disabled:$disabledReason"
+        nowMs<retryAtMs -> "cooldown:$cooldownReason"
         !visible -> "workspace_or_sidebar_not_ready"
         !animationEnabled -> "system_animators_disabled"
         powerSave -> "power_saver"
@@ -42,19 +50,20 @@ internal object StageConcurrentNativeTrialPolicy {
         x==0 && y==0 && physicalW>1 && physicalH>1 &&
             width>=physicalW && height>=physicalH
 
-    fun acceptPrepareTime(ms:Long):Boolean {
+    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {
         lastPrepareMs=ms
-        if (disabled || ms < 0L) return false
+        if (disabled || nowMs<retryAtMs || ms < 0L) return false
         if (ms <= PREP_BUDGET_MS) {
             consecutiveSlowPreparations=0
             return true
         }
         consecutiveSlowPreparations++
-        // Never run this attempt if it exceeded 28ms. One ordinary cold miss
-        // is recoverable; a second consecutive miss or severe stall locks out.
+        // Keep the original per-attempt budget. Slow is not proof of permanent
+        // OEM denial; allow an explicit tap to retry after a bounded cooldown.
         if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) {
-            disabled=true
-            disabledReason="prepare_timeout_${ms}ms_streak${consecutiveSlowPreparations}"
+            cooldownReason="prepare_timeout_${ms}ms_streak${consecutiveSlowPreparations}"
+            retryAtMs=nowMs + if(ms>=SEVERE_PREP_MS) SEVERE_COOLDOWN_MS else SLOW_COOLDOWN_MS
+            consecutiveSlowPreparations=0
         }
         return false
     }
@@ -105,6 +114,7 @@ internal object StageConcurrentNativeTrialPolicy {
 
     internal fun resetForTests() {
         disabled=false; disabledReason="none"; lastPrepareMs=-1L
+        retryAtMs=0L; cooldownReason="none"
         consecutiveSlowPreparations=0
     }
 }

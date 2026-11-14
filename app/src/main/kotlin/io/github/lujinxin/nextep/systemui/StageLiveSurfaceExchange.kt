@@ -121,6 +121,22 @@ internal class StageLiveSurfaceExchange private constructor(
         // mid-flight, reproducing the exact flash/snap seen in 3717.mp4.
         // The normal phased transfer begins at the *end* of visual travel.
         private const val MOVE_PROGRESS = .94f
+        // AOSP has two mirror-root coordinate contracts (detached_mirror).
+        // Read the actual read-only flag once, never set system flags or infer
+        // from a manufacturer/model. Older/opaque OEMs keep the legacy contract
+        // and log unknown instead of claiming the flag was observed.
+        private val detachedMirrorRoot: Boolean? by lazy {
+            runCatching {
+                val type=Class.forName("android.os.flagging.AconfigPackage")
+                val pkg=type.getMethod("load",String::class.java)
+                    .invoke(null,"com.android.graphics.surfaceflinger.flags")
+                val read=type.getMethod("getBooleanFlagValue",String::class.java,
+                    Boolean::class.javaPrimitiveType)
+                val a=read.invoke(pkg,"detached_mirror",false) as Boolean
+                val b=read.invoke(pkg,"detached_mirror",true) as Boolean
+                if(a==b) a else null
+            }.getOrNull()
+        }
         @Volatile private var lastOutcome = "not_attempted"
         fun lastOutcome(): String = lastOutcome
         private fun markUnavailable(why: String): StageLiveSurfaceExchange? {
@@ -165,6 +181,12 @@ internal class StageLiveSurfaceExchange private constructor(
             )
             if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
                 return markUnavailable("invalid_bounds")
+            val detached=detachedMirrorRoot
+            val outgoingCrop=StageLiveSurfaceFlightGeometry.mainMirrorCrop(
+                to,fullScreenWidth,fullScreenHeight,detached==true)
+                ?: return markUnavailable("invalid_bounds")
+            StageExchangeTelemetry.nativeEvent(
+                "mirror_root=${detached?.let { if(it) "detached" else "retained" } ?: "unknown_legacy"}")
             // The mirror must follow the app TASK, not the rail's ViewRoot.
             // That root switches the producer during the two-stage exchange,
             // which caused PR59 to show the new app twice while still flying.
@@ -186,7 +208,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 )
             }
             if (!StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
-                    from, to, localCrop.width(), localCrop.height(), obstacles)) {
+                    from, to, localCrop.width(), localCrop.height(), obstacles,
+                    mainCropWidth=outgoingCrop.right-outgoingCrop.left,
+                    mainCropHeight=outgoingCrop.bottom-outgoingCrop.top)) {
                 outgoing.release()
                 incoming.release()
                 return markUnavailable("rail_corridor_blocked")
@@ -204,7 +228,7 @@ internal class StageLiveSurfaceExchange private constructor(
             lastOutcome="capable:two_owned_tasks_and_atomic_masks"
             return StageLiveSurfaceExchange(
                 host, incoming, outgoing, localCrop,
-                Rect(0,0,fullScreenWidth,fullScreenHeight),
+                outgoingCrop.toAndroidRect(),
                 from,to,backdrop,masks,
             )
         }
@@ -401,22 +425,20 @@ internal class StageLiveSurfaceExchange private constructor(
         val incoming=StageLiveSurfaceFlightGeometry.railCorridorFlight(
             slotStart,mainStart,sourceCrop.width(),sourceCrop.height(),p,
         ) ?: error("Unsafe incoming GPU rail path")
-        // Unlike the sidebar ViewRoot, WM Shell's main-task leash is ALREADY
-        // fitted to its visible main rectangle. Mirroring that hierarchy
-        // preserves the owned task's scale and translation. The outer mirror
-        // therefore starts at identity (1, 0, 0) and moves the *visible main
-        // bounds*, or the main application would shrink a second time.
+        // Both crop and transform use the SAME root coordinate convention.
+        // Detached: raw source pixels; retained: fitted physical pixels.
+        // The crop bounds the actual mirror, not merely our mathematical card.
         val outgoing=StageLiveSurfaceFlightGeometry.railCorridorFlight(
-            mainStart,slotStart,mainStart.width.toInt(),mainStart.height.toInt(),p,
+            mainStart,slotStart,mainCrop.width(),mainCrop.height(),p,
         ) ?: error("Unsafe outgoing GPU rail path")
         transaction.setScale(sourceMirror,incoming.scale,incoming.scale)
         transaction.setPosition(sourceMirror,
-            incoming.x-sourceCrop.left*incoming.scale,
-            incoming.y-sourceCrop.top*incoming.scale)
+            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.x,sourceCrop.left,incoming.scale),
+            StageLiveSurfaceFlightGeometry.mirrorPosition(incoming.y,sourceCrop.top,incoming.scale))
         transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)
         transaction.setPosition(mainMirror,
-            outgoing.x-mainStart.left*outgoing.scale,
-            outgoing.y-mainStart.top*outgoing.scale)
+            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.x,mainCrop.left,outgoing.scale),
+            StageLiveSurfaceFlightGeometry.mirrorPosition(outgoing.y,mainCrop.top,outgoing.scale))
         // Preserve the previously accepted 24dp-equivalent round cards while
         // their compositor scale changes. A parent layer's corner radius uses
         // source-layer units, hence divide by the current uniform scale.
