@@ -65,6 +65,6 @@ class StageSwapTraceBufferTest {
         val report = recorder.describe()
         assertTrue(report.length <= 1000)
         assertTrue(report.contains("private-data-"))
-        assertFalse(report.contains("end:timeout")) // the 4-event cap prevents unbounded string append
+        assertTrue(report.contains("end:timeout")) // outcome must survive a full trace
     }
 }
