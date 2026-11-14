@@ -66,6 +66,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val liveReady:()->Boolean,val trace:(String)->Unit,val onFinished:()->Unit,
         val onVisualStart:()->Unit,val onVisualEnd:()->Unit,val mainReady:()->Boolean,
     ) {
+        private val viewport=Rect(0,0,host.width,host.height)
         private var waitingCapture=true
         private var waitingCommit=false
         private var moveStarted=false
@@ -130,10 +131,15 @@ internal class StageTransientTapSwap(private val context:Context) {
                         outgoingFailure="none"
                         TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
                     } else null
+                    // Plan once on the already active snapshot worker, using
+                    // immutable copies of the viewport and protected slot geometry.
+                    val plan=if(a!=null && b!=null && SystemClock.uptimeMillis()<deadline)
+                        runCatching{planFlight(a,b,slot,main,others,viewport)}.getOrNull()
+                    else null
                     ui.post {
                         if(current() && waitingCapture && (a==null || b==null))
                             trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
-                        captured(a,b,deadline)
+                        captured(a,b,deadline,plan)
                     }
                 }
             }.onFailure {
@@ -142,7 +148,7 @@ internal class StageTransientTapSwap(private val context:Context) {
                 direct("capture_busy")
             }
         }
-        private fun captured(a:Bitmap?,b:Bitmap?,deadline:Long){
+        private fun captured(a:Bitmap?,b:Bitmap?,deadline:Long,plan:StageSnapshotMotion.PairFlight?){
             if(!current() || !waitingCapture){a?.recycle();b?.recycle();return}
             waitingCapture=false
             ui.removeCallbacks(captureTimeout)
@@ -150,7 +156,8 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(a==null || b==null || SystemClock.uptimeMillis()>=deadline){
                 a?.recycle();b?.recycle();direct("capture_unavailable");return
             }
-            val v=FlightView(context,a,b,slot,main,others,backdrop,Rect(0,0,host.width,host.height))
+            if(plan==null){a.recycle();b.recycle();direct("corridor_unavailable");return}
+            val v=FlightView(context,a,b,slot,main,others,backdrop,viewport,plan)
             if(!v.safe){v.release();direct("corridor_unavailable");return}
             view=v
             val added=runCatching{
@@ -333,16 +340,21 @@ internal class StageTransientTapSwap(private val context:Context) {
      * RenderThread. Unsupported OEMs keep the exact same motion via UI
      * property transforms, not the removed multi-phase renderer.
      */
+    companion object {
+        private fun motionBox(r:Rect)=StageSnapshotMotion.Box(
+            r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
+        private fun planFlight(incoming:Bitmap,outgoing:Bitmap,slot:Rect,main:Rect,
+                               others:List<Rect>,viewport:Rect)=StageSnapshotMotion.pairedFlights(
+            motionBox(slot),motionBox(main),incoming.width,incoming.height,outgoing.width,outgoing.height,
+            motionBox(viewport),others.map(::motionBox))
+    }
     internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
                              slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?,
-                             viewport:Rect):FrameLayout(context){
-        private fun box(r:Rect)=StageSnapshotMotion.Box(r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
-        private val small=box(slot)
-        private val large=box(main)
+                             viewport:Rect,planned:StageSnapshotMotion.PairFlight?=null):FrameLayout(context){
         private val excluded=others.map(::Rect)
-        private val pair=StageSnapshotMotion.pairedFlights(small,large,
-            incoming.width,incoming.height,outgoing.width,outgoing.height,
-            box(viewport),excluded.map(::box))
+        // Production always receives the precomputed worker result. The default
+        // is retained for the isolated renderer's instrumentation harness.
+        private val pair=planned?:planFlight(incoming,outgoing,slot,main,excluded,viewport)
         private val up=pair?.up
         private val down=pair?.down
         val safe=up!=null && down!=null
