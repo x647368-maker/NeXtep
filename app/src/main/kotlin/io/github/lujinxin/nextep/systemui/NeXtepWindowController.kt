@@ -1900,7 +1900,11 @@ class NeXtepWindowController(
                 workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
                 android.animation.ValueAnimator.areAnimatorsEnabled(),
                 context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true)) {
-            StageExchangeTelemetry.nativeEvent("fallback:disabled_or_power_saver")
+            StageExchangeTelemetry.nativeEvent(
+                "fallback:gate_" + StageConcurrentNativeTrialPolicy.gateReason(
+                    workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
+                    android.animation.ValueAnimator.areAnimatorsEnabled(),
+                    context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true))
             return false
         }
         val g=geometry()
@@ -1962,9 +1966,12 @@ class NeXtepWindowController(
             return false
         }
         val setupMs=android.os.SystemClock.uptimeMillis()-before
+        StageExchangeTelemetry.nativeEvent("mirror_prepared_${setupMs}ms")
         if (!StageConcurrentNativeTrialPolicy.acceptPrepareTime(setupMs)) {
             native.stop()
-            StageExchangeTelemetry.nativeEvent("fallback:prepare_${setupMs}ms")
+            StageExchangeTelemetry.nativeEvent(
+                "fallback:prepare_${setupMs}ms " + StageConcurrentNativeTrialPolicy.gateReason(
+                    true,true,false))
             NeXtepLog.warn("native_swap","Mirror preparation exceeded frame budget: $setupMs ms; native allowed next tap=" +
                 StageConcurrentNativeTrialPolicy.allowed(true,true,false))
             return false
@@ -2001,6 +2008,8 @@ class NeXtepWindowController(
             onFinished={
                 slot.view.endExchangePreview()
                 StageExchangeTelemetry.nativeEvent("native_finished:"+StageLiveSurfaceExchange.lastOutcome())
+                StageExchangeTelemetry.endNativeTap(
+                    "gpu_" + StageLiveSurfaceExchange.lastOutcome().take(48))
                 activeSwapViewport=null
                 liveSurfaceExchange=null
                 val flush=deferredSwapGeometryRefresh
@@ -2075,12 +2084,16 @@ class NeXtepWindowController(
                     NeXtepLog.info("swap_latency",
                         "Phased task exchange finished ok=$ok elapsedMs=" +
                             (android.os.SystemClock.uptimeMillis() - tappedAt))
+                    StageExchangeTelemetry.nativeEvent("fallback_move_ack_ok=$ok")
+                    StageExchangeTelemetry.endNativeTap("fallback_real_move_$ok")
                     onFinished()
                     scheduleStageFocus()
                 }
             }.onFailure {
                 NeXtepLog.error("swap_latency", "Phased tap move could not start", it)
                 oneShotSwapMotion.cancel()
+                StageExchangeTelemetry.nativeEvent("fallback_move_exception")
+                StageExchangeTelemetry.endNativeTap("fallback_exception")
                 onFinished()
             }
             return
