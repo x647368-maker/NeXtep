@@ -31,13 +31,19 @@ internal object WorkspaceEnergyContract {
         context.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != ACTION || !isOrderedBroadcast) return
-                setResultExtras(snapshot())
+                val result = snapshot()
+                if (intent.getBooleanExtra("include_exchange_diagnostics", false)) {
+                    result.putString("exchange_diagnostics", runCatching {
+                        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.describe()
+                    }.getOrNull())
+                }
+                setResultExtras(result)
                 resultCode = RESULT_SNAPSHOT
             }
         }, IntentFilter(ACTION), TriggerBroadcastContract.CONTROL_PERMISSION, handler, Context.RECEIVER_EXPORTED)
     }
 
-    fun query(context: Context, onResult: (Snapshot?) -> Unit) {
+    fun query(context: Context, includeExchangeDiagnostics: Boolean = false, onResult: (Snapshot?) -> Unit) {
         val handler = Handler(Looper.getMainLooper())
         var completed = false
         fun complete(value: Snapshot?) {
@@ -62,6 +68,7 @@ internal object WorkspaceEnergyContract {
         }
         runCatching {
             context.sendOrderedBroadcast(Intent(ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
+                .putExtra("include_exchange_diagnostics", includeExchangeDiagnostics)
                 .addFlags(Intent.FLAG_RECEIVER_FOREGROUND), null, receiver, handler, 0, null, null)
         }.onFailure {
             handler.removeCallbacks(timeout)
