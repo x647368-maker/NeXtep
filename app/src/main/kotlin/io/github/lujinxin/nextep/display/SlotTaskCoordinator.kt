@@ -1758,7 +1758,8 @@ class SlotTaskCoordinator(
                         check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
-                    moveTaskToDisplayNonBlocking(mainTask, occupied.displayId) { result ->
+                    moveTaskToDisplayNonBlocking(mainTask, occupied.displayId,
+                        observedDemotionSlot=slotIndex) { result ->
                         val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val preliminary = runCatching {
                             check(token == transitionGeneration && active && !suspended)
@@ -2656,6 +2657,7 @@ class SlotTaskCoordinator(
 
     private fun moveTaskToDisplayNonBlocking(
         expected: TaskRepository.TaskSnapshot, displayId: Int,
+        observedDemotionSlot: Int? = null,
         done: (Result<TaskRepository.TaskSnapshot>) -> Unit,
     ) {
         val taskId=expected.taskId
@@ -2677,7 +2679,16 @@ class SlotTaskCoordinator(
                 timed("promotion_prepare") {
                     TaskSurfaceCompat.preparePromotion(taskId, geometryProvider())
                 }.onFailure { NeXtepLog.warn("task_surface", "Early promotion fitting unavailable", it) }
-            } else TaskSurfaceCompat.cancelPreparedPromotion(taskId)
+            } else {
+                TaskSurfaceCompat.cancelPreparedPromotion(taskId)
+                val target=observedDemotionSlot?.let { slots.getOrNull(it) }
+                val canvas=target?.geometry()
+                if (target!=null && canvas!=null && target.displayId()==displayId) {
+                    TaskSurfaceCompat.prepareObservedDemotionFit(
+                        taskId,displayId,expected.token,Rect(0,0,canvas.width,canvas.height),
+                        canvas.densityDpi)
+                }
+            }
             try {
                 StageExchangeTelemetry.measure("display_binder") {
                     ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
