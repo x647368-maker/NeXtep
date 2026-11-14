@@ -89,6 +89,18 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
                 check(similar(pixel(shot,main.centerX(),main.centerY()),green))
                 check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
             }
+            // A late slot buffer must not retain an already verified main
+            // endpoint or its background mask. Test actual composed pixels.
+            instrumentation.runOnMainSync { flight.revealMain() }
+            frame(1f){shot->
+                check(similar(pixel(shot,main.centerX(),main.centerY()),purple)) {
+                    "Main preview/mask still covers ready live endpoint"
+                }
+                check(similar(pixel(shot,small.centerX(),small.centerY()),orange)) {
+                    "Independent main reveal removed unready slot preview"
+                }
+                check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
+            }
             android.util.Log.i("StageTransientFlight","motion backend="+backend)
         } finally {
             instrumentation.runOnMainSync {host.removeView(flight)}
@@ -96,6 +108,6 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             Thread.sleep(200)
             instrumentation.runOnMainSync {flight.release()}
         }
-        return "PASS production transient HWUI flight: both directions, endpoint colors, unaffected rail"
+        return "PASS production transient HWUI flight: both directions, endpoint colors, unaffected rail, independent main reveal"
     }
 }
