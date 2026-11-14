@@ -71,6 +71,14 @@ class SlotTaskCoordinator(
     private val slotRecords = MutableList(slots.size) { SlotRecord() }
     private val exchangeHandler = Handler(Looper.getMainLooper())
     private var exchangeSession: ExchangeSession<TaskLayout>? = null
+    private data class ConfirmedOutput(val generation: Int, val slot: Int, val task: Int,
+                                       val mark: VirtualDisplaySlot.OutputFrameMark)
+    private var confirmedOutput: ConfirmedOutput? = null
+    internal fun confirmedOutputMark(slot: Int, task: Int): VirtualDisplaySlot.OutputFrameMark? =
+        confirmedOutput?.takeIf {
+            it.generation==transitionGeneration && it.slot==slot && it.task==task &&
+                exchangeSession?.phase==ExchangeSession.Phase.COMMITTED
+        }?.mark
     private val exchangeEndActions = mutableListOf<() -> Unit>()
 
     fun isExchangePending(): Boolean = exchangeSession?.settled == false
@@ -1609,6 +1617,7 @@ class SlotTaskCoordinator(
             ?: return Result.failure(IllegalStateException("Slot changed"))
         val token = ++transitionGeneration
         StageExchangeTelemetry.beginPhased("slot=$slotIndex")
+        confirmedOutput=null
         transitionInProgress = true
         visualTransitionPending = true
         pendingSelection = null
@@ -1621,6 +1630,7 @@ class SlotTaskCoordinator(
             if (exchangeSession?.settled == false) return
             if (!animationFinished) return
             StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)
+            confirmedOutput=null
             exchangeSession = null
             visualTransitionPending = false
             transitionInProgress = false
@@ -1718,13 +1728,14 @@ class SlotTaskCoordinator(
                             ActivityTaskManagerCompat.setTaskResizeable(slotTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
-                    moveTaskToDisplayNonBlocking(slotTask.taskId, Display.DEFAULT_DISPLAY) { error ->
-                        if (error != null) { done(error); return@moveTaskToDisplayNonBlocking }
+                    moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY) { result ->
+                        val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val stale = runCatching {
                             check(token == transitionGeneration && active && !suspended)
                         }.exceptionOrNull()
                         if (stale != null) { done(stale); return@moveTaskToDisplayNonBlocking }
-                        restoreTaskLayoutNonBlocking(slotTask, slotLayout, restoreResizeMode = false) { layoutError ->
+                        restoreTaskLayoutNonBlocking(slotTask, slotLayout, restoreResizeMode = false,
+                            observed=observed) { layoutError ->
                             if (layoutError != null) { done(layoutError); return@restoreTaskLayoutNonBlocking }
                             done(runCatching {
                                 check(token == transitionGeneration && active && !suspended)
@@ -1747,21 +1758,36 @@ class SlotTaskCoordinator(
                         check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
-                    moveTaskToDisplayNonBlocking(mainTask.taskId, occupied.displayId) { error ->
-                        if (error != null) { done(error); return@moveTaskToDisplayNonBlocking }
+                    moveTaskToDisplayNonBlocking(mainTask, occupied.displayId) { result ->
+                        val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val preliminary = runCatching {
                             check(token == transitionGeneration && active && !suspended)
                             mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
                         }.exceptionOrNull()
                         if (preliminary != null) { done(preliminary); return@moveTaskToDisplayNonBlocking }
-                        ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout) { layoutError ->
+                        ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout, observed=observed) { layoutError ->
                             if (layoutError != null) { done(layoutError); return@ensureSlotLayoutNonBlocking }
                             done(runCatching {
                                 check(token == transitionGeneration && active && !suspended)
                                 mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
                                 val committed = taskRepository.runningTasks()
                                 check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
-                                check(current(mainTask, committed).displayId == occupied.displayId)
+                                val parked=current(mainTask, committed)
+                                check(parked.displayId == occupied.displayId)
+                                // Earlier evidence is optional, requiring the actual foreground
+                                // slot task and final canvas, not merely a display move ACK.
+                                val canvas=slots[slotIndex].geometry()
+                                confirmedOutput=if (canvas != null &&
+                                    committed.firstOrNull { it.displayId==occupied.displayId }?.taskId==mainTask.taskId &&
+                                    !parked.vendorWindowed && parked.windowingMode==fullscreenWindowingMode() &&
+                                    parked.bounds==Rect(0,0,canvas.width,canvas.height) &&
+                                    parked.densityDpi==canvas.densityDpi) {
+                                    slots[slotIndex].outputFrameMark()?.takeIf {
+                                        it.displayId==occupied.displayId
+                                    }?.let { ConfirmedOutput(token,slotIndex,mainTask.taskId,it) }
+                                } else null
+                                StageExchangeTelemetry.phasedEvent(if (confirmedOutput!=null)
+                                    "slot_verified_output_mark" else "slot_output_mark_deferred")
                                 record.originalLayout = mainLayout
                                 record.retainedTaskId = mainTask.taskId
                                 record.migrationRecoveryComponent = null
@@ -2529,11 +2555,12 @@ class SlotTaskCoordinator(
         task: TaskRepository.TaskSnapshot,
         layout: TaskLayout,
         restoreResizeMode: Boolean = true,
+        observed: TaskRepository.TaskSnapshot? = null,
         done: (Throwable?) -> Unit,
     ) {
         val started = runCatching {
             val token = task.token ?: error("Task ${task.taskId} has no restore token")
-            val current = taskRepository.findTask(task.taskId)
+            val current = observed ?: taskRepository.findTask(task.taskId)
             val mainFullscreen = current?.displayId == Display.DEFAULT_DISPLAY &&
                 layout.windowingMode == fullscreenWindowingMode()
             val expectedBounds = if (mainFullscreen) geometryProvider().let {
@@ -2573,6 +2600,7 @@ class SlotTaskCoordinator(
     private fun ensureSlotLayoutNonBlocking(
         slotIndex: Int, task: TaskRepository.TaskSnapshot,
         originalLayout: TaskLayout? = null,
+        observed: TaskRepository.TaskSnapshot? = null,
         done: (Throwable?) -> Unit,
     ) {
         val started = runCatching {
@@ -2585,9 +2613,11 @@ class SlotTaskCoordinator(
                 record.originalLayout = originalLayout ?: if (task.displayId == Display.DEFAULT_DISPLAY)
                     task.toLayout() else defaultMainLayout(task.resizeMode)
             }
-            val current = if (task.displayId != slots[slotIndex].displayId())
+            val current = observed ?: if (task.displayId != slots[slotIndex].displayId())
                 taskRepository.findTask(task.taskId) ?: error("Task ${task.taskId} exited")
             else task
+            check(current.taskId==task.taskId && current.token==task.token &&
+                current.userId==task.userId && current.displayId==slots[slotIndex].displayId())
             val resizeMismatch = current.resizeMode != TASK_RESIZE_MODE_RESIZEABLE
             val layoutMismatch = current.bounds != targetBounds ||
                 current.densityDpi != slotGeometry.densityDpi ||
@@ -2625,12 +2655,20 @@ class SlotTaskCoordinator(
     }
 
     private fun moveTaskToDisplayNonBlocking(
-        taskId: Int, displayId: Int, done: (Throwable?) -> Unit,
+        expected: TaskRepository.TaskSnapshot, displayId: Int,
+        done: (Result<TaskRepository.TaskSnapshot>) -> Unit,
     ) {
+        val taskId=expected.taskId
+        fun checkIdentity(task: TaskRepository.TaskSnapshot) {
+            check(task.taskId==taskId && task.token==expected.token && task.userId==expected.userId) {
+                "Exchange task identity changed"
+            }
+        }
         val started = runCatching {
-            val before = taskRepository.findTask(taskId)
-            if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) {
-                done(null)
+            val before = taskRepository.findTask(taskId) ?: error("Exchange task disappeared")
+            checkIdentity(before)
+            if (!TaskContinuityPolicy.shouldMove(before.displayId, displayId)) {
+                done(Result.success(before))
                 return
             }
             StageExchangeTelemetry.phasedEvent("display_${displayId}_begin")
@@ -2653,25 +2691,26 @@ class SlotTaskCoordinator(
             fun observe() {
                 val result = runCatching {
                     val current = taskRepository.findTask(taskId)
-                    if (current?.displayId == displayId) {
+                    if (current != null) checkIdentity(current)
+                    if (current != null && current.displayId == displayId) {
                         StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
                         NeXtepLog.info("task_continuity",
                             "async_move_observed task=$taskId display=$displayId")
-                        done(null)
+                        done(Result.success(current))
                     } else if (SystemClock.uptimeMillis() >= deadline) {
-                        done(IllegalStateException(
+                        done(Result.failure(IllegalStateException(
                             "Async task move did not settle task=$taskId expected=$displayId actual=${current?.displayId}"
-                        ))
+                        )))
                     } else {
                         // No sleep: let the compositor draw other frames.
                         exchangeHandler.postDelayed({ observe() }, DISPLAY_MOVE_POLL_MS)
                     }
                 }
-                result.exceptionOrNull()?.let(done)
+                result.exceptionOrNull()?.let { done(Result.failure(it)) }
             }
             observe()
         }
-        started.exceptionOrNull()?.let(done)
+        started.exceptionOrNull()?.let { done(Result.failure(it)) }
     }
 
     private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {

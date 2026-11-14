@@ -81,6 +81,22 @@ class VirtualDisplaySlot(
 
     internal var contentFrameSequence = 0L
         private set
+    private var lastBoundOutputFrameSequence = 0L
+
+    internal data class OutputFrameMark(
+        val displayId: Int, val texture: SurfaceTexture, val surface: Surface, val sequence: Long,
+    )
+
+    // Only the exact connected producer is eligible. Keep ordinary diagnostic
+    // counters unchanged; a replaced surface cannot satisfy an old mark.
+    internal fun outputFrameMark(): OutputFrameMark? {
+        val id=displayId() ?: return null
+        val texture=boundTexture ?: return null
+        val output=surface ?: return null
+        if (!active || suspended || !outputConnected || !output.isValid ||
+            !view.textureView.isAvailable || view.textureView.surfaceTexture !== texture) return null
+        return OutputFrameMark(id,texture,output,lastBoundOutputFrameSequence)
+    }
 
     init {
         view.textureView.surfaceTextureListener = this
@@ -260,6 +276,8 @@ class VirtualDisplaySlot(
 
     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
         contentFrameSequence += 1
+        if (outputConnected && boundTexture === texture)
+            lastBoundOutputFrameSequence=contentFrameSequence
     }
 
     private fun reconnectRetainedOutput(texture: SurfaceTexture, width: Int, height: Int) {
