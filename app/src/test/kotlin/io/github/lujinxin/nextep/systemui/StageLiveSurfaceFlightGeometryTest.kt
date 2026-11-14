@@ -192,6 +192,31 @@ class StageLiveSurfaceFlightGeometryTest {
         assertNull(StageLiveSurfaceFlightGeometry.localCrop(card,400,160,400,1100))
         assertNull(StageLiveSurfaceFlightGeometry.localCrop(card,50,160,200,400))
     }
+    @Test fun aspectMismatchIsMeasuredWithoutStretchingEitherLiveBuffer() {
+        val g = StageLiveSurfaceFlightGeometry
+        val selected = b(25f,850f,235f,1220f)
+        val main = b(290f,120f,1030f,2150f)
+        val incoming = g.railCorridorFlight(selected,main,210,370,1f)!!
+        val outgoing = g.railCorridorFlight(main,selected,740,2030,1f)!!
+        assertTrue(g.endpointGapPx(main,incoming.box)>300f)
+        assertTrue(g.endpointGapPx(selected,outgoing.box)>30f)
+        assertEquals(210f/370f,incoming.box.width/incoming.box.height,.002f)
+        assertEquals(740f/2030f,outgoing.box.width/outgoing.box.height,.002f)
+        assertEquals(0f,g.endpointGapPx(main,main),.001f)
+    }
+
+    @Test fun revealNeverFadesLiveMirrorsBehindDarkCovers() {
+        val g = StageLiveSurfaceFlightGeometry
+        assertEquals(StageLiveSurfaceFlightGeometry.RevealAlpha(1f,1f),g.handoffReveal(0f))
+        assertEquals(StageLiveSurfaceFlightGeometry.RevealAlpha(0f,1f),g.handoffReveal(.5f))
+        assertEquals(StageLiveSurfaceFlightGeometry.RevealAlpha(0f,0f),g.handoffReveal(1f))
+        for(i in 0..100) {
+            val a = g.handoffReveal(i/100f)
+            assertTrue(a.cover in 0f..1f && a.mirror in 0f..1f)
+            if(a.mirror<1f) assertEquals(0f,a.cover,0f)
+        }
+    }
+
     @Test fun invalidFramesFallBackWithoutChangingOriginalSurfaces() {
         assertNull(StageLiveSurfaceFlightGeometry.flight(
             b(0f,0f,0f,20f),b(10f,20f,200f,300f),500,800,.5f))
