@@ -221,6 +221,22 @@ object TaskSurfaceCompat {
      * SurfaceFlinger retains the mirror's normal protected-layer restrictions.
      * We do not clear secure flags, acquire a framebuffer or defeat DRM.
      */
+    /**
+     * Read-only live transform snapshot for swap diagnostics. Describes the
+     * ORIGINAL task leash crop/matrix, not assumed container geometry.
+     * Includes no task identifiers, app names, package names or screen pixels.
+     */
+    internal fun describeOwnedMainPresentation(taskId: Int): String {
+        val presentation = activePresentations[taskId] ?: return "main_transform:missing"
+        val frame = presentation.frame
+        val c = frame.crop
+        return "main_transform:" +
+            " s=${frame.scaleX},${frame.scaleY}" +
+            " p=${frame.positionX.toInt()},${frame.positionY.toInt()}" +
+            " crop=${c?.width() ?: -1}x${c?.height() ?: -1}" +
+            " restoring=${presentation.restoring}"
+    }
+
     internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
         val active = activePresentations[taskId] ?: return null
         if (active.restoring || ownedTaskLeash(taskId) !== active.leash ||
