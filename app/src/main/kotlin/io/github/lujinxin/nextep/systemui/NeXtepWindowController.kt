@@ -2159,6 +2159,12 @@ class NeXtepWindowController(
             onVisualStart={slot.view.beginExchangePreview()},
             onVisualEnd={slot.view.endExchangePreview()},
             mainReady={verifiedMainEndpoint()},
+            // Main panel is transparent over the desktop wallpaper, not
+            // frosted like the rail. Reuse only a matching cached frame;
+            // no per-exchange wallpaper capture/blur node or stale rotation.
+            mainBackdrop=matchingWallpaperFrame(g)?.let {
+                WorkspaceWallpaperBackdrop.crop(it,0,0,0,wallpaperRotation,g.displayRotation)
+            },
             onFinished={
                 previewCapturePending=false
                 activeSwapViewport=null

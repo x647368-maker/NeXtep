@@ -7,6 +7,41 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 # Only exact reviewed performance/animation fragments may differ. All task moves,
 # geometry formulas, crop/input writers and the rest of each file remain frozen.
 import hashlib
+# PR85: separate endpoint background materials; reuse only same-turn source proof.
+pr85_review=json.loads((root/'scripts/reviewed-pr85-endpoint-backdrop-0.9.61.json').read_text())['files']
+def undo_pr85(path,data):
+ if path not in pr85_review:return data
+ spec=pr85_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr85_review:
+ undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())
+def pr85_prior(relative):
+ path='app/src/main/kotlin/io/github/lujinxin/nextep/'+relative
+ return undo_pr85(path,(root/path).read_bytes()).decode('utf-8')
+_pr85=(k/'systemui/StageTransientTapSwap.kt').read_text()
+_pr85_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
+_pr85_coordinator=(k/'display/SlotTaskCoordinator.kt').read_text()
+assert 'mainBackdrop=matchingWallpaperFrame(g)?.let' in _pr85_controller
+assert 'WorkspaceWallpaperBackdrop.crop(it,0,0,0,wallpaperRotation,g.displayRotation)' in _pr85_controller
+assert 'canvas.clipRect(mainRect)' in _pr85 and 'canvas.clipOutRect(slotRect)' in _pr85
+assert 'if(!mainRevealed)' in _pr85 and 'mainBackdrop.draw(canvas)' in _pr85
+assert 'if(mainBackdrop==null)' in _pr85 and 'canvas.clipRect(slotRect)' in _pr85
+assert _pr85_coordinator.count('sameTurnSource=sameTurnSource')==2
+assert 'sameTurnSource=checkedMain' in _pr85_coordinator
+assert 'slotTask.resizeMode==TASK_RESIZE_MODE_RESIZEABLE)\n                            sameTurnSource=checkedSlot' in _pr85_coordinator
+assert 'check(it.displayId==expected.displayId)' in _pr85_coordinator
+assert 'checkIdentity(before)' in _pr85_coordinator and 'checkIdentity(current)' in _pr85_coordinator
+assert 'slots[slotIndex].outputFrameMark()' in _pr85_coordinator
+assert 'now.sequence<=mark.sequence->"slot_buffer"' in _pr85_controller
+
 # PR84: viewport-aware two-card renderer corridor, no live geometry writes.
 pr84_review=json.loads((root/'scripts/reviewed-pr84-visible-crossing-0.9.60.json').read_text())['files']
 def undo_pr84(path,data):
@@ -22,8 +57,8 @@ def undo_pr84(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr84_review:
- undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())
-_pr84=(k/'systemui/StageTransientTapSwap.kt').read_text()
+ undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))
+_pr84=pr85_prior('systemui/StageTransientTapSwap.kt')
 _pr84_motion=(k/'systemui/StageSnapshotMotion.kt').read_text()
 assert 'StageSnapshotMotion.pairedFlights(' in _pr84
 assert 'motionBox(viewport),others.map(::motionBox)' in _pr84
@@ -51,8 +86,8 @@ def undo_pr83(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr83_review:
- undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))
-_pr83=(k/'display/SlotTaskCoordinator.kt').read_text()
+ undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))
+_pr83=pr85_prior('display/SlotTaskCoordinator.kt')
 _pr83_async=_pr83.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
 assert _pr83_async.count('ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()')==1
 assert 'exchangeBinderLane.submit(' in _pr83_async
@@ -82,18 +117,18 @@ def undo_pr82(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr82_review:
- undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))
-_pr82=(k/'systemui/StageTransientTapSwap.kt').read_text()
+ undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))
+_pr82=pr85_prior('systemui/StageTransientTapSwap.kt')
 assert 'StageTransientTapPolicy.canHandoff(flightDone,moveAck)' in _pr82
 assert 'mainHandoff.observe(runCatching(mainReady).getOrDefault(false))' in _pr82
 assert 'upView.visibility=View.INVISIBLE' in _pr82 and 'mask.reset();mask.addRect(RectF(slotRect)' in _pr82
 assert 'if(mainRevealed)canvas.clipRect(slotRect)' in _pr82
 assert 'snapshot_motion_animators_end' in _pr82
-_pr82_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
+_pr82_controller=pr85_prior('systemui/NeXtepWindowController.kt')
 assert 'mainReady={verifiedMainEndpoint()}' in _pr82_controller
 assert 'now.sequence<=mark.sequence->"slot_buffer"' in _pr82_controller
 assert 'slot.view.textureView.postInvalidateOnAnimation()' in _pr82_controller
-_pr82_coordinator=(k/'display/SlotTaskCoordinator.kt').read_text()
+_pr82_coordinator=pr85_prior('display/SlotTaskCoordinator.kt')
 assert 'onObservedDestinationFront={observedFront=it}' in _pr82_coordinator
 assert 'observedFront===observed' in _pr82_coordinator and 'StageEarlySlotOutputPolicy.allowEarlier(' in _pr82_coordinator
 assert 'observed.resizeMode==TASK_RESIZE_MODE_RESIZEABLE' in _pr82_coordinator
@@ -116,8 +151,8 @@ def undo_pr81(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr81_review:
- undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))
-_pr81=(k/'systemui/StageTransientTapSwap.kt').read_text()
+ undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))
+_pr81=pr85_prior('systemui/StageTransientTapSwap.kt')
 assert 'android.view.RenderNodeAnimator' in _pr81
 assert 'snapshot_motion_backend=' in _pr81
 assert 'snapshot_terminal_commit' in _pr81 and 'armMoveAfterMotionSubmission(v)' in _pr81
@@ -141,7 +176,7 @@ def undo_pr80(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr80_review:
- undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))
+ undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))
 _pr80_capture=(k/'framework/TaskSurfaceCompat.kt').read_text().split('internal fun captureObservedSwapPreview(',1)[1].split('/** Ownership of the result',1)[0]
 assert 'StageSnapshotSourcePolicy.reservationAllowsRead(' in _pr80_capture
 assert 'displayExchanges[stamp.taskId]==reservation' in _pr80_capture
@@ -172,7 +207,7 @@ def undo_pr79(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr79_review:
- undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))
+ undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))
 _pr79_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
 assert 'if (StageTransientTapPolicy.privateTrialEnabled()) {' in _pr79_controller
 assert 'if (tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return' in _pr79_controller
@@ -209,7 +244,7 @@ def undo_pr78(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr78_review:
- undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))
+ undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))
 _pr78_surface=(k/'framework/TaskSurfaceCompat.kt').read_text()
 _pr78_append=_pr78_surface.split('private fun appendHeldMirrorFrame(',1)[1].split('private data class MethodKey',1)[0]
 assert 'heldMirrorWriter.get() ?: return' in _pr78_append
@@ -240,7 +275,7 @@ def undo_pr77(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr77_review:
- undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))
+ undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))
 
 # PR76: verified output checkpoint and identity-preserving snapshot reuse.
 pr76_review=json.loads((root/'scripts/reviewed-pr76-confirmed-output-0.9.52.json').read_text())['files']
@@ -257,7 +292,7 @@ def undo_pr76(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr76_review:
- undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))
+ undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))
 
 # PR74: explicit terminal geometry and callback-independent completion.
 pr74_review=json.loads((root/'scripts/reviewed-pr74-terminal-frame-0.9.50.json').read_text())['files']
@@ -274,7 +309,7 @@ def undo_pr74(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr74_review:
- undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))
+ undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))
 
 # PR73: only explicitly reviewed bounded-handoff patches; prior pins unchanged.
 pr73_review=json.loads((root/'scripts/reviewed-pr73-bounded-handoff-0.9.49.json').read_text())['files']
@@ -291,7 +326,7 @@ def undo_pr73(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr73_review:
- undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))))
+ undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))
 
 # PR72: exact endpoint reveal changes only; retain all earlier source pins.
 pr72_review=json.loads((root/'scripts/reviewed-pr72-ready-handoff-0.9.48.json').read_text())['files']
@@ -308,7 +343,7 @@ def undo_pr72(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr72_review:
- undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))
+ undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))
 
 # PR71: exact independently reviewed live-mirror coordinates and retry changes.
 pr71_review=json.loads((root/'scripts/reviewed-pr71-mirror-coordinate-0.9.47.json').read_text())['files']
@@ -324,7 +359,7 @@ def undo_pr71(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr71_review:
- undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))
+ undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))
 
 # PR70: exact approved diagnostic-only differences, reversed before every
 # prior immutable source contract. Unknown edits still fail the SHA checks.
@@ -341,7 +376,7 @@ def undo_pr70(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr70_review:
- undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))
+ undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))
 
 # PR68: read-only performance/mirror trace. Reverse exact SHA-reviewed
 # differences before checking PR67 and every earlier frozen source.
@@ -357,7 +392,7 @@ def undo_pr68(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr68_review:
- undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))
+ undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))
 
 # Guard the non-invasive instrumented entry points and privacy properties.
 _pr68=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageSwapTraceBuffer.kt').read_text()
@@ -383,7 +418,7 @@ def undo_pr67(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr67_review:
- undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))
+ undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))
 
 _pr67_geometry=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt').read_text()
 _pr67_controller=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt').read_text()
@@ -406,7 +441,7 @@ def undo_pr66(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr66_review:
- undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))
+ undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))))
 
 # Both live cards must be rejected if either may cover another occupied slot.
 _pr66_geom=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt').read_text()
@@ -430,7 +465,7 @@ def undo_pr65(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr65_review:
- undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))))
+ undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))))
 
 
 # Normal two-task exchange must yield while observing OEM task display status.
@@ -446,7 +481,7 @@ assert 'pendingDemotedFits[taskId] !== fit' in _pr77_observer
 assert 'observedStates[taskId] !== state' in _pr77_observer
 assert 'isDisplayExchanging(taskId) && !verifiedDemotedSlot(taskId,slot,state)' in _pr77_surface
 assert 'observed_slot_fit_submitted' in _pr77_surface
-_pr76_coordinator=undo_pr77(_pr76_coordinator_path,undo_pr78(_pr76_coordinator_path,undo_pr79(_pr76_coordinator_path,undo_pr80(_pr76_coordinator_path,undo_pr81(_pr76_coordinator_path,undo_pr82(_pr76_coordinator_path,undo_pr83(_pr76_coordinator_path,undo_pr84(_pr76_coordinator_path,(root/_pr76_coordinator_path).read_bytes())))))))).decode('utf-8')
+_pr76_coordinator=undo_pr77(_pr76_coordinator_path,undo_pr78(_pr76_coordinator_path,undo_pr79(_pr76_coordinator_path,undo_pr80(_pr76_coordinator_path,undo_pr81(_pr76_coordinator_path,undo_pr82(_pr76_coordinator_path,undo_pr83(_pr76_coordinator_path,undo_pr84(_pr76_coordinator_path,undo_pr85(_pr76_coordinator_path,(root/_pr76_coordinator_path).read_bytes()))))))))).decode('utf-8')
 _pr76_async=_pr76_coordinator.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
 assert 'SystemClock.sleep(' not in _pr76_async
 assert 'exchangeHandler.postDelayed(' in _pr76_async
@@ -464,7 +499,7 @@ assert 'StageConcurrentNativeTrialPolicy.freshFrameOnConfirmedOutput(' in _pr76_
 _pr76_slot=(k/'display/VirtualDisplaySlot.kt').read_text()
 assert 'outputConnected && boundTexture === texture' in _pr76_slot
 # The exact reviewed predecessor still must satisfy every PR64 guard.
-_pr64_coordinator=undo_pr76(_pr76_coordinator_path,undo_pr77(_pr76_coordinator_path,undo_pr78(_pr76_coordinator_path,undo_pr79(_pr76_coordinator_path,undo_pr80(_pr76_coordinator_path,undo_pr81(_pr76_coordinator_path,undo_pr82(_pr76_coordinator_path,undo_pr83(_pr76_coordinator_path,undo_pr84(_pr76_coordinator_path,(root/_pr76_coordinator_path).read_bytes()))))))))).decode('utf-8')
+_pr64_coordinator=undo_pr76(_pr76_coordinator_path,undo_pr77(_pr76_coordinator_path,undo_pr78(_pr76_coordinator_path,undo_pr79(_pr76_coordinator_path,undo_pr80(_pr76_coordinator_path,undo_pr81(_pr76_coordinator_path,undo_pr82(_pr76_coordinator_path,undo_pr83(_pr76_coordinator_path,undo_pr84(_pr76_coordinator_path,undo_pr85(_pr76_coordinator_path,(root/_pr76_coordinator_path).read_bytes())))))))))).decode('utf-8')
 _pr64_async=_pr64_coordinator.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
 assert 'SystemClock.sleep(' not in _pr64_async
 assert 'exchangeHandler.postDelayed(' in _pr64_async
@@ -494,7 +529,7 @@ def undo_pr64(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr64_review:
- undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))))
+ undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))))))
 
 # PR63: restore exact aspect-lock/frame-pacing changes before PR62/older frozen audits.
 pr63_review=json.loads((root/'scripts/reviewed-pr63-frame-pacing-aspect-lock-0.9.40.json').read_text())['files']
@@ -509,7 +544,7 @@ def undo_pr63(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr63_review:
- undo_pr63(reviewed_path,undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))))))
+ undo_pr63(reviewed_path,undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))))))
 
 # PR62: restore the exact reviewed PRIVATE owned-task GPU flight changes
 # before older source-freeze boundaries. All modified source blobs are checked
@@ -526,7 +561,7 @@ def undo_pr62(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr62_review:
- undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))))))
+ undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))))))))
 
 # PR61: invert reviewed phased timing and privileged-snapshot reuse first.
 pr61_review=json.loads((root/'scripts/reviewed-pr61-phased-async-latency-0.9.38.json').read_text())['files']
@@ -541,7 +576,7 @@ def undo_pr61(path,data):
  assert hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in pr61_review:
- undo_pr61(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,(root/reviewed_path).read_bytes()))))))))))))))))))))))
+ undo_pr61(reviewed_path,undo_pr62(reviewed_path,undo_pr63(reviewed_path,undo_pr64(reviewed_path,undo_pr65(reviewed_path,undo_pr66(reviewed_path,undo_pr67(reviewed_path,undo_pr68(reviewed_path,undo_pr70(reviewed_path,undo_pr71(reviewed_path,undo_pr72(reviewed_path,undo_pr73(reviewed_path,undo_pr74(reviewed_path,undo_pr76(reviewed_path,undo_pr77(reviewed_path,undo_pr78(reviewed_path,undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))))))))))))))))))
 
 # PR60 P0: reverse only the reviewed single real swap gate/auxiliary visual removal.
 pr60_review=json.loads((root/'scripts/reviewed-pr60-single-real-swap-0.9.37.json').read_text())['files']
@@ -925,7 +960,7 @@ def undo_y700_handoff(path,data):
  assert gitblob(previous)==handoff_blobs[path]['previous'],path
  return previous
 for source_path in handoff_review:
- undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,undo_parallel_motion(source_path,undo_abc_ui(source_path,undo_update_hero(source_path,undo_total4_gpu_release(source_path,undo_total4_gpu(source_path,undo_total4_entry(source_path,undo_total4_real_swap(source_path,undo_swap_hold(source_path,undo_native_live_exchange(source_path,undo_assistant3_full_host(source_path,undo_pr50_jank(source_path,undo_immediate_tap(source_path,undo_n3_port(source_path,undo_one_shot_swap(source_path,undo_gpu_concurrent(source_path,undo_pr55(source_path,undo_pr57(source_path,undo_pr58(source_path,undo_pr59(source_path,undo_pr60(source_path,undo_pr61(source_path,undo_pr62(source_path,undo_pr63(source_path,undo_pr64(source_path,undo_pr65(source_path,undo_pr66(source_path,undo_pr67(source_path,undo_pr68(source_path,undo_pr70(source_path,undo_pr71(source_path,undo_pr72(source_path,undo_pr73(source_path,undo_pr74(source_path,undo_pr76(source_path,undo_pr77(source_path,undo_pr78(source_path,undo_pr79(source_path,undo_pr80(source_path,undo_pr81(source_path,undo_pr82(source_path,undo_pr83(source_path,undo_pr84(source_path,(root/source_path).read_bytes()))))))))))))))))))))))))))))))))))))))))))))
+ undo_y700_handoff(source_path,undo_cooluser_quickbar(source_path,undo_parallel_motion(source_path,undo_abc_ui(source_path,undo_update_hero(source_path,undo_total4_gpu_release(source_path,undo_total4_gpu(source_path,undo_total4_entry(source_path,undo_total4_real_swap(source_path,undo_swap_hold(source_path,undo_native_live_exchange(source_path,undo_assistant3_full_host(source_path,undo_pr50_jank(source_path,undo_immediate_tap(source_path,undo_n3_port(source_path,undo_one_shot_swap(source_path,undo_gpu_concurrent(source_path,undo_pr55(source_path,undo_pr57(source_path,undo_pr58(source_path,undo_pr59(source_path,undo_pr60(source_path,undo_pr61(source_path,undo_pr62(source_path,undo_pr63(source_path,undo_pr64(source_path,undo_pr65(source_path,undo_pr66(source_path,undo_pr67(source_path,undo_pr68(source_path,undo_pr70(source_path,undo_pr71(source_path,undo_pr72(source_path,undo_pr73(source_path,undo_pr74(source_path,undo_pr76(source_path,undo_pr77(source_path,undo_pr78(source_path,undo_pr79(source_path,undo_pr80(source_path,undo_pr81(source_path,undo_pr82(source_path,undo_pr83(source_path,undo_pr84(source_path,undo_pr85(source_path,(root/source_path).read_bytes())))))))))))))))))))))))))))))))))))))))))))))
 # Scoped Y700 native first-frame callback path. Reverse exact source fragments
 # and validate both full Git blob hashes before the v0.9.8 frozen chain.
 cold_review=json.loads((root/'scripts/reviewed-y700-cold-launch-0.9.27.json').read_text())['files']
@@ -1211,7 +1246,7 @@ def undo_cooluser_swap(path,data):
  return before
 
 def protected_bytes(path):
- data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,(root/path).read_bytes())))))))))))))))))))))))))))))))))))))))))))))))))))
+ data=undo_catalog_files(path,undo_home_ui(path,undo_update_ui(path,undo_n5_rail_refit(path,undo_y700_handoff(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,undo_pr85(path,(root/path).read_bytes()))))))))))))))))))))))))))))))))))))))))))))))))))))
  data=undo_swap_rollback_fix(path,undo_y700_visual(path,undo_sparse_cards(path,undo_reflow(path,data))))
  if path in screen_review:
   text=data.decode()
@@ -1388,7 +1423,7 @@ for path,sha in frozen.items():
  if path in reviewed_n5:
   spec=reviewed_n5[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,(root/path).read_bytes())))))))))))))))))))))))))))))))))))))))))))))))
+  data=undo_y700_visual(path,undo_reflow(path,undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,undo_pr85(path,(root/path).read_bytes()))))))))))))))))))))))))))))))))))))))))))))))))
   # The frozen controller is also touched by the scoped Y700 wallpaper fix.
   # Reverse exactly the separately reviewed changes before checking the
   # original N5 diagnostics blob. Unknown changes are still rejected.
@@ -1409,14 +1444,14 @@ for path,sha in frozen.items():
  elif path in reviewed_game:
   spec=reviewed_game[path]
   assert sha==spec['original_sha256'],path
-  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,(root/path).read_bytes())))))))))))))))))))))))))))))))))))))))))))))
+  data=undo_y700_handoff(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,undo_pr85(path,(root/path).read_bytes()))))))))))))))))))))))))))))))))))))))))))))))
   # The exact Git blob SHA-1 pins the reviewed hook's entire contents.
   git_blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
   assert git_blob==spec['reviewed_blob_sha1'],path
  elif path in reviewed_updater:
   spec=reviewed_updater[path]
   assert sha==spec['original_sha256'],path
-  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,(root/path).read_bytes()))))))))))))))))))))))))))))))))))))))))))))))))
+  data=undo_api403_fallback(path,undo_update_ui(path,undo_unified_update(path,undo_private_ux(path,undo_cooluser_quickbar(path,undo_cooluser_swap(path,undo_parallel_motion(path,undo_abc_ui(path,undo_update_hero(path,undo_total4_gpu_release(path,undo_total4_gpu(path,undo_total4_entry(path,undo_total4_real_swap(path,undo_swap_hold(path,undo_native_live_exchange(path,undo_assistant3_full_host(path,undo_pr50_jank(path,undo_immediate_tap(path,undo_n3_port(path,undo_one_shot_swap(path,undo_gpu_concurrent(path,undo_pr55(path,undo_pr57(path,undo_pr58(path,undo_pr59(path,undo_pr60(path,undo_pr61(path,undo_pr62(path,undo_pr63(path,undo_pr64(path,undo_pr65(path,undo_pr66(path,undo_pr67(path,undo_pr68(path,undo_pr70(path,undo_pr71(path,undo_pr72(path,undo_pr73(path,undo_pr74(path,undo_pr76(path,undo_pr77(path,undo_pr78(path,undo_pr79(path,undo_pr80(path,undo_pr81(path,undo_pr82(path,undo_pr83(path,undo_pr84(path,undo_pr85(path,(root/path).read_bytes())))))))))))))))))))))))))))))))))))))))))))))))))
   if path in stale_feed_review:
    review=stale_feed_review[path]
    blob=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()

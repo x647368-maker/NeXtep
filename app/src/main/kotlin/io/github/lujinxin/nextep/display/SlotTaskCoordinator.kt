@@ -1712,12 +1712,14 @@ class SlotTaskCoordinator(
                 // safety and non-tap/legacy callers.
                 override val nonBlocking: Boolean get() = true
                 override fun promoteAsync(done: (Throwable?) -> Unit) {
+                    var sameTurnSource:TaskRepository.TaskSnapshot?=null
                     val preliminary = runCatching {
                         StageExchangeTelemetry.phasedEvent("promote_start")
                         check(token == transitionGeneration && active && !suspended)
                         check(geometryProvider() == exchangeGeometry)
                         val before = taskRepository.runningTasks()
-                        check(current(slotTask, before).displayId == occupied.displayId)
+                        val checkedSlot=current(slotTask,before)
+                        check(checkedSlot.displayId == occupied.displayId)
                         check(before.firstOrNull { it.displayId == occupied.displayId }?.taskId == slotTask.taskId)
                         check(current(mainTask, before).displayId == Display.DEFAULT_DISPLAY)
                         check(before.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == mainTask.taskId)
@@ -1727,9 +1729,15 @@ class SlotTaskCoordinator(
                             ActivityTaskManagerCompat.setTaskResizeable(mainTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
                         if (slotTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE)
                             ActivityTaskManagerCompat.setTaskResizeable(slotTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                        // Reuse the exact source proof only if this main-loop
+                        // turn made NO intervening WCT/resize/Binder mutation.
+                        if(mainTask.resizeMode==TASK_RESIZE_MODE_RESIZEABLE &&
+                            slotTask.resizeMode==TASK_RESIZE_MODE_RESIZEABLE)
+                            sameTurnSource=checkedSlot
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
-                    moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY) { result ->
+                    moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY,
+                        sameTurnSource=sameTurnSource) { result ->
                         val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val stale = runCatching {
                             check(token == transitionGeneration && active && !suspended)
@@ -1748,6 +1756,7 @@ class SlotTaskCoordinator(
                 }
 
                 override fun demoteAndVerifyAsync(done: (Throwable?) -> Unit) {
+                    var sameTurnSource:TaskRepository.TaskSnapshot?=null
                     val preliminary = runCatching {
                         StageExchangeTelemetry.phasedEvent("demote_start")
                         check(token == transitionGeneration && active && !suspended)
@@ -1755,12 +1764,15 @@ class SlotTaskCoordinator(
                         check(slots[slotIndex].displayId() == occupied.displayId)
                         val promoted = taskRepository.runningTasks()
                         check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)
-                        check(current(mainTask, promoted).displayId == Display.DEFAULT_DISPLAY)
+                        val checkedMain=current(mainTask,promoted)
+                        check(checkedMain.displayId == Display.DEFAULT_DISPLAY)
                         check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
+                        sameTurnSource=checkedMain
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
                     var observedFront:TaskRepository.TaskSnapshot?=null
                     moveTaskToDisplayNonBlocking(mainTask, occupied.displayId,
+                        sameTurnSource=sameTurnSource,
                         observedDemotionSlot=slotIndex,
                         onObservedDestinationFront={observedFront=it}) { result ->
                         val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
@@ -2682,6 +2694,7 @@ class SlotTaskCoordinator(
 
     private fun moveTaskToDisplayNonBlocking(
         expected: TaskRepository.TaskSnapshot, displayId: Int,
+        sameTurnSource:TaskRepository.TaskSnapshot?=null,
         observedDemotionSlot: Int? = null,
         onObservedDestinationFront: ((TaskRepository.TaskSnapshot)->Unit)? = null,
         done: (Result<TaskRepository.TaskSnapshot>) -> Unit,
@@ -2693,7 +2706,14 @@ class SlotTaskCoordinator(
             }
         }
         val started = runCatching {
-            val before = taskRepository.findTask(taskId) ?: error("Exchange task disappeared")
+            // The two callers may pass only their just-validated immutable
+            // snapshot from this same main-loop stack, without a yield or
+            // intervening mutation. Never cache it across moves or callbacks.
+            val before = sameTurnSource?.also {
+                checkIdentity(it)
+                check(it.displayId==expected.displayId)
+                StageExchangeTelemetry.phasedEvent("display_${displayId}_source_reused")
+            } ?: taskRepository.findTask(taskId) ?: error("Exchange task disappeared")
             checkIdentity(before)
             if (!TaskContinuityPolicy.shouldMove(before.displayId, displayId)) {
                 done(Result.success(before))
