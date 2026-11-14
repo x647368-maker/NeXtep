@@ -1,0 +1,59 @@
+{
+  "purpose": "Exact private endpoint reveal behavior, no changes to original task surfaces or layout.",
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt": {
+      "previous_blob_sha1": "ef291813e522bec596ee13cc45c71a7e512a2e31",
+      "reviewed_blob_sha1": "bd450886223c0ed38e7bd2f0bed146c19ad4b1d3",
+      "patches": [
+        {
+          "before": "    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {",
+          "after": "    // A source buffer cannot exactly fit a differently shaped destination\n    // without either cropping or non-uniform scaling. Measure the remaining\n    // physical edge gap so handoff can reveal the real reflowed destination.\n    fun endpointGapPx(target: Box, fitted: Box): Float = maxOf(\n        kotlin.math.abs(target.left - fitted.left),\n        kotlin.math.abs(target.top - fitted.top),\n        kotlin.math.abs(target.right - fitted.right),\n        kotlin.math.abs(target.bottom - fitted.bottom),\n    )\n\n    data class RevealAlpha(val cover: Float, val mirror: Float)\n\n    // First remove the opaque covers, THEN fade the mirrors over the real\n    // destination. Never compound a translucent mirror with a dark cover.\n    // Both cards use one transaction and one shared progress.\n    fun handoffReveal(progress: Float): RevealAlpha {\n        val p = if (progress.isFinite()) progress.coerceIn(0f, 1f) else 0f\n        return RevealAlpha(\n            cover = (1f - 2f * p).coerceIn(0f, 1f),\n            mirror = (2f - 2f * p).coerceIn(0f, 1f),\n        )\n    }\n\n    data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageGpuMirrorOcclusion.kt": {
+      "previous_blob_sha1": "ccd6a7ae40b51f6023da98623717d8f137918f7f",
+      "reviewed_blob_sha1": "f07f177d1987b19257a1490d72e188ad50008afc",
+      "patches": [
+        {
+          "before": "    fun hide(transaction: SurfaceControl.Transaction) {",
+          "after": "    fun setRevealAlpha(transaction: SurfaceControl.Transaction, alpha: Float) {\n        transaction.setAlpha(sourceCover, alpha)\n        transaction.setAlpha(mainCover, alpha)\n    }\n\n    fun hide(transaction: SurfaceControl.Transaction) {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
+      "previous_blob_sha1": "dc8d1cb5f016556bab2c0171f84f9be5463c2ddc",
+      "reviewed_blob_sha1": "7bb56047013c35f113f2d069edad7fce4ec15340",
+      "patches": [
+        {
+          "before": "    private var animator: ValueAnimator? = null",
+          "after": "    private var animator: ValueAnimator? = null\n    private var revealAnimator: ValueAnimator? = null\n    private var handoffCheckStarted = false\n    private var endpointGap = 0f"
+        },
+        {
+          "before": "        private const val MAX_LIFETIME_MS = 1800L",
+          "after": "        private const val MAX_LIFETIME_MS = 1800L\n        private const val READY_REVEAL_MS = 96L\n        private const val ENDPOINT_GAP_PX = 2f"
+        },
+        {
+          "before": "        concurrentHandoff = immediateMove\n        startedAtMs = SystemClock.uptimeMillis()",
+          "after": "        concurrentHandoff = immediateMove\n        val finalIncoming = StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            slotStart, mainStart, sourceCrop.width(), sourceCrop.height(), 1f)\n        val finalOutgoing = StageLiveSurfaceFlightGeometry.railCorridorFlight(\n            mainStart, slotStart, mainCrop.width(), mainCrop.height(), 1f)\n        if (finalIncoming == null || finalOutgoing == null) {\n            finished.set(true)\n            cleanupWithoutCallback()\n            return false\n        }\n        val incomingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart, finalIncoming.box)\n        val outgoingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart, finalOutgoing.box)\n        endpointGap = maxOf(incomingGap, outgoingGap)\n        trace(\"endpoint_gap_px up=${incomingGap.toInt()} down=${outgoingGap.toInt()}\" +\n            \" up_fit=${finalIncoming.box.width.toInt()}x${finalIncoming.box.height.toInt()}\" +\n            \" down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}\")\n        startedAtMs = SystemClock.uptimeMillis()"
+        },
+        {
+          "before": "        if (!isRunning || !frameComplete || !moveComplete) return\n        fun check() {",
+          "after": "        if (!isRunning || !frameComplete || !moveComplete || handoffCheckStarted) return\n        handoffCheckStarted = true\n        fun check() {"
+        },
+        {
+          "before": "                host.postOnAnimation { stop() }\n            } else host.postOnAnimation { check() }",
+          "after": "                if (ready && endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {\n                    revealReadyDestination(liveReady, canRelease)\n                } else host.postOnAnimation { stop() }\n            } else host.postOnAnimation { check() }"
+        },
+        {
+          "before": "    fun stop() {",
+          "after": "    // An aspect-mismatched live buffer cannot cover both target dimensions\n    // without stretching/cropping. Once the real task is confirmed ready,\n    // reveal it over a short bounded GPU-only handoff rather than a hard cut.\n    // No new surfaces, screenshots, task resizes or work while idle.\n    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean) {\n        if (!isRunning || revealAnimator != null) return\n        if (!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {\n            stop()\n            return\n        }\n        trace(\"endpoint_reveal_start gap=${endpointGap.toInt()}px\")\n        val reveal = ValueAnimator.ofFloat(0f, 1f).apply {\n            duration = READY_REVEAL_MS\n            interpolator = PathInterpolator(.2f, 0f, .2f, 1f)\n            addUpdateListener {\n                if (!isRunning) return@addUpdateListener\n                val alpha = StageLiveSurfaceFlightGeometry.handoffReveal(it.animatedValue as Float)\n                runCatching {\n                    val tx = frameTransaction ?: error(\"Handoff transaction unavailable\")\n                    occlusion.setRevealAlpha(tx, alpha.cover)\n                    tx.setAlpha(sourceMirror, alpha.mirror)\n                    tx.setAlpha(mainMirror, alpha.mirror)\n                    tx.apply()\n                }.onFailure { stop() }\n            }\n            addListener(object : AnimatorListenerAdapter() {\n                override fun onAnimationEnd(animation: Animator) {\n                    if (!isRunning) return\n                    trace(\"endpoint_reveal_end\")\n                    stop()\n                }\n            })\n        }\n        revealAnimator = reveal\n        reveal.start()\n    }\n\n    fun stop() {"
+        },
+        {
+          "before": "        animator=null\n        cleanupWithoutCallback()",
+          "after": "        animator=null\n        revealAnimator?.removeAllListeners()\n        revealAnimator?.removeAllUpdateListeners()\n        revealAnimator?.cancel()\n        revealAnimator=null\n        cleanupWithoutCallback()"
+        }
+      ]
+    }
+  }
+}
