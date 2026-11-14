@@ -35,7 +35,7 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             other=box(.76f,.06f,.94f,.23f)
             val a=Bitmap.createBitmap(small.width(),small.height(),Bitmap.Config.ARGB_8888).apply{eraseColor(green)}
             val b=Bitmap.createBitmap(main.width(),main.height(),Bitmap.Config.ARGB_8888).apply{eraseColor(orange)}
-            flight=StageTransientTapSwap.FlightView(activity,a,b,small,main,listOf(other),null)
+            flight=StageTransientTapSwap.FlightView(activity,a,b,small,main,listOf(other),null,Rect(0,0,w,h))
             check(flight.safe){"Production flight rejected a separated top rail"}
             host.addView(flight,FrameLayout.LayoutParams(-1,-1))
         }
