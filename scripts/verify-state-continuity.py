@@ -15,7 +15,29 @@ pr86_review=json.loads((root/'scripts/reviewed-pr86-terminal-commit-0.9.62.json'
 pr87_smooth_review=json.loads((root/'scripts/reviewed-pr87-smooth-synchronized-motion-0.9.63.json').read_text())['files']
 # PR88 exact fragment normalization preserves all earlier reviewed hashes.
 pr88_review=json.loads((root/'scripts/reviewed-pr88-first-frame-recovery-0.9.64.json').read_text())['files']
+# PR89: only the already authorized foreground Binder call moves to the same lane.
+pr89_review=json.loads((root/'scripts/reviewed-pr89-foreground-binder-0.9.65.json').read_text())['files']
+def undo_pr89(path,data):
+ if path not in pr89_review:return data
+ spec=pr89_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr89_review:
+ undo_pr89(reviewed_path,(root/reviewed_path).read_bytes())
+_pr89=(k/'display/SlotTaskCoordinator.kt').read_text().split('override fun promoteAsync(',1)[1].split('override fun demoteAndVerifyAsync(',1)[0]
+assert _pr89.count('taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()')==1
+assert 'call={taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()}' in _pr89
+assert 'frontResult.getOrThrow()' in _pr89 and 'if(!accepted)done(IllegalStateException(' in _pr89
+assert _pr89.index('frontResult.getOrThrow()')<_pr89.index('StageExchangeTelemetry.phasedEvent("promote_complete")')
+assert _pr89.count('check(token == transitionGeneration && active && !suspended)')>=3
 def undo_pr88(path,data):
+ data=undo_pr89(path,data)
  if path not in pr88_review:return data
  spec=pr88_review[path]
  source=data.decode('utf-8')

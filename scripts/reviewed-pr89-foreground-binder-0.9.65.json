@@ -1,0 +1,13 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "previous_blob_sha1": "984d54da53a83479e6545174a4d61fc2a73694fd",
+      "patches": [
+        {
+          "before": "                            done(runCatching {\n                                check(token == transitionGeneration && active && !suspended)\n                                taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()\n                                StageExchangeTelemetry.phasedEvent(\"promote_complete\")\n                            }.exceptionOrNull())",
+          "after": "                            // This is a real synchronous ATM mutation too. Do not\n                            // block the owner Looper while it waits for the reply.\n                            // The exchange session stays PROMOTING and owns both\n                            // tasks until the same serialized lane actually returns.\n                            val staleBeforeFront=runCatching {\n                                check(token == transitionGeneration && active && !suspended)\n                            }.exceptionOrNull()\n                            if(staleBeforeFront!=null){\n                                done(staleBeforeFront)\n                                return@restoreTaskLayoutNonBlocking\n                            }\n                            StageExchangeTelemetry.phasedEvent(\"promote_front_worker\")\n                            val accepted=exchangeBinderLane.submit(\n                                call={taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()},\n                                complete={frontResult->\n                                    done(runCatching {\n                                        frontResult.getOrThrow()\n                                        check(token == transitionGeneration && active && !suspended)\n                                        StageExchangeTelemetry.phasedEvent(\"promote_complete\")\n                                    }.exceptionOrNull())\n                                },\n                            )\n                            if(!accepted)done(IllegalStateException(\n                                \"Serialized exchange front Binder lane unexpectedly busy\"))"
+        }
+      ]
+    }
+  }
+}
