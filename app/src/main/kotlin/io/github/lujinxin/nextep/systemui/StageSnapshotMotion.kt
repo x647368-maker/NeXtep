@@ -77,19 +77,23 @@ internal object StageSnapshotMotion {
     }
     private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float):Float{
         var minUp=1f;var minDown=1f;var totalUp=0f;var totalDown=0f
-        for(i in 1..15){
-            val (u,d)=visibleFractions(pair,i/16f,screen,excluded)
+        // 31 interior samples catch brief overlap/occlusion between key poses.
+        for(i in 1..31){
+            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)
             minUp=min(minUp,u);minDown=min(minDown,d)
             totalUp+=u;totalDown+=d
         }
-        return 2f*minUp+3f*minDown+(totalUp+totalDown)/15f-
+        return 2f*minUp+3f*minDown+(totalUp+totalDown)/31f-
             .08f*abs(pair.up.arc)/baseArc.coerceAtLeast(1f)-.12f*pair.up.sizeBias
     }
     /**
      * Pick a bounded corridor ONCE per exchange, not on each render frame.
      * Both cards retain uniform scale, exact endpoints and strictly advancing
-     * center-line progress. Estimate visibility against the actual viewport,
-     * protected slots and front card instead of always choosing one bend.
+     * center-line progress. The route is a property of the physical layout,
+     * not the apps being swapped. Use the viewport aspect for both scoring
+     * cards, so identical endpoint/protected geometry always chooses exactly
+     * the same signed arc and easing bias. Real bitmaps retain their actual
+     * dimensions and uniform endpoint scale; no bitmap is resized to score.
      */
     fun pairedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,
                       screen:Box,excluded:List<Box>):PairFlight?{
@@ -97,21 +101,31 @@ internal object StageSnapshotMotion {
         val d=flight(main,small,ow,oh)?:return null
         val original=PairFlight(u,d)
         if(!screen.valid())return original
-        var best=original
+        // Score canonical screen-shaped cards only. Previously changing
+        // captured source aspect could reverse the arc at an unchanged slot.
+        // No extra candidates, bitmap capture, state cache or per-frame work.
+        val canonicalWidth=screen.w.toInt().coerceAtLeast(2)
+        val canonicalHeight=screen.h.toInt().coerceAtLeast(2)
+        val routeUp=u.copy(width=canonicalWidth,height=canonicalHeight)
+        val routeDown=d.copy(width=canonicalWidth,height=canonicalHeight)
+        var best=PairFlight(routeUp,routeDown)
         var bestScore=score(best,screen,excluded,u.arc)
         val maxArc=minOf(min(screen.w,screen.h)*.22f,
             min(main.w,main.h)*.34f,hypot(main.cx-small.cx,main.cy-small.cy)*.32f)
         for(factor in floatArrayOf(1f,-1f,2f,-2f,3f,-3f)){
             val arc=(u.arc*factor).coerceIn(-maxArc,maxArc)
             for(bias in floatArrayOf(0f,.35f,.70f)){
-                val candidate=PairFlight(u.copy(arc=arc,sizeBias=bias),d.copy(arc=arc,sizeBias=bias))
+                val candidate=PairFlight(routeUp.copy(arc=arc,sizeBias=bias),
+                    routeDown.copy(arc=arc,sizeBias=bias))
                 val rating=score(candidate,screen,excluded,u.arc)
                 if(rating>bestScore+.0001f){
                     best=candidate;bestScore=rating
                 }
             }
         }
-        return best
+        // Transfer only the geometric route, never canonical bitmap sizes.
+        return PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias),
+            d.copy(arc=best.down.arc,sizeBias=best.down.sizeBias))
     }
     /** Hardware animator interpolates scalar start/end. For parallel axes
      * use a subpixel terminal delta, then restore exact endpoint on commit.

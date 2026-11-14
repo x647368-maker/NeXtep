@@ -1,0 +1,25 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt": {
+      "previous_blob_sha1": "30f68990de8077e52543666a9165de998c4ba994",
+      "patches": [
+        {
+          "before": "     * center-line progress. Estimate visibility against the actual viewport,\n     * protected slots and front card instead of always choosing one bend.",
+          "after": "     * center-line progress. The route is a property of the physical layout,\n     * not the apps being swapped. Use the viewport aspect for both scoring\n     * cards, so identical endpoint/protected geometry always chooses exactly\n     * the same signed arc and easing bias. Real bitmaps retain their actual\n     * dimensions and uniform endpoint scale; no bitmap is resized to score."
+        },
+        {
+          "before": "        var best=original\n        var bestScore=score(best,screen,excluded,u.arc)",
+          "after": "        // Score canonical screen-shaped cards only. Previously changing\n        // captured source aspect could reverse the arc at an unchanged slot.\n        // No extra candidates, bitmap capture, state cache or per-frame work.\n        val canonicalWidth=screen.w.toInt().coerceAtLeast(2)\n        val canonicalHeight=screen.h.toInt().coerceAtLeast(2)\n        val routeUp=u.copy(width=canonicalWidth,height=canonicalHeight)\n        val routeDown=d.copy(width=canonicalWidth,height=canonicalHeight)\n        var best=PairFlight(routeUp,routeDown)\n        var bestScore=score(best,screen,excluded,u.arc)"
+        },
+        {
+          "before": "                val candidate=PairFlight(u.copy(arc=arc,sizeBias=bias),d.copy(arc=arc,sizeBias=bias))",
+          "after": "                val candidate=PairFlight(routeUp.copy(arc=arc,sizeBias=bias),\n                    routeDown.copy(arc=arc,sizeBias=bias))"
+        },
+        {
+          "before": "        return best\n    }\n    /** Hardware animator",
+          "after": "        // Transfer only the geometric route, never canonical bitmap sizes.\n        return PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias),\n            d.copy(arc=best.down.arc,sizeBias=best.down.sizeBias))\n    }\n    /** Hardware animator"
+        }
+      ]
+    }
+  }
+}

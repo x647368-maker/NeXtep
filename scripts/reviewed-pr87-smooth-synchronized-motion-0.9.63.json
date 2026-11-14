@@ -1,0 +1,39 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt": {
+      "previous_blob_sha1": "fe467ff92080659bc8af4d7a79bdb5b34c359907",
+      "patches": [
+        {
+          "before": "        for(i in 1..15){\n            val (u,d)=visibleFractions(pair,i/16f,screen,excluded)\n            minUp=min(minUp,u);minDown=min(minDown,d)\n            totalUp+=u;totalDown+=d\n        }\n        return 2f*minUp+3f*minDown+(totalUp+totalDown)/15f-",
+          "after": "        // 31 interior samples catch brief overlap/occlusion between key poses.\n        for(i in 1..31){\n            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)\n            minUp=min(minUp,u);minDown=min(minDown,d)\n            totalUp+=u;totalDown+=d\n        }\n        return 2f*minUp+3f*minDown+(totalUp+totalDown)/31f-"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt": {
+      "previous_blob_sha1": "fb58af8ad7dbf7b7b18ca864db70900f982395bf",
+      "patches": [
+        {
+          "before": "import android.animation.AnimatorListenerAdapter\nimport android.animation.ValueAnimator",
+          "after": "import android.animation.AnimatorListenerAdapter\nimport android.animation.AnimatorSet\nimport android.animation.ValueAnimator"
+        },
+        {
+          "before": "                    animations.add(anim)\n                    startValue.invoke(anim,from)",
+          "after": "                    startValue.invoke(anim,from)"
+        },
+        {
+          "before": "                var remaining=list.size\n                list.forEach{anim->\n                    anim.addListener(object:AnimatorListenerAdapter(){\n                        override fun onAnimationEnd(animation:Animator){\n                            if(--remaining==0){\n                                animations.clear()\n                                progress=1f\n                                onEnd()\n                            }\n                        }\n                    })\n                }\n                list.forEach{it.start()}\n                true",
+          "after": "                // Start all eight RenderNode property channels as one set.\n                // Independent start() calls can land on different frame pulses,\n                // briefly desynchronizing translation and scale between the cards.\n                val synchronizedSet=AnimatorSet()\n                synchronizedSet.playTogether(list)\n                synchronizedSet.addListener(object:AnimatorListenerAdapter(){\n                    override fun onAnimationEnd(animation:Animator){\n                        animations.clear()\n                        progress=1f\n                        onEnd()\n                    }\n                })\n                animations.add(synchronizedSet)\n                synchronizedSet.start()\n                true"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "77bebdfe87847b72ce96ae0af56428ebc0b92372",
+      "patches": [
+        {
+          "before": "                    if(ok){\n                        val ack=slot.outputFrameMark()\n                        val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)\n                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack\n                        // The move is genuinely confirmed. Ask for the same\n                        // single traversal now instead of waiting for the\n                        // visual terminal callback; never count it as output.\n                        val baseline=outputAtConfirmedMove\n                        if(baseline!=null && ack!=null && same(baseline,ack) &&\n                            ack.sequence<=baseline.sequence &&\n                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&\n                            mainTaskPresenter.currentTaskId()==state.taskId){\n                            requestSlotLatch()\n                        }\n                    }",
+          "after": "                    if(ok){\n                        // Capture the monotonic producer-frame counter at ACK even\n                        // when the output Surface is temporarily unavailable. Keep\n                        // the pre-move producer identity as a strict fallback.\n                        val ack=slot.outputFrameMark()\n                        val ackSequence=slot.contentFrameSequence\n                        val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)\n                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack\n                            ?: atStart.copy(sequence=ackSequence)\n                        // Request one traversal as soon as ownership is confirmed.\n                        // This is only a wake-up hint, never proof of a fresh buffer.\n                        val ownerStillMatches=\n                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&\n                                mainTaskPresenter.currentTaskId()==state.taskId\n                        if(ownerStillMatches)requestSlotLatch()\n                    }"
+        }
+      ]
+    }
+  }
+}

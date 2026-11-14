@@ -11,7 +11,54 @@ import hashlib
 pr85_review=json.loads((root/'scripts/reviewed-pr85-endpoint-backdrop-0.9.61.json').read_text())['files']
 # PR86 exact patch normalization comes before every earlier frozen hash check.
 pr86_review=json.loads((root/'scripts/reviewed-pr86-terminal-commit-0.9.62.json').read_text())['files']
+# PR87b: symmetric scale curves, synchronized RenderThread channels and denser route scoring.
+pr87_smooth_review=json.loads((root/'scripts/reviewed-pr87-smooth-synchronized-motion-0.9.63.json').read_text())['files']
+def undo_pr87_smooth(path,data):
+ if path not in pr87_smooth_review:return data
+ spec=pr87_smooth_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr87_smooth_review:
+ undo_pr87_smooth(reviewed_path,(root/reviewed_path).read_bytes())
+pr87_review=json.loads((root/'scripts/reviewed-pr87-layout-locked-route-0.9.63.json').read_text())['files']
+def undo_pr87(path,data):
+ data=undo_pr87_smooth(path,data)
+ if path not in pr87_review:return data
+ spec=pr87_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr87_review:
+ undo_pr87(reviewed_path,(root/reviewed_path).read_bytes())
+_pr87=(k/'systemui/StageSnapshotMotion.kt').read_text()
+_pr87_swap=(k/'systemui/StageTransientTapSwap.kt').read_text()
+_pr87_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
+assert '?: atStart.copy(sequence=ackSequence)' in _pr87_controller
+assert 'if(ownerStillMatches)requestSlotLatch()' in _pr87_controller
+assert 'val gentle=q*q*(2f-q)' in _pr87
+assert 'val compact=q*q*q' in _pr87
+assert 'val fraction=gentle+(compact-gentle)*sizeBias' in _pr87
+assert 'for(i in 1..31)' in _pr87
+assert 'import android.animation.AnimatorSet' in _pr87_swap
+assert 'synchronizedSet.playTogether(list)' in _pr87_swap
+assert 'list.forEach{it.start()}' not in _pr87_swap
+assert 'routeUp=u.copy(width=canonicalWidth,height=canonicalHeight)' in _pr87
+assert 'routeDown=d.copy(width=canonicalWidth,height=canonicalHeight)' in _pr87
+assert 'score(candidate,screen,excluded,u.arc)' in _pr87
+assert 'return PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias)' in _pr87
 def undo_pr86(path,data):
+ data=undo_pr87(path,data)
  if path not in pr86_review:return data
  spec=pr86_review[path]
  source=data.decode('utf-8')
@@ -80,7 +127,10 @@ def undo_pr84(path,data):
 for reviewed_path in pr84_review:
  undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes()))
 _pr84=pr85_prior('systemui/StageTransientTapSwap.kt')
-_pr84_motion=(k/'systemui/StageSnapshotMotion.kt').read_text()
+_pr84_motion=undo_pr87(
+    'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',
+    (root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt').read_bytes()
+).decode('utf-8')
 assert 'StageSnapshotMotion.pairedFlights(' in _pr84
 assert 'motionBox(viewport),others.map(::motionBox)' in _pr84
 assert 'runCatching{planFlight(a,b,slot,main,others,viewport)}' in _pr84
