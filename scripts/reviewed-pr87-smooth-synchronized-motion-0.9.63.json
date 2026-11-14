@@ -38,6 +38,15 @@
           "after": "台前调度 v0.9.63-dev（versionCode 78）｜PR87 交换方向一致性与运动连续性专项私测\n\n本轮在轨迹固定基础上继续修复：incoming/outgoing 原先采用不对称的 gentle/compact 尺寸曲线，可能出现小窗增长滞后、主窗提前缩小；改为两端零速度且互为镜像的 smoothstep/smootherstep 混合曲线。RenderThread 原先八个 X/Y/SCALE 属性动画独立 start，改为 AnimatorSet 同步启动，统一终点回调。走廊遮挡评分由15增至31个内部采样点，减少短暂遮挡漏检。保留300ms、原始 bitmap 尺寸/等比缩放、任务迁移、真实缓冲校验及全部布局冻结。新增尺度对称、端点速度、方向与多宽高比回归。CI/模拟器通过不等于 ColorOS 真机通过；未交付 APK、未发布，等待用户后续验收。\n\n"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
+      "previous_blob_sha1": "77bebdfe87847b72ce96ae0af56428ebc0b92372",
+      "patches": [
+        {
+          "before": "                    if(ok){\n                        val ack=slot.outputFrameMark()\n                        val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)\n                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack\n                        // The move is genuinely confirmed. Ask for the same\n                        // single traversal now instead of waiting for the\n                        // visual terminal callback; never count it as output.\n                        val baseline=outputAtConfirmedMove\n                        if(baseline!=null && ack!=null && same(baseline,ack) &&\n                            ack.sequence<=baseline.sequence &&\n                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&\n                            mainTaskPresenter.currentTaskId()==state.taskId){\n                            requestSlotLatch()\n                        }\n                    }",
+          "after": "                    if(ok){\n                        // Capture the monotonic producer-frame counter at ACK even\n                        // when the output Surface is temporarily unavailable. Keep\n                        // the pre-move producer identity as a strict fallback.\n                        val ackSequence=slot.contentFrameSequence\n                        val ack=slot.outputFrameMark()\n                        val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)\n                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack\n                            ?: atStart.copy(sequence=ackSequence)\n                        // Request one traversal as soon as ownership is confirmed.\n                        // This is only a wake-up hint, never proof of a fresh buffer.\n                        val ownerStillMatches=\n                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&\n                                mainTaskPresenter.currentTaskId()==state.taskId\n                        if(ownerStillMatches)requestSlotLatch()\n                    }"
+        }
+      ]
     }
   }
 }

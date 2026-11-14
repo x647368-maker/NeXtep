@@ -2132,19 +2132,20 @@ class NeXtepWindowController(
             moveAsync={ done ->
                 moveAsync { ok ->
                     if(ok){
+                        // Capture the monotonic producer-frame counter at ACK even
+                        // when the output Surface is temporarily unavailable. Keep
+                        // the pre-move producer identity as a strict fallback.
+                        val ackSequence=slot.contentFrameSequence
                         val ack=slot.outputFrameMark()
                         val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
                         outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack
-                        // The move is genuinely confirmed. Ask for the same
-                        // single traversal now instead of waiting for the
-                        // visual terminal callback; never count it as output.
-                        val baseline=outputAtConfirmedMove
-                        if(baseline!=null && ack!=null && same(baseline,ack) &&
-                            ack.sequence<=baseline.sequence &&
+                            ?: atStart.copy(sequence=ackSequence)
+                        // Request one traversal as soon as ownership is confirmed.
+                        // This is only a wake-up hint, never proof of a fresh buffer.
+                        val ownerStillMatches=
                             (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&
-                            mainTaskPresenter.currentTaskId()==state.taskId){
-                            requestSlotLatch()
-                        }
+                                mainTaskPresenter.currentTaskId()==state.taskId
+                        if(ownerStillMatches)requestSlotLatch()
                     }
                     done(ok)
                 }
