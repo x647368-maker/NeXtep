@@ -243,3 +243,5 @@ v0.9.49/64 真机最近五次交换全部记录 flight_end_missing，平均1413m
 【PR87补充回归】同一布局位置跨不同App横竖比例必须保持同一几何轨迹；双卡归一化缩放进度一致；RenderThread八个属性通道由AnimatorSet同步启动；遮挡评分采用31个内部采样点。上述均为自动化候选验证，仍不替代ColorOS真机验收。
 
 【真实小窗首帧等待补强】move ACK 时即使 OutputFrameMark 暂时不可用，也采样同一 TextureView 的单调 contentFrameSequence，并以交换开始时已验证的 Surface/Texture 身份作为严格回退基线；ACK 后只请求一次输出遍历，仍要求相同生产者身份及严格更新的真实帧序号才允许交接。避免空基线导致永远等待，也把一次性刷新提前到真实任务确认时，不把 invalidate 当作新帧证据。
+
+【时序保护】ACK 时先读取当前有效输出标记，再读取单调帧计数，避免两次读取之间的并发帧更新被错误计入 ACK 前基线。
