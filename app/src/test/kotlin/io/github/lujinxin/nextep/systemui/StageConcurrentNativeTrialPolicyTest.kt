@@ -97,6 +97,27 @@ class StageConcurrentNativeTrialPolicyTest {
         assertTrue(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,43L))
     }
 
+    @Test fun terminalFrameDoesNotNeedAnimatorEndAndCannotBePremature() {
+        val p=StageConcurrentNativeTrialPolicy
+        assertFalse(p.terminalFrameDue(300,360,.98f,true,45))
+        assertFalse(p.terminalFrameDue(353,360,.999f,true,45))
+        assertFalse(p.terminalFrameDue(354,360,.999f,true,2))
+        assertTrue(p.terminalFrameDue(354,360,.999f,true,45))
+        assertTrue(p.terminalFrameDue(360,360,.9f,false,0))
+        assertTrue(p.terminalFrameDue(359,360,1f,false,0))
+        assertFalse(p.terminalFrameDue(0,0,1f,true,45))
+    }
+
+    @Test fun terminalDeadlineIsOneShotAndBoundedAcrossAnimatorScales() {
+        val p=StageConcurrentNativeTrialPolicy
+        assertEquals(424L,p.terminalDeadlineDelay(360,1f))
+        assertEquals(244L,p.terminalDeadlineDelay(360,.5f))
+        assertEquals(784L,p.terminalDeadlineDelay(360,2f))
+        assertEquals(64L,p.terminalDeadlineDelay(360,0f))
+        assertEquals(1500L,p.terminalDeadlineDelay(380,10f))
+        assertEquals(424L,p.terminalDeadlineDelay(360,Float.NaN))
+    }
+
     @Test fun acknowledgedMoveNeverDependsOnAViewOrMissingAnimatorEndForever() {
         val p=StageConcurrentNativeTrialPolicy
         assertEquals(StageConcurrentNativeTrialPolicy.HandoffAction.WAIT,
