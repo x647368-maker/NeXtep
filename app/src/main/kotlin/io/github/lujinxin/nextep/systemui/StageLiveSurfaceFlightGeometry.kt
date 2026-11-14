@@ -141,12 +141,14 @@ internal object StageLiveSurfaceFlightGeometry {
         smallCropWidth:Int,smallCropHeight:Int,
         otherSlots:List<Box>,
         sampleCount:Int=24,
+        mainCropWidth:Int=main.width.toInt(),
+        mainCropHeight:Int=main.height.toInt(),
     ):Boolean {
         if(!small.valid() || !main.valid() || sampleCount<4 || sampleCount>240 ||
             otherSlots.any { !it.valid() }) return false
         val initialUp=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,0f)
             ?: return false
-        val initialDown=railCorridorFlight(main,small,main.width.toInt(),main.height.toInt(),0f)
+        val initialDown=railCorridorFlight(main,small,mainCropWidth,mainCropHeight,0f)
             ?: return false
         // ColorOS can place the main ViewRoot slightly UNDER the rail by
         // design. That pre-existing 1-20px edge intersection is not new
@@ -159,7 +161,7 @@ internal object StageLiveSurfaceFlightGeometry {
             val progress=i.toFloat()/sampleCount
             val up=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,progress)
                 ?: return false
-            val down=railCorridorFlight(main,small,main.width.toInt(),main.height.toInt(),progress)
+            val down=railCorridorFlight(main,small,mainCropWidth,mainCropHeight,progress)
                 ?: return false
             if(otherSlots.indices.any { index ->
                 intersectionArea(up.box,otherSlots[index]) > baseline[index].first + 1f ||
@@ -172,6 +174,25 @@ internal object StageLiveSurfaceFlightGeometry {
     data class Crop(val left:Int,val top:Int,val right:Int,val bottom:Int) {
         fun toAndroidRect() = android.graphics.Rect(left,top,right,bottom)
     }
+    /**
+     * AOSP detached_mirror strips the source root's local transform. Legacy
+     * mirrors retain it. Select the crop in the matching mirror-root space.
+     * The OUTER crop must use precisely the coordinates used by placement.
+     */
+    fun mainMirrorCrop(visible:Box, screenWidth:Int, screenHeight:Int,
+                       detachedRoot:Boolean):Crop? {
+        if (!visible.valid() || screenWidth<2 || screenHeight<2 ||
+            visible.left<0f || visible.top<0f ||
+            visible.right>screenWidth || visible.bottom>screenHeight) return null
+        return if(detachedRoot) Crop(0,0,screenWidth,screenHeight)
+        else Crop(visible.left.toInt(),visible.top.toInt(),visible.right.toInt(),visible.bottom.toInt())
+    }
+
+    data class Translation(val x:Float,val y:Float)
+    fun mirrorTranslation(placement:Placement,crop:Crop):Translation =
+        Translation(placement.x-crop.left*placement.scale,
+                    placement.y-crop.top*placement.scale)
+
     fun localCrop(frame: Box, rootLeft: Int, rootTop: Int, rootWidth: Int,
                   rootHeight: Int): Crop? {
         if (!frame.valid() || rootWidth < 2 || rootHeight < 2) return null
