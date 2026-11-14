@@ -74,6 +74,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var handoffStarted=false
         private var visualOwned=false
         private var view:FlightView?=null
+        private var motionCommit:Runnable?=null
+        private var motionDeadline:Runnable?=null
         private var terminalCommit:Runnable?=null
         private var terminalTimeout:Runnable?=null
         private val handoff=StageStableHandoff()
@@ -176,10 +178,40 @@ internal class StageTransientTapSwap(private val context:Context) {
                 if(current())awaitTerminalFrame(v)
             }
             trace("snapshot_motion_backend="+backend)
-            // Do not start Binder work on the same stack that arms the motion.
-            // The first moving frame gets a traversal opportunity; migration
-            // still overlaps the 300ms visual flight.
-            v.postOnAnimation { if(current())requestMove() }
+            // RenderThread needs a submitted animation frame BEFORE the
+            // coordinator starts its synchronous Binder work on SystemUI.
+            // One shot, bounded by 48ms; never a second task move.
+            armMoveAfterMotionSubmission(v)
+        }
+        private fun armMoveAfterMotionSubmission(v:FlightView){
+            val callback=Runnable {
+                ui.post {
+                    if(current() && !moveStarted){
+                        clearMotionCallbacks()
+                        trace("snapshot_motion_commit")
+                        requestMove()
+                    }
+                }
+            }
+            val deadline=Runnable{
+                if(current() && !moveStarted){
+                    clearMotionCallbacks()
+                    trace("snapshot_motion_commit_deadline")
+                    requestMove()
+                }
+            }
+            motionCommit=callback;motionDeadline=deadline
+            ui.postDelayed(deadline,48L)
+            runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}
+                .onFailure{trace("snapshot_motion_callback_unavailable")}
+            v.invalidate()
+        }
+        private fun clearMotionCallbacks(){
+            motionCommit?.let{cb->
+                runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
+            }
+            motionDeadline?.let{ui.removeCallbacks(it)}
+            motionCommit=null;motionDeadline=null
         }
         private fun awaitTerminalFrame(v:FlightView){
             if(!current() || terminalCommit!=null || flightDone)return
@@ -245,6 +277,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             checkHandoff.run()
         }
         private fun removeVisual(){
+            clearMotionCallbacks()
             clearTerminalCallbacks()
             view?.stopMotion()
             if(visualOwned){visualOwned=false;runCatching(onVisualEnd)}
@@ -314,8 +347,8 @@ internal class StageTransientTapSwap(private val context:Context) {
             clipChildren=false;clipToPadding=false
             // Incoming remains below the shrinking outgoing card where paths
             // cross; the opposing arcs expose both without hiding other slots.
-            addView(upView,LayoutParams(incoming.width,incoming.height))
-            addView(downView,LayoutParams(outgoing.width,outgoing.height))
+            addView(upView,LayoutParams(incoming.width,incoming.height,android.view.Gravity.TOP or android.view.Gravity.LEFT))
+            addView(downView,LayoutParams(outgoing.width,outgoing.height,android.view.Gravity.TOP or android.view.Gravity.LEFT))
             progress=0f
         }
         override fun onDraw(canvas:Canvas){
@@ -389,7 +422,7 @@ internal class StageTransientTapSwap(private val context:Context) {
                 true
             }.getOrElse{
                 stopMotion()
-                trace("snapshot_rt_unavailable")
+                trace("snapshot_rt_unavailable:"+it.javaClass.simpleName)
                 progress=0f
                 false
             }
