@@ -35,6 +35,24 @@ class StageSwapTraceBufferTest {
         assertTrue(report.contains("#2 tap_swap begin@0ms"))
     }
 
+    @Test fun lateNativeCallbackCannotBeMisattributedToNextTap() {
+        var time=0L
+        val recorder=StageSwapTraceBuffer({ time })
+        val first=recorder.begin("tap_swap")
+        assertTrue(recorder.event("gpu_begin",first))
+        time+=10
+        val second=recorder.begin("tap_swap")
+        assertFalse(recorder.event("late_surface_commit",first))
+        recorder.finish("late_wrong_finish",first)
+        assertTrue(recorder.event("gpu_begin",second))
+        recorder.finish("ok",second)
+        val traces=recorder.describe()
+        assertFalse(traces.contains("late_surface_commit"))
+        assertFalse(traces.contains("late_wrong_finish"))
+        assertTrue(traces.contains("end:superseded"))
+        assertTrue(traces.contains("end:ok"))
+    }
+
     @Test fun boundsEventNamesAndCapsTheirNumber() {
         var time = 0L
         val recorder = StageSwapTraceBuffer({ time }, maxRecords=2, maxEvents=4)
