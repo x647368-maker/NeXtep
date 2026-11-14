@@ -70,6 +70,7 @@ class SlotTaskCoordinator(
     private val handler = Handler(Looper.getMainLooper())
     private val slotRecords = MutableList(slots.size) { SlotRecord() }
     private val exchangeHandler = Handler(Looper.getMainLooper())
+    private val exchangeBinderLane = StageExchangeBinderLane { action -> exchangeHandler.post(action) }
     private var exchangeSession: ExchangeSession<TaskLayout>? = null
     private data class ConfirmedOutput(val generation: Int, val slot: Int, val task: Int,
                                        val mark: VirtualDisplaySlot.OutputFrameMark)
@@ -2714,17 +2715,13 @@ class SlotTaskCoordinator(
                         canvas.densityDpi)
                 }
             }
-            try {
-                StageExchangeTelemetry.measure("display_binder") {
-                    ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
-                }
-            } catch (error: Throwable) {
-                TaskSurfaceCompat.cancelDisplayExchange(taskId)
-                throw error
-            }
-            StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_done")
-            val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-            fun observe() {
+            // Keep the existing reservation and all UI-owned state on this
+            // Looper. Only the blocking system IPC moves to the single-flight
+            // worker. Its actual response re-enters the old observation path.
+            fun afterBinder() {
+                StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_done")
+                val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
+                fun observe() {
                 val result = runCatching {
                     // findTask already reads the full running task list. Keep
                     // the same single observation but reuse its foreground proof
@@ -2751,7 +2748,27 @@ class SlotTaskCoordinator(
                 }
                 result.exceptionOrNull()?.let { done(Result.failure(it)) }
             }
-            observe()
+                observe()
+            }
+            val accepted=exchangeBinderLane.submit(
+                call={
+                    ActivityTaskManagerCompat.moveTaskToDisplay(taskId, displayId).getOrThrow()
+                },
+                complete={ result ->
+                    // Never synthesize success or release the reservation while
+                    // an already submitted system mutation is still running.
+                    val error=result.exceptionOrNull()
+                    if(error!=null){
+                        TaskSurfaceCompat.cancelDisplayExchange(taskId)
+                        done(Result.failure(error))
+                    } else runCatching{afterBinder()}.onFailure{done(Result.failure(it))}
+                },
+            )
+            if(!accepted){
+                TaskSurfaceCompat.cancelDisplayExchange(taskId)
+                error("Serialized exchange Binder lane unexpectedly busy")
+            }
+            StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_worker")
         }
         started.exceptionOrNull()?.let { done(Result.failure(it)) }
     }
