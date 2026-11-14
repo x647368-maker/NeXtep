@@ -60,7 +60,9 @@ internal class StageSwapTraceBuffer(
             attempt.events.removeAt(attempt.events.lastIndex)
         eventLocked("end:${result.take(40)}")
         val report = "#${attempt.id} ${attempt.operation} " + attempt.events.joinToString(" > ")
-        completed.addLast(report.take(1000))
+        // The event count and individual event length already bound this record.
+        // Do not cut at 1000 characters: that can erase the final failure reason.
+        completed.addLast(report)
         while (completed.size > maxRecords.coerceAtLeast(1)) completed.removeFirst()
         active = null
     }
