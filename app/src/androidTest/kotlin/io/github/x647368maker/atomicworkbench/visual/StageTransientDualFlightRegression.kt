@@ -73,6 +73,23 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
                 check(similar(pixel(shot,main.centerX(),main.centerY()),green))
                 check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
             }
+            // Run the production renderer's real animated path as well as
+            // deterministic position samples. No screenshot is used as a
+            // task migration acknowledgment; only renderer pixels are tested.
+            val done=java.util.concurrent.CountDownLatch(1)
+            var backend=""
+            instrumentation.runOnMainSync {
+                flight.progress=0f
+                backend=flight.startMotion(360L,{}){done.countDown()}
+            }
+            check(backend=="render_thread" || backend=="ui_transform")
+            check(done.await(3,java.util.concurrent.TimeUnit.SECONDS)){"Actual flight never ended"}
+            frame(1f){shot->
+                check(similar(pixel(shot,small.centerX(),small.centerY()),orange))
+                check(similar(pixel(shot,main.centerX(),main.centerY()),green))
+                check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
+            }
+            android.util.Log.i("StageTransientFlight","motion backend="+backend)
         } finally {
             instrumentation.runOnMainSync {host.removeView(flight)}
             instrumentation.waitForIdleSync()
