@@ -1,3 +1,7 @@
+台前调度 v0.9.66-dev（versionCode 81）｜布局事务 Binder 隔离专项候选
+
+在 v80 前台调用隔离基础上，将正常双任务异步交换中两处原有 WindowOrganizer.applyTransaction 布局提交移至同一单飞 Binder lane；仅移动系统 IPC，不改变 WCT 内容、顺序、尺寸、DPI、模式、Surface 写入、原有同步回滚或其他入口。提交前及真实返回后在 owner 检查会话 generation、active、suspended、几何与相关显示器身份；布局观察另外要求任务 token、userId、displayId 一致，取消或身份变化走原回滚，不抢先释放任务。仍需真实返回和原观察匹配才继续。不新增常驻线程、系统调用次数、轮询频率或截图次数。v80 的 HWUI 最新查询尚未返回，v81 为叠加隔离候选；必须分别核验完整 CI 与真机，不宣称实际提速、不改 main、不公开发布。
+
 台前调度 v0.9.65-dev（versionCode 80）｜前台切换 Binder 隔离专项私测
 
 v79 已通过构建、API101、Android15 HWUI、API37 双镜像回归。读取 v79 真测试产物：同四个 AOSP 任务、每批128次解码、8轮交替对照，原始反射中位19.622ms、元数据缓存候选26.305ms；不引入已证明在该环境更慢的缓存。真实框架16次 display move 验证任务身份及新缓冲，但该探针并非 ColorOS 生产交换路径，不作为手机性能数据。正式 promoteAsync 的 moveTaskToFront 仍为同步主线程调用；本次仅将该真实 IPC 交给原有单飞串行 Binder lane。仍等待真实结果，返回 owner Looper 后重新检查 generation/active/suspended，再允许 demote；失败/取消保持旧会话及回滚，不重复迁移、不新增线程或轮询。保留原同步回滚及其他调用、300ms、布局、首末帧恢复与真实缓冲门槛。新增串行前台 IPC 阻塞时取消及错误回退测试、精确冻结审计。预计降低主线程被 IPC 阻塞风险，不宣称缩短总耗时、降低实测温度或已通过 ColorOS 真机。不修改 main，不公开发布。

@@ -1744,7 +1744,8 @@ class SlotTaskCoordinator(
                         }.exceptionOrNull()
                         if (stale != null) { done(stale); return@moveTaskToDisplayNonBlocking }
                         restoreTaskLayoutNonBlocking(slotTask, slotLayout, restoreResizeMode = false,
-                            observed=observed) { layoutError ->
+                            observed=observed, stillCurrent={token==transitionGeneration && active && !suspended &&
+                                geometryProvider()==exchangeGeometry}) { layoutError ->
                             if (layoutError != null) { done(layoutError); return@restoreTaskLayoutNonBlocking }
                             // This is a real synchronous ATM mutation too. Do not
                             // block the owner Looper while it waits for the reply.
@@ -1800,7 +1801,10 @@ class SlotTaskCoordinator(
                             mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
                         }.exceptionOrNull()
                         if (preliminary != null) { done(preliminary); return@moveTaskToDisplayNonBlocking }
-                        ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout, observed=observed) { layoutError ->
+                        ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout, observed=observed,
+                            stillCurrent={token==transitionGeneration && active && !suspended &&
+                                geometryProvider()==exchangeGeometry &&
+                                slots[slotIndex].displayId()==occupied.displayId}) { layoutError ->
                             if (layoutError != null) { done(layoutError); return@ensureSlotLayoutNonBlocking }
                             done(runCatching {
                                 check(token == transitionGeneration && active && !suspended)
@@ -2578,15 +2582,46 @@ class SlotTaskCoordinator(
      * ExchangeSession, which retains generation checks and verified rollback.
      * Other moves retain the existing synchronous semantics.
      */
+    /** Submit only the authorized layout IPC on the existing exchange lane.
+     * The owner retains its reservation until the real reply, even on lock/cancel.
+     * All View, geometry, session and ownership checks remain on the owner Looper.
+     */
+    private fun submitExchangeLayout(
+        token: Any, bounds: Rect, densityDpi: Int, windowingMode: Int,
+        stillCurrent: () -> Boolean, done: (Throwable?) -> Unit,
+    ) {
+        check(stillCurrent()) {"Stale exchange before layout submission"}
+        val target=Rect(bounds)
+        val accepted=exchangeBinderLane.submit(
+            call={WindowContainerTransactionCompat.applyTaskLayout(
+                token, target, densityDpi, windowingMode).getOrThrow()},
+            complete={result->
+                val error=runCatching {
+                    result.getOrThrow()
+                    check(stillCurrent()) {"Stale exchange after layout submission"}
+                }.exceptionOrNull()
+                done(error)
+            },
+        )
+        if(!accepted)done(IllegalStateException("Serialized exchange layout Binder lane unexpectedly busy"))
+    }
+
     /** On the active two-task exchange only, observe the layout without a main-thread sleep. */
     private fun waitForTaskLayoutNonBlocking(
-        taskId: Int, bounds: Rect, densityDpi: Int, windowingMode: Int,
+        expected: TaskRepository.TaskSnapshot, bounds: Rect, densityDpi: Int, windowingMode: Int,
+        stillCurrent: () -> Boolean,
         done: (Throwable?) -> Unit,
     ) {
+        val taskId=expected.taskId
         val deadline = SystemClock.uptimeMillis() + TASK_LAYOUT_TIMEOUT_MS
         fun observe() {
             val result = runCatching {
+                check(stillCurrent()) {"Stale exchange during layout observation"}
                 val snapshot = taskRepository.findTask(taskId)
+                if(snapshot!=null)check(snapshot.token==expected.token &&
+                    snapshot.userId==expected.userId && snapshot.displayId==expected.displayId) {
+                    "Exchange task identity or display changed during layout observation"
+                }
                 val matches = snapshot != null &&
                     snapshot.bounds == bounds && snapshot.densityDpi == densityDpi &&
                     snapshot.windowingMode == windowingMode
@@ -2613,12 +2648,17 @@ class SlotTaskCoordinator(
         layout: TaskLayout,
         restoreResizeMode: Boolean = true,
         observed: TaskRepository.TaskSnapshot? = null,
+        stillCurrent: () -> Boolean,
         done: (Throwable?) -> Unit,
     ) {
         val started = runCatching {
+            check(stillCurrent())
             val token = task.token ?: error("Task ${task.taskId} has no restore token")
             val current = observed ?: taskRepository.findTask(task.taskId)
-            val mainFullscreen = current?.displayId == Display.DEFAULT_DISPLAY &&
+                ?: error("Task ${task.taskId} exited before restore layout")
+            check(current.taskId==task.taskId && current.token==task.token &&
+                current.userId==task.userId && current.displayId==Display.DEFAULT_DISPLAY)
+            val mainFullscreen = current.displayId == Display.DEFAULT_DISPLAY &&
                 layout.windowingMode == fullscreenWindowingMode()
             val expectedBounds = if (mainFullscreen) geometryProvider().let {
                 Rect(0, 0, it.screenWidth, it.screenHeight)
@@ -2631,22 +2671,21 @@ class SlotTaskCoordinator(
                     StageExchangeTelemetry.phasedEvent("restore_layout_complete")
                 }.exceptionOrNull())
             }
-            if (mainFullscreen && current?.bounds == expectedBounds &&
+            if (mainFullscreen && current.bounds == expectedBounds &&
                 current.densityDpi == layout.densityDpi &&
                 current.windowingMode == layout.windowingMode
             ) {
                 finish()
             } else {
-                WindowContainerTransactionCompat.applyTaskLayout(
-                    token = token,
-                    bounds = if (mainFullscreen) Rect() else layout.bounds,
-                    densityDpi = layout.densityDpi,
-                    windowingMode = layout.windowingMode,
-                ).getOrThrow()
-                StageExchangeTelemetry.phasedEvent("restore_layout_submitted")
-                waitForTaskLayoutNonBlocking(task.taskId, expectedBounds,
-                    layout.densityDpi, layout.windowingMode) { error ->
-                    if (error != null) done(error) else finish()
+                StageExchangeTelemetry.phasedEvent("restore_layout_worker")
+                submitExchangeLayout(token,if(mainFullscreen)Rect() else layout.bounds,
+                    layout.densityDpi,layout.windowingMode,stillCurrent){ failure->
+                    if(failure!=null){done(failure);return@submitExchangeLayout}
+                    StageExchangeTelemetry.phasedEvent("restore_layout_submitted")
+                    waitForTaskLayoutNonBlocking(current, expectedBounds,
+                        layout.densityDpi, layout.windowingMode,stillCurrent) { error ->
+                        if (error != null) done(error) else finish()
+                    }
                 }
             }
         }
@@ -2658,9 +2697,11 @@ class SlotTaskCoordinator(
         slotIndex: Int, task: TaskRepository.TaskSnapshot,
         originalLayout: TaskLayout? = null,
         observed: TaskRepository.TaskSnapshot? = null,
+        stillCurrent: () -> Boolean,
         done: (Throwable?) -> Unit,
     ) {
         val started = runCatching {
+            check(stillCurrent())
             val slotGeometry = slots[slotIndex].geometry()
                 ?: error("Slot $slotIndex geometry is unavailable")
             val fullscreenMode = fullscreenWindowingMode()
@@ -2696,15 +2737,15 @@ class SlotTaskCoordinator(
             }
             if (layoutMismatch) {
                 val token = current.token ?: error("Task ${task.taskId} has no slot layout token")
-                WindowContainerTransactionCompat.applyTaskLayout(
-                    token = token, bounds = Rect(),
-                    densityDpi = slotGeometry.densityDpi,
-                    windowingMode = fullscreenMode,
-                ).getOrThrow()
-                StageExchangeTelemetry.phasedEvent("slot_layout_submitted")
-                waitForTaskLayoutNonBlocking(task.taskId, targetBounds,
-                    slotGeometry.densityDpi, fullscreenMode) { error ->
-                    if (error != null) done(error) else finish()
+                StageExchangeTelemetry.phasedEvent("slot_layout_worker")
+                submitExchangeLayout(token,Rect(),slotGeometry.densityDpi,
+                    fullscreenMode,stillCurrent){ failure->
+                    if(failure!=null){done(failure);return@submitExchangeLayout}
+                    StageExchangeTelemetry.phasedEvent("slot_layout_submitted")
+                    waitForTaskLayoutNonBlocking(current, targetBounds,
+                        slotGeometry.densityDpi, fullscreenMode,stillCurrent) { error ->
+                        if (error != null) done(error) else finish()
+                    }
                 }
             } else finish()
         }

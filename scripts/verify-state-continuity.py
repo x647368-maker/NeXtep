@@ -17,7 +17,35 @@ pr87_smooth_review=json.loads((root/'scripts/reviewed-pr87-smooth-synchronized-m
 pr88_review=json.loads((root/'scripts/reviewed-pr88-first-frame-recovery-0.9.64.json').read_text())['files']
 # PR89: only the already authorized foreground Binder call moves to the same lane.
 pr89_review=json.loads((root/'scripts/reviewed-pr89-foreground-binder-0.9.65.json').read_text())['files']
+# PR90 confines layout submission to the existing lane and retains owner validation.
+pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').read_text())['files']
+def undo_pr90(path,data):
+ if path not in pr90_review:return data
+ spec=pr90_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr90_review:
+ undo_pr90(reviewed_path,(root/reviewed_path).read_bytes())
+_pr90=(k/'display/SlotTaskCoordinator.kt').read_text()
+_pr90_submit=_pr90.split('private fun submitExchangeLayout(',1)[1].split('private fun waitForTaskLayoutNonBlocking(',1)[0]
+assert 'exchangeBinderLane.submit(' in _pr90_submit
+assert 'call={WindowContainerTransactionCompat.applyTaskLayout(' in _pr90_submit
+assert 'val target=Rect(bounds)' in _pr90_submit
+assert _pr90_submit.count('check(stillCurrent())')==2
+_pr90_layout=_pr90.split('private fun waitForTaskLayoutNonBlocking(',1)[1].split('private fun moveTaskToDisplayNonBlocking(',1)[0]
+assert 'snapshot.token==expected.token' in _pr90_layout
+assert 'snapshot.userId==expected.userId && snapshot.displayId==expected.displayId' in _pr90_layout
+assert 'check(stillCurrent())' in _pr90_layout
+assert _pr90_layout.count('submitExchangeLayout(token,')==2
+assert 'WindowContainerTransactionCompat.applyTaskLayout(' not in _pr90_layout
 def undo_pr89(path,data):
+ data=undo_pr90(path,data)
  if path not in pr89_review:return data
  spec=pr89_review[path]
  source=data.decode('utf-8')
