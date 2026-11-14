@@ -119,6 +119,15 @@ internal object StageConcurrentNativeTrialPolicy {
     fun freshFrameAfterTaskAck(frameAtAck:Long?, currentFrame:Long):Boolean =
         frameAtAck != null && currentFrame > frameAtAck
 
+    // The ownership checkpoint is after verified destination layout. A strict
+    // output identity and a newer callback are necessary, not pixel proof.
+    fun freshFrameOnConfirmedOutput(
+        baseline: io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot.OutputFrameMark?,
+        current: io.github.x647368maker.atomicworkbench.display.VirtualDisplaySlot.OutputFrameMark?,
+    ):Boolean = baseline != null && current != null &&
+        baseline.displayId==current.displayId && baseline.texture === current.texture &&
+        baseline.surface === current.surface && current.sequence>baseline.sequence
+
     // Only used during an active real swap after ownership has been verified.
     // An absent animator-end or detached View must not strand the handoff.
     enum class HandoffAction { WAIT, READY, EXPIRED }
