@@ -54,7 +54,7 @@ internal object StageConcurrentNativeTrialPolicy {
         // is recoverable; a second consecutive miss or severe stall locks out.
         if (consecutiveSlowPreparations>=2 || ms>=SEVERE_PREP_MS) {
             disabled=true
-            disabledReason="prepare_timeout_${ms}ms_streak$"+"{consecutiveSlowPreparations}"
+            disabledReason="prepare_timeout_${ms}ms_streak${consecutiveSlowPreparations}"
         }
         return false
     }
