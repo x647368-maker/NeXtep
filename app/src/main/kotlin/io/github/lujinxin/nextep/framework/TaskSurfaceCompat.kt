@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.view.Display
 import android.view.animation.DecelerateInterpolator
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import io.github.x647368maker.atomicworkbench.display.TaskContinuityPolicy
 import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceGeometry
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceNavigationInsets
@@ -64,7 +65,8 @@ object TaskSurfaceCompat {
     private var activityManager: ActivityManager? = null
     private val activePresentations = ConcurrentHashMap<Int, ActivePresentation>()
     private val preparedPresentations = ConcurrentHashMap<Int, ActivePresentation>()
-    private data class SlotSurface(val displayId: Int, val leash: Any, val crop: Rect) {
+    private data class SlotSurface(val displayId: Int, val leash: Any, val crop: Rect,
+                                   val verifiedExchangeTicket: Long? = null) {
         var lastAppliedAt = 0L
     }
     private val slotSurfaces = ConcurrentHashMap<Int, SlotSurface>()
@@ -132,13 +134,16 @@ object TaskSurfaceCompat {
         require(displayId != Display.DEFAULT_DISPLAY)
         // Do not overwrite the outgoing display-0 snapshot before Shell's
         // reparent. WM owns the move/finish; steady slot fitting runs afterwards.
-        if (isDisplayExchanging(taskId)) return@runCatching
+        if (!mayFitSlot(taskId,displayId,slotSurfaces[taskId]?.verifiedExchangeTicket)) return@runCatching
         val observed = observedStates[taskId]
         val cached = slotSurfaces[taskId]?.takeIf {
             it.displayId == displayId && it.crop == crop && observed?.displayId == displayId &&
                 observedLeashes[taskId] === it.leash && isValid(it.leash)
         }
         val slot = cached ?: run {
+            // A cache miss during a reserved transfer needs fresh destination
+            // verification, not a steady-path lookup of a potentially stale leash.
+            if (isDisplayExchanging(taskId)) return@runCatching
             val state = findLiveTaskState(taskId) ?: return@runCatching
             if (state.displayId != displayId || state.vendorWindowed ||
                 state.windowingMode != WINDOWING_MODE_FULLSCREEN
@@ -147,8 +152,55 @@ object TaskSurfaceCompat {
             if (!isValid(leash)) return@runCatching
             SlotSurface(displayId, leash, Rect(crop)).also { slotSurfaces[taskId] = it }
         }
+        applySlotFrame(slot)
+    }.onFailure { NeXtepLog.warn("slot_surface", "Unable to restore slot coordinates taskId=$taskId", it) }
+
+    private fun mayFitSlot(taskId: Int, displayId: Int, verifiedTicket: Long?): Boolean =
+        TaskContinuityPolicy.mayFitSlotDuringExchange(
+            isDisplayExchanging(taskId),exchangeDisplays[taskId],displayId,
+            displayExchanges[taskId],verifiedTicket)
+
+    /** Only invoked after coordinator-confirmed destination layout. Keep the
+     * migration reservation, but correct the new slot leash before revealing
+     * it. Never authorize a stale display-0 leash or a different task token.
+     * An unavailable OEM organizer record is a deferred fit, not migration failure.
+     */
+    internal fun fitVerifiedExchangeSlot(taskId: Int, displayId: Int, crop: Rect,
+                                         expectedBounds: Rect, expectedToken: Any?): Boolean {
+        val ticket=displayExchanges[taskId] ?: return false
+        if (expectedToken==null || crop.width()<2 || crop.height()<2 ||
+            !isDisplayExchanging(taskId) || exchangeDisplays[taskId]!=displayId ||
+            displayId==Display.DEFAULT_DISPLAY || activePresentations.containsKey(taskId)) return false
+        return runCatching {
+            val leash=findTaskLeash(taskId,requireMainDisplay=false,
+                requiredSlotDisplay=displayId,requiredSlotToken=expectedToken,
+                requiredSlotBounds=expectedBounds) ?: return@runCatching false
+            val state=observedStates[taskId] ?: return@runCatching false
+            if (!TaskContinuityPolicy.verifiedSlotDestination(displayId,state.displayId,
+                    state.windowingMode==WINDOWING_MODE_FULLSCREEN,state.vendorWindowed,
+                    state.token==expectedToken,state.bounds==expectedBounds) ||
+                !isValid(leash) || observedLeashes[taskId] !== leash ||
+                displayExchanges[taskId]!=ticket || exchangeDisplays[taskId]!=displayId ||
+                !isDisplayExchanging(taskId) || activePresentations.containsKey(taskId))
+                return@runCatching false
+            val slot=SlotSurface(displayId,leash,Rect(crop),ticket)
+            slotSurfaces[taskId]=slot
+            try {
+                applySlotFrame(slot,force=true)
+            } catch (error: Throwable) {
+                slotSurfaces.remove(taskId,slot)
+                throw error
+            }
+            true
+        }.getOrElse {
+            NeXtepLog.warn("slot_surface","Verified destination fit deferred",it)
+            false
+        }
+    }
+
+    private fun applySlotFrame(slot: SlotSurface, force: Boolean = false) {
         val now = SystemClock.uptimeMillis()
-        if (now - slot.lastAppliedAt < STEADY_REAPPLY_INTERVAL_MS) return@runCatching
+        if (!force && now - slot.lastAppliedAt < STEADY_REAPPLY_INTERVAL_MS) return
         val loader = checkNotNull(hostClassLoader)
         val transaction = loader.loadClass("android.view.SurfaceControl\$Transaction")
             .getDeclaredConstructor().newInstance()
@@ -161,7 +213,7 @@ object TaskSurfaceCompat {
                 invokeOptional(transaction, "close")
             }
         }
-    }.onFailure { NeXtepLog.warn("slot_surface", "Unable to restore slot coordinates taskId=$taskId", it) }
+    }
 
     /** Reserve fitting before a display move, without touching the small-window surface. */
     fun preparePromotion(taskId: Int, geometry: WorkspaceGeometry): Result<Unit> = runCatching {
@@ -781,7 +833,7 @@ object TaskSurfaceCompat {
             if (slotSurfaces[taskId] != slot || state.displayId != slot.displayId ||
                 state.vendorWindowed || state.windowingMode != WINDOWING_MODE_FULLSCREEN ||
                 observedLeashes[taskId] !== slot.leash || !isValid(slot.leash) ||
-                isDisplayExchanging(taskId)
+                !mayFitSlot(taskId,slot.displayId,slot.verifiedExchangeTicket)
             ) return@forEach
             // A queued Shell finish may still contain the former main transform.
             // Preserve its visibility/layer writes, but commit local slot coordinates.
@@ -829,7 +881,9 @@ object TaskSurfaceCompat {
         }
     }
 
-    private fun findTaskLeash(taskId: Int, requireMainDisplay: Boolean = true, allowHomeRoot: Boolean = false): Any? = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("leash_lookup") { runCatching {
+    private fun findTaskLeash(taskId: Int, requireMainDisplay: Boolean = true, allowHomeRoot: Boolean = false,
+                              requiredSlotDisplay: Int? = null, requiredSlotToken: Any? = null,
+                              requiredSlotBounds: Rect? = null): Any? = io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("leash_lookup") { runCatching {
         val loader = hostClassLoader ?: error("SystemUI host class loader is unavailable")
         val factoryClass = loader.loadClass(SYSTEM_UI_FACTORY)
         val initializer = findField(factoryClass, INITIALIZER_FIELD).get(null)
@@ -864,6 +918,17 @@ object TaskSurfaceCompat {
             ) {
                 return@runCatching null
             }
+        }
+        if (requiredSlotDisplay != null) {
+            val info=invokeRequired(appearedInfo,"getTaskInfo") as? ActivityManager.RunningTaskInfo
+                ?: return@runCatching null
+            val state=TaskInfoCompat.readWindowState(info) ?: return@runCatching null
+            if (info.taskId!=taskId || requiredSlotToken==null || requiredSlotBounds==null ||
+                !TaskContinuityPolicy.verifiedSlotDestination(requiredSlotDisplay,state.displayId,
+                    state.windowingMode==WINDOWING_MODE_FULLSCREEN,state.vendorWindowed,
+                    state.token==requiredSlotToken,state.bounds==requiredSlotBounds))
+                return@runCatching null
+            observeTaskState(taskId,state)
         }
         val leash = invokeRequired(appearedInfo, "getLeash")
             ?: error("Task $taskId leash is null")
