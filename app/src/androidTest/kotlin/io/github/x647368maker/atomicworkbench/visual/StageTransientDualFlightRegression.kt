@@ -57,16 +57,20 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
                 check(similar(pixel(shot,main.centerX(),main.centerY()),orange))
                 check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
             }
-            frame(.45f){shot->
-                var up=0;var down=0
-                for(y in small.top until main.bottom step 12)
-                    for(x in small.left until main.right step 12){
-                        val c=pixel(shot,x,y)
-                        if(similar(c,green))up++
-                        if(similar(c,orange))down++
-                    }
-                check(up>3 && down>3){"Both task cards must remain visible mid-flight: $up/$down"}
-                check(similar(pixel(shot,other.centerX(),other.centerY()),purple))
+            for(p in listOf(.33f,.42f,.50f,.58f,.67f)){
+                frame(p){shot->
+                    var up=0;var down=0
+                    for(y in 0 until host.height step 8)
+                        for(x in 0 until host.width step 8){
+                            val c=pixel(shot,x,y)
+                            if(similar(c,green))up++
+                            if(similar(c,orange))down++
+                        }
+                    check(up>3 && down>3){"Both task cards must remain visible at $p: $up/$down"}
+                    for(y in other.top+2 until other.bottom-2 step 8)
+                        for(x in other.left+2 until other.right-2 step 8)
+                            check(similar(pixel(shot,x,y),purple)){"Protected rail changed at $p"}
+                }
             }
             frame(1f){shot->
                 check(similar(pixel(shot,small.centerX(),small.centerY()),orange))
