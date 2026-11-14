@@ -39,17 +39,35 @@ internal object StageExchangeTelemetry {
         phasedStartedAt=0L
         phasedSegments.setLength(0)
     }
-    // Single bounded in-memory route trail; no per-frame writes, file I/O,
-    // background polling, network reports, or screenshots.
+    // Last five bounded, in-memory exchange trails. Never sample app pixels,
+    // read input text, poll in the background, upload data or write to disk.
+    // Main SystemUI Looper only; new route archives the previous route.
     private val nativeTapId=AtomicLong()
+    private val previousNative=java.util.ArrayDeque<String>(4)
+    private var nativeStartedAt=0L
     @Volatile private var nativePath="尚无本次进程的窗口交换记录"
-    fun beginNativeTap() {
-        nativePath="#${nativeTapId.incrementAndGet()} ${StageRuntimeIdentity.BUILD} tap"
+    @Volatile private var nativeHistory=""
+    fun beginNativeTap(operation:String="tap_swap") {
+        if (nativePath.startsWith("#")) {
+            if (previousNative.size>=4) previousNative.removeFirst()
+            previousNative.addLast(nativePath)
+            nativeHistory=previousNative.joinToString("\n")
+        }
+        nativeStartedAt=SystemClock.uptimeMillis()
+        nativePath="#${nativeTapId.incrementAndGet()} ${StageRuntimeIdentity.BUILD} op=${operation.take(20)}"
     }
     fun nativeEvent(stage:String) {
-        nativePath=(nativePath+" -> "+stage.take(110)).takeLast(680)
+        val elapsed=(SystemClock.uptimeMillis()-nativeStartedAt).coerceAtLeast(0L)
+        val event=" -> ${stage.take(150)}@${elapsed}ms"
+        val next=nativePath+event
+        // Preserve first route ID/capability decision and last events even
+        // when the OEM emits a long sequence of transitions.
+        nativePath=if (next.length<=1800) next else
+            next.take(600)+" [middle omitted] "+next.takeLast(950)
     }
     fun nativeDescription():String=nativePath
+    fun nativeRecent():String=if(nativeHistory.isEmpty()) nativePath
+        else nativeHistory+"\n"+nativePath
     fun <T> phase(name:String,block:()->T):T = active.get()?.span(name,block) ?: block()
     fun <T> measure(name:String,block:()->T):T {
         val existing=active.get()
@@ -77,5 +95,5 @@ internal object StageExchangeTelemetry {
         handoff="#${serial.get()} 交接：${if(stable)"连续就绪" else "超时回退（不能当作 Surface 已稳定）"} ${elapsed}ms"
         runCatching { NeXtepLog.info("exchange_handoff","${StageRuntimeIdentity.BUILD} $handoff") }
     }
-    fun describe():String="测量代码：${StageRuntimeIdentity.BUILD}\n$completed\n$handoff\n异步任务交换：$phasedReport\n动画路径：$nativePath"
+    fun describe():String="测量代码：${StageRuntimeIdentity.BUILD}\n$completed\n$handoff\n异步任务交换：$phasedReport\n最近五次动画路径（仅时间与几何，不含屏幕内容）：\n${nativeRecent()}"
 }
