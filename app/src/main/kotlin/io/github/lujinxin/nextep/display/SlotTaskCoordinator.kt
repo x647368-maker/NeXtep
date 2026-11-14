@@ -1693,6 +1693,11 @@ class SlotTaskCoordinator(
         StageExchangeTelemetry.phasedEvent("snapshot_ready")
 
         var mutationStarted = false
+        fun forwardCurrent():Boolean =
+            token==transitionGeneration && active && !suspended &&
+                exchangeSession?.acceptsForwardWork==true &&
+                geometryProvider()==exchangeGeometry &&
+                slots[slotIndex].displayId()==occupied.displayId
         fun current(expected: TaskRepository.TaskSnapshot, tasks: List<TaskRepository.TaskSnapshot>): TaskRepository.TaskSnapshot {
             val task = tasks.firstOrNull { it.taskId == expected.taskId } ?: error("Exchange task disappeared")
             check(task.userId == expected.userId && task.token == expected.token) { "Exchange identity changed" }
@@ -1716,6 +1721,7 @@ class SlotTaskCoordinator(
                     val preliminary = runCatching {
                         StageExchangeTelemetry.phasedEvent("promote_start")
                         check(token == transitionGeneration && active && !suspended)
+                        check(forwardCurrent())
                         check(geometryProvider() == exchangeGeometry)
                         val before = taskRepository.runningTasks()
                         val checkedSlot=current(slotTask,before)
@@ -1737,15 +1743,14 @@ class SlotTaskCoordinator(
                     }.exceptionOrNull()
                     if (preliminary != null) { done(preliminary); return }
                     moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY,
-                        sameTurnSource=sameTurnSource) { result ->
+                        sameTurnSource=sameTurnSource, stillCurrent=::forwardCurrent) { result ->
                         val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val stale = runCatching {
                             check(token == transitionGeneration && active && !suspended)
                         }.exceptionOrNull()
                         if (stale != null) { done(stale); return@moveTaskToDisplayNonBlocking }
                         restoreTaskLayoutNonBlocking(slotTask, slotLayout, restoreResizeMode = false,
-                            observed=observed, stillCurrent={token==transitionGeneration && active && !suspended &&
-                                geometryProvider()==exchangeGeometry}) { layoutError ->
+                            observed=observed, stillCurrent=::forwardCurrent) { layoutError ->
                             if (layoutError != null) { done(layoutError); return@restoreTaskLayoutNonBlocking }
                             // This is a real synchronous ATM mutation too. Do not
                             // block the owner Looper while it waits for the reply.
@@ -1753,6 +1758,7 @@ class SlotTaskCoordinator(
                             // tasks until the same serialized lane actually returns.
                             val staleBeforeFront=runCatching {
                                 check(token == transitionGeneration && active && !suspended)
+                                check(forwardCurrent())
                             }.exceptionOrNull()
                             if(staleBeforeFront!=null){
                                 done(staleBeforeFront)
@@ -1765,6 +1771,7 @@ class SlotTaskCoordinator(
                                     done(runCatching {
                                         frontResult.getOrThrow()
                                         check(token == transitionGeneration && active && !suspended)
+                                        check(forwardCurrent())
                                         StageExchangeTelemetry.phasedEvent("promote_complete")
                                     }.exceptionOrNull())
                                 },
@@ -1782,6 +1789,7 @@ class SlotTaskCoordinator(
                         check(token == transitionGeneration && active && !suspended)
                         check(geometryProvider() == exchangeGeometry)
                         check(slots[slotIndex].displayId() == occupied.displayId)
+                        check(forwardCurrent())
                         val promoted = taskRepository.runningTasks()
                         check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)
                         val checkedMain=current(mainTask,promoted)
@@ -1794,7 +1802,8 @@ class SlotTaskCoordinator(
                     moveTaskToDisplayNonBlocking(mainTask, occupied.displayId,
                         sameTurnSource=sameTurnSource,
                         observedDemotionSlot=slotIndex,
-                        onObservedDestinationFront={observedFront=it}) { result ->
+                        onObservedDestinationFront={observedFront=it},
+                        stillCurrent=::forwardCurrent) { result ->
                         val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
                         val preliminary = runCatching {
                             check(token == transitionGeneration && active && !suspended)
@@ -1802,12 +1811,11 @@ class SlotTaskCoordinator(
                         }.exceptionOrNull()
                         if (preliminary != null) { done(preliminary); return@moveTaskToDisplayNonBlocking }
                         ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout, observed=observed,
-                            stillCurrent={token==transitionGeneration && active && !suspended &&
-                                geometryProvider()==exchangeGeometry &&
-                                slots[slotIndex].displayId()==occupied.displayId}) { layoutError ->
+                            stillCurrent=::forwardCurrent) { layoutError ->
                             if (layoutError != null) { done(layoutError); return@ensureSlotLayoutNonBlocking }
                             done(runCatching {
                                 check(token == transitionGeneration && active && !suspended)
+                                check(forwardCurrent())
                                 // Sample immediately after the exact verified foreground task's
                                 // existing target layout fit, BEFORE main presentation work.
                                 // A WCT/layout mismatch cannot opt into this checkpoint.
@@ -2757,6 +2765,7 @@ class SlotTaskCoordinator(
         sameTurnSource:TaskRepository.TaskSnapshot?=null,
         observedDemotionSlot: Int? = null,
         onObservedDestinationFront: ((TaskRepository.TaskSnapshot)->Unit)? = null,
+        stillCurrent: () -> Boolean,
         done: (Result<TaskRepository.TaskSnapshot>) -> Unit,
     ) {
         val taskId=expected.taskId
@@ -2766,6 +2775,7 @@ class SlotTaskCoordinator(
             }
         }
         val started = runCatching {
+            check(stillCurrent()) {"Stale exchange before display move"}
             // The two callers may pass only their just-validated immutable
             // snapshot from this same main-loop stack, without a yield or
             // intervening mutation. Never cache it across moves or callbacks.
@@ -2800,13 +2810,16 @@ class SlotTaskCoordinator(
             // worker. Its actual response re-enters the old observation path.
             fun afterBinder() {
                 StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_done")
+                check(stillCurrent()) {"Stale exchange after actual display Binder reply"}
                 val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
                 fun observe() {
                 val result = runCatching {
+                    check(stillCurrent()) {"Stale exchange during display observation"}
                     // findTask already reads the full running task list. Keep
                     // the same single observation but reuse its foreground proof
                     // for the optional early buffer checkpoint, not another query.
                     val running=taskRepository.runningTasks()
+                    check(stillCurrent()) {"Exchange expired during display observation"}
                     val current=running.firstOrNull{it.taskId==taskId}
                     if (current != null) checkIdentity(current)
                     if (current != null && current.displayId == displayId) {
