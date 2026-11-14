@@ -64,9 +64,17 @@ object TaskSurfaceCompat {
     private var activityManager: ActivityManager? = null
     private val activePresentations = ConcurrentHashMap<Int, ActivePresentation>()
     private val preparedPresentations = ConcurrentHashMap<Int, ActivePresentation>()
-    private data class SlotSurface(val displayId: Int, val leash: Any, val crop: Rect) {
+    private data class SlotSurface(val displayId: Int, val leash: Any, val crop: Rect,
+                                   val confirmedDemotion: PendingDemotedFit? = null) {
         var lastAppliedAt = 0L
     }
+    // Only a tapped, reserved demotion can opt in. The original owned main
+    // leash is retained as an identity, never looked up again in this path.
+    private data class PendingDemotedFit(
+        val displayId: Int, val token: Any, val leash: Any, val crop: Rect,
+        val densityDpi: Int, val reservation: Long,
+    )
+    private val pendingDemotedFits = ConcurrentHashMap<Int, PendingDemotedFit>()
     private val slotSurfaces = ConcurrentHashMap<Int, SlotSurface>()
     private val displayExchanges = ConcurrentHashMap<Int, Long>()
     private val exchangeDisplays = ConcurrentHashMap<Int, Int>()
@@ -104,20 +112,71 @@ object TaskSurfaceCompat {
     }
 
     fun observeTaskInfo(info: ActivityManager.RunningTaskInfo, leash: Any? = null) {
-        TaskInfoCompat.readWindowState(info)?.let { observeTaskState(info.taskId, it) }
+        val state=TaskInfoCompat.readWindowState(info)
+        state?.let { observeTaskState(info.taskId, it) }
         if (leash != null) observedLeashes[info.taskId] = leash
+        // Consume the existing Shell observation; never query ATM or the
+        // organizer from the callback or SurfaceControl commit hook.
+        if (state != null) observeDemotedFit(info.taskId,state)
+    }
+
+    internal fun prepareObservedDemotionFit(taskId: Int, displayId: Int,
+                                            token: Any?, crop: Rect, densityDpi: Int) {
+        if (token==null || displayId==Display.DEFAULT_DISPLAY || crop.left!=0 ||
+            crop.top!=0 || crop.width()<2 || crop.height()<2 || densityDpi<=0) return
+        val reservation=displayExchanges[taskId] ?: return
+        val p=activePresentations[taskId] ?: return
+        val state=observedStates[taskId] ?: return
+        if (!isDisplayExchanging(taskId) || exchangeDisplays[taskId]!=displayId ||
+            state.displayId!=Display.DEFAULT_DISPLAY || state.token!=token ||
+            state.vendorWindowed || state.windowingMode!=WINDOWING_MODE_FULLSCREEN ||
+            p.restoring || observedLeashes[taskId]!==p.leash || !isValid(p.leash)) return
+        pendingDemotedFits[taskId]=PendingDemotedFit(
+            displayId,token,p.leash,Rect(crop),densityDpi,reservation)
+    }
+
+    private fun matchesDemotedFit(taskId: Int, fit: PendingDemotedFit,
+                                  state: TaskInfoCompat.WindowState): Boolean =
+        ObservedDemotionFitPolicy.matches(
+            fit.displayId,state.displayId,fit.token,state.token,fit.leash,observedLeashes[taskId],
+            state.windowingMode==WINDOWING_MODE_FULLSCREEN,!state.vendorWindowed,
+            state.bounds==fit.crop,state.densityDpi==fit.densityDpi,
+            fit.reservation,displayExchanges[taskId],exchangeDisplays[taskId],SystemClock.uptimeMillis())
+
+    private fun observeDemotedFit(taskId: Int, state: TaskInfoCompat.WindowState) {
+        val fit=pendingDemotedFits[taskId] ?: return
+        if (!matchesDemotedFit(taskId,fit,state) || !isValid(fit.leash)) return
+        // Callback matched the original leash, destination token, full
+        // local canvas and density. Cache only: existing native transactions
+        // and the existing final slot-fit operation perform the actual reset.
+        if (pendingDemotedFits[taskId] !== fit) return
+        slotSurfaces.compute(taskId) { _, previous ->
+            if (pendingDemotedFits[taskId] !== fit || !matchesDemotedFit(taskId,fit,state)) previous
+            else if (previous?.confirmedDemotion===fit) previous
+            else SlotSurface(fit.displayId,fit.leash,Rect(fit.crop),fit)
+        }
+    }
+
+    private fun verifiedDemotedSlot(taskId: Int, slot: SlotSurface,
+                                    state: TaskInfoCompat.WindowState?): Boolean {
+        val fit=slot.confirmedDemotion ?: return false
+        return state != null && pendingDemotedFits[taskId]===fit &&
+            matchesDemotedFit(taskId,fit,state)
     }
 
     fun observeTaskState(taskId: Int, state: TaskInfoCompat.WindowState) {
         observedStates[taskId] = state
         slotSurfaces[taskId]?.let { slot ->
             if (slot.displayId != state.displayId || state.vendorWindowed ||
-                state.windowingMode != WINDOWING_MODE_FULLSCREEN
+                state.windowingMode != WINDOWING_MODE_FULLSCREEN ||
+                (slot.confirmedDemotion?.let { state.token!=it.token || state.bounds!=it.crop ||
+                    state.densityDpi!=it.densityDpi } == true)
             ) slotSurfaces.remove(taskId, slot)
         }
     }
 
     fun forgetTaskSurface(taskId: Int) {
+        pendingDemotedFits.remove(taskId)
         observedStates.remove(taskId)
         observedLeashes.remove(taskId)
         slotSurfaces.remove(taskId)
@@ -130,14 +189,15 @@ object TaskSurfaceCompat {
      * must clear its matrix and position as well as its physical-display crop. */
     fun fitSlotSurface(taskId: Int, displayId: Int, crop: Rect): Result<Unit> = runCatching {
         require(displayId != Display.DEFAULT_DISPLAY)
-        // Do not overwrite the outgoing display-0 snapshot before Shell's
-        // reparent. WM owns the move/finish; steady slot fitting runs afterwards.
-        if (isDisplayExchanging(taskId)) return@runCatching
+        // Keep the reservation. The only exception is the exact original
+        // leash already confirmed in destination coordinates by Shell itself.
         val observed = observedStates[taskId]
         val cached = slotSurfaces[taskId]?.takeIf {
             it.displayId == displayId && it.crop == crop && observed?.displayId == displayId &&
                 observedLeashes[taskId] === it.leash && isValid(it.leash)
         }
+        if (isDisplayExchanging(taskId) &&
+            (cached==null || !verifiedDemotedSlot(taskId,cached,observed))) return@runCatching
         val slot = cached ?: run {
             val state = findLiveTaskState(taskId) ?: return@runCatching
             if (state.displayId != displayId || state.vendorWindowed ||
@@ -188,9 +248,11 @@ object TaskSurfaceCompat {
 
     fun markDisplayExchange(taskId: Int, destinationDisplayId: Int) {
         val now = SystemClock.uptimeMillis()
+        pendingDemotedFits.remove(taskId)
         displayExchanges.entries.removeIf {
             if (it.value >= now) false else {
                 exchangeDisplays.remove(it.key)
+                pendingDemotedFits.remove(it.key)
                 true
             }
         }
@@ -207,6 +269,11 @@ object TaskSurfaceCompat {
     }
 
     fun cancelDisplayExchange(taskId: Int) {
+        pendingDemotedFits.remove(taskId)?.let { fit ->
+            slotSurfaces[taskId]?.takeIf { it.confirmedDemotion===fit }?.let {
+                slotSurfaces.remove(taskId,it)
+            }
+        }
         displayExchanges.remove(taskId)
         exchangeDisplays.remove(taskId)
         cancelPreparedPromotion(taskId)
@@ -781,7 +848,7 @@ object TaskSurfaceCompat {
             if (slotSurfaces[taskId] != slot || state.displayId != slot.displayId ||
                 state.vendorWindowed || state.windowingMode != WINDOWING_MODE_FULLSCREEN ||
                 observedLeashes[taskId] !== slot.leash || !isValid(slot.leash) ||
-                isDisplayExchanging(taskId)
+                (isDisplayExchanging(taskId) && !verifiedDemotedSlot(taskId,slot,state))
             ) return@forEach
             // A queued Shell finish may still contain the former main transform.
             // Preserve its visibility/layer writes, but commit local slot coordinates.
