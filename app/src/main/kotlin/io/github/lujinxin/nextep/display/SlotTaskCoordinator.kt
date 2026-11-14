@@ -1772,13 +1772,22 @@ class SlotTaskCoordinator(
                                 mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
                                 val committed = taskRepository.runningTasks()
                                 check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
-                                check(current(mainTask, committed).displayId == occupied.displayId)
-                                // The coordinator has now verified BOTH real owners and layouts.
-                                // Mark this producer before posting the final session callback.
-                                confirmedOutput=slots[slotIndex].outputFrameMark()?.let {
-                                    ConfirmedOutput(token,slotIndex,mainTask.taskId,it)
-                                }
-                                StageExchangeTelemetry.phasedEvent("slot_verified_output_mark")
+                                val parked=current(mainTask, committed)
+                                check(parked.displayId == occupied.displayId)
+                                // Earlier evidence is optional, requiring the actual foreground
+                                // slot task and final canvas, not merely a display move ACK.
+                                val canvas=slots[slotIndex].geometry()
+                                confirmedOutput=if (canvas != null &&
+                                    committed.firstOrNull { it.displayId==occupied.displayId }?.taskId==mainTask.taskId &&
+                                    !parked.vendorWindowed && parked.windowingMode==fullscreenWindowingMode() &&
+                                    parked.bounds==Rect(0,0,canvas.width,canvas.height) &&
+                                    parked.densityDpi==canvas.densityDpi) {
+                                    slots[slotIndex].outputFrameMark()?.takeIf {
+                                        it.displayId==occupied.displayId
+                                    }?.let { ConfirmedOutput(token,slotIndex,mainTask.taskId,it) }
+                                } else null
+                                StageExchangeTelemetry.phasedEvent(if (confirmedOutput!=null)
+                                    "slot_verified_output_mark" else "slot_output_mark_deferred")
                                 record.originalLayout = mainLayout
                                 record.retainedTaskId = mainTask.taskId
                                 record.migrationRecoveryComponent = null
@@ -2683,7 +2692,7 @@ class SlotTaskCoordinator(
                 val result = runCatching {
                     val current = taskRepository.findTask(taskId)
                     if (current != null) checkIdentity(current)
-                    if (current?.displayId == displayId) {
+                    if (current != null && current.displayId == displayId) {
                         StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
                         NeXtepLog.info("task_continuity",
                             "async_move_observed task=$taskId display=$displayId")
