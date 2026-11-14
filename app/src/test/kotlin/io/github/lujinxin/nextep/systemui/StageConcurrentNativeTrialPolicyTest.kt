@@ -68,9 +68,26 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(StageConcurrentNativeTrialPolicy.acceptPrepareTime(81))
         val reason=StageConcurrentNativeTrialPolicy.gateReason(true,true,false)
         assertTrue(reason.contains("prepare_timeout_81ms"))
-        assertTrue(reason.contains("session_disabled"))
+        assertTrue(reason.contains("cooldown:"))
         assertFalse(StageConcurrentNativeTrialPolicy.allowed(true,true,false))
         StageConcurrentNativeTrialPolicy.resetForTests()
+    }
+
+    @Test fun slowPreparationsRecoverOnAnExplicitLaterTapButOemDenialDoesNot() {
+        val policy=StageConcurrentNativeTrialPolicy
+        policy.resetForTests()
+        assertFalse(policy.acceptPrepareTime(29,100L))
+        assertFalse(policy.acceptPrepareTime(30,200L))
+        assertFalse(policy.allowed(true,true,false,1699L))
+        assertTrue(policy.allowed(true,true,false,1700L))
+        assertTrue(policy.acceptPrepareTime(18,1700L))
+        assertFalse(policy.acceptPrepareTime(80,1800L))
+        assertFalse(policy.allowed(true,true,false,5799L))
+        assertTrue(policy.allowed(true,true,false,5800L))
+        assertTrue(policy.acceptPrepareTime(20,5800L))
+        policy.disableForSession("OEM explicitly denied")
+        assertFalse(policy.allowed(true,true,false,100000L))
+        policy.resetForTests()
     }
 
     @Test fun slotReadyRequiresPostMoveBuffer() {
