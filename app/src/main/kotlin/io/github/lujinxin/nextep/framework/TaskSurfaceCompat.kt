@@ -141,6 +141,9 @@ object TaskSurfaceCompat {
                 observedLeashes[taskId] === it.leash && isValid(it.leash)
         }
         val slot = cached ?: run {
+            // A cache miss during a reserved transfer needs fresh destination
+            // verification, not a steady-path lookup of a potentially stale leash.
+            if (isDisplayExchanging(taskId)) return@runCatching
             val state = findLiveTaskState(taskId) ?: return@runCatching
             if (state.displayId != displayId || state.vendorWindowed ||
                 state.windowingMode != WINDOWING_MODE_FULLSCREEN
@@ -177,7 +180,8 @@ object TaskSurfaceCompat {
                     state.windowingMode==WINDOWING_MODE_FULLSCREEN,state.vendorWindowed,
                     state.token==expectedToken,state.bounds==expectedBounds) ||
                 !isValid(leash) || observedLeashes[taskId] !== leash ||
-                !mayFitSlot(taskId,displayId,ticket) || activePresentations.containsKey(taskId))
+                displayExchanges[taskId]!=ticket || exchangeDisplays[taskId]!=displayId ||
+                !isDisplayExchanging(taskId) || activePresentations.containsKey(taskId))
                 return@runCatching false
             val slot=SlotSurface(displayId,leash,Rect(crop),ticket)
             slotSurfaces[taskId]=slot
