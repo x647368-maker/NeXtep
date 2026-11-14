@@ -9,7 +9,28 @@ root=Path(__file__).resolve().parents[1];k=root/'app/src/main/kotlin/io/github/l
 import hashlib
 # PR85: separate endpoint background materials; reuse only same-turn source proof.
 pr85_review=json.loads((root/'scripts/reviewed-pr85-endpoint-backdrop-0.9.61.json').read_text())['files']
+# PR86 exact patch normalization comes before every earlier frozen hash check.
+pr86_review=json.loads((root/'scripts/reviewed-pr86-terminal-commit-0.9.62.json').read_text())['files']
+def undo_pr86(path,data):
+ if path not in pr86_review:return data
+ spec=pr86_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr86_review:
+ undo_pr86(reviewed_path,(root/reviewed_path).read_bytes())
+_pr86=(k/'systemui/StageTransientTapSwap.kt').read_text()
+_pr86_ctl=(k/'systemui/NeXtepWindowController.kt').read_text()
+assert 'terminalRecovery.accept(v.terminalFrameDrawn && v.isAttachedToWindow)' in _pr86
+assert 'terminalRecovery.retry()' in _pr86 and 'terminalRetry?.let{ui.removeCallbacks(it)}' in _pr86
+assert 'now.sequence<=mark.sequence->"slot_buffer"' in _pr86_ctl
 def undo_pr85(path,data):
+ data=undo_pr86(path,data)
  if path not in pr85_review:return data
  spec=pr85_review[path]
  blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
