@@ -50,6 +50,9 @@ internal class StageLiveSurfaceExchange private constructor(
     private val occlusion: StageGpuMirrorOcclusion,
 ) {
     private val ui = Handler(Looper.getMainLooper())
+    private val traceAttemptId = StageExchangeTelemetry.currentNativeTapId()
+    private fun trace(stage: String) =
+        StageExchangeTelemetry.nativeEvent(stage, traceAttemptId)
     private val lifetimeWatchdog = Runnable {
         if (isRunning) {
             NeXtepLog.warn("native_swap", "Two-mirror flight exceeded safety lifetime; releasing compositor mirrors")
@@ -248,7 +251,7 @@ internal class StageLiveSurfaceExchange private constructor(
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
         startedAtMs = SystemClock.uptimeMillis()
-        StageExchangeTelemetry.nativeEvent(
+        trace(
             "mirror_start crop=${sourceCrop.width()}x${sourceCrop.height()}" +
             " main=${mainStart.width.toInt()}x${mainStart.height.toInt()}")
         val root = host.rootSurfaceControl ?: return cleanupWithoutCallback().let { false }
@@ -284,7 +287,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     // accepted both layer parents, NOT proof of visible pixels.
                     tx.addTransactionCommittedListener(host.context.mainExecutor) {
                         firstTransactionCommitted = true
-                        StageExchangeTelemetry.nativeEvent(
+                        trace(
                             "first_gpu_transaction_committed@${SystemClock.uptimeMillis()-startedAtMs}ms")
                         NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
                     }
@@ -302,7 +305,7 @@ internal class StageLiveSurfaceExchange private constructor(
         fun commitMove() {
             if (!isRunning || sentMove) return
             sentMove = true
-            StageExchangeTelemetry.nativeEvent(
+            trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
             if (moveAsync != null) {
                 runCatching {
@@ -312,7 +315,7 @@ internal class StageLiveSurfaceExchange private constructor(
                             if (!ok) { stop(); return@post }
                             moveComplete = true
                             moveCompletedAt = SystemClock.uptimeMillis()
-                            StageExchangeTelemetry.nativeEvent(
+                            trace(
                                 "real_move_ack@${moveCompletedAt-startedAtMs}ms")
                             finishIfReady(liveReady,canRelease)
                         }
@@ -326,7 +329,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 if (!ok) { stop(); return }
                 moveComplete=true
                 moveCompletedAt=SystemClock.uptimeMillis()
-                StageExchangeTelemetry.nativeEvent(
+                trace(
                     "sync_move_ack@${moveCompletedAt-startedAtMs}ms")
                 finishIfReady(liveReady,canRelease)
             }
@@ -443,7 +446,7 @@ internal class StageLiveSurfaceExchange private constructor(
             if (ready || elapsed >= timeout) {
                 handoffReady=ready
                 handoffTimedOut=!ready
-                StageExchangeTelemetry.nativeEvent(
+                trace(
                     "handoff_${if(ready)"ready" else "timeout"}@${SystemClock.uptimeMillis()-startedAtMs}ms")
                 NeXtepLog.info("native_swap",
                     "Real GPU layer handoff ready=$ready elapsed=${elapsed}ms")
@@ -463,7 +466,7 @@ internal class StageLiveSurfaceExchange private constructor(
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
-        StageExchangeTelemetry.nativeEvent(
+        trace(
             "gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
             " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
         NeXtepLog.info("native_swap",
