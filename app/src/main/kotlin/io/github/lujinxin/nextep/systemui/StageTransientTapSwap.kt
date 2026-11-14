@@ -3,12 +3,15 @@ package io.github.x647368maker.atomicworkbench.systemui
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
+import android.animation.TimeInterpolator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Outline
+import android.view.ViewOutlineProvider
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
@@ -71,7 +74,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var handoffStarted=false
         private var visualOwned=false
         private var view:FlightView?=null
-        private var animator:ValueAnimator?=null
+        private var terminalCommit:Runnable?=null
+        private var terminalTimeout:Runnable?=null
         private val handoff=StageStableHandoff()
         private var handoffBegan=0L
         private fun current()=active===this
@@ -168,25 +172,47 @@ internal class StageTransientTapSwap(private val context:Context) {
             runCatching(onVisualStart).onFailure {
                 finish("visual_start_failed");return
             }
-            animator=ValueAnimator.ofFloat(0f,1f).apply {
-                duration=StageTransientTapPolicy.FLIGHT_MS
-                interpolator=PathInterpolator(.22f,0f,.12f,1f)
-                addUpdateListener{
-                    if(current()){v.progress=it.animatedValue as Float;v.invalidate()}
-                }
-                addListener(object:AnimatorListenerAdapter(){
-                    override fun onAnimationEnd(animation:Animator){
-                        if(!current())return
-                        v.progress=1f;v.invalidate()
-                        flightDone=true
-                        trace("snapshot_flight_end")
-                        maybeHandoff()
-                    }
-                })
-                start()
+            val backend=v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
+                if(current())awaitTerminalFrame(v)
             }
-            // The real coordinator owns identity, rollback and input. Exactly one call.
-            requestMove()
+            trace("snapshot_motion_backend="+backend)
+            // Do not start Binder work on the same stack that arms the motion.
+            // The first moving frame gets a traversal opportunity; migration
+            // still overlaps the 300ms visual flight.
+            v.postOnAnimation { if(current())requestMove() }
+        }
+        private fun awaitTerminalFrame(v:FlightView){
+            if(!current() || terminalCommit!=null || flightDone)return
+            v.progress=1f
+            v.invalidate()
+            val observer=host.viewTreeObserver
+            val callback=Runnable {
+                ui.post {
+                    if(!current() || flightDone)return@post
+                    clearTerminalCallbacks()
+                    flightDone=true
+                    trace("snapshot_flight_end")
+                    trace("snapshot_terminal_commit")
+                    maybeHandoff()
+                }
+            }
+            val timeout=Runnable{
+                if(current() && !flightDone){
+                    trace("snapshot_terminal_commit_timeout")
+                    finish("terminal_commit_timeout")
+                }
+            }
+            terminalCommit=callback;terminalTimeout=timeout
+            ui.postDelayed(timeout,StageTransientTapPolicy.FIRST_COMMIT_BUDGET_MS)
+            runCatching{observer.registerFrameCommitCallback(callback)}
+                .onFailure{trace("snapshot_terminal_callback_unavailable")}
+        }
+        private fun clearTerminalCallbacks(){
+            terminalCommit?.let{cb->
+                runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
+            }
+            terminalTimeout?.let{ui.removeCallbacks(it)}
+            terminalCommit=null;terminalTimeout=null
         }
         private fun direct(why:String){
             if(!current() || moveStarted)return
@@ -219,10 +245,8 @@ internal class StageTransientTapSwap(private val context:Context) {
             checkHandoff.run()
         }
         private fun removeVisual(){
-            animator?.removeAllListeners()
-            animator?.removeAllUpdateListeners()
-            animator?.cancel()
-            animator=null
+            clearTerminalCallbacks()
+            view?.stopMotion()
             if(visualOwned){visualOwned=false;runCatching(onVisualEnd)}
             val old=view ?: return
             view=null
@@ -253,59 +277,176 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
     }
 
+    /** Two independently composed immutable cards. The parent records its
+     * mask once; transform updates do not re-record the bitmaps or backdrop.
+     * The optional platform RenderNodeAnimator drives the transforms on
+     * RenderThread. Unsupported OEMs keep the exact same motion via UI
+     * property transforms, not the removed multi-phase renderer.
+     */
     internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
-                             slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?):View(context){
-        private fun box(r:Rect)=StageLiveSurfaceFlightGeometry.Box(r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
+                             slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?):FrameLayout(context){
+        private fun box(r:Rect)=StageSnapshotMotion.Box(r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
         private val small=box(slot)
         private val large=box(main)
-        private val obstacles=others.map(::box)
         private val excluded=others.map(::Rect)
-        private val upCrop=StageLiveSurfaceFlightGeometry.Crop(0,0,incoming.width,incoming.height)
-        private val downCrop=StageLiveSurfaceFlightGeometry.Crop(0,0,outgoing.width,outgoing.height)
-        val safe=StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(small,large,
-            incoming.width,incoming.height,obstacles,mainCropWidth=outgoing.width,mainCropHeight=outgoing.height)
-        private val covered=safe && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(small,large,upCrop,downCrop,obstacles)
-        private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        private val clip=Path()
-        private val bounds=RectF()
-        private val crop=Rect()
+        private val up=StageSnapshotMotion.flight(small,large,incoming.width,incoming.height)
+        private val down=StageSnapshotMotion.flight(large,small,outgoing.width,outgoing.height)
+        val safe=up!=null && down!=null
         private val mask=Path().apply{
             addRect(RectF(slot),Path.Direction.CW);addRect(RectF(main),Path.Direction.CW)
         }
+        private val upView=CardView(context,incoming,main)
+        private val downView=CardView(context,outgoing,main)
+        private val animations=mutableListOf<Animator>()
         var progress=0f
+            set(value){
+                field=value.coerceIn(0f,1f)
+                up?.let{upView.place(it.pose(field))}
+                down?.let{downView.place(it.pose(field))}
+            }
         var drawn=false
             private set
         private var released=false
-        init{importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS;isClickable=false}
+        init{
+            importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            isClickable=false
+            setWillNotDraw(false)
+            clipChildren=false;clipToPadding=false
+            // Incoming remains below the shrinking outgoing card where paths
+            // cross; the opposing arcs expose both without hiding other slots.
+            addView(upView,LayoutParams(incoming.width,incoming.height))
+            addView(downView,LayoutParams(outgoing.width,outgoing.height))
+            progress=0f
+        }
         override fun onDraw(canvas:Canvas){
+            super.onDraw(canvas)
             if(released || !canvas.isHardwareAccelerated)return
             val save=canvas.save()
-            // The other three cards are never painted over, even if a rail slightly overlaps.
             excluded.forEach{canvas.clipOutRect(it)}
-            val cover=canvas.save()
             canvas.clipPath(mask)
             canvas.drawColor(Color.rgb(12,14,21))
             backdrop?.setBounds(0,0,width,height);backdrop?.draw(canvas)
-            canvas.restoreToCount(cover)
-            drawCard(canvas,outgoing,large,small,downCrop)
-            drawCard(canvas,incoming,small,large,upCrop)
             canvas.restoreToCount(save)
-            drawn=true
         }
-        private fun drawCard(canvas:Canvas,bitmap:Bitmap,from:StageLiveSurfaceFlightGeometry.Box,
-                             to:StageLiveSurfaceFlightGeometry.Box,source:StageLiveSurfaceFlightGeometry.Crop){
-            val frame=StageLiveSurfaceFlightGeometry.mirrorFrame(from,to,source,progress,covered) ?: return
-            val b=frame.box
-            bounds.set(b.left,b.top,b.right,b.bottom)
-            crop.set(frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom)
-            val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
-                bounds.width(),bounds.height(),resources.displayMetrics.density)
-            clip.reset();clip.addRoundRect(bounds,radius,radius,Path.Direction.CW)
-            val saved=canvas.save()
-            canvas.clipPath(clip)
-            canvas.drawBitmap(bitmap,crop,bounds,paint)
-            canvas.restoreToCount(saved)
+        override fun dispatchDraw(canvas:Canvas){
+            if(released)return
+            val save=canvas.save()
+            excluded.forEach{canvas.clipOutRect(it)}
+            super.dispatchDraw(canvas)
+            canvas.restoreToCount(save)
+            if(canvas.isHardwareAccelerated && safe)drawn=true
         }
-        fun release(){if(released)return;released=true;incoming.recycle();if(outgoing!==incoming)outgoing.recycle()}
+        fun startMotion(duration:Long,trace:(String)->Unit,onEnd:()->Unit):String{
+            stopMotion()
+            progress=0f
+            val a=up ?: error("Invalid incoming geometry")
+            val b=down ?: error("Invalid outgoing geometry")
+            val easing=PathInterpolator(.28f,.05f,.22f,1f)
+            // Build every animator before starting any; an unsupported
+            // reflection path leaves no partially animated card.
+            val native=runCatching{
+                val klass=Class.forName("android.view.RenderNodeAnimator")
+                val ctor=klass.getConstructor(Int::class.javaPrimitiveType,Float::class.javaPrimitiveType)
+                val target=klass.getMethod("setTarget",View::class.java)
+                val startValue=klass.getMethod("setStartValue",Float::class.javaPrimitiveType)
+                fun channel(view:CardView,flight:StageSnapshotMotion.Flight,name:String,
+                            value:(StageSnapshotMotion.Pose)->Float):Animator{
+                    val from=value(flight.start)
+                    val exact=value(flight.end)
+                    val to=StageSnapshotMotion.hardwareEnd(from,exact)
+                    val anim=ctor.newInstance(klass.getField(name).getInt(null),to) as Animator
+                    target.invoke(anim,view)
+                    startValue.invoke(anim,from)
+                    anim.duration=duration
+                    anim.interpolator=TimeInterpolator{t->
+                        val raw=t.coerceIn(0f,1f)
+                        if(raw>=1f)1f else (value(flight.pose(easing.getInterpolation(raw)))-from)/(to-from)
+                    }
+                    return anim
+                }
+                val list=mutableListOf<Animator>()
+                for((v,f) in listOf(upView to a,downView to b)){
+                    list+=channel(v,f,"TRANSLATION_X"){it.cx-v.width*.5f}
+                    list+=channel(v,f,"TRANSLATION_Y"){it.cy-v.height*.5f}
+                    list+=channel(v,f,"SCALE_X"){it.scale}
+                    list+=channel(v,f,"SCALE_Y"){it.scale}
+                }
+                animations.addAll(list)
+                var remaining=list.size
+                list.forEach{anim->
+                    anim.addListener(object:AnimatorListenerAdapter(){
+                        override fun onAnimationEnd(animation:Animator){
+                            if(--remaining==0){
+                                animations.clear()
+                                progress=1f
+                                onEnd()
+                            }
+                        }
+                    })
+                }
+                list.forEach{it.start()}
+                true
+            }.getOrElse{
+                stopMotion()
+                trace("snapshot_rt_unavailable")
+                progress=0f
+                false
+            }
+            if(native)return "render_thread"
+            val fallback=ValueAnimator.ofFloat(0f,1f).apply{
+                this.duration=duration
+                interpolator=easing
+                addUpdateListener{progress=it.animatedValue as Float}
+                addListener(object:AnimatorListenerAdapter(){
+                    override fun onAnimationEnd(animation:Animator){
+                        animations.clear();progress=1f;onEnd()
+                    }
+                })
+            }
+            animations.add(fallback);fallback.start()
+            return "ui_transform"
+        }
+        fun stopMotion(){
+            val old=animations.toList()
+            animations.clear()
+            old.forEach{anim->
+                anim.removeAllListeners()
+                if(anim is ValueAnimator)anim.removeAllUpdateListeners()
+                runCatching{anim.cancel()}
+            }
+        }
+        private class CardView(context:Context,private val bitmap:Bitmap,main:Rect):View(context){
+            private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            private val image=RectF(0f,0f,bitmap.width.toFloat(),bitmap.height.toFloat())
+            init{
+                pivotX=bitmap.width*.5f;pivotY=bitmap.height*.5f
+                // Use the physical main endpoint's roundness, converted to
+                // source coordinates. Interpolation scales naturally with
+                // each card. The actual live corners are never modified.
+                val scale=minOf(main.width().toFloat()/bitmap.width,
+                    main.height().toFloat()/bitmap.height).coerceAtLeast(.001f)
+                val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
+                    main.width().toFloat(),main.height().toFloat(),resources.displayMetrics.density)/scale
+                outlineProvider=object:ViewOutlineProvider(){
+                    override fun getOutline(view:View,outline:Outline){
+                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,radius)
+                    }
+                }
+                clipToOutline=true
+            }
+            fun place(p:StageSnapshotMotion.Pose){
+                translationX=p.cx-bitmap.width*.5f
+                translationY=p.cy-bitmap.height*.5f
+                scaleX=p.scale;scaleY=p.scale
+            }
+            override fun onDraw(canvas:Canvas){
+                if(!bitmap.isRecycled)canvas.drawBitmap(bitmap,null,image,paint)
+            }
+        }
+        fun release(){
+            if(released)return
+            released=true;stopMotion()
+            incoming.recycle();if(outgoing!==incoming)outgoing.recycle()
+        }
     }
 }
