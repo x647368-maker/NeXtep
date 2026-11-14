@@ -188,10 +188,8 @@ internal object StageLiveSurfaceFlightGeometry {
         else Crop(visible.left.toInt(),visible.top.toInt(),visible.right.toInt(),visible.bottom.toInt())
     }
 
-    data class Translation(val x:Float,val y:Float)
-    fun mirrorTranslation(placement:Placement,crop:Crop):Translation =
-        Translation(placement.x-crop.left*placement.scale,
-                    placement.y-crop.top*placement.scale)
+    fun mirrorPosition(coordinate:Float,cropOrigin:Int,scale:Float):Float =
+        coordinate-cropOrigin*scale
 
     fun localCrop(frame: Box, rootLeft: Int, rootTop: Int, rootWidth: Int,
                   rootHeight: Int): Crop? {
