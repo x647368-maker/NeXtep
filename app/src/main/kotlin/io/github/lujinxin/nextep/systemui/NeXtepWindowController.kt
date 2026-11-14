@@ -1979,7 +1979,7 @@ class NeXtepWindowController(
         }
         // PR59: the previous task may draw many times during the GPU flight;
         // do not count old frames as new post-migration virtual-display output.
-        var frameAtCompletedMove:Long?=null
+        var outputAtConfirmedMove: VirtualDisplaySlot.OutputFrameMark?=null
         var lastTargetWait=""
         val incoming=state.taskId
         activeSwapViewport=g
@@ -1991,7 +1991,8 @@ class NeXtepWindowController(
                 if (ok) {
                     // SlotTaskCoordinator confirms actual ownership only at
                     // completion; require a fresh TextureView buffer after it.
-                    frameAtCompletedMove=slot.contentFrameSequence
+                    outputAtConfirmedMove=slotCoordinator?.confirmedOutputMark(slotIndex,task)
+                        ?: slot.outputFrameMark()
                 }
                 complete(ok)
             } },
@@ -2001,8 +2002,8 @@ class NeXtepWindowController(
                 val reason=when {
                     now !is SlotState.Occupied || now.taskId!=task -> "slot_owner"
                     !slot.view.textureView.isAvailable -> "slot_texture"
-                    !StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(
-                        frameAtCompletedMove,slot.contentFrameSequence) -> "slot_post_ack_buffer"
+                    !StageConcurrentNativeTrialPolicy.freshFrameOnConfirmedOutput(
+                        outputAtConfirmedMove,slot.outputFrameMark()) -> "slot_post_ack_buffer"
                     mainTaskPresenter.currentTaskId()!=incoming -> "main_owner"
                     !TaskSurfaceCompat.isPresentationSettled(incoming,g) -> "main_geometry"
                     else -> "ready"
