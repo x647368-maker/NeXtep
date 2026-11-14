@@ -106,6 +106,20 @@ internal object StageConcurrentNativeTrialPolicy {
     fun freshFrameAfterTaskAck(frameAtAck:Long?, currentFrame:Long):Boolean =
         frameAtAck != null && currentFrame > frameAtAck
 
+    // Only used during an active real swap after ownership has been verified.
+    // An absent animator-end or detached View must not strand the handoff.
+    enum class HandoffAction { WAIT, READY, EXPIRED }
+    fun handoffAction(elapsedMs: Long, timeoutMs: Long, frameComplete: Boolean,
+                      releasable: Boolean, liveReady: Boolean): HandoffAction =
+        when {
+            frameComplete && releasable && liveReady -> HandoffAction.READY
+            elapsedMs >= timeoutMs -> HandoffAction.EXPIRED
+            else -> HandoffAction.WAIT
+        }
+
+    fun nextHandoffCheck(nowMs: Long, deadlineMs: Long): Long =
+        minOf(nowMs + 16L, deadlineMs)
+
     fun disableForSession(reason:String) {
         disabledReason=reason.take(100)
         disabled=true
