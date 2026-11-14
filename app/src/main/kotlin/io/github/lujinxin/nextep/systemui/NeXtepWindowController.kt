@@ -2143,6 +2143,8 @@ class NeXtepWindowController(
                 wait=="ready"
             },
             trace={StageExchangeTelemetry.nativeEvent(it,traceId)},
+            onVisualStart={slot.view.beginExchangePreview()},
+            onVisualEnd={slot.view.endExchangePreview()},
             onFinished={
                 previewCapturePending=false
                 activeSwapViewport=null

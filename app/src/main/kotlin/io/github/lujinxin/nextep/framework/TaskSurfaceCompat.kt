@@ -467,10 +467,43 @@ object TaskSurfaceCompat {
      * than the legacy findTaskLeash() (which requires display 0 by default).
      * No organizer query, display screenshot, protected-layer override or disk I/O.
      */
-    internal fun captureObservedSwapPreview(stamp: MirrorSourceStamp, crop: Rect): android.graphics.Bitmap? {
-        fun valid(): Boolean = stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)) &&
-            !isDisplayExchanging(stamp.taskId) && observedStates[stamp.taskId]?.bounds==crop
-        if (crop.isEmpty || !valid()) return null
+    internal fun captureObservedSwapPreview(
+        stamp: MirrorSourceStamp, crop: Rect, failure: (String) -> Unit = {},
+    ): android.graphics.Bitmap? {
+        fun reject(reason: String): android.graphics.Bitmap? { failure(reason); return null }
+        // The same 2s reservation also protects post-move Shell reapplication.
+        // Returning to the already verified destination must not lose animation.
+        val reservation=displayExchanges[stamp.taskId]
+        val destination=exchangeDisplays[stamp.taskId]
+        val state=observedStates[stamp.taskId] ?: return reject("state_missing")
+        if (!stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))
+            return reject("identity_changed")
+        if (!StageSnapshotSourcePolicy.reservationAllowsRead(
+                state.displayId,isDisplayExchanging(stamp.taskId),destination))
+            return reject("move_in_flight")
+        // TaskInfo bounds may have a screen-space origin. LayerCaptureArgs uses
+        // task-local pixels, not display coordinates. Preserve native resolution.
+        val local=Rect(0,0,state.bounds.width(),state.bounds.height())
+        val fitted=if(stamp.displayId==Display.DEFAULT_DISPLAY)
+            activePresentations[stamp.taskId]?.takeIf { !it.restoring && it.leash===stamp.leash }?.frame?.crop
+        else slotSurfaces[stamp.taskId]?.takeIf {
+            it.displayId==stamp.displayId && it.leash===stamp.leash
+        }?.crop
+        val requested=Rect(fitted ?: local)
+        if (crop.isEmpty || requested.left<0 || requested.top<0 ||
+            !local.contains(requested) ||
+            !StageSnapshotSourcePolicy.localExtentMatches(local.width(),local.height(),
+                requested.width(),requested.height())) return reject("local_extent")
+        fun valid():Boolean {
+            val now=observedStates[stamp.taskId] ?: return false
+            return stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)) &&
+                displayExchanges[stamp.taskId]==reservation &&
+                exchangeDisplays[stamp.taskId]==destination &&
+                now.bounds==state.bounds &&
+                StageSnapshotSourcePolicy.reservationAllowsRead(now.displayId,
+                    isDisplayExchanging(stamp.taskId),destination)
+        }
+        if(!valid())return reject("source_changed_before")
         return runCatching {
             WorkspaceEnergyDiagnostics.previewCaptures.incrementAndGet()
             val type=Class.forName("android.window.ScreenCaptureInternal")
@@ -479,33 +512,31 @@ object TaskSurfaceCompat {
             val builder=builderType.getConstructor(surface).newInstance(stamp.leash)
             builderType.getMethod("setFrameScale",Float::class.javaPrimitiveType).invoke(builder,1f)
             builderType.getMethod("setChildrenOnly",Boolean::class.javaPrimitiveType).invoke(builder,true)
-            builderType.getMethod("setSourceCrop",Rect::class.java).invoke(builder,crop)
+            builderType.getMethod("setSourceCrop",Rect::class.java).invoke(builder,requested)
             val args=builderType.getMethod("build").invoke(builder)
-            val result=type.methods.firstOrNull {
+            val method=type.methods.firstOrNull {
                 it.name=="captureLayers" && it.parameterCount==1 && it.parameterTypes[0].isInstance(args)
-            }?.invoke(null,args) ?: return@runCatching null
-            // Secure/protected layer capture flags remain at the platform defaults.
-            if (result.javaClass.methods.firstOrNull {
-                    it.name=="containsSecureLayers" && it.parameterCount==0
-                }?.invoke(result)==true) {
-                (runCatching { result.javaClass.getMethod("getHardwareBuffer").invoke(result) }.getOrNull()
-                    as? android.hardware.HardwareBuffer)?.close()
-                return@runCatching null
-            }
+            } ?: return@runCatching reject("api_unavailable")
+            val result=method.invoke(null,args) ?: return@runCatching reject("no_buffer")
             val buffer=runCatching { result.javaClass.getMethod("getHardwareBuffer").invoke(result) }.getOrNull()
                 as? android.hardware.HardwareBuffer
             try {
+                // Never opt into protected or secure capture.
+                if (result.javaClass.methods.firstOrNull {
+                        it.name=="containsSecureLayers" && it.parameterCount==0
+                    }?.invoke(result)==true) return@runCatching reject("secure")
                 val bitmap=result.javaClass.getMethod("asBitmap").invoke(result) as? android.graphics.Bitmap
-                    ?: return@runCatching null
-                if (!valid() || bitmap.width!=crop.width() || bitmap.height!=crop.height()) {
+                    ?: return@runCatching reject("no_bitmap")
+                if (!valid() || bitmap.width!=requested.width() || bitmap.height!=requested.height()) {
                     bitmap.recycle()
-                    return@runCatching null
+                    return@runCatching reject(if(!valid())"source_changed_after" else "buffer_extent")
                 }
-                retainPreviewForAcceleratedCanvas(bitmap)
-            } finally {
-                buffer?.close()
-            }
-        }.onFailure { NeXtepLog.warn("swap_snapshot","Owned task preview unavailable",it) }.getOrNull()
+                retainPreviewForAcceleratedCanvas(bitmap) ?: reject("retain_failed")
+            } finally { buffer?.close() }
+        }.onFailure {
+            failure("capture_exception")
+            NeXtepLog.warn("swap_snapshot","Owned task preview unavailable",it)
+        }.getOrNull()
     }
 
     /** Ownership of the result transfers to the short-lived HWUI exchange overlay. */
