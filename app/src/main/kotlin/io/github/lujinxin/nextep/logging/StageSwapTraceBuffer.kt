@@ -31,7 +31,15 @@ internal class StageSwapTraceBuffer(
         return serial
     }
 
-    @Synchronized fun event(name: String) = eventLocked(name)
+    @Synchronized fun activeId(): Long? = active?.id
+
+    // Late OEM compositor callbacks must never be attributed to a newer tap.
+    @Synchronized fun event(name: String, expectedId: Long? = null): Boolean {
+        val attempt = active ?: return false
+        if (expectedId != null && attempt.id != expectedId) return false
+        eventLocked(name)
+        return true
+    }
 
     private fun eventLocked(name: String) {
         val attempt = active ?: return
@@ -40,7 +48,9 @@ internal class StageSwapTraceBuffer(
         attempt.events.add("${name.take(88)}@${elapsed}ms")
     }
 
-    @Synchronized fun finish(result: String) = finishLocked(result)
+    @Synchronized fun finish(result: String, expectedId: Long? = null) {
+        if (expectedId == null || active?.id == expectedId) finishLocked(result)
+    }
 
     private fun finishLocked(result: String) {
         val attempt = active ?: return
