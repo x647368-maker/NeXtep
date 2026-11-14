@@ -2097,6 +2097,12 @@ class NeXtepWindowController(
         val traceId=StageExchangeTelemetry.currentNativeTapId()
         var outputAtConfirmedMove:VirtualDisplaySlot.OutputFrameMark?=null
         var reason=""
+        var slotLatchRequested=false
+        fun verifiedMainEndpoint():Boolean =
+            canRelease() &&
+                (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&
+                mainTaskPresenter.currentTaskId()==state.taskId &&
+                TaskSurfaceCompat.isPresentationSettled(state.taskId,g)
         activeSwapViewport=g
         previewCapturePending=true
         deferredSwapGeometryRefresh=false
@@ -2139,12 +2145,20 @@ class NeXtepWindowController(
                     !TaskSurfaceCompat.isPresentationSettled(state.taskId,g)->"main_geometry"
                     else->"ready"
                 }
+                if(wait=="slot_buffer" && !slotLatchRequested){
+                    slotLatchRequested=true
+                    // One UI traversal only. This does not change the producer,
+                    // sequence, owner or buffer readiness test; no invented ACK.
+                    slot.view.textureView.postInvalidateOnAnimation()
+                    StageExchangeTelemetry.nativeEvent("snapshot_slot_latch_requested",traceId)
+                }
                 if(wait!=reason){reason=wait;StageExchangeTelemetry.nativeEvent("snapshot_wait="+wait,traceId)}
                 wait=="ready"
             },
             trace={StageExchangeTelemetry.nativeEvent(it,traceId)},
             onVisualStart={slot.view.beginExchangePreview()},
             onVisualEnd={slot.view.endExchangePreview()},
+            mainReady={verifiedMainEndpoint()},
             onFinished={
                 previewCapturePending=false
                 activeSwapViewport=null
