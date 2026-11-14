@@ -61,6 +61,9 @@ internal class StageLiveSurfaceExchange private constructor(
     }
     private val finished = AtomicBoolean(false)
     private var animator: ValueAnimator? = null
+    private var revealAnimator: ValueAnimator? = null
+    private var handoffCheckStarted = false
+    private var endpointGap = 0f
     // Reuse one compositor transaction for the entire flight; avoid allocating
     // and closing a Binder-backed Transaction on every animation frame.
     private var frameTransaction: SurfaceControl.Transaction? = null
@@ -113,6 +116,8 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val MAX_DURATION_MS = 360L
         private const val HANDOFF_TIMEOUT_MS = 600L
         private const val MAX_LIFETIME_MS = 1800L
+        private const val READY_REVEAL_MS = 96L
+        private const val ENDPOINT_GAP_PX = 2f
         // One bounded wait for the replacement real-task and slot buffers.
         // Shorter than the overall 1800ms watchdog; no idle polling.
         private const val CONCURRENT_HANDOFF_TIMEOUT_MS = 480L
@@ -274,6 +279,21 @@ internal class StageLiveSurfaceExchange private constructor(
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
+        val finalIncoming = StageLiveSurfaceFlightGeometry.railCorridorFlight(
+            slotStart, mainStart, sourceCrop.width(), sourceCrop.height(), 1f)
+        val finalOutgoing = StageLiveSurfaceFlightGeometry.railCorridorFlight(
+            mainStart, slotStart, mainCrop.width(), mainCrop.height(), 1f)
+        if (finalIncoming == null || finalOutgoing == null) {
+            finished.set(true)
+            cleanupWithoutCallback()
+            return false
+        }
+        val incomingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart, finalIncoming.box)
+        val outgoingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart, finalOutgoing.box)
+        endpointGap = maxOf(incomingGap, outgoingGap)
+        trace("endpoint_gap_px up=${incomingGap.toInt()} down=${outgoingGap.toInt()}" +
+            " up_fit=${finalIncoming.box.width.toInt()}x${finalIncoming.box.height.toInt()}" +
+            " down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}")
         startedAtMs = SystemClock.uptimeMillis()
         trace(
             "mirror_start crop=${sourceCrop.width()}x${sourceCrop.height()}" +
@@ -458,7 +478,8 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     private fun finishIfReady(liveReady: () -> Boolean, canRelease: () -> Boolean) {
-        if (!isRunning || !frameComplete || !moveComplete) return
+        if (!isRunning || !frameComplete || !moveComplete || handoffCheckStarted) return
+        handoffCheckStarted = true
         fun check() {
             if (!isRunning) return
             val elapsed=SystemClock.uptimeMillis()-moveCompletedAt
@@ -472,10 +493,49 @@ internal class StageLiveSurfaceExchange private constructor(
                     "handoff_${if(ready)"ready" else "timeout"}@${SystemClock.uptimeMillis()-startedAtMs}ms")
                 NeXtepLog.info("native_swap",
                     "Real GPU layer handoff ready=$ready elapsed=${elapsed}ms")
-                host.postOnAnimation { stop() }
+                if (ready && endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {
+                    revealReadyDestination(liveReady, canRelease)
+                } else host.postOnAnimation { stop() }
             } else host.postOnAnimation { check() }
         }
         check()
+    }
+
+    // An aspect-mismatched live buffer cannot cover both target dimensions
+    // without stretching/cropping. Once the real task is confirmed ready,
+    // reveal it over a short bounded GPU-only handoff rather than a hard cut.
+    // No new surfaces, screenshots, task resizes or work while idle.
+    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean) {
+        if (!isRunning || revealAnimator != null) return
+        if (!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {
+            stop()
+            return
+        }
+        trace("endpoint_reveal_start gap=${endpointGap.toInt()}px")
+        val reveal = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = READY_REVEAL_MS
+            interpolator = PathInterpolator(.2f, 0f, .2f, 1f)
+            addUpdateListener {
+                if (!isRunning) return@addUpdateListener
+                val alpha = StageLiveSurfaceFlightGeometry.handoffReveal(it.animatedValue as Float)
+                runCatching {
+                    val tx = frameTransaction ?: error("Handoff transaction unavailable")
+                    occlusion.setRevealAlpha(tx, alpha.cover)
+                    tx.setAlpha(sourceMirror, alpha.mirror)
+                    tx.setAlpha(mainMirror, alpha.mirror)
+                    tx.apply()
+                }.onFailure { stop() }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (!isRunning) return
+                    trace("endpoint_reveal_end")
+                    stop()
+                }
+            })
+        }
+        revealAnimator = reveal
+        reveal.start()
     }
 
     fun stop() {
@@ -497,6 +557,10 @@ internal class StageLiveSurfaceExchange private constructor(
         animator?.removeAllListeners()
         animator?.cancel()
         animator=null
+        revealAnimator?.removeAllListeners()
+        revealAnimator?.removeAllUpdateListeners()
+        revealAnimator?.cancel()
+        revealAnimator=null
         cleanupWithoutCallback()
         callback?.invoke()
     }
