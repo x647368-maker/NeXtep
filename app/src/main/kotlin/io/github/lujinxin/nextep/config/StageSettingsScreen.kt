@@ -607,12 +607,14 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, slot: Int? = null, expectedTask: Int? = null) {
         if (activity.isDestroyed || name == "query" && queryPending) return
         if (name == "query") queryPending = true
+        val diagnosticToken = StageIssueEventObserver.commandToken(name)
+        fun diagnostic(outcome: String) = StageIssueEventObserver.recordCommandResult(diagnosticToken, name, outcome)
         var completed = false
         fun unavailable() {
             connected = false; status = "系统组件未连接"; stateText?.text = homeState()
             if (page == "diagnostics") open("diagnostics")
         }
-        val timeout = Runnable { if (!completed && !activity.isDestroyed) { completed = true; queryPending = false; unavailable() } }
+        val timeout = Runnable { if (!completed && !activity.isDestroyed) { completed = true; queryPending = false; diagnostic("等待响应超时"); unavailable() } }
         handler.postDelayed(timeout, 6000)
         val intent = Intent(StageControlContract.ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
             .putExtra(StageControlContract.COMMAND, name).putExtra(StageControlContract.ID, id).putExtra(StageControlContract.NAME, title)
@@ -624,11 +626,12 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     if (completed || activity.isDestroyed) return
                     completed = true; handler.removeCallbacks(timeout); queryPending = false
                     val reply = getResultExtras(false)
-                    if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null || reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) { unavailable(); return }
+                    if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null || reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) { diagnostic("无有效协议响应"); unavailable(); return }
                     connected = true; active = reply.getBoolean(TriggerBroadcastContract.EXTRA_ACTIVE)
                     status = if (active) "已开启" else "已关闭"
                     stateText?.text = homeState(); syncSwitch()
-                    if (!reply.getBoolean(StageControlContract.OK)) { toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return }
+                    if (!reply.getBoolean(StageControlContract.OK)) { diagnostic("系统返回操作失败"); toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return }
+                    diagnostic("系统返回OK（不代表画面验收）")
                     reply.getString(StageControlContract.GROUPS)?.let { raw -> runCatching {
                         val snapshot = JSONObject(raw); groups = snapshot.getJSONArray("groups")
                         activeId = snapshot.optString("active").takeIf { it.isNotBlank() && it != "null" }
@@ -646,7 +649,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     }
                 }
             }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())
-        }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); unavailable() }
+        }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); diagnostic("控制请求发送失败"); unavailable() }
     }
 }
 
