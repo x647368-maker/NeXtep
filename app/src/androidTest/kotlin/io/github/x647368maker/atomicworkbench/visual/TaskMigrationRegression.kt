@@ -11,12 +11,18 @@ import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
 import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
 import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import io.github.x647368maker.atomicworkbench.display.StageExchangeBinderLane
+import io.github.x647368maker.atomicworkbench.task.TaskRepository
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
 
 /** Real AOSP task reparenting, not coloured Surface producers or a ColorOS claim.
  * No production task-engine changes are evaluated as a performance fix here.
@@ -128,15 +134,95 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 lines.add("round=$round slot=$slot task_id_retained=true fresh_buffers=${frames[slot].get()-before}")
             }
             i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
+            val baselineGap=gaps.maxOrNull()
+            val baselineSamples=gaps.size
+            // Exercise real framework moves through the production Binder lane
+            // and the production query/decode + owner-publication entry points.
+            // Still a probe: not the entire ColorOS-injected exchange session.
+            val repository=TaskRepository(original)
+            lateinit var lane:StageExchangeBinderLane
+            i.runOnMainSync {
+                val owner=Handler(Looper.getMainLooper())
+                lane=StageExchangeBinderLane { action->owner.post(action) }
+                gaps.clear();lastFrame=0L;sampling=true
+                Choreographer.getInstance().postFrameCallback(callback)
+            }
+            fun <T> laneCall(work:()->T,accept:(T)->T={it}):T {
+                val finished=CountDownLatch(1)
+                var output:Result<T>?=null
+                i.runOnMainSync {
+                    var value:Result<T>?=null
+                    check(lane.submit({
+                        check(Looper.myLooper()!=Looper.getMainLooper())
+                        value=runCatching(work)
+                        value!!.getOrThrow()
+                        Unit
+                    }){result->
+                        output=runCatching {
+                            check(Looper.myLooper()==Looper.getMainLooper())
+                            result.getOrThrow()
+                            accept(checkNotNull(value).getOrThrow())
+                        }
+                        finished.countDown()
+                    }) {"Production exchange lane unexpectedly busy"}
+                }
+                check(finished.await(8,TimeUnit.SECONDS)) {"Production exchange lane did not reply"}
+                return checkNotNull(output).getOrThrow()
+            }
+            fun snapshots():List<TaskRepository.TaskSnapshot> =
+                laneCall({repository.readExchangeTasks()}).let { batch->
+                    var published:List<TaskRepository.TaskSnapshot>?=null
+                    i.runOnMainSync { published=repository.publishExchangeTasks(batch) }
+                    checkNotNull(published)
+                }
+            val originalStates=snapshots().filter{it.taskId in ids}.associateBy{it.taskId}
+            check(originalStates.size==4)
+            fun asyncMove(id:Int,destination:Int){
+                val before=SystemClock.elapsedRealtimeNanos()
+                laneCall({ ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow() })
+                val deadline=SystemClock.uptimeMillis()+700
+                var state:TaskRepository.TaskSnapshot?=null
+                do {
+                    state=snapshots().firstOrNull{it.taskId==id}
+                    if(state?.displayId==destination)break
+                    if(SystemClock.uptimeMillis()>=deadline)break
+                    Thread.sleep(30)
+                }while(true)
+                val actual=checkNotNull(state)
+                val origin=checkNotNull(originalStates[id])
+                check(actual.displayId==destination && actual.token==origin.token &&
+                    actual.userId==origin.userId) {"Async framework task identity or display mismatch"}
+                lines.add("lane_move task=$id display=$destination elapsed_ms=${(SystemClock.elapsedRealtimeNanos()-before)/1_000_000.0}")
+            }
+            for(round in 0..1) for(slot in 0..3){
+                asyncMove(ids[slot],0)
+                val before=frames[slot].get()
+                asyncMove(ids[slot],displays[slot].display.displayId)
+                awaitFrame(slot,before)
+                lines.add("lane_round=$round slot=$slot task_identity_retained=true fresh_buffers=${frames[slot].get()-before}")
+            }
+            i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
+            val laneGap=gaps.maxOrNull()
+            val laneSamples=gaps.size
+            lines.add("lane_frame_gap_max_ms=$laneGap samples=$laneSamples; separate sequential probe, no FPS or ColorOS guarantee")
+            // Directly exercise the real owner-only publication guard.
+            val rejected=laneCall({
+                val batch=repository.readExchangeTasks()
+                runCatching{repository.publishExchangeTasks(batch)}.isFailure
+            })
+            check(rejected) {"Worker must never publish task/Surface observations"}
+            lines.add("PASS production lane actual Binder/query/decode, owner publication, task identity and fresh buffers; worker publication rejected")
             val report=StageExchangeTelemetry.describe()
             check(report.contains(io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.BUILD) && report.contains("probe_display_binder") && report.contains("main=true"))
             File(out,"exchange-profile-probe.txt").writeText(report)
-            lines.add("main_frame_gap_max_ms=${gaps.maxOrNull()} samples=${gaps.size}")
+            lines.add("main_frame_gap_max_ms=$baselineGap samples=$baselineSamples")
             lines.add("Scope: real framework moves only; production crop, input, overlay and vendor task engine are not emulated")
             File(out,"real-task-migration.txt").writeText(lines.joinToString("\n"))
-            return listOf("PASS four real AOSP tasks retained IDs and resumed fresh buffers across 16 display moves; timings recorded, no phone performance claim")
+            return listOf("PASS four real AOSP tasks retained IDs and resumed fresh buffers across 16 display moves; timings recorded, no phone performance claim",
+                "PASS production exchange lane and task repository on 16 real AOSP display moves; original task identity/fresh buffers; owner-only publication guard")
         } finally {
             i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
+            i.runOnMainSync { taskIds.forEach{TaskSurfaceCompat.forgetTaskSurface(it)} }
             taskIds.forEach { id -> runCatching { ActivityTaskManagerCompat.removeTask(id).getOrThrow() } }
             displays.forEach { it.release() };readers.forEach { it.close() }
             consumer.quitSafely()
