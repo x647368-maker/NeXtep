@@ -70,6 +70,8 @@ internal class StageTransientTapSwap(private val context:Context) {
     ) {
         private val viewport=Rect(0,0,host.width,host.height)
         @Volatile private var waitingCapture=true
+        @Volatile private var hostDetached=false
+        private val moveReceipt=StageTransientTapPolicy.MoveReceipt()
         private var waitingCommit=false
         private var moveStarted=false
         private var moveAck=false
@@ -95,7 +97,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var mainRevealed=false
         private var handoffBegan=0L
         private fun current()=active===this
-        private fun stillValid()=runCatching(valid).getOrDefault(false) && host.isAttachedToWindow
+        private fun stillValid()=!hostDetached && host.isAttachedToWindow &&
+            runCatching(valid).getOrDefault(false) && !hostDetached && host.isAttachedToWindow
         private val captureTimeout=Runnable {
             if(current() && waitingCapture){waitingCapture=false; direct("capture_timeout")}
         }
@@ -108,13 +111,15 @@ internal class StageTransientTapSwap(private val context:Context) {
             override fun onViewDetachedFromWindow(v:View) {
                 // Do not remove children while the framework is dispatching
                 // detach. Even a quick reattach changes the old frame owner.
+                hostDetached=true
+                waitingCapture=false
                 ui.post { if(current())finish("host_detached") }
             }
         }
         private val checkHandoff=object:Runnable{
             override fun run(){
                 if(!current())return
-                if(!host.isAttachedToWindow){finish("host_detached");return}
+                if(hostDetached || !host.isAttachedToWindow){finish("host_detached");return}
                 val elapsed=SystemClock.uptimeMillis()-handoffBegan
                 val ready=runCatching(liveReady).getOrDefault(false)
                 when(handoff.decide(ready,elapsed>=StageTransientTapPolicy.HANDOFF_BUDGET_MS)){
@@ -404,19 +409,22 @@ internal class StageTransientTapSwap(private val context:Context) {
             trace("snapshot_real_move_requested")
             runCatching {
                 moveAsync { ok ->
-                    // Keep all ownership/ACK transitions on the same UI
-                    // lane; late or duplicate callbacks cannot finish a
-                    // different attempt or retract a successful first ACK.
-                    if(Looper.myLooper()==ui.looper) acknowledgeMove(ok)
-                    else ui.post { acknowledgeMove(ok) }
+                    // The callback claims the receipt BEFORE crossing
+                    // threads. A provider throwing after its callback must
+                    // not retire an already acknowledged move.
+                    if(moveReceipt.claim()) {
+                        if(Looper.myLooper()==ui.looper) acknowledgeMove(ok)
+                        else ui.post { acknowledgeMove(ok) }
+                    }
                 }
             }.onFailure{
-                if(!moveAck)finish("move_exception")
+                if(moveReceipt.claim())finish("move_exception")
                 else runCatching{trace("snapshot_move_exception_after_ack")}
             }
         }
         private fun acknowledgeMove(ok:Boolean){
             if(!current() || !moveStarted || moveAck)return
+            if(hostDetached || !host.isAttachedToWindow){finish("host_detached");return}
             if(ok)moveAck=true
             runCatching { trace("snapshot_real_move_ack="+ok) }
             if(!ok || fallback){finish(if(ok)"fallback_ready" else "move_failed");return}
@@ -456,12 +464,14 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(!current())return
             active=null
             waitingCapture=false;waitingCommit=false
-            host.removeOnAttachStateChangeListener(attachmentListener)
-            ui.removeCallbacks(captureTimeout);ui.removeCallbacks(commitTimeout);ui.removeCallbacks(lifetime)
-            host.removeCallbacks(checkHandoff)
-            // One failed visual teardown/diagnostic step cannot leave the
-            // shared coordinator permanently waiting for this attempt.
+            // Isolate each teardown stage so a failing host callback
+            // cannot prevent visual release or coordinator completion.
             StageConcurrentNativeTrialPolicy.cleanupSteps(
+                { host.removeOnAttachStateChangeListener(attachmentListener) },
+                { ui.removeCallbacks(captureTimeout) },
+                { ui.removeCallbacks(commitTimeout) },
+                { ui.removeCallbacks(lifetime) },
+                { host.removeCallbacks(checkHandoff) },
                 { removeVisual() },
                 { trace("snapshot_end:"+result) },
                 { onFinished() },

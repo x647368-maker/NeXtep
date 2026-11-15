@@ -41,6 +41,20 @@ class StageTransientTapPolicyTest {
         assertEquals(StageTransientTapPolicy.MoveRequest.IGNORE,
             p.decideMoveRequest(true,true){error("duplicate validity probe")})
     }
+    @Test fun firstMoveReceiptCannotBeRetractedBeforeUiDispatch() {
+        val receipt=StageTransientTapPolicy.MoveReceipt()
+        // A genuine worker callback wins the claim while UI delivery is pending.
+        val accepted=java.util.concurrent.atomic.AtomicBoolean(false)
+        val worker=Thread { accepted.set(receipt.claim()) }
+        worker.start();worker.join()
+        assertTrue(accepted.get())
+        assertFalse(receipt.claim()) // provider throws after callback
+        assertFalse(receipt.claim()) // late duplicate callback
+        val failureFirst=StageTransientTapPolicy.MoveReceipt()
+        assertTrue(failureFirst.claim())
+        assertFalse(failureFirst.claim()) // late success cannot resurrect it
+        assertTrue(StageTransientTapPolicy.MoveReceipt().claim()) // successor isolated
+    }
     @Test fun flightAndActualOwnershipAckMustBothComplete() {
         val p=StageTransientTapPolicy
         assertFalse(p.canHandoff(false,false))

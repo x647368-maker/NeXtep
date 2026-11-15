@@ -29,11 +29,11 @@ PINS = {
     MAIN+"StageLiveSurfaceExchange.kt": ("f3681dbfde208d4c976af7938601d8657165f181", "bd8569f0fd711d87da1443016063d39bf2e98ad8"),
     MAIN+"StageLiveSurfaceFlightGeometry.kt": ("8849f80b22e3ce76c8ce78db6294c421023f954c", "18d3356bac56d6ce1d1c5d58cf0f369a7db06aac"),
     MAIN+"StagePrivateDualTaskFlightGate.kt": ("de055e62992e593235914bf339fb3127762449ae", "65d5ad2064c711ae3fba16e8762dce3c97fa94d8"),
-    MAIN+"StageTransientTapPolicy.kt": ("a5312b523a810cfdb8e82e77618005335d9b9c17", "5041ec241992b3bb3a88f1661855d05704e3add1"),
-    MAIN+"StageTransientTapSwap.kt": ("9fa8cdbb60fb2c2b6ec2740b595c39c537127a12", "7e9489d8aedeedea5beea0f653ce5a68f5006908"),
+    MAIN+"StageTransientTapPolicy.kt": ("a5312b523a810cfdb8e82e77618005335d9b9c17", "12fd6cd98c8f1d3a6d667e56c57b1030989b56aa"),
+    MAIN+"StageTransientTapSwap.kt": ("9fa8cdbb60fb2c2b6ec2740b595c39c537127a12", "0211543d8de780f3253214e40317d45bf5dbaa1c"),
     TEST+"StageConcurrentNativeTrialPolicyTest.kt": ("0343597c1e9f0ed2a88caa4d8cef1eaa07193e6e", "a3352b04384b04666ad3fb3847ab39a0503c2077"),
     TEST+"StageLiveSurfaceFlightGeometryTest.kt": ("b1d1fbf4032c2df0cae3886c761bb3bf0e675544", "e1795f15dd46ee5d9097a6efd0aaa520a5f812ef"),
-    TEST+"StageTransientTapPolicyTest.kt": ("42b89180ab4c4407ff68c9d97ec4c3d260618b3a", "df51ba28dd1d32b13066eaf05af523df643d20b9"),
+    TEST+"StageTransientTapPolicyTest.kt": ("42b89180ab4c4407ff68c9d97ec4c3d260618b3a", "384bb3b48732ab492e19399388d8702892a0d02b"),
 }
 
 def check_scope(changed, observed):

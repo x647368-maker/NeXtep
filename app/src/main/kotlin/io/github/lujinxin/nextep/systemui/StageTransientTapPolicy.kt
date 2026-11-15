@@ -22,5 +22,11 @@ internal object StageTransientTapPolicy {
             !valid() -> MoveRequest.STALE
             else -> MoveRequest.START
         }
+    // The first callback (or a pre-callback provider failure) alone owns
+    // the outcome; the main-thread ACK may still be queued at that point.
+    internal class MoveReceipt {
+        private val claimed=java.util.concurrent.atomic.AtomicBoolean(false)
+        fun claim():Boolean=claimed.compareAndSet(false,true)
+    }
     fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged
 }
