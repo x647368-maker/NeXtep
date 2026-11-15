@@ -31,6 +31,9 @@ internal object StageHomeLayout {
         return (width * .32f).toInt().coerceIn((208 * density).toInt(), (300 * density).toInt())
     }
 
+    // Keep the system runtime health route available under fault diagnostics, not as a fourth home group.
+    val systemDiagnostics = Item("系统运行诊断", "diagnostics", "diagnostics")
+
     fun contentWidth(availablePixels:Int,density:Float):Int {
         require(availablePixels>0 && density>0)
         return minOf(availablePixels,(MAX_COLUMN_DP*density).toInt().coerceAtLeast(1))

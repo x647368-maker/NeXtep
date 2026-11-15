@@ -483,8 +483,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         val tools = group(root)
         row(tools, "诊断报告与历史", "查看或导出本机报告", "diagnostics") { launchIssue() }
-        row(tools, "系统组件与连接状态", "查看注入状态、刷新连接或退出旧工作区", "diagnostics") {
-            open("diagnostics"); refresh()
+        val health = StageHomeLayout.systemDiagnostics
+        row(tools, health.name, "查看注入状态、刷新连接或退出旧工作区", health.icon) {
+            open(health.page); refresh()
         }
         root.addView(hint("五大专项与综合诊断共用一个会话；已有测试运行时继续该会话，不重复启动。"))
     }
