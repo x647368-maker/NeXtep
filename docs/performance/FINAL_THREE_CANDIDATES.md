@@ -1,0 +1,7 @@
+# Final three-candidate scope (86–88)
+
+85 is rejected on the user's OnePlus PMS110 recording and device report. No publication or merge to main. Maximum three user-facing candidates, not three promises of success. 86 is a convergence branch; do not issue a package merely because a small patch compiles. 87 only if real remaining failures require it; 88 only if necessary and validated. No forced deadline or version-count-based declaration of perfection.
+
+P0: protected small-window visibility during exchange, menu occlusion, real task migration and handoff latency, flash/trajectory, thermal/power. Preserve all prior accepted behavior, sizes, task identity, full resolution, original package/cert/update source and existing device compatibility. Test straight/left/right/top, folded/unfolded, tablet portrait/landscape with actual task frames wherever available. Record failure separately from pass. No fake FPS or simulated OEM equivalence.
+
+This change only implements bounded menu fitting for existing supplied avoidRects. The main menu and its in-popup pages use these rects. Find a free rectangle, use a scrollable viewport, keep minimum touch-row size. If no free rectangle can accommodate one row, minimize overlap/relative card loss; absolute non-occlusion is not geometrically guaranteed. No task layout mutations. Other menu callers without avoidRects and moving-card visibility remain separate outstanding work. No APK delivery from this draft.

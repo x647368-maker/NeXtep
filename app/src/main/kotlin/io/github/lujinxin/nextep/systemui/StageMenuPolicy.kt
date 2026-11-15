@@ -29,4 +29,74 @@ internal object StageMenuPlacement {
             compareBy<Box>{p->avoid.sumOf{p.overlap(it)}}.thenBy{p->kotlin.math.abs(p.l-homeX).toLong()+kotlin.math.abs(p.t-homeY)}
         ) ?: box(homeX,homeY)
     }
+
+    /** Select a scrollable viewport in a true empty rectangle before considering
+     * overlap. This is a menu-open-only calculation; covered tasks stay intact. */
+    fun compact(safe:Box,anchor:Box,preferredW:Int,preferredH:Int,
+                minimumW:Int,minimumH:Int,avoid:List<Box>,gap:Int):Box {
+        val w=preferredW.coerceIn(1,safe.w.coerceAtLeast(1))
+        val h=preferredH.coerceIn(1,safe.h.coerceAtLeast(1))
+        val minW=minimumW.coerceIn(1,w)
+        val minH=minimumH.coerceIn(1,h)
+        val homeX=anchor.l
+        val homeY=anchor.b+gap
+        fun distance(b:Box)=kotlin.math.abs(b.l-homeX).toLong()+kotlin.math.abs(b.t-homeY)
+        fun search(clearance:Int):Box? {
+            val blocked=avoid.mapNotNull { a->
+                Box(maxOf(safe.l,a.l-clearance),maxOf(safe.t,a.t-clearance),
+                    minOf(safe.r,a.r+clearance),minOf(safe.b,a.b+clearance))
+                    .takeIf { it.w>0 && it.h>0 }
+            }
+            val xs=(listOf(safe.l,safe.r)+blocked.flatMap{listOf(it.l,it.r)}).distinct().sorted()
+            var best:Box?=null
+            fun offer(l:Int,r:Int,top:Int,bottom:Int){
+                if(r-l<minW || bottom-top<minH)return
+                val cw=minOf(w,r-l);val ch=minOf(h,bottom-top)
+                val x=homeX.coerceIn(l,r-cw);val y=homeY.coerceIn(top,bottom-ch)
+                val candidate=Box(x,y,x+cw,y+ch)
+                val prior=best
+                val area=cw.toLong()*ch
+                val priorArea=prior?.let{it.w.toLong()*it.h}?:0L
+                if(prior==null || area>priorArea ||
+                    (area==priorArea && (cw>prior.w || (cw==prior.w && distance(candidate)<distance(prior)))))
+                    best=candidate
+            }
+            // For each bounded horizontal strip, merge vertical obstacle intervals.
+            // The free intervals are complete for rectangles whose edges touch
+            // bounds/obstacles; no per-pixel scan, bitmap or background timer.
+            for(i in 0 until xs.lastIndex)for(j in i+1..xs.lastIndex){
+                val l=xs[i];val r=xs[j]
+                if(r-l<minW)continue
+                var top=safe.t
+                for(a in blocked.filter{it.l<r && it.r>l}.sortedBy{it.t}){
+                    if(a.t>top)offer(l,r,top,a.t)
+                    top=maxOf(top,a.b)
+                }
+                if(top<safe.b)offer(l,r,top,safe.b)
+            }
+            return best
+        }
+        // Keep the existing comfortable size if possible. If there is only a
+        // smaller true gap, use a scrolling viewport instead of covering a card.
+        val clear=search(gap.coerceAtLeast(0))
+        val tight=search(0)
+        if(clear!=null && (clear.w==w && clear.h==h || tight==null ||
+                clear.w.toLong()*clear.h>=tight.w.toLong()*tight.h))return clear
+        if(tight!=null)return tight
+        // A fully occupied viewport may have no space for even one accessible
+        // row. Keep actions reachable, minimize the footprint, and favor
+        // preserving small cards (relative protected-area loss).
+        val xs=mutableListOf(homeX,anchor.r-w,safe.l,safe.r-w)
+        val ys=mutableListOf(homeY,anchor.t-minH-gap,safe.t,safe.b-minH)
+        for(a in avoid){xs.add(a.r+gap);xs.add(a.l-w-gap);ys.add(a.b+gap);ys.add(a.t-minH-gap)}
+        fun box(x:Int,y:Int):Box {
+            val l=x.coerceIn(safe.l,maxOf(safe.l,safe.r-w))
+            val t=y.coerceIn(safe.t,maxOf(safe.t,safe.b-minH))
+            return Box(l,t,l+w,t+minH)
+        }
+        return xs.flatMap{x->ys.map{y->box(x,y)}}.distinct().minWithOrNull(
+            compareBy<Box>{b->avoid.sumOf{a->b.overlap(a).toDouble()/(a.w.toLong()*a.h).coerceAtLeast(1L)}}
+                .thenBy{b->avoid.sumOf{b.overlap(it)}}.thenBy(::distance)
+        )?:box(homeX,homeY)
+    }
 }
