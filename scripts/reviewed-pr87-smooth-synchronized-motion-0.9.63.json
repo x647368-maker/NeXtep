@@ -549,6 +549,15 @@
           "after": "        val taskCounts = tasks.groupingBy { it.packageName to it.userId }.eachCount()\n        val sessionsByOwner = sessions.distinctBy { it.key }.groupBy { it.key.packageName to it.key.userId }\n        val result = mutableMapOf<Int, StagePlaybackObservation>()\n        for (task in tasks) {\n            val userId = task.userId ?: continue\n            val owner = task.packageName to userId\n            if (taskCounts[owner] != 1) continue\n            val match = sessionsByOwner[owner]?.singleOrNull() ?: continue\n            result[task.id] = match\n        }"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTabletColdLaunchBridge.kt": {
+      "previous_blob_sha1": "30f48cbcfb84c45496c677cd693d57fa5ab2efc7",
+      "patches": [
+        {
+          "before": "        val state = TaskInfoCompat.readWindowState(info) ?: return\n        val user = TaskInfoCompat.readUserId(info)\n        val pkg = info.baseActivity?.packageName ?: info.topActivity?.packageName\n        val now = SystemClock.uptimeMillis()\n        val ticket = synchronized(this) {\n            val current = pending ?: return",
+          "after": "        // Shell reports every task, even while the workbench is inactive.\n        // Read compatibility fields only for a live, relevant launch ticket.\n        val candidate = synchronized(this) {\n            val current = pending ?: return\n            if (!StageTabletColdLaunchPolicy.mayRetryPrefit(\n                    current.attempts, current.expiresAt, SystemClock.uptimeMillis())) {\n                pending = null\n                return\n            }\n            if (current.inFlight) return\n            current\n        }\n        val pkg = info.baseActivity?.packageName ?: info.topActivity?.packageName\n        if (pkg != candidate.packageName) return\n        val state = TaskInfoCompat.readWindowState(info) ?: return\n        val user = TaskInfoCompat.readUserId(info)\n        val ticket = synchronized(this) {\n            val current = pending ?: return\n            // A cancellation or replacement during the field reads must not\n            // let an earlier callback consume the newer launch ticket.\n            if (current !== candidate) return\n            val now = SystemClock.uptimeMillis()"
+        }
+      ]
     }
   }
 }
