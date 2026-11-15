@@ -58,9 +58,12 @@ internal class ShadeRegression(private val inst:Instrumentation) {
             ui{AtomicPopupMenu.show(activity,anchor,(listOf("GLASS_TEST_ACTION" to {}) + if(i==0)(1..15).map{"MENU_ITEM_$it" to {}} else emptyList()))};settle();check(menuCount()==1){"Menu unavailable while panel closed"}
             if(i==0) {
                 val bounds=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(bounds)
-                check(bounds.height()<=minOf(301*activity.resources.displayMetrics.density,activity.resources.displayMetrics.heightPixels*.42f))
-                check(bounds.width()<=220*activity.resources.displayMetrics.density+3)
+                val maxHeight=minOf(301*activity.resources.displayMetrics.density,activity.resources.displayMetrics.heightPixels*.42f)
+                val maxWidth=220*activity.resources.displayMetrics.density+3
+                record("OBSERVE glass menu bounds=$bounds maxHeight=$maxHeight maxWidth=$maxWidth")
                 inst.uiAutomation.takeScreenshot()?.let {b->File(out,"099-glass-menu.png").outputStream().use{b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)};b.recycle()}
+                check(bounds.height()<=maxHeight){"Menu height ${bounds.height()} exceeds $maxHeight"}
+                check(bounds.width()<=maxWidth){"Menu width ${bounds.width()} exceeds $maxWidth"}
             }
             ui{panel.visibility=View.VISIBLE};settle()
             check(menuCount()==0){"Menu overlapped native panel: ${SystemUiPanelMonitor.state()} ${SystemUiPanelMonitor.diagnostic()}"}

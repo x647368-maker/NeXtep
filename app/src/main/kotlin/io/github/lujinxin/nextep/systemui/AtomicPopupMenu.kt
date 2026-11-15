@@ -66,15 +66,18 @@ internal object AtomicPopupMenu {
             // Measure real labels, including system font scaling, before placing.
             rows.measure(View.MeasureSpec.makeMeasureSpec(maxWidth,View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
-            val width=maxOf(dp(if(secondary)220 else 208),rows.measuredWidth).coerceAtMost(maxWidth)
+            val width=maxOf(dp(if(secondary)220 else 208),rows.measuredWidth).coerceAtMost(maxWidth).coerceAtMost(dp(220))
             rows.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+            // Preserve measured labels, but keep the accepted compact scrolling viewport.
             val height=rows.measuredHeight.coerceIn(1,maxHeight)
+                .coerceAtMost(minOf(dp(300),(maxHeight*.38f).toInt()).coerceAtLeast(1))
             val xy=IntArray(2);anchor.getLocationOnScreen(xy)
             fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
-            val pos=StageMenuPlacement.place(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),width,height,avoid.map{it.box()},dp(8))
-            if(initialized)popup.update(pos.l,pos.t,width,height) else {
-                popup.width=width;popup.height=height
+            val pos=StageMenuPlacement.compact(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),
+                width,height,dp(160),dp(60),avoid.map{it.box()},dp(8))
+            if(initialized)popup.update(pos.l,pos.t,pos.w,pos.h) else {
+                popup.width=pos.w;popup.height=pos.h
                 popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,pos.l,pos.t);initialized=true
             }
         }
