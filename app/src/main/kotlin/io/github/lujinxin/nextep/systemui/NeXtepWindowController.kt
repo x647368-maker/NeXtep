@@ -154,19 +154,21 @@ class NeXtepWindowController(
     private val smartRail = StageSmartRail(context, backdropHandler,
         { workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked &&
             cinemaSlot == null && !workgroups.isSwitching() && slotCoordinator?.isGroupRestoreReady() == true &&
-            !geometry().railAtTop && !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&
+            !isExchangePending() && !swapAnimator.isRunning && !previewCapturePending &&
+            !transientTapSwap.isRunning && liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&
+            !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&
             SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)
     private fun renderSmartRail(hidden: Boolean) {
-        // Unfolded near-square foldables reclaim the side rail's unused physical
-        // width in the main task. Reconfigure the existing task surface through
-        // WorkspaceController, without recreating the four virtual displays.
-        // On phones and Y700 keep the previously verified geometry unchanged.
-        val current = viewport.geometry(sidebarSide)
-        if (workspaceVisible && !suspended &&
-            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
-                current.screenWidth, current.screenHeight) && !current.railAtTop) {
-            onViewportChanged()
+        if (!workspaceVisible || suspended) return
+        // Hide existing live hosts before expanding the main task. Keep the
+        // producer profile and rail bounds unchanged while invisible.
+        if (hidden) records.firstOrNull { it.title == "NeXtepSidebar" }?.view?.let {
+            it.animate().cancel()
+            it.alpha = 0f
         }
+        onViewportChanged()
+        // A failed reconfigure can close the workspace and reset the rail.
+        if (!workspaceVisible || suspended || smartRail.hidden != hidden) return
         records.filter { it.title == "NeXtepSidebar" || it.title == "AtomicSidebarHandle" }.forEach { record ->
             val params = record.view.layoutParams as? WindowManager.LayoutParams ?: return@forEach
             configureWindow(record, params, geometry())
@@ -246,7 +248,7 @@ class NeXtepWindowController(
 
     fun suspendForLock() {
         sparseRailMotion.cancel()
-        smartRail.stop()
+        smartRail.stop(restorePresentation = false)
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         contentDrag.cancel()
@@ -299,6 +301,7 @@ class NeXtepWindowController(
             record.view.scaleY = 1f
         }
         resumeContentAfterFrame()
+        smartRail.armWhenReady()
         return geometry
     }
 
@@ -419,7 +422,7 @@ class NeXtepWindowController(
     fun hide() {
         sparseRailMotion.cancel()
         previousRailGeometry = null
-        smartRail.stop()
+        smartRail.stop(restorePresentation = false)
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
         cinemaPolicy.reset(); cinemaSlot = null; viewport.cinema = false
@@ -505,7 +508,7 @@ class NeXtepWindowController(
     fun onTasksChanged() {
         observeN5ParallelForeground()
         slotCoordinator?.onTasksChanged()
-        smartRail.armWhenReady()
+        if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()
         scheduleCinemaCheck()
         scheduleStageFocus()
     }
@@ -523,12 +526,15 @@ class NeXtepWindowController(
         syncCoreViewport()
         return viewport.geometry(sidebarSide, refreshViewport).let {
             if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
-            else if (smartRail.hidden && !it.railAtTop &&
-                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(
-                    it.screenWidth, it.screenHeight))
-                io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy
-                    .reclaim(it, context.resources.displayMetrics.density)
-            else if (viewport.activeCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it
+            else {
+                val base = if (viewport.activeCount == 0)
+                    it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt()))
+                else it
+                if (smartRail.hidden)
+                    io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry
+                        .reclaim(base, context.resources.displayMetrics.density)
+                else base
+            }
         }
     }
 
@@ -984,8 +990,12 @@ class NeXtepWindowController(
     private fun configureWindow(
         record: WindowRecord,
         params: WindowManager.LayoutParams,
-        geometry: WorkspaceGeometry,
+        requested: WorkspaceGeometry,
     ) {
+        // Invisible TextureViews keep their expanded rail's physical bounds.
+        // Only the main task and the independently touchable handle reclaim space.
+        val geometry = if (smartRail.hidden && record.title == "NeXtepSidebar")
+            viewport.geometry(sidebarSide) else requested
         val touchable = !suspended && ((record.title == "NeXtepContentPanel" && groupInputBlocked) ||
             record.title == "AtomicSidebarHandle" || record.title == "StageMainHandle" ||
             (record.title == "NeXtepTopBar" && quickInputReady && !quickChromeSuppressed && !groupInputBlocked) ||
@@ -1020,7 +1030,10 @@ class NeXtepWindowController(
                 else if (geometry.sidebarSide == SidebarSide.LEFT) "›\n展开" else "‹\n展开"
             textSize = if (sidebarCollapsed) 13f else 14f
             contentDescription = if (sidebarCollapsed || smartRail.hidden) "展开小窗" else "收起小窗"
-            if (smartRail.hidden) { text = "│"; textSize = 18f }
+            if (smartRail.hidden) {
+                text = if (io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(geometry)) "━" else "│"
+                textSize = 18f
+            }
         }
         if (record.title == "NeXtepContentPanel") {
             contentHighlightView?.layoutParams = FrameLayout.LayoutParams(
@@ -1070,21 +1083,10 @@ class NeXtepWindowController(
             "AtomicSidebarHandle" -> {
                 params.width=dp(48).toInt();params.height=dp(48).toInt()
                 params.x=geometry.availableRight-dp(56).toInt();params.y=geometry.availableTop+dp(4).toInt()
-                if (smartRail.hidden && !geometry.railAtTop) {
-                    // Inset from the back-gesture edge; no gesture exclusion or global listener.
-                    params.width=dp(24).toInt();params.height=dp(48).toInt()
-                    val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
-                        .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)
-                    params.x=if (foldEdge)
-                        io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy
-                            .edgeHandleX(geometry, context.resources.displayMetrics.density)
-                        else if (geometry.sidebarSide==SidebarSide.LEFT)
-                            geometry.availableLeft+dp(32).toInt()
-                        else geometry.availableRight-dp(56).toInt()
-                    val safeTop = maxOf(geometry.availableTop, geometry.controlTop + geometry.controlHeight) + dp(8).toInt()
-                    val safeBottom = geometry.availableBottom - dp(12).toInt()
-                    params.height = (safeBottom - safeTop).coerceAtLeast(dp(48).toInt())
-                    params.y = safeTop
+                if (smartRail.hidden) {
+                    val box = io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry
+                        .handle(geometry, context.resources.displayMetrics.density)
+                    params.width=box.width;params.height=box.height;params.x=box.left;params.y=box.top
                 }
             }
             "NeXtepTopBar" -> {
@@ -1193,6 +1195,7 @@ class NeXtepWindowController(
 
     private fun addStageWindow(engine: SlotTaskCoordinator, intent: Intent): Result<Unit> {
         if (sidebarCollapsed) setSidebarCollapsed(false)
+        if (smartRail.hidden) smartRail.interact()
         // Rebind presentation before capacity checks. Existing tasks are never removed.
         sidebarView?.let { applySlotLayout(it, currentGeometry()) }
         scheduleWindowRefresh()
@@ -1364,9 +1367,9 @@ class NeXtepWindowController(
     }
 
     private fun changeStageLayout(top: Boolean, side: SidebarSide = sidebarSide) {
-        smartRail.stop()
         check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
         if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
+        smartRail.stop()
         // Preserve the established collapsed-rail expand/side callbacks. Atomic
         // layout selection applies to the visible four-card path, not its state machine.
         if (!top && sidebarCollapsed && side != sidebarSide) {
@@ -1378,7 +1381,10 @@ class NeXtepWindowController(
         leaveCinema()
         val previous = viewport.isTopRail()
         val previousSide=sidebarSide
-        if(previous==top && previousSide==side)return
+        if(previous==top && previousSide==side) {
+            if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()
+            return
+        }
         runCatching {
             viewport.setSidebarSide(side);sidebarSide=side;topAppStrip?.setSidebarSide(side)
             viewport.setTopRail(top)
@@ -1388,11 +1394,15 @@ class NeXtepWindowController(
                 // The task surface and click projection are still updated by
                 // the normal geometry owner; no frozen image or VD recreation.
                 animateTabletLayoutSelection()
+                if (!sidebarCollapsed) smartRail.armWhenReady()
             }
         }.onFailure {
             viewport.setSidebarSide(previousSide);sidebarSide=previousSide;topAppStrip?.setSidebarSide(previousSide)
             viewport.setTopRail(previous)
-            if (workspaceVisible && !suspended) onViewportChanged()
+            if (workspaceVisible && !suspended) {
+                onViewportChanged()
+                if (!sidebarCollapsed) smartRail.armWhenReady()
+            }
             throw it
         }
     }
@@ -1438,7 +1448,7 @@ class NeXtepWindowController(
             "影音布局与自动模式" to { showCinemaMenu(anchor) },
             (if (smartRail.enabled) "关闭智能侧栏" else "开启智能侧栏（静置收起）") to {
                 smartRail.setEnabled(!smartRail.enabled)
-                showStageMessage(if (smartRail.enabled) "智能侧栏已开启：侧栏静置后收起，保留任务和主窗比例；顶部布局不受影响" else "已恢复原有侧栏行为")
+                showStageMessage(if (smartRail.enabled) "智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务" else "已恢复原有侧栏行为")
             },
             "侧栏自动收起时间（${smartRail.idleSeconds}秒）" to { showSmartRailDelayMenu(anchor) },
             (if (smartRail.pinned) "取消固定侧栏" else "固定侧栏") to { smartRail.setPinned(!smartRail.pinned) },
@@ -1683,7 +1693,7 @@ class NeXtepWindowController(
         setOnClickListener {
             if (smartRail.hidden) {
                 if (SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) smartRail.interact()
-            } else if (smartRail.enabled && !sidebarCollapsed && !geometry().railAtTop) smartRail.hideNow()
+            } else if (smartRail.enabled && !sidebarCollapsed) smartRail.hideNow()
             else setSidebarCollapsed(!sidebarCollapsed)
         }
         var downX = 0f
@@ -1693,6 +1703,14 @@ class NeXtepWindowController(
                 android.view.MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; true }
                 android.view.MotionEvent.ACTION_UP -> {
                     val g = geometry()
+                    if (smartRail.hidden) {
+                        val horizontal = io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(g)
+                        val motion = if (horizontal) event.rawY - downY else event.rawX - downX
+                        if (kotlin.math.abs(motion) <= dp(24) ||
+                            io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.towardsContent(g, motion))
+                            view.performClick()
+                        return@setOnTouchListener true
+                    }
                     val delta = if (g.railAtTop || g.isLandscape) event.rawY - downY else event.rawX - downX
                     val outward = if (g.railAtTop) false else if (g.isLandscape) !g.isSidebarAtTop else g.sidebarSide == SidebarSide.RIGHT
                     if (kotlin.math.abs(delta) > dp(24)) setSidebarCollapsed((delta > 0) == outward)
@@ -1727,6 +1745,7 @@ class NeXtepWindowController(
                 .translationY(if (base.railAtTop || base.isLandscape) offset else 0f)
                 .setDuration(220).setInterpolator(transitionInterpolator).start()
         }
+        if (!value) smartRail.armWhenReady()
     }
 
     private var sidebarTouchRegionReady = false
@@ -2834,7 +2853,9 @@ class NeXtepWindowController(
         val selectedProfile = viewport.layout().let { selected ->
             // The no-task compact rail is ONLY a parent/add affordance. Hidden
             // producer hosts remain 1x1 until an occupied state chooses real bounds.
-            if (viewport.activeCount > 0 && !sidebarCollapsed) selected.copy(geometry = geometry) else selected
+            if (viewport.activeCount > 0 && !sidebarCollapsed) selected.copy(
+                geometry = if (smartRail.hidden) viewport.geometry(sidebarSide) else geometry
+            ) else selected
         }
         val right = logicalSidebarSide(geometry) == SidebarSide.RIGHT
         val states = slotCoordinator?.slotStates().orEmpty()

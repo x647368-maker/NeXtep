@@ -40,6 +40,95 @@
         {
           "before": "        })\n    }\n",
           "after": "        })\n    }\n\n    private fun showSmartRailDelayMenu(anchor: View) {\n        val items: List<Pair<String, () -> Unit>> = listOf(3, 5, 10, 15, 30).map { seconds ->\n            (if (smartRail.idleSeconds == seconds) \"✓ ${seconds}秒\" else \"${seconds}秒\") to {\n                smartRail.setIdleSeconds(seconds)\n            }\n        } + listOf(\"始终显示（固定侧栏）\" to { smartRail.setPinned(true) })\n        AtomicPopupMenu.show(context, anchor, items)\n    }\n"
+        },
+        {
+          "before": "            !geometry().railAtTop && !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&\n            SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)",
+          "after": "            !isExchangePending() && !swapAnimator.isRunning && !previewCapturePending &&\n            !transientTapSwap.isRunning && liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&\n            !windowPicker.isShowing && !AtomicPopupMenu.isShowing() &&\n            SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)"
+        },
+        {
+          "before": "        // Unfolded near-square foldables reclaim the side rail's unused physical\n        // width in the main task. Reconfigure the existing task surface through\n        // WorkspaceController, without recreating the four virtual displays.\n        // On phones and Y700 keep the previously verified geometry unchanged.\n        val current = viewport.geometry(sidebarSide)\n        if (workspaceVisible && !suspended &&\n            io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(\n                current.screenWidth, current.screenHeight) && !current.railAtTop) {\n            onViewportChanged()\n        }",
+          "after": "        if (!workspaceVisible || suspended) return\n        // Hide existing live hosts before expanding the main task. Keep the\n        // producer profile and rail bounds unchanged while invisible.\n        if (hidden) records.firstOrNull { it.title == \"NeXtepSidebar\" }?.view?.let {\n            it.animate().cancel()\n            it.alpha = 0f\n        }\n        onViewportChanged()\n        // A failed reconfigure can close the workspace and reset the rail.\n        if (!workspaceVisible || suspended || smartRail.hidden != hidden) return"
+        },
+        {
+          "before": "        sparseRailMotion.cancel()\n        smartRail.stop()\n        cinemaEpoch++; directionDebounce.reset()",
+          "after": "        sparseRailMotion.cancel()\n        smartRail.stop(restorePresentation = false)\n        cinemaEpoch++; directionDebounce.reset()"
+        },
+        {
+          "before": "        previousRailGeometry = null\n        smartRail.stop()\n        cinemaEpoch++; directionDebounce.reset()",
+          "after": "        previousRailGeometry = null\n        smartRail.stop(restorePresentation = false)\n        cinemaEpoch++; directionDebounce.reset()"
+        },
+        {
+          "before": "        resumeContentAfterFrame()\n        return geometry\n    }",
+          "after": "        resumeContentAfterFrame()\n        smartRail.armWhenReady()\n        return geometry\n    }"
+        },
+        {
+          "before": "        slotCoordinator?.onTasksChanged()\n        smartRail.armWhenReady()\n        scheduleCinemaCheck()",
+          "after": "        slotCoordinator?.onTasksChanged()\n        if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()\n        scheduleCinemaCheck()"
+        },
+        {
+          "before": "            else if (smartRail.hidden && !it.railAtTop &&\n                io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy.unfoldedNearSquare(\n                    it.screenWidth, it.screenHeight))\n                io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy\n                    .reclaim(it, context.resources.displayMetrics.density)\n            else if (viewport.activeCount == 0) it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt())) else it",
+          "after": "            else {\n                val base = if (viewport.activeCount == 0)\n                    it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt()))\n                else it\n                if (smartRail.hidden)\n                    io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry\n                        .reclaim(base, context.resources.displayMetrics.density)\n                else base\n            }"
+        },
+        {
+          "before": "        params: WindowManager.LayoutParams,\n        geometry: WorkspaceGeometry,\n    ) {\n        val touchable = !suspended",
+          "after": "        params: WindowManager.LayoutParams,\n        requested: WorkspaceGeometry,\n    ) {\n        // Invisible TextureViews keep their expanded rail's physical bounds.\n        // Only the main task and the independently touchable handle reclaim space.\n        val geometry = if (smartRail.hidden && record.title == \"NeXtepSidebar\")\n            viewport.geometry(sidebarSide) else requested\n        val touchable = !suspended"
+        },
+        {
+          "before": "            if (smartRail.hidden) { text = \"│\"; textSize = 18f }",
+          "after": "            if (smartRail.hidden) {\n                text = if (io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(geometry)) \"━\" else \"│\"\n                textSize = 18f\n            }"
+        },
+        {
+          "before": "                if (smartRail.hidden && !geometry.railAtTop) {\n                    // Inset from the back-gesture edge; no gesture exclusion or global listener.\n                    params.width=dp(24).toInt();params.height=dp(48).toInt()\n                    val foldEdge = io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy\n                        .unfoldedNearSquare(geometry.screenWidth, geometry.screenHeight)\n                    params.x=if (foldEdge)\n                        io.github.x647368maker.atomicworkbench.workspace.StageAutoHideFoldPolicy\n                            .edgeHandleX(geometry, context.resources.displayMetrics.density)\n                        else if (geometry.sidebarSide==SidebarSide.LEFT)\n                            geometry.availableLeft+dp(32).toInt()\n                        else geometry.availableRight-dp(56).toInt()\n                    val safeTop = maxOf(geometry.availableTop, geometry.controlTop + geometry.controlHeight) + dp(8).toInt()\n                    val safeBottom = geometry.availableBottom - dp(12).toInt()\n                    params.height = (safeBottom - safeTop).coerceAtLeast(dp(48).toInt())\n                    params.y = safeTop\n                }",
+          "after": "                if (smartRail.hidden) {\n                    val box = io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry\n                        .handle(geometry, context.resources.displayMetrics.density)\n                    params.width=box.width;params.height=box.height;params.x=box.left;params.y=box.top\n                }"
+        },
+        {
+          "before": "        if (sidebarCollapsed) setSidebarCollapsed(false)\n        // Rebind presentation before capacity checks.",
+          "after": "        if (sidebarCollapsed) setSidebarCollapsed(false)\n        if (smartRail.hidden) smartRail.interact()\n        // Rebind presentation before capacity checks."
+        },
+        {
+          "before": "        smartRail.stop()\n        check(!groupInputBlocked && !workgroups.isSwitching()) { \"请等待工作组切换完成\" }\n        if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { \"请等待窗口切换完成\" }",
+          "after": "        check(!groupInputBlocked && !workgroups.isSwitching()) { \"请等待工作组切换完成\" }\n        if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { \"请等待窗口切换完成\" }\n        smartRail.stop()"
+        },
+        {
+          "before": "        if(previous==top && previousSide==side)return",
+          "after": "        if(previous==top && previousSide==side) {\n            if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()\n            return\n        }"
+        },
+        {
+          "before": "                animateTabletLayoutSelection()\n            }\n        }.onFailure {",
+          "after": "                animateTabletLayoutSelection()\n                if (!sidebarCollapsed) smartRail.armWhenReady()\n            }\n        }.onFailure {"
+        },
+        {
+          "before": "            if (workspaceVisible && !suspended) onViewportChanged()\n            throw it\n        }\n    }\n\n    private fun animateTabletLayoutSelection()",
+          "after": "            if (workspaceVisible && !suspended) {\n                onViewportChanged()\n                if (!sidebarCollapsed) smartRail.armWhenReady()\n            }\n            throw it\n        }\n    }\n\n    private fun animateTabletLayoutSelection()"
+        },
+        {
+          "before": "智能侧栏已开启：侧栏静置后收起，保留任务和主窗比例；顶部布局不受影响",
+          "after": "智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务"
+        },
+        {
+          "before": "            } else if (smartRail.enabled && !sidebarCollapsed && !geometry().railAtTop) smartRail.hideNow()",
+          "after": "            } else if (smartRail.enabled && !sidebarCollapsed) smartRail.hideNow()"
+        },
+        {
+          "before": "                    val g = geometry()\n                    val delta = if (g.railAtTop || g.isLandscape) event.rawY - downY else event.rawX - downX",
+          "after": "                    val g = geometry()\n                    if (smartRail.hidden) {\n                        val horizontal = io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(g)\n                        val motion = if (horizontal) event.rawY - downY else event.rawX - downX\n                        if (kotlin.math.abs(motion) <= dp(24) ||\n                            io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.towardsContent(g, motion))\n                            view.performClick()\n                        return@setOnTouchListener true\n                    }\n                    val delta = if (g.railAtTop || g.isLandscape) event.rawY - downY else event.rawX - downX"
+        },
+        {
+          "before": "                .setDuration(220).setInterpolator(transitionInterpolator).start()\n        }\n    }\n\n    private var sidebarTouchRegionReady",
+          "after": "                .setDuration(220).setInterpolator(transitionInterpolator).start()\n        }\n        if (!value) smartRail.armWhenReady()\n    }\n\n    private var sidebarTouchRegionReady"
+        },
+        {
+          "before": "            if (viewport.activeCount > 0 && !sidebarCollapsed) selected.copy(geometry = geometry) else selected",
+          "after": "            if (viewport.activeCount > 0 && !sidebarCollapsed) selected.copy(\n                geometry = if (smartRail.hidden) viewport.geometry(sidebarSide) else geometry\n            ) else selected"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmartRail.kt": {
+      "previous_blob_sha1": "ef075cd9bd31c56321b33c2dbbf07628ebe3135c",
+      "patches": [
+        {
+          "before": "    fun stop() {\n        touching = false\n        handler.removeCallbacks(idle)\n        pending = false\n        retries = 0\n        if (hidden) { hidden = false; render(false) }\n    }",
+          "after": "    fun stop(restorePresentation: Boolean = true) {\n        touching = false\n        handler.removeCallbacks(idle)\n        pending = false\n        retries = 0\n        if (hidden) {\n            hidden = false\n            // Lock and workspace exit already remove the presentation. Do not\n            // submit a redundant main-Surface refit while tearing it down.\n            if (restorePresentation) render(false)\n        }\n    }"
         }
       ]
     }

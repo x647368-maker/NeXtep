@@ -82,11 +82,16 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
             handler.postDelayed(idle, 2000)
         }
     }
-    fun stop() {
+    fun stop(restorePresentation: Boolean = true) {
         touching = false
         handler.removeCallbacks(idle)
         pending = false
         retries = 0
-        if (hidden) { hidden = false; render(false) }
+        if (hidden) {
+            hidden = false
+            // Lock and workspace exit already remove the presentation. Do not
+            // submit a redundant main-Surface refit while tearing it down.
+            if (restorePresentation) render(false)
+        }
     }
 }
