@@ -10,6 +10,11 @@ import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
+import io.github.x647368maker.atomicworkbench.display.StageExchangeBinderLane
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
@@ -147,6 +152,132 @@ internal class CrossProcessMigrationRegression(private val i:Instrumentation) {
             waitFor("new returned side marker"){markers.get() and 2 != 0}
             check(realPid()==firstPid)
             record("return_marker_verified=true")
+            // After the original independent pixel/identity smoke, compare the
+            // same remote process and same task, two callbacks vs guarded first read.
+            // No screenshot, shell PID query or output waiting inside a timed interval.
+            val owner=Handler(Looper.getMainLooper())
+            lateinit var lane:StageExchangeBinderLane
+            i.runOnMainSync{lane=StageExchangeBinderLane{action->owner.post(action)}}
+            fun now()=SystemClock.elapsedRealtimeNanos()
+            fun ms(ns:Long)=ns/1_000_000.0
+            data class Measurement(val elapsed:Double,val callback:Double,val ownerBusy:Double)
+            val measurements=mutableMapOf<Pair<String,Int>,MutableList<Measurement>>()
+            fun matchedMove(round:Int,target:Int,batchMode:Boolean){
+                val mode=if(batchMode)"guarded_batch" else "ordinary"
+                val started=now()
+                val sessionDeadline=SystemClock.uptimeMillis()+4000L
+                val finish=CountDownLatch(1)
+                val ticket=AtomicReference("READY")
+                var terminal:Result<Unit>?=null
+                var ended=0L
+                var moveReturnedAt=0L
+                var ownerBusy=0L
+                var callbackWait=0L
+                var callbacks=0
+                var queries=0
+                fun active()=ticket.get()!="REVOKED" && SystemClock.uptimeMillis()<sessionDeadline
+                fun observationActive()=active() && SystemClock.uptimeMillis()<moveReturnedAt+700L
+                fun bridge(action:()->Unit){
+                    val t=now()
+                    try{
+                        check(Looper.myLooper()==Looper.getMainLooper())
+                        action()
+                    }catch(error:Throwable){terminal=Result.failure(error)}
+                    finally{
+                        ownerBusy+=now()-t
+                        if(terminal!=null){ended=now();finish.countDown()}
+                    }
+                }
+                fun <T> submit(work:()->T,accept:(T)->Unit){
+                    var result:Result<T>?=null
+                    var returned=0L
+                    check(lane.submit({
+                        try{result=runCatching(work);checkNotNull(result).getOrThrow();Unit}
+                        finally{returned=now()}
+                    }){ack->
+                        val entered=now()
+                        bridge{
+                            callbacks++;callbackWait+=entered-returned
+                            ack.getOrThrow()
+                            check(active()){"Session invalid"}
+                            accept(checkNotNull(result).getOrThrow())
+                        }
+                    }){"Serialized lane unavailable"}
+                }
+                lateinit var observe:()->Unit
+                fun accept(b:TaskRepository.ExchangeTaskBatch){
+                    check(observationActive()){"Matched post-move observation expired"}
+                    val raw=b.snapshots.firstOrNull{it.taskId==id}
+                    if(raw!=null)check(raw.taskId==before.taskId && raw.userId==before.userId &&
+                        raw.token==before.token){"Remote task identity changed"}
+                    // No speculative result may update Surface state before owner checks.
+                    val state=repository.publishExchangeTasks(b).firstOrNull{it.taskId==id}
+                    if(state?.displayId==target)terminal=Result.success(Unit)
+                    else check(owner.postDelayed({bridge{observe()}},30L))
+                }
+                observe={
+                    check(observationActive())
+                    queries++
+                    submit({repository.readExchangeTasks()},::accept)
+                }
+                check(owner.post{
+                    bridge{
+                        check(active())
+                        if(batchMode){
+                            queries++
+                            submit({
+                                ActivityTaskManagerCompat.moveTaskToDisplay(id,target).getOrThrow()
+                                moveReturnedAt=SystemClock.uptimeMillis()
+                                check(observationActive() && ticket.compareAndSet("READY","READING") &&
+                                    observationActive()){"Prefetch no longer authorized"}
+                                repository.readExchangeTasks()
+                            }){value->
+                                check(ticket.get()=="READING")
+                                accept(value)
+                            }
+                        }else{
+                            submit({
+                                ActivityTaskManagerCompat.moveTaskToDisplay(id,target).getOrThrow()
+                                moveReturnedAt=SystemClock.uptimeMillis()
+                            }){observe()}
+                        }
+                    }
+                })
+                if(!finish.await(8,TimeUnit.SECONDS)){
+                    ticket.set("REVOKED")
+                    error("Remote matched move did not return; no next mutation permitted")
+                }
+                checkNotNull(terminal).getOrThrow()
+                ticket.set("REVOKED")
+                val m=Measurement(ms(ended-started),ms(callbackWait),ms(ownerBusy))
+                val direction=if(target==android.view.Display.DEFAULT_DISPLAY)"to_main" else "to_side"
+                measurements.getOrPut(mode to target){mutableListOf()}.add(m)
+                record("remote_matched round=$round mode=$mode direction=$direction "+
+                    "elapsed_ms=${m.elapsed} callback_wait_ms=${m.callback} owner_busy_ms=${m.ownerBusy} "+
+                    "queries=$queries callbacks=$callbacks")
+                // Strict independent identity and process evidence, outside timing.
+                check(displayOf()==target && realPid()==firstPid)
+                Thread.sleep(150L)
+            }
+            repeat(8){round->
+                for(batchMode in if(round%2==0)listOf(false,true) else listOf(true,false)){
+                    matchedMove(round,android.view.Display.DEFAULT_DISPLAY,batchMode)
+                    matchedMove(round,side,batchMode)
+                }
+            }
+            fun median(xs:List<Double>):Double{
+                check(xs.size==8)
+                val sorted=xs.sorted()
+                return (sorted[3]+sorted[4])/2
+            }
+            for(mode in listOf("ordinary","guarded_batch"))for(target in listOf(0,side)){
+                val v=checkNotNull(measurements[mode to target])
+                val direction=if(target==0)"to_main" else "to_side"
+                record("remote_summary mode=$mode direction=$direction n=${v.size} "+
+                    "elapsed_median_ms=${median(v.map{it.elapsed})} elapsed_max_ms=${v.maxOf{it.elapsed}} "+
+                    "callback_median_ms=${median(v.map{it.callback})} owner_busy_median_ms=${median(v.map{it.ownerBusy})}")
+            }
+            record("remote matched scope: 32 moves, one independent fixture task, 700ms post-IPC budget, owner-only publication; valid path only, no per-move fresh-pixel timing or full owner geometry/cancellation proof")
             val result="PASS remote test-APK process retained task identity and actual main/side markers; smoke only, no OEM FPS or third-party content claim"
             record(result)
             return result
