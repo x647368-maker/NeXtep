@@ -169,7 +169,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         controls.addView(status)
         startButton=Button(this).apply{
             text="开始诊断";isAllCaps=false
-            background=GradientDrawable().apply {setColor(Color.rgb(15,103,241));cornerRadius=dp(26).toFloat()}
+            this.background=GradientDrawable().apply {setColor(Color.rgb(15,103,241));cornerRadius=dp(26).toFloat()}
             setTextColor(Color.WHITE);minHeight=dp(54);setOnClickListener{start()}
         }
         markButton=Button(this).apply{text="标记问题（可选）";setOnClickListener{mark()}}
