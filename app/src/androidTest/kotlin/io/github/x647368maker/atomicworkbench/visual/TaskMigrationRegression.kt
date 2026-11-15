@@ -143,6 +143,10 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             val barrierOwner=mutableListOf<Double>()
             val ordinaryCallback=mutableListOf<Double>()
             val barrierCallback=mutableListOf<Double>()
+            val batchGaps=mutableListOf<Long>()
+            val batchElapsed=mutableListOf<Double>()
+            val batchOwner=mutableListOf<Double>()
+            val batchCallback=mutableListOf<Double>()
             fun matchedMove(id:Int,destination:Int,mode:String){
                 val async=mode!="sync"
                 val selectedLane=if(mode=="async_barrier")barrierLane else lane
@@ -156,6 +160,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 var firstOwnerNs=0L
                 var endedNs=0L
                 var queries=0
+                var callbacks=0
                 var deadline=0L
                 fun ownerStep(action:()->Unit){
                     val entered=now()
@@ -191,28 +196,46 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     }){ack->
                         val entered=now()
                         ownerStep {
+                            callbacks++
                             callbackNs+=entered-workerEnd
                             ack.getOrThrow()
                             accept(checkNotNull(value).getOrThrow())
                         }
                     }) {"Production exchange lane unexpectedly busy"}
                 }
-                fun observeAsync(){
-                    queries++
-                    onLane({repository.readExchangeTasks()}){batch->
-                        val state=repository.publishExchangeTasks(batch).firstOrNull{it.taskId==id}
-                        verify(id,state)
-                        if(state?.displayId==destination)outcome=Result.success(Unit)
-                        else{
-                            check(SystemClock.uptimeMillis()<deadline){"Async display observation timed out"}
-                            check(owner.postDelayed({ownerStep{observeAsync()}},30L))
-                        }
+                // Publish only on the owner. Batched first observation is
+                // read-only and may not bypass identity or destination proof.
+                lateinit var observeAsync:()->Unit
+                fun acceptBatch(batch:TaskRepository.ExchangeTaskBatch){
+                    val state=repository.publishExchangeTasks(batch).firstOrNull{it.taskId==id}
+                    verify(id,state)
+                    if(state?.displayId==destination)outcome=Result.success(Unit)
+                    else{
+                        check(SystemClock.uptimeMillis()<deadline){"Async display observation timed out"}
+                        check(owner.postDelayed({ownerStep{observeAsync()}},30L))
                     }
+                }
+                observeAsync={
+                    queries++
+                    onLane({repository.readExchangeTasks()},::acceptBatch)
                 }
                 check(owner.post {
                     firstOwnerNs=now()-startTime
                     ownerStep {
-                        if(async){
+                        if(mode=="async_batch"){
+                            // Candidate only: combine an actual successful move
+                            // and its first uncommitted read in one worker call.
+                            // The ordinary main Handler is retained.
+                            queries++
+                            onLane({
+                                ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
+                                val expiry=SystemClock.uptimeMillis()+700L
+                                repository.readExchangeTasks() to expiry
+                            }){(batch,expiry)->
+                                deadline=expiry
+                                acceptBatch(batch)
+                            }
+                        }else if(async){
                             onLane({ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()}){
                                 deadline=SystemClock.uptimeMillis()+700
                                 observeAsync()
@@ -247,21 +270,24 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     "sync"->{syncElapsed.add(elapsed);syncOwner.add(busy)}
                     "async"->{asyncElapsed.add(elapsed);asyncOwner.add(busy);ordinaryCallback.add(ms(callbackNs))}
                     "async_barrier"->{barrierElapsed.add(elapsed);barrierOwner.add(busy);barrierCallback.add(ms(callbackNs))}
+                    "async_batch"->{batchElapsed.add(elapsed);batchOwner.add(busy);batchCallback.add(ms(callbackNs))}
                     else->error("Unknown probe mode")
                 }
                 lines.add("matched_move mode=$mode task=$id display=$destination elapsed_ms=$elapsed "+
                     "owner_busy_ms=$busy worker_ms=${ms(workerNs)} dispatch_ms=${ms(dispatchNs)} "+
-                    "callback_wait_ms=${ms(callbackNs)} initial_owner_wait_ms=${ms(firstOwnerNs)} queries=$queries")
+                    "callback_wait_ms=${ms(callbackNs)} initial_owner_wait_ms=${ms(firstOwnerNs)} queries=$queries callbacks=$callbacks")
             }
             for(round in 0..1)for(slot in 0..3){
                 // Balanced alternating order over the same four live tasks.
                 val orders=listOf(
-                    listOf("sync","async","async_barrier"),
-                    listOf("async","async_barrier","sync"),
-                    listOf("async_barrier","sync","async"),
-                    listOf("async_barrier","async","sync"),
-                    listOf("sync","async_barrier","async"),
-                    listOf("async","sync","async_barrier"))
+                    listOf("sync","async","async_batch","async_barrier"),
+                    listOf("async","async_barrier","sync","async_batch"),
+                    listOf("async_barrier","async_batch","async","sync"),
+                    listOf("async_batch","sync","async_barrier","async"),
+                    listOf("async_barrier","async_batch","async","sync").reversed(),
+                    listOf("async_batch","sync","async_barrier","async").reversed(),
+                    listOf("sync","async","async_batch","async_barrier").reversed(),
+                    listOf("async","async_barrier","sync","async_batch").reversed())
                 val order=orders[(round*4+slot)%orders.size]
                 for(mode in order){
                     i.runOnMainSync {
@@ -283,6 +309,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                                 "sync"->syncGaps.addAll(gaps)
                                 "async"->laneGaps.addAll(gaps)
                                 "async_barrier"->barrierGaps.addAll(gaps)
+                                "async_batch"->batchGaps.addAll(gaps)
                                 else->error("Unknown probe mode")
                             }
                         }
@@ -305,7 +332,8 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             lines.add("matched_summary mode=sync n=16 elapsed_median_ms=${median(syncElapsed)} owner_busy_median_ms=${median(syncOwner)} "+frameMetrics(syncGaps))
             lines.add("matched_summary mode=async n=16 elapsed_median_ms=${median(asyncElapsed)} owner_busy_median_ms=${median(asyncOwner)} callback_wait_median_ms=${median(ordinaryCallback)} "+frameMetrics(laneGaps))
             lines.add("matched_summary mode=async_barrier n=16 elapsed_median_ms=${median(barrierElapsed)} owner_busy_median_ms=${median(barrierOwner)} callback_wait_median_ms=${median(barrierCallback)} "+frameMetrics(barrierGaps))
-            lines.add("Scope: async_barrier is a test-only Handler.createAsync completion route; no production scheduling modification and no assumed improvement.")
+            lines.add("matched_summary mode=async_batch n=16 elapsed_median_ms=${median(batchElapsed)} owner_busy_median_ms=${median(batchOwner)} callback_wait_median_ms=${median(batchCallback)} "+frameMetrics(batchGaps))
+            lines.add("Scope: async_barrier and async_batch are test-only candidates; batch merges successful move and first read, never worker publication; no production scheduling modification and no assumed improvement.")
             // Guard test is outside measured intervals.
             val guardFinished=CountDownLatch(1)
             var rejected=false
@@ -326,7 +354,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             lines.add("main_frame_gap_max_ms=$baselineGap samples=$baselineSamples")
             lines.add("Scope: real framework moves only; production crop, input, overlay and vendor task engine are not emulated")
             File(out,"real-task-migration.txt").writeText(lines.joinToString("\n"))
-            return listOf("PASS four real AOSP tasks retained identities and new buffers across 48 matched display moves; three callback modes, no phone performance claim",
+            return listOf("PASS four real AOSP tasks retained identities and new buffers across 64 matched display moves; four modes, no phone performance claim",
                 "PASS matched production Binder lane and task repository; owner-only publication guard; separate elapsed and owner-busy timings")
         } finally {
             i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
