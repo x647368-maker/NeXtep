@@ -70,6 +70,18 @@ internal class StageLiveSurfaceExchange private constructor(
         }
     }
     private val finished = AtomicBoolean(false)
+    // Scoped to one flight: even a brief detach/reattach invalidates the
+    // compositor parent and original viewport. Never reuse their old stamps.
+    private var hostDetached=false
+    private val detachCleanup=Runnable { stop() }
+    private val attachmentListener=object:View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(v:View) = Unit
+        override fun onViewDetachedFromWindow(v:View) {
+            hostDetached=true
+            // Avoid mutating View children inside framework detach dispatch.
+            ui.post(detachCleanup)
+        }
+    }
     private var animator: ValueAnimator? = null
     private var revealAnimator: ValueAnimator? = null
     private var handoffCheckStarted = false
@@ -405,6 +417,8 @@ internal class StageLiveSurfaceExchange private constructor(
             " main=${mainStart.width.toInt()}x${mainStart.height.toInt()}")
         finishCallback = onFinished
         try {
+            check(host.isAttachedToWindow && !hostDetached)
+            host.addOnAttachStateChangeListener(attachmentListener)
             val root = host.rootSurfaceControl ?: error("Host surface detached before native flight")
             frameTransaction = SurfaceControl.Transaction()
             val tx = root.buildReparentTransaction(sourceMirror)
@@ -435,7 +449,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     // A committed transaction is proof that SurfaceFlinger
                     // accepted both layer parents, NOT proof of visible pixels.
                     tx.addTransactionCommittedListener(host.context.mainExecutor) {
-                        if (finished.get()) return@addTransactionCommittedListener
+                        if (finished.get() || hostDetached) return@addTransactionCommittedListener
                         firstTransactionCommitted = true
                         trace(
                             "first_gpu_transaction_committed@${SystemClock.uptimeMillis()-startedAtMs}ms")
@@ -458,16 +472,24 @@ internal class StageLiveSurfaceExchange private constructor(
 
         fun commitMove() {
             if (!isRunning || sentMove) return
+            if(hostDetached || !host.isAttachedToWindow){stop();return}
             // Recheck once immediately before the real migration. Observed
             // task stamps use local cached state, not a synchronous task query.
             // A rejected preflight leaves task rollback/reconciliation to the
             // existing exchange coordinator and runs normal visual cleanup.
-            if (!StageConcurrentNativeTrialPolicy.sourceIdentityReady(
-                    host.isAttachedToWindow,sourceMirror.isValid && mainMirror.isValid,
+            val sourceReady=runCatching {
+                StageConcurrentNativeTrialPolicy.sourceIdentityReady(
+                    host.isAttachedToWindow && !hostDetached,
+                    sourceMirror.isValid && mainMirror.isValid,
                     { incomingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
                         incomingStamp.taskId,incomingStamp.displayId)) },
                     { outgoingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
-                        outgoingStamp.taskId,outgoingStamp.displayId)) })) {
+                        outgoingStamp.taskId,outgoingStamp.displayId)) })
+            }.getOrElse {
+                runCatching { NeXtepLog.warn("native_swap","Source preflight failed",it) }
+                false
+            }
+            if (!sourceReady) {
                 trace("native_move_rejected:source_changed_or_detached")
                 stop()
                 return
@@ -529,6 +551,7 @@ internal class StageLiveSurfaceExchange private constructor(
             else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
         fun submitFlightFrame(fraction: Float,terminal:Boolean=false): Boolean {
             if (!isRunning) return false
+            if(hostDetached || !host.isAttachedToWindow){stop();return false}
             return runCatching {
                 val frame=frameTransaction ?: error("Flight transaction is unavailable")
                 applyFrame(frame,fraction)
@@ -538,7 +561,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(terminal && concurrentHandoff && Build.VERSION.SDK_INT>=33) {
                     runCatching {
                         frame.addTransactionCommittedListener(host.context.mainExecutor) {
-                            if(!isRunning || sentMove)return@addTransactionCommittedListener
+                            if(!isRunning || sentMove || hostDetached)return@addTransactionCommittedListener
                             terminalTransactionCommitted=true
                             trace("native_terminal_transaction_committed")
                             deferredMove?.let { pending ->
@@ -624,6 +647,7 @@ internal class StageLiveSurfaceExchange private constructor(
         val beginFlight=Runnable {
             pendingFirstFlight=null
             if(!isRunning)return@Runnable
+            if(hostDetached || !host.isAttachedToWindow){stop();return@Runnable}
             if(concurrentHandoff && !firstTransactionCommitted) {
                 trace("native_first_commit_timeout:unmasked_move")
                 // Do not submit a jumped endpoint or hold unconfirmed masks.
@@ -704,6 +728,7 @@ internal class StageLiveSurfaceExchange private constructor(
         val check = object : Runnable {
             override fun run() {
                 if (!isRunning) return
+                if(hostDetached || !host.isAttachedToWindow){stop();return}
                 val now=SystemClock.uptimeMillis()
                 val releasable=frameComplete && runCatching { canRelease() }.getOrDefault(false)
                 val live=releasable && runCatching { liveReady() }.getOrDefault(false)
@@ -766,6 +791,7 @@ internal class StageLiveSurfaceExchange private constructor(
             interpolator = PathInterpolator(.2f, 0f, .2f, 1f)
             addUpdateListener {
                 if (!isRunning) return@addUpdateListener
+                if(hostDetached || !host.isAttachedToWindow){stop();return@addUpdateListener}
                 val alpha = StageLiveSurfaceFlightGeometry.handoffReveal(it.animatedValue as Float)
                 runCatching {
                     val tx = frameTransaction ?: error("Handoff transaction unavailable")
@@ -787,7 +813,10 @@ internal class StageLiveSurfaceExchange private constructor(
             })
         }
         revealAnimator = reveal
-        reveal.start()
+        runCatching { reveal.start() }.onFailure {
+            runCatching { NeXtepLog.warn("native_swap","Endpoint reveal start failed",it) }
+            stop()
+        }
     }
 
     fun stop() {
@@ -838,6 +867,8 @@ internal class StageLiveSurfaceExchange private constructor(
         val ownedTransaction=frameTransaction
         frameTransaction=null
         StageConcurrentNativeTrialPolicy.cleanupSteps(
+            { host.removeOnAttachStateChangeListener(attachmentListener) },
+            { ui.removeCallbacks(detachCleanup) },
             { disarmHeldEndpointWriter() },
             {
                 SurfaceControl.Transaction().use { tx ->
