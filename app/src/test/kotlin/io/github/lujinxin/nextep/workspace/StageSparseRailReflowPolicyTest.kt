@@ -127,4 +127,19 @@ class StageSparseRailReflowPolicyTest {
             Float.POSITIVE_INFINITY,0f))
         assertNull(StageSparseRailReflowPolicy.visibleBounds(layout,0f,0f,0f,0f))
     }
+
+    @Test fun interruptedReflowUsesNominalBoundsAndOneTransformNotTwo() {
+        val nominal = StageSparseRailReflowPolicy.Bounds(36f,110f,160f,320f)
+        val target = StageSparseRailReflowPolicy.Bounds(40f,180f,180f,360f)
+        val visual = StageSparseRailReflowPolicy.visibleBounds(nominal,.9f,.9f,12f,-18f)!!
+        val start = StageSparseRailReflowPolicy.start(visual,target)!!
+        assertEquals(visual.cx,target.cx+start.offsetX,.001f)
+        assertEquals(visual.cy,target.cy+start.offsetY,.001f)
+        assertEquals(visual.width,target.width*start.uniformScale,.001f)
+        assertEquals(visual.height,target.height*start.uniformScale,.001f)
+        // Reproduces the integration bug, not a second acceptable trajectory.
+        val doubleApplied = StageSparseRailReflowPolicy.visibleBounds(visual,.9f,.9f,12f,-18f)!!
+        assertTrue(kotlin.math.abs(doubleApplied.cx-visual.cx)>1f)
+        assertTrue(kotlin.math.abs(doubleApplied.width-visual.width)>1f)
+    }
 }

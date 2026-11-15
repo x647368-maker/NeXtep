@@ -3026,29 +3026,22 @@ class NeXtepWindowController(
     }
 
     /**
-     * Snapshot live card positions before a count change, including a possible
-     * unfinished earlier reflow. This is read-only and never captures pixels.
+     * Untransformed layout rectangles only. StageSparseRailReflowAnimator
+     * samples the still-running compositor properties exactly once. Passing
+     * rendered bounds here as well would apply the old scale/offset twice.
      */
-    private fun liveRailFrames(
+    private fun nominalRailFrames(
         geometry: WorkspaceGeometry,
-        transformed: Boolean,
     ): Map<View, io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds> =
         slotWindows.mapNotNull { slot ->
             val view = slot.view
             if (!view.isWorkspaceCardVisible()) return@mapNotNull null
             val box = view.layoutParams as? FrameLayout.LayoutParams ?: return@mapNotNull null
             if (box.width <= 1 || box.height <= 1) return@mapNotNull null
-            val scaleX = if (transformed) view.scaleX else 1f
-            val scaleY = if (transformed) view.scaleY else 1f
-            if (kotlin.math.abs(scaleX - scaleY) > .04f) return@mapNotNull null
-            val dx = if (transformed) view.translationX else 0f
-            val dy = if (transformed) view.translationY else 0f
-            val visibleW = box.width * scaleX
-            val visibleH = box.height * scaleY
             view to io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds(
-                geometry.sidebarLeft + box.marginStart + (box.width - visibleW) / 2f + dx,
-                geometry.sidebarTop + box.topMargin + (box.height - visibleH) / 2f + dy,
-                visibleW, visibleH,
+                (geometry.sidebarLeft + box.marginStart).toFloat(),
+                (geometry.sidebarTop + box.topMargin).toFloat(),
+                box.width.toFloat(), box.height.toFloat(),
             )
         }.toMap()
 
@@ -3060,7 +3053,7 @@ class NeXtepWindowController(
         }
         val oldCount = shownWindowCount
         val oldRailGeometry = previousRailGeometry
-        val oldCardFrames = oldRailGeometry?.let { liveRailFrames(it, transformed = true) }.orEmpty()
+        val oldCardFrames = oldRailGeometry?.let { nominalRailFrames(it) }.orEmpty()
         // If the physical screen or layout mode changed, never preserve a stale
         // scale/translation into the next touchable workspace.
         if (oldRailGeometry != null &&
@@ -3140,13 +3133,14 @@ class NeXtepWindowController(
                 return@forEachIndexed
             }
             slot.view.apply {
-                pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()
-                pivotY = bounds[index].height / 2f
                 cameraDistance = dp(900)
                 rotationY = pose.tilt
-                // A short compositor reflow already owns these properties.
-                // Other harmless refreshes must not snap it back mid-frame.
+                // The running FLIP also owns its centre pivot. Changing it
+                // during a harmless refresh would move the rendered card
+                // and invalidate the animator's next interruption sample.
                 if (!sparseRailMotion.isAnimating(this)) {
+                    pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()
+                    pivotY = bounds[index].height / 2f
                     scaleX = pose.scale
                     scaleY = pose.scale
                     translationX = pose.x
@@ -3168,7 +3162,7 @@ class NeXtepWindowController(
             // fixed menu, bottom '+' action, virtual display or touch bridge.
             sparseRailMotion.animate(
                 oldRailGeometry, profile.geometry, oldCount, shownWindowCount,
-                oldCardFrames, liveRailFrames(profile.geometry, transformed = false),
+                oldCardFrames, nominalRailFrames(profile.geometry),
                 enabled = workspaceVisible && !suspended && !sidebarCollapsed &&
                     !smartRail.hidden && !groupInputBlocked && !workgroups.isSwitching() &&
                     cinemaSlot == null && !swapAnimator.isRunning &&

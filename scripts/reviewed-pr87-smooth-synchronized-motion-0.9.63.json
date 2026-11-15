@@ -284,6 +284,22 @@
         {
           "before": "        smartRail.stop()\n        cancelDragVisuals()\n        sidebarCollapsed = value",
           "after": "        cancelRailLayoutMotion()\n        smartRail.stop()\n        cancelDragVisuals()\n        sidebarCollapsed = value"
+        },
+        {
+          "before": "    /**\n     * Snapshot live card positions before a count change, including a possible\n     * unfinished earlier reflow. This is read-only and never captures pixels.\n     */\n    private fun liveRailFrames(\n        geometry: WorkspaceGeometry,\n        transformed: Boolean,\n    ): Map<View, io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds> =\n        slotWindows.mapNotNull { slot ->\n            val view = slot.view\n            if (!view.isWorkspaceCardVisible()) return@mapNotNull null\n            val box = view.layoutParams as? FrameLayout.LayoutParams ?: return@mapNotNull null\n            if (box.width <= 1 || box.height <= 1) return@mapNotNull null\n            val scaleX = if (transformed) view.scaleX else 1f\n            val scaleY = if (transformed) view.scaleY else 1f\n            if (kotlin.math.abs(scaleX - scaleY) > .04f) return@mapNotNull null\n            val dx = if (transformed) view.translationX else 0f\n            val dy = if (transformed) view.translationY else 0f\n            val visibleW = box.width * scaleX\n            val visibleH = box.height * scaleY\n            view to io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds(\n                geometry.sidebarLeft + box.marginStart + (box.width - visibleW) / 2f + dx,\n                geometry.sidebarTop + box.topMargin + (box.height - visibleH) / 2f + dy,\n                visibleW, visibleH,\n            )\n        }.toMap()\n\n",
+          "after": "    /**\n     * Untransformed layout rectangles only. StageSparseRailReflowAnimator\n     * samples the still-running compositor properties exactly once. Passing\n     * rendered bounds here as well would apply the old scale/offset twice.\n     */\n    private fun nominalRailFrames(\n        geometry: WorkspaceGeometry,\n    ): Map<View, io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds> =\n        slotWindows.mapNotNull { slot ->\n            val view = slot.view\n            if (!view.isWorkspaceCardVisible()) return@mapNotNull null\n            val box = view.layoutParams as? FrameLayout.LayoutParams ?: return@mapNotNull null\n            if (box.width <= 1 || box.height <= 1) return@mapNotNull null\n            view to io.github.x647368maker.atomicworkbench.workspace.StageSparseRailReflowPolicy.Bounds(\n                (geometry.sidebarLeft + box.marginStart).toFloat(),\n                (geometry.sidebarTop + box.topMargin).toFloat(),\n                box.width.toFloat(), box.height.toFloat(),\n            )\n        }.toMap()\n\n"
+        },
+        {
+          "before": "oldRailGeometry?.let { liveRailFrames(it, transformed = true) }.orEmpty()",
+          "after": "oldRailGeometry?.let { nominalRailFrames(it) }.orEmpty()"
+        },
+        {
+          "before": "oldCardFrames, liveRailFrames(profile.geometry, transformed = false),",
+          "after": "oldCardFrames, nominalRailFrames(profile.geometry),"
+        },
+        {
+          "before": "                pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()\n                pivotY = bounds[index].height / 2f\n                cameraDistance = dp(900)\n                rotationY = pose.tilt\n                // A short compositor reflow already owns these properties.\n                // Other harmless refreshes must not snap it back mid-frame.\n                if (!sparseRailMotion.isAnimating(this)) {\n                    scaleX = pose.scale",
+          "after": "                cameraDistance = dp(900)\n                rotationY = pose.tilt\n                // The running FLIP also owns its centre pivot. Changing it\n                // during a harmless refresh would move the rendered card\n                // and invalidate the animator's next interruption sample.\n                if (!sparseRailMotion.isAnimating(this)) {\n                    pivotX = if (geometry.railAtTop) bounds[index].width / 2f else if (right) 0f else bounds[index].width.toFloat()\n                    pivotY = bounds[index].height / 2f\n                    scaleX = pose.scale"
         }
       ]
     },
