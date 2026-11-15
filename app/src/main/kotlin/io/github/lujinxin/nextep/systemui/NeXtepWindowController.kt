@@ -1337,7 +1337,7 @@ class NeXtepWindowController(
             actions += "向前排序" to { core.pins = StageQuickPolicy.move(core.pins, entry.key, -1); refreshQuickBar() }
             actions += "向后排序" to { core.pins = StageQuickPolicy.move(core.pins, entry.key, 1); refreshQuickBar() }
         }
-        AtomicPopupMenu.show(context, anchor, actions)
+        AtomicPopupMenu.show(context, anchor, actions, avoidBounds = menuAvoidBounds())
     }
 
     private fun scheduleCinemaCheck() {
@@ -1413,7 +1413,7 @@ class NeXtepWindowController(
         for ((label, mode) in listOf("自动（可靠方向信号）" to StageCinemaPolicy.Mode.AUTO, "手动横屏影音" to StageCinemaPolicy.Mode.LANDSCAPE, "手动竖屏影音" to StageCinemaPolicy.Mode.PORTRAIT, "关闭影音布局" to StageCinemaPolicy.Mode.OFF)) {
             items += label to { leaveCinema(); core.cinemaMode = mode; cinemaPolicy.mode = mode; scheduleCinemaCheck() }
         }
-        AtomicPopupMenu.show(context, anchor, items)
+        AtomicPopupMenu.show(context, anchor, items, avoidBounds = menuAvoidBounds())
     }
     private fun moveWechat() {
         check(workspaceVisible && !suspended && !groupInputBlocked && !workgroups.isSwitching()) { "请先开启台前调度" }
@@ -1517,10 +1517,18 @@ class NeXtepWindowController(
             },
             "关闭主窗（移回后台）" to { closeMainWindow() },
             "退出台前调度" to { onExitRequested() },
-        ), avoidBounds = buildList {
-            val g=geometry();add(Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom))
-            slotWindows.forEach { slot -> val box=Rect();if(slot.view.getScreenVisibleRect(box))add(box) }
-        })
+        ), avoidBounds = menuAvoidBounds())
+    }
+
+    /** All workspace popups use the same visible task regions. A hidden rail
+     * still owns real TextureViews but is not a visible menu obstacle. */
+    private fun menuAvoidBounds(): List<Rect> = buildList {
+        val g = geometry()
+        add(Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom))
+        if (!sidebarCollapsed && !smartRail.hidden) slotWindows.forEach { slot ->
+            val box = Rect()
+            if (slot.view.isWorkspaceCardVisible() && slot.view.getScreenVisibleRect(box)) add(box)
+        }
     }
 
     private fun showSmartRailDelayMenu(anchor: View) {
@@ -1529,7 +1537,7 @@ class NeXtepWindowController(
                 smartRail.setIdleSeconds(seconds)
             }
         } + listOf("始终显示（固定侧栏）" to { smartRail.setPinned(true) })
-        AtomicPopupMenu.show(context, anchor, items)
+        AtomicPopupMenu.show(context, anchor, items, avoidBounds = menuAvoidBounds())
     }
 
     private fun setMainPriority(priority: Boolean) {
@@ -1558,19 +1566,35 @@ class NeXtepWindowController(
     private fun showWindowMenu(index: Int, anchor: View) {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val state = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied ?: return
+        // A popup outlives a task callback. Never address its old positional
+        // index after another task took ownership (including a recreated VD).
+        fun withOwner(action: (SlotTaskCoordinator) -> Unit) {
+            if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
+            val engine = slotCoordinator ?: return
+            if (!engine.isGroupRestoreReady()) {
+                showStageMessage("窗口正在切换，请稍后重试")
+                return
+            }
+            val current = engine.slotStates().getOrNull(index) as? SlotState.Occupied
+            if (current == null || current.taskId != state.taskId ||
+                current.displayId != state.displayId || current.component != state.component) {
+                showStageMessage("小窗已变化，请重新打开菜单")
+                return
+            }
+            action(engine)
+        }
         AtomicPopupMenu.show(context, anchor, listOf(
-            "横屏影音布局（保留原任务）" to { enterCinema(state.taskId, portrait = false) },
-            "竖屏影音布局（保留原任务）" to { enterCinema(state.taskId, portrait = true) },
-            "在小窗中操作" to { slotWindows[index].view.setDirectInteraction(true) },
-            "切换为主窗口" to { slotCoordinator?.onSlotClicked(index) },
-            "替换应用" to { chooseWindowApp(anchor, index, state.taskId) },
-            "关闭小窗（移回后台）" to {
-                val current = slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied
-                if (current?.taskId == state.taskId) slotCoordinator?.closeWindow(index)?.onFailure {
+            "横屏影音布局（保留原任务）" to { withOwner { enterCinema(state.taskId, portrait = false) } },
+            "竖屏影音布局（保留原任务）" to { withOwner { enterCinema(state.taskId, portrait = true) } },
+            "在小窗中操作" to { withOwner { slotWindows.getOrNull(index)?.view?.setDirectInteraction(true) } },
+            "切换为主窗口" to { withOwner { it.onSlotClicked(index) } },
+            "替换应用" to { withOwner { chooseWindowApp(anchor, index, state.taskId) } },
+            "关闭小窗（移回后台）" to { withOwner { engine ->
+                engine.closeWindow(index).onFailure {
                     android.widget.Toast.makeText(context, it.message ?: "关闭失败", android.widget.Toast.LENGTH_LONG).show()
                 }
-            },
-        ))
+            } },
+        ), avoidBounds = menuAvoidBounds())
     }
 
     private fun chooseWindowApp(anchor: View, target: Int?, expectedTask: Int? = null,
