@@ -43,7 +43,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
         abs(Color.green(value)-Color.green(expected))<25 &&
         abs(Color.blue(value)-Color.blue(expected))<25
 
-    fun run(activity:Activity,host:FrameLayout,out:File):String {
+    fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false):String {
         check(Build.VERSION.SDK_INT>=37)
         check(ValueAnimator.getDurationScale()>=2f) { "Test requires extended system animation scale" }
         val first=View(activity).apply { setBackgroundColor(blue) }
@@ -94,6 +94,9 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         Rect(0,0,270,360),box(small),box(main),null,covers,false,
                         incoming,outgoing,true) as StageLiveSurfaceExchange
                     flight=engine
+                    if(pairedRail)check(engine.preparePairedRailRuntimeTest(
+                        StageLiveSurfaceFlightGeometry.Box(0f,0f,host.width.toFloat(),host.height.toFloat()),
+                        listOf(box(other)))) { "No certified paired contain route" }
                     val ended=CountDownLatch(1)
                     val finishes=AtomicInteger()
                     val moves=AtomicInteger()
@@ -172,6 +175,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     var moving=false
                     var samples=0
                     var last:Bitmap?=null
+                    var firstMoving:Bitmap?=null
+                    var firstCenters:FloatArray?=null
                     val start=SystemClock.uptimeMillis()
                     val deadline=start+1450L
                     // Retain only one screenshot while sampling. Compression
@@ -181,7 +186,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         val requested=SystemClock.uptimeMillis()
                         val frame=shot()
                         val captured=SystemClock.uptimeMillis()
-                        last?.recycle()
+                        if(last!==firstMoving)last?.recycle()
                         last=frame
                         samples++
                         run {
@@ -189,13 +194,28 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                                 "Protected unselected slot changed during $label"
                             }
                             var up=0;var down=0;var movedUp=0;var movedDown=0
+                            var ux=0L;var uy=0L;var dx=0L;var dy=0L
                             for(y in small.top until main.bottom step 12)
                                 for(x in 0 until host.width step 12) {
                                     val c=pixel(frame,x,y)
-                                    if(matches(c,blue)) { up++; if(!small.contains(x,y))movedUp++ }
-                                    if(matches(c,orange)) { down++; if(!main.contains(x,y))movedDown++ }
+                                    if(matches(c,blue)) { up++; ux+=x;uy+=y;if(!small.contains(x,y))movedUp++ }
+                                    if(matches(c,orange)) { down++;dx+=x;dy+=y;if(!main.contains(x,y))movedDown++ }
                                 }
-                            moving=up>12 && down>12 && movedUp>12 && movedDown>12
+                            val both=up>12 && down>12 && movedUp>12 && movedDown>12
+                            if(!pairedRail)moving=both
+                            else if(both) {
+                                val centers=floatArrayOf(ux.toFloat()/up,uy.toFloat()/up,dx.toFloat()/down,dy.toFloat()/down)
+                                val prior=firstCenters
+                                if(prior==null) { firstCenters=centers;firstMoving=frame }
+                                else {
+                                    // Both moving clusters must change their actual
+                                    // screen positions by more than one sampling cell.
+                                    val d1=kotlin.math.hypot(centers[0]-prior[0],centers[1]-prior[1])
+                                    val d2=kotlin.math.hypot(centers[2]-prior[2],centers[3]-prior[3])
+                                    moving=d1>12f && d2>12f
+                                    evidence.add("$label distinct displacement blue=$d1 orange=$d2")
+                                }
+                            }
                             evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
                         }
                     }
@@ -204,9 +224,12 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         attempt.flight.stop();attempt.flight.stop()
                     }
                     } finally {
-                        last?.let { frame ->
-                            try { save(frame,if(moving)"native-flight-moving-$label.png" else "native-flight-failed-moving-$label.png") }
-                            finally { frame.recycle() }
+                        try {
+                            firstMoving?.let { save(it,"native-flight-first-moving-$label.png") }
+                            last?.let { save(it,if(moving)"native-flight-moving-$label.png" else "native-flight-failed-moving-$label.png") }
+                        } finally {
+                            firstMoving?.recycle()
+                            if(last!==firstMoving)last?.recycle()
                         }
                         evidence.add("$label samples=$samples elapsed=${SystemClock.uptimeMillis()-start}ms ended=${attempt.ended.count==0L}")
                     }
@@ -226,7 +249,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     }
                 } finally { inst.runOnMainSync { attempt.flight.stop() } }
             }
-            return "PASS production native GPU animator: moving live roots, protected slot, early/mid cancellation, stale migration rejection, repeat cleanup"
+            return if(pairedRail) "PASS paired contain trial: two distinct dual-moving physical frames, protected slot, cancellation and stale migration rejection"
+                else "PASS production native GPU animator: moving live roots, protected slot, early/mid cancellation, stale migration rejection, repeat cleanup"
         } finally {
             File(out,"native-flight-runtime.txt").writeText(evidence.joinToString("\n"))
             File(out,"native-flight-trace.txt").writeText(StageExchangeTelemetry.nativeDescription()+"\nOutcome: "+StageLiveSurfaceExchange.lastOutcome())

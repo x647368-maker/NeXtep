@@ -27,10 +27,12 @@ import java.util.concurrent.TimeUnit
 class LivePreviewInstrumentation : Instrumentation() {
     private var nativeMirrorOnly = false
     private var nativeFlightOnly = false
+    private var pairedFlightOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
         nativeFlightOnly = arguments?.getString("nativeFlightOnly") == "true"
+        pairedFlightOnly = arguments?.getString("pairedFlightOnly") == "true"
         start()
     }
     override fun onStart() {
@@ -43,9 +45,11 @@ class LivePreviewInstrumentation : Instrumentation() {
             waitForIdleSync()
             val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
             val checks=mutableListOf<String>()
-            if (nativeFlightOnly) {
-                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,out)
-                result.putString("stream",status+"\nNATIVE_FLIGHT_PASS\n")
+            if (nativeFlightOnly || pairedFlightOnly) {
+                val destination=if(pairedFlightOnly)File(out,"paired-flight").apply { mkdirs() } else out
+                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly)
+                val marker=if(pairedFlightOnly)"PAIRED_FLIGHT_PASS" else "NATIVE_FLIGHT_PASS"
+                result.putString("stream",status+"\n"+marker+"\n")
                 runOnMainSync { activity.finish() }
                 finish(Activity.RESULT_OK,result)
                 return

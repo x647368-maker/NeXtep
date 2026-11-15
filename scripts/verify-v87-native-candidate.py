@@ -16,11 +16,11 @@ REVIEW_TARGET = "b4ef45a111702da7bee85029c981ccc31a9411e5"
 SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
-NEW = {"app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c", "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": "dc9e1769f44047613a545a76d6b2f7687aad87d8", "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "5ca7fb96cc4606994080788f4f93386833de936e"}
+NEW = {"app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c", "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": "dc9e1769f44047613a545a76d6b2f7687aad87d8", "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "4e2e1d8f70e2576ae8266e97481ba956e9f79d19"}
 PINS = {
-    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "2ce8336fd6dbd34e2c9e352bf2871506c786e803"),
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "128788ac6fe1ee75e8c83dfe5b65efdd005ca7d5"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
-    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "376fda410f2d1ef1578f8450c393d9c8230aed01"),
+    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "c2e7d71e542faa476c8a009d75099bacf8a97a75"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "34f4058cbc0ae0db18cf3c6ee2f82de303b3e135"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "84f90a1c0d1730ac49ad54e79c28782f75594ddf"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
