@@ -451,6 +451,54 @@
         {
           "before": "    private fun renderDuration(){",
           "after": "    private fun renderAdvanced(){\n        if(!::advancedBody.isInitialized)return\n        advancedControl.text=if(advancedExpanded) \"收起高级诊断详情\" else \"展开高级诊断详情\"\n        advancedBody.visibility=if(advancedExpanded) View.VISIBLE else View.GONE\n    }\n    private fun renderDuration(){"
+        },
+        {
+          "before": "    private lateinit var scope: LinearLayout\n    private var advancedExpanded",
+          "after": "    private lateinit var scope: LinearLayout\n    private lateinit var scopeHost: LinearLayout\n    private lateinit var bodyHost: LinearLayout\n    private lateinit var timingCard: LinearLayout\n    private var advancedExpanded"
+        },
+        {
+          "before": "            setPadding(dp(20),dp(18),dp(20),dp(34))\n        }\n        fun line",
+          "after": "            setPadding(dp(20),dp(12),dp(20),dp(26))\n        }\n        bodyHost=body\n        fun line"
+        },
+        {
+          "before": "            setPadding(dp(16),dp(12),dp(16),dp(12))\n            this.background=GradientDrawable().apply { setColor(surface);cornerRadius=dp(22).toFloat() }\n            body.addView(this,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(14)})",
+          "after": "            setPadding(dp(16),dp(10),dp(16),dp(10))\n            this.background=GradientDrawable().apply { setColor(surface);cornerRadius=dp(22).toFloat() }\n            body.addView(this,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(10)})"
+        },
+        {
+          "before": "        val scopeCard=card()\n        scopeHeading=",
+          "after": "        val scopeCard=card()\n        scopeHost=scopeCard\n        scopeHeading="
+        },
+        {
+          "before": "        scopeCard.addView(advancedControl,LinearLayout.LayoutParams(-1,-2))\n        advancedBody=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}\n        instruction=line(\"\")\n        advancedBody.addView(instruction)\n        scopeCard.addView(advancedBody,LinearLayout.LayoutParams(-1,-2))\n        renderAdvanced()",
+          "after": "        advancedBody=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}\n        instruction=line(\"\")\n        advancedBody.addView(instruction)\n        renderAdvanced()"
+        },
+        {
+          "before": "        val timing=card()\n        timing.addView",
+          "after": "        val timing=card()\n        timingCard=timing\n        timing.addView"
+        },
+        {
+          "before": "        status=line(\"\")\n        controls.addView(status)\n        startButton=",
+          "after": "        status=line(\"\")\n        startButton="
+        },
+        {
+          "before": "        for (b in listOf(startButton,markButton,stopButton))\n            controls.addView(b,LinearLayout.LayoutParams(-1,-2))\n\n        val reportCard=card()",
+          "after": "        for (b in listOf(startButton,markButton,stopButton))\n            controls.addView(b,LinearLayout.LayoutParams(-1,-2))\n        controls.addView(status)\n        // Advanced details remain collapsed and reachable below the primary action.\n        val details=card()\n        details.addView(advancedControl,LinearLayout.LayoutParams(-1,-2))\n        details.addView(advancedBody,LinearLayout.LayoutParams(-1,-2))\n\n        val reportCard=card()"
+        },
+        {
+          "before": "        showScope(id)\n        startButton.visibility",
+          "after": "        showScope(id)\n        placeTiming(id)\n        startButton.visibility"
+        },
+        {
+          "before": "    private fun showScope(id:String?){",
+          "after": "    // Only reparent the existing duration controls when the visible mode changes.\n    // The selected value, callbacks, token and deadline are untouched.\n    private fun placeTiming(id:String?) {\n        if(!::timingCard.isInitialized || !::scopeHost.isInitialized)return\n        val comprehensive=StageIssueTestCatalog.find(id).id==\"all\"\n        val target=if(comprehensive) scopeHost else bodyHost\n        if(timingCard.parent===target)return\n        (timingCard.parent as? android.view.ViewGroup)?.removeView(timingCard)\n        val density=resources.displayMetrics.density\n        fun dp(n:Int)=(n*density).toInt()\n        val index=if(comprehensive) scopeHost.indexOfChild(scope) else bodyHost.indexOfChild(scopeHost)+1\n        timingCard.setPadding(dp(if(comprehensive) 0 else 16),dp(10),dp(if(comprehensive) 0 else 16),dp(10))\n        target.addView(timingCard,index.coerceIn(0,target.childCount),\n            LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(if(comprehensive) 0 else 10)})\n    }\n    private fun showScope(id:String?){"
+        },
+        {
+          "before": "                minimumHeight=dp(62);setPadding(0,dp(9),0,dp(9))",
+          "after": "                minimumHeight=dp(58);setPadding(0,dp(7),0,dp(7))"
+        },
+        {
+          "before": "            row.addView(icon,LinearLayout.LayoutParams(dp(46),dp(46)).apply{marginEnd=dp(13)})",
+          "after": "            row.addView(icon,LinearLayout.LayoutParams(dp(42),dp(42)).apply{marginEnd=dp(12)})"
         }
       ]
     },
@@ -633,6 +681,18 @@
         {
           "before": "if (page == \"windows\" || (wideLayout && page == \"home\")) refresh()",
           "after": "if (page == \"windows\") refresh()"
+        },
+        {
+          "before": "        val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }\n        words.addView(label(\"台前调度\", if (wideLayout) 21f else 30f)",
+          "after": "        if(wideLayout) header.addView(ImageView(activity).apply {setImageResource(R.drawable.ic_atomic_workbench)},\n            LinearLayout.LayoutParams(dp(30),dp(30)).apply{marginEnd=dp(8)})\n        val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }\n        words.addView(label(\"台前调度\", if (wideLayout) 21f else 30f)"
+        },
+        {
+          "before": "        stateText = label(homeState(), 12f, secondary)",
+          "after": "        if(wideLayout) words.addView(label(\"Atomic Workbench\",10f,secondary))\n        stateText = label(homeState(), 12f, secondary)"
+        },
+        {
+          "before": "        footer.addView(label(\"台前调度 · Atomic Workbench\\nZMW小武 × GPT\\n基于 NeXtep 二次开发 · $versionName\", 11f, secondary).apply {\n            setLineSpacing(dp(3).toFloat(),1f)\n        },LinearLayout.LayoutParams(-2,-2,0f))",
+          "after": "        val identity=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL}\n        identity.addView(label(\"台前调度 · Atomic Workbench\",12f).apply{typeface=Typeface.DEFAULT_BOLD})\n        identity.addView(label(\"二次开发：ZMW小武 × GPT\",11f,secondary))\n        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))\n        footer.addView(label(versionName,11f,secondary).apply{\n            gravity=Gravity.CENTER;setPadding(dp(8),dp(5),dp(8),dp(5))\n            background=GradientDrawable().apply{setColor(cardColor);cornerRadius=dp(14).toFloat()}\n        },LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(6)})"
         }
       ]
     }
