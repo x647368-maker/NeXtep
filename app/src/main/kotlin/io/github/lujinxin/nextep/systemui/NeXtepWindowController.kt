@@ -1081,7 +1081,10 @@ class NeXtepWindowController(
                         else if (geometry.sidebarSide==SidebarSide.LEFT)
                             geometry.availableLeft+dp(32).toInt()
                         else geometry.availableRight-dp(56).toInt()
-                    params.y=(geometry.availableTop+geometry.availableBottom-params.height)/2
+                    val safeTop = maxOf(geometry.availableTop, geometry.controlTop + geometry.controlHeight) + dp(8).toInt()
+                    val safeBottom = geometry.availableBottom - dp(12).toInt()
+                    params.height = (safeBottom - safeTop).coerceAtLeast(dp(48).toInt())
+                    params.y = safeTop
                 }
             }
             "NeXtepTopBar" -> {
