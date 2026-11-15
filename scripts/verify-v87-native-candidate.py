@@ -18,6 +18,8 @@ MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
 NEW = {"app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c", "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": "dc9e1769f44047613a545a76d6b2f7687aad87d8", "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "099b6e29101c369e11d4c1ee40a2aaac0f532630"}
 PINS = {
+    MAIN+"StageSparseRailReflowAnimator.kt": ("fde92eb3dd4f5d13cb3b6d1b4dfdc9d82ed2618b", "f24f84845cabbcc61c9deedd6194e708fe29e424"),
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageSparseRailMotionRegression.kt": ("0beb558911b7b41e45fb40a9cdfd5593baf93b64", "087cc5efbdfc91318ce539d48ee616d9a5ef43cd"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "128788ac6fe1ee75e8c83dfe5b65efdd005ca7d5"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
     ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "c2e7d71e542faa476c8a009d75099bacf8a97a75"),
@@ -140,7 +142,7 @@ def main():
         old = git(root, "ls-tree", BASE, "--", file)
         if actual != pin or mode != b"100644" or old:
             raise SystemExit("unexpected new test object: "+file)
-    print("PASS: committed candidate matches 14 exact file pairs and 3 new pinned files; no extra paths except this auditor.")
+    print("PASS: committed candidate matches 16 exact file pairs and 3 new pinned files; no extra paths except this auditor.")
     check_candidate_contracts(root, ref)
     if args.historical:
         historical_on_normalized_copy(root, ref)

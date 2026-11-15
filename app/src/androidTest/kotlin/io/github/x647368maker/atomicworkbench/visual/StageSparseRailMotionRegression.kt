@@ -299,6 +299,22 @@ internal class StageSparseRailMotionRegression(private val instrumentation: Inst
                 shot.compress(Bitmap.CompressFormat.PNG,100,it)
             }
             shot.recycle()
+            instrumentation.runOnMainSync {
+                motion.cancel()
+                val removed=cards[3]
+                removed.alpha=0f
+                val before=(0 until 3).associate { i -> cards[i] as View to four[i].bounds() }
+                val after=(0 until 4).associate { i -> cards[i] as View to four[i].bounds() }
+                motion.animate(geo,geo,3,4,before,after,enabled=true)
+                check(motion.isAnimating(removed)) { "Detach test requires an active live entrance" }
+                root.removeView(removed)
+                check(!removed.isAttachedToWindow)
+                check(!motion.isAnimating(removed)) { "Detached live card retained reflow ownership" }
+                check(abs(removed.scaleX-1f)<.002f && abs(removed.scaleY-1f)<.002f &&
+                    abs(removed.translationX)<.002f && abs(removed.translationY)<.002f &&
+                    abs(removed.alpha-1f)<.002f) { "Detached live card retained old compositor properties" }
+                motion.cancel()
+            }
         } finally {
             instrumentation.runOnMainSync {
                 motion.cancel()
