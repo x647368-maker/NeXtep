@@ -81,9 +81,11 @@ class StageExchangeLaneCancellationIntegrationTest {
             )
         }
 
-        fun turn() = checkNotNull(turns.poll(5, TimeUnit.SECONDS)) {
+        fun takeTurn(): () -> Unit = checkNotNull(turns.poll(5, TimeUnit.SECONDS)) {
             "Expected an actual worker/owner completion"
-        }.invoke()
+        }
+
+        fun turn() = takeTurn().invoke()
 
         fun start() {
             session.start()
@@ -98,8 +100,8 @@ class StageExchangeLaneCancellationIntegrationTest {
             assertFalse(lane.submit({ error("overlapping Binder call") }) {})
         }
 
-        fun finishRollback() {
-            turn() // actual IPC/query completion
+        fun finishRollback(actualReply: () -> Unit = takeTurn()) {
+            actualReply() // actual IPC/query completion
             turn() // ExchangeSession receives the driver reply
             turn() // verified rollback
             assertEquals(ExchangeSession.Phase.RESTORED, session.phase)
@@ -159,6 +161,35 @@ class StageExchangeLaneCancellationIntegrationTest {
             f.assertHeld()
             f.releaseQuery.countDown()
             f.finishRollback()
+            assertEquals(1, f.queries)
+        } finally { f.cleanup() }
+    }
+
+    @Test fun cancelAfterMoveReturnedButBeforeOwnerConsumesReplySkipsQuery() {
+        val f = Fixture()
+        try {
+            f.start()
+            f.releaseMove.countDown()
+            val actualReply = f.takeTurn()
+            f.session.cancel()
+            f.assertHeld()
+            f.finishRollback(actualReply)
+            assertEquals(0, f.queries)
+        } finally { f.cleanup() }
+    }
+
+    @Test fun expireAfterQueryReturnedButBeforeOwnerConsumesReplySkipsPublication() {
+        val f = Fixture()
+        try {
+            f.start()
+            f.releaseMove.countDown()
+            f.turn()
+            assertTrue(f.queryEntered.await(5, TimeUnit.SECONDS))
+            f.releaseQuery.countDown()
+            val actualReply = f.takeTurn()
+            f.clock = 100L
+            f.assertHeld()
+            f.finishRollback(actualReply)
             assertEquals(1, f.queries)
         } finally { f.cleanup() }
     }
