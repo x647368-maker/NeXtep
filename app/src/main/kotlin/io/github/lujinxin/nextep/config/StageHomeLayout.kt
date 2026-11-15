@@ -17,7 +17,7 @@ internal object StageHomeLayout {
             Item("专项测试与报告","issue_specialties","diagnostics"))),
         Section("支持与服务",listOf(Item("软件更新","update","update"),
             Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
-            Item("关于","about","about"),Item("使用帮助与退出","help","book")))
+            Item("关于与使用帮助","about","about")))
     )
     fun contentWidth(availablePixels:Int,density:Float):Int {
         require(availablePixels>0 && density>0)
