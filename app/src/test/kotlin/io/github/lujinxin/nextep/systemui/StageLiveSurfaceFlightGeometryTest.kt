@@ -7,6 +7,33 @@ class StageLiveSurfaceFlightGeometryTest {
     private fun b(l:Float,t:Float,r:Float,z:Float) =
         StageLiveSurfaceFlightGeometry.Box(l,t,r,z)
 
+    @Test fun continuousSweptOverlapFindsInteriorExtrema() {
+        val g=StageLiveSurfaceFlightGeometry
+        assertEquals(16.0,g.peakSweptOverlap(
+            b(0f,0f,4f,4f),b(1000f,0f,1004f,4f),b(22f,0f,26f,4f)),.000001)
+        assertEquals(36.0,g.peakSweptOverlap(
+            b(0f,0f,2f,10f),b(0f,0f,10f,2f),b(0f,0f,12f,12f)),.000001)
+        assertEquals(0.0,g.peakSweptOverlap(
+            b(0f,0f,4f,4f),b(1000f,0f,1004f,4f),b(20f,10f,30f,14f)),.000001)
+    }
+
+    @Test fun corridorRejectsBriefObstructionMissedByOldTwentyFourSamples() {
+        val g=StageLiveSurfaceFlightGeometry
+        val small=b(4f,4f,14f,14f)
+        val main=b(1000f,0f,1100f,100f)
+        val blocker=b(24f,4f,28f,8f)
+        fun overlap(card:StageLiveSurfaceFlightGeometry.Box):Float =
+            (minOf(card.right,blocker.right)-maxOf(card.left,blocker.left)).coerceAtLeast(0f)*
+                (minOf(card.bottom,blocker.bottom)-maxOf(card.top,blocker.top)).coerceAtLeast(0f)
+        for(i in 0..24) {
+            val p=i/24f
+            assertTrue(overlap(g.railCorridorFlight(small,main,10,10,p)!!.box)<=1f)
+            assertTrue(overlap(g.railCorridorFlight(main,small,100,100,p)!!.box)<=1f)
+        }
+        for(n in listOf(4,24,80,240))
+            assertFalse(g.corridorAvoidsOtherSlots(small,main,10,10,listOf(blocker),n))
+    }
+
     @Test fun twoLiveCompositorLayersMustMoveInOppositeDirections() {
         val small=b(30f,240f,280f,690f)
         val main=b(310f,160f,1070f,2360f)
