@@ -13,3 +13,14 @@ internal object StageTransientTapPolicy {
         valid && committed && !started
     fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged
 }
+
+/** One attempt's worker-only permission. Owner revocation cannot interrupt an
+ * already entered capture; all later stages recheck before starting. The
+ * existing owner validity/commit gates still control publication and moves. */
+internal class StageTapCapturePermit {
+    private val cancelled=java.util.concurrent.atomic.AtomicBoolean(false)
+    val revoked:Boolean get()=cancelled.get()
+    fun revoke(){cancelled.set(true)}
+    fun allows(now:Long,deadline:Long):Boolean = !revoked &&
+        StageTransientTapPolicy.canCaptureSecond(now,deadline)
+}

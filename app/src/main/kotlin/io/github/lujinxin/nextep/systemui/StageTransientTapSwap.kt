@@ -70,6 +70,7 @@ internal class StageTransientTapSwap(private val context:Context) {
     ) {
         private val viewport=Rect(0,0,host.width,host.height)
         private var waitingCapture=true
+        private val capturePermit=StageTapCapturePermit()
         private var waitingCommit=false
         private var moveStarted=false
         private var moveAck=false
@@ -95,7 +96,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         private fun current()=active===this
         private fun stillValid()=runCatching(valid).getOrDefault(false) && host.isAttachedToWindow
         private val captureTimeout=Runnable {
-            if(current() && waitingCapture){waitingCapture=false; direct("capture_timeout")}
+            if(current() && waitingCapture){capturePermit.revoke();waitingCapture=false;direct("capture_timeout")}
         }
         private val commitTimeout=Runnable {
             if(current() && waitingCommit){waitingCommit=false; direct("first_commit_timeout")}
@@ -135,20 +136,25 @@ internal class StageTransientTapSwap(private val context:Context) {
                     var incomingFailure="none"
                     var outgoingFailure="not_attempted"
                     val captureStarted=SystemClock.uptimeMillis()
-                    val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    val a=if(capturePermit.allows(SystemClock.uptimeMillis(),deadline))
+                        TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    else null
                     val firstCaptured=SystemClock.uptimeMillis()
-                    val b=if(a!=null && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
+                    val b=if(a!=null && capturePermit.allows(SystemClock.uptimeMillis(),deadline)){
                         outgoingFailure="none"
                         TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
                     } else null
                     val bothCaptured=SystemClock.uptimeMillis()
                     // Plan once on the already active snapshot worker, using
                     // immutable copies of the viewport and protected slot geometry.
-                    val plan=if(a!=null && b!=null && SystemClock.uptimeMillis()<deadline)
+                    val plan=if(a!=null && b!=null && capturePermit.allows(SystemClock.uptimeMillis(),deadline))
                         runCatching{planFlight(a,b,slot,main,others,viewport)}.getOrNull()
                     else null
                     val plannedAt=SystemClock.uptimeMillis()
-                    ui.post {
+                    // A cancelled attempt no longer owns a destination. Do not
+                    // retain its abandoned full-size frames in the UI queue.
+                    if(capturePermit.revoked){a?.recycle();b?.recycle();return@execute}
+                    val posted=ui.post {
                         // One bounded timing record, no per-frame trace or new worker.
                         // Split actual capture/planning from main-loop callback delay.
                         if(current() && waitingCapture)
@@ -159,8 +165,10 @@ internal class StageTransientTapSwap(private val context:Context) {
                             trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
                         captured(a,b,deadline,plan)
                     }
+                    if(!posted){a?.recycle();b?.recycle()}
                 }
             }.onFailure {
+                capturePermit.revoke()
                 waitingCapture=false
                 ui.removeCallbacks(captureTimeout)
                 direct("capture_busy")
@@ -168,6 +176,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         private fun captured(a:Bitmap?,b:Bitmap?,deadline:Long,plan:StageSnapshotMotion.PairFlight?){
             if(!current() || !waitingCapture){a?.recycle();b?.recycle();return}
+            capturePermit.revoke()
             waitingCapture=false
             ui.removeCallbacks(captureTimeout)
             if(!stillValid()){a?.recycle();b?.recycle();finish("stale_before_move");return}
@@ -393,6 +402,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         fun finish(result:String){
             if(!current())return
+            capturePermit.revoke()
             active=null
             waitingCapture=false;waitingCommit=false
             ui.removeCallbacks(captureTimeout);ui.removeCallbacks(commitTimeout);ui.removeCallbacks(lifetime)
