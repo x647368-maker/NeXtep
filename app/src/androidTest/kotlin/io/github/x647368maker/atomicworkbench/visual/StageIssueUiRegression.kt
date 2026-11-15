@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit
 import android.content.Intent
 import android.os.SystemClock
 import android.graphics.Bitmap
+import android.util.Base64
+import java.security.MessageDigest
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.view.accessibility.AccessibilityNodeInfo
@@ -137,11 +139,40 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
     private fun shell(command: String): String =
         ParcelFileDescriptor.AutoCloseInputStream(inst.uiAutomation.executeShellCommand(command))
             .bufferedReader().use { it.readText() }
-    private fun screenshot(out: File, name: String) {
-        ui { Unit }
-        val shot=checkNotNull(inst.uiAutomation.takeScreenshot()) { "No actual HWUI screenshot" }
-        try { File(out,name).outputStream().use { check(shot.compress(Bitmap.CompressFormat.PNG,100,it)) } }
-        finally { shot.recycle() }
+    // Capture actual compositor pixels only after the intended Activity has
+    // focus and the entry transition has settled. Never draw a View to a fake bitmap.
+    private fun screenshot(out: File, name: String, activity:Activity) {
+        await("focused rendered window $name"){ui{activity.hasWindowFocus() &&
+            activity.window.decorView.isShown && !activity.isFinishing}}
+        Thread.sleep(850)
+        fun sample(b:Bitmap):IntArray {
+            val cols=64;val rows=96
+            return IntArray(cols*rows){i->
+                val x=((i%cols+0.5)*b.width/cols).toInt().coerceIn(0,b.width-1)
+                val y=((i/cols+0.5)*b.height/rows).toInt().coerceIn(0,b.height-1)
+                b.getPixel(x,y)
+            }
+        }
+        var previous:IntArray?=null
+        val deadline=SystemClock.elapsedRealtime()+5000L
+        while(SystemClock.elapsedRealtime()<deadline) {
+            val shot=checkNotNull(inst.uiAutomation.takeScreenshot()){"No actual HWUI screenshot"}
+            try{
+                val values=sample(shot)
+                val interior=values.filterIndexed{i,_->i/64 in 8..87}
+                val varied=interior.map{it and 0x00F0F0F0}.toSet().size>=10
+                val old=previous
+                val stable=old!=null && old.indices.count{i->old[i]!=values[i]}<=values.size/25
+                if(varied && stable && ui{activity.hasWindowFocus()}){
+                    File(out,name).outputStream().use{check(shot.compress(Bitmap.CompressFormat.PNG,100,it))}
+                    phase("PASS settled compositor screenshot $name")
+                    return
+                }
+                previous=values
+            }finally{shot.recycle()}
+            Thread.sleep(300)
+        }
+        error("No stable non-blank focused compositor image: $name")
     }
     private fun verifyHome(out: File, wide: Boolean, size:String, density:String, name:String, navigation:Boolean=false) {
         phase("BEGIN viewport $name $size density=$density")
@@ -166,7 +197,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                             .all { item -> descendants(settings).filterIsInstance<TextView>().any { it.text.toString()==item.name } }
                 }
             }
-            screenshot(out,"diagnostic-home-$name.png")
+            screenshot(out,"diagnostic-home-$name.png",activity)
             if(wide && navigation) for((index,section) in StageHomeLayout.sections.withIndex()){
                 ui {
                     val target=descendants(activity.window.decorView).firstOrNull {
@@ -188,7 +219,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                                 .none { item->detail.any{it.text.toString()==item.name}}
                     }
                 }
-                screenshot(out,"diagnostic-home-wide-section-$index.png")
+                screenshot(out,"diagnostic-home-wide-section-$index.png",activity)
             }
             if(navigation) {
                 if(wide)clickLabel(activity,"故障诊断")
@@ -197,7 +228,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                     hasText(activity,"故障测试与报告") && hasText(activity,"立即诊断") &&
                     listOf("性能与流畅度","窗口与布局体验","应用与内容状态","系统与兼容性","功能与服务","历史报告").all{hasText(activity,it)}
                 }
-                screenshot(out,"diagnostic-landing-$name.png")
+                screenshot(out,"diagnostic-landing-$name.png",activity)
                 val all=awaitActivity(StageIssueDiagnosticActivity::class.java,"real landing entry"){
                     val button=descendants(activity.window.decorView).filterIsInstance<Button>()
                         .firstOrNull{it.isShown && it.text.toString()=="立即诊断"}?:error("Missing real comprehensive entry")
@@ -244,16 +275,33 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                 it.text?.toString()?.equals("Save",ignoreCase=true)==true)
         })
         check(save.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { "DocumentsUI save action not accepted" }
-        var actual=""
-        await("SAF report bytes written") {
-            val path=shell("find /sdcard/Download /sdcard/Documents /sdcard/Pictures -name $name 2>/dev/null | head -n 1").trim()
-            if(path.isEmpty()) false else {
-                actual=shell("cat '$path'")
-                actual==expected
+        // UiAutomation executes a command, not a shell program. The old
+        // pipeline/redirect/quoted cat could fail even when DocumentsUI created
+        // the file. Read the actual bytes through a simple base64 command.
+        val wanted=expected.toByteArray(Charsets.UTF_8)
+        fun digest(bytes:ByteArray)=MessageDigest.getInstance("SHA-256")
+            .digest(bytes).joinToString(""){"%02x".format(it.toInt() and 255)}
+        val directories=listOf("Download","Documents","Pictures")
+        val deadline=SystemClock.elapsedRealtime()+20000L
+        var actual:ByteArray?=null
+        var location=""
+        while(SystemClock.elapsedRealtime()<deadline) {
+            for(dir in directories){
+                val path="/storage/emulated/0/$dir/$name"
+                val encoded=shell("base64 $path").trim()
+                if(encoded.isEmpty())continue
+                val bytes=runCatching{Base64.decode(encoded,Base64.DEFAULT)}.getOrNull()?:continue
+                actual=bytes;location=path
+                File(out,"diagnostic-export-observed.bin").writeBytes(bytes)
+                if(bytes.contentEquals(wanted)){
+                    File(out,"diagnostic-exported-report.txt").writeBytes(bytes)
+                    phase("PASS exact SAF bytes path=$path size=${bytes.size} SHA256=${digest(bytes)}")
+                    return
+                }
             }
+            Thread.sleep(300)
         }
-        File(out,"diagnostic-exported-report.txt").writeText(actual)
-        phase("PASS exact SAF text bytes, characters=${actual.length}")
+        error("SAF bytes mismatch expected=${wanted.size}/${digest(wanted)}, actual=${actual?.size}/${actual?.let{digest(it)}} location=$location")
     }
 
     fun run(out: File): String {
@@ -278,7 +326,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                 val screen=page(id)
                 activities.add(screen)
                 await("specialty $id") { hasText(screen,title) && hasText(screen,"开始专项诊断") }
-                screenshot(out,"diagnostic-scope-$id.png")
+                screenshot(out,"diagnostic-scope-$id.png",screen)
                 close(screen)
                 activities.remove(screen)
             }
@@ -288,7 +336,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             click(all,"展开高级诊断详情")
             check(hasText(all,"收起高级诊断详情"))
             click(all,"收起高级诊断详情")
-            screenshot(out,"diagnostic-scope-all.png")
+            screenshot(out,"diagnostic-scope-all.png",all)
             click(all, "5 分钟")
             click(all, "开始综合诊断")
             await("real active session") { ui { session.active() && session.selectedCategory() == "all" && session.durationMs() == 300000L } }
@@ -330,7 +378,8 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             check(ui { session.report(first.id) } == first.text)
             check(!records.first().text.contains("Android diagnostic regression"))
             phase("PASS real report history and session isolation")
-            verifySaf(layout,records.first().text,out)
+            val safFailure=runCatching{verifySaf(layout,records.first().text,out)}.exceptionOrNull()
+            if(safFailure!=null)phase("FAIL SAF: ${safFailure.message}; continue independent expiry test")
             // Close both prior editors before starting the independent alarm test.
             close(layout);activities.remove(layout)
             close(all);activities.remove(all)
@@ -354,6 +403,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             check(ui { session.reports().size==3 })
             phase("PASS genuine background expiration elapsed=${SystemClock.elapsedRealtime()-expiryToken}ms")
             File(out,"diagnostic-expiry-report.txt").writeText(expired.text)
+            if(safFailure!=null)throw IllegalStateException("SAF failed; independent expiry completed",safFailure)
             val result = "PASS actual Android diagnostics: narrow/wide native home, six scopes, real sessions, marker, stale-note rejection, history, SAF text bytes, real five-minute background OS alarm; OEM not tested"
             File(out, "diagnostic-ui-results.txt").writeText(result + "\n")
             return result
