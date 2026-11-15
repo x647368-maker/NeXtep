@@ -2934,6 +2934,10 @@ class NeXtepWindowController(
 
     private fun updateStageFocus() {
         if (!workspaceVisible || suspended) return
+        // The transient exchange has its own real task and output checks.
+        // Do not query ActivityManager or relayout focus decoration mid-flight;
+        // its onFinished already schedules the latest foreground once.
+        if (transientTapSwap.isRunning) return
         runCatching {
             val main = taskRepository.foregroundTask()
             if (main == null) {

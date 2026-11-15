@@ -23,10 +23,34 @@ pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').
 pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
 # PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.
 pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']
+# Defer foreground decoration only during the existing transient visual exchange.
+focus_defer_review=json.loads((root/'scripts/reviewed-p0-defer-focus-decoration-v84.json').read_text())['files']
+assert set(focus_defer_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt','scripts/verify-state-continuity.py'}
+def undo_focus_defer(path,data):
+ if path not in focus_defer_review:return data
+ spec=focus_defer_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in focus_defer_review:
+ undo_focus_defer(reviewed_path,(root/reviewed_path).read_bytes())
+_focus_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
+_focus_update=_focus_controller.split('private fun updateStageFocus()',1)[1].split('private fun refreshWallpaperBackdrop(',1)[0]
+assert _focus_update.index('if (transientTapSwap.isRunning) return')<_focus_update.index('taskRepository.foregroundTask()')
+_focus_finish=_focus_controller.split('val started=transientTapSwap.start(',1)[1].split('private fun animateSwap(',1)[0]
+assert 'onFinished()\n                if(workspaceVisible && !suspended)scheduleStageFocus()' in _focus_finish
+assert 'active=null' in (k/'systemui/StageTransientTapSwap.kt').read_text().split('fun finish(result:String)',1)[1]
 # Phased finish-once guard: normalize only the exact scoped changes first.
 finish_once_review=json.loads((root/'scripts/reviewed-phased-finish-once-v83.json').read_text())['files']
 assert set(finish_once_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt','scripts/verify-state-continuity.py'}
 def undo_finish_once(path,data):
+ data=undo_focus_defer(path,data)
  if path not in finish_once_review:return data
  spec=finish_once_review[path]
  blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
