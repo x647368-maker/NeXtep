@@ -143,15 +143,47 @@ internal class StageLiveMirrorPrimitiveRegression(private val instrumentation: I
 
             // A live source changes AFTER the mirror has been created. A static
             // screenshot would stay green: a real mirrored buffer becomes blue.
-            instrumentation.runOnMainSync {green.setBackgroundColor(Color.rgb(39,116,239))}
-            instrumentation.waitForIdleSync()
-            Thread.sleep(170L)
-            val updated=screenshot()
-            val live=updated.getPixel(xy[0]+465,xy[1]+400)
-            check(matches(live,39,116,239)) {
-                "Mirrored content did not update with the original attached window"
+            val sourceXY=IntArray(2)
+            instrumentation.runOnMainSync {
+                green.getLocationOnScreen(sourceXY)
+                sourceXY[0]+=green.width/2
+                sourceXY[1]+=green.height/2
+                green.setBackgroundColor(Color.rgb(39,116,239))
             }
-            updated.recycle()
+            instrumentation.waitForIdleSync()
+            // Verify BOTH the original producer and its mirror in the same
+            // physical screenshot. A compositor deadline is distinct from
+            // source invalidation; keep evidence rather than hide a failure.
+            var sourceColor=Color.TRANSPARENT
+            var mirrorColor=Color.TRANSPARENT
+            var sourceAndMirrorReady=false
+            var lastUpdateShot:Bitmap?=null
+            val samples=mutableListOf<String>()
+            try {
+                for (attempt in 1..12) {
+                    Thread.sleep(140L)
+                    val shot=screenshot()
+                    lastUpdateShot?.recycle()
+                    lastUpdateShot=shot
+                    sourceColor=shot.getPixel(sourceXY[0],sourceXY[1])
+                    mirrorColor=shot.getPixel(xy[0]+465,xy[1]+400)
+                    val secondColor=shot.getPixel(xy[0]+675,xy[1]+400)
+                    samples.add("attempt=$attempt source=#${Integer.toHexString(sourceColor)} mirror=#${Integer.toHexString(mirrorColor)} second=#${Integer.toHexString(secondColor)}")
+                    sourceAndMirrorReady=matches(sourceColor,39,116,239) &&
+                        matches(mirrorColor,39,116,239) && matches(secondColor,166,75,205)
+                    if(sourceAndMirrorReady)break
+                }
+                File(out,"native-api37-producer-update.txt").writeText(samples.joinToString("\n"))
+                if(!sourceAndMirrorReady)lastUpdateShot?.let { frame ->
+                    File(out,"native-api37-failed-producer-update.png")
+                        .outputStream().use {frame.compress(Bitmap.CompressFormat.PNG,100,it)}
+                }
+                check(sourceAndMirrorReady) {
+                    "Live producer/mirror update failed: source=#${Integer.toHexString(sourceColor)} mirror=#${Integer.toHexString(mirrorColor)}; inspect producer-update evidence"
+                }
+            } finally {
+                lastUpdateShot?.recycle()
+            }
 
             // One atomic transaction moves BOTH opposite directions. Crop and
             // buffer identity are not changed, only position and uniform scale.

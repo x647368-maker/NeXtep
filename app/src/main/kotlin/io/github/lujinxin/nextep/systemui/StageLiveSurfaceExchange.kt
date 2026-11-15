@@ -75,6 +75,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private var handoffCheckStarted = false
     private var handoffCheck: Runnable? = null
     private var flightDeadline: Runnable? = null
+    private var pendingFirstFlight: Runnable? = null
     private var deferredMove: Runnable? = null
     private var lastHandoffWait = ""
     private var endpointGap = 0f
@@ -182,6 +183,8 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val HANDOFF_TIMEOUT_MS = 600L
         private const val MAX_LIFETIME_MS = 1800L
         private const val READY_REVEAL_MS = 96L
+        // A short one-shot admission window; never run a hidden flight for its full duration.
+        private const val FIRST_COMMIT_BUDGET_MS = 48L
         private const val ENDPOINT_GAP_PX = 2f
         // One bounded wait for the replacement real-task and slot buffers.
         // Shorter than the overall 1800ms watchdog; no idle polling.
@@ -424,6 +427,10 @@ internal class StageLiveSurfaceExchange private constructor(
                         trace(
                             "first_gpu_transaction_committed@${SystemClock.uptimeMillis()-startedAtMs}ms")
                         NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
+                        pendingFirstFlight?.let { pending ->
+                            ui.removeCallbacks(pending)
+                            ui.post(pending)
+                        }
                     }
                 }
                 tx.apply()
@@ -571,9 +578,6 @@ internal class StageLiveSurfaceExchange private constructor(
         // Independent one-shot fallback for missing terminal update/listener.
         // During a real flight only; cancelled on completion or cleanup.
         val deadline=Runnable { completeFlight("deadline") }
-        flightDeadline=deadline
-        ui.postDelayed(deadline,StageConcurrentNativeTrialPolicy.terminalDeadlineDelay(
-            flightDuration,ValueAnimator.getDurationScale()))
         val flightAnimator=ValueAnimator.ofFloat(0f,1f).apply {
             duration=flightDuration
             // Geometry supplies the C2 ease for each physical phase. Use a
@@ -600,9 +604,29 @@ internal class StageLiveSurfaceExchange private constructor(
                 }
             })
         }
-        // Assign before start: synchronous callbacks must see the owned animator.
+        // Own the animator before any start or synchronous callback. In the
+        // experimental route, start its clock only after the initial dual-root
+        // transaction commits. An ACK is admission, not proof of visible pixels.
         animator=flightAnimator
-        flightAnimator.start()
+        val beginFlight=Runnable {
+            pendingFirstFlight=null
+            if(!isRunning)return@Runnable
+            if(concurrentHandoff && !firstTransactionCommitted) {
+                trace("native_first_commit_timeout:unmasked_move")
+                // Do not submit a jumped endpoint or hold unconfirmed masks.
+                // commitMove performs the existing source preflight and hides
+                // both roots atomically before the ordinary task migration.
+                commitMove()
+                return@Runnable
+            }
+            flightDeadline=deadline
+            ui.postDelayed(deadline,StageConcurrentNativeTrialPolicy.terminalDeadlineDelay(
+                flightDuration,ValueAnimator.getDurationScale()))
+            runCatching { flightAnimator.start() }.onFailure {
+                runCatching { NeXtepLog.warn("native_swap","Animation clock start failed",it) }
+                stop()
+            }
+        }
         // PR58: ColorOS can replace a mirrored producer's content as soon as
         // task migration begins. Keep almost all card travel visible BEFORE
         // owner changes; then hold endpoint overlays until the new buffers
@@ -612,6 +636,10 @@ internal class StageLiveSurfaceExchange private constructor(
         lastOutcome=if (immediateMove) "active:lead_in_concurrent_gpu_mirrors"
             else "active:two_live_gpu_mirrors"
         NeXtepLog.info("native_swap","GPU mirrors submitted; pixel visibility not yet proven")
+        if(concurrentHandoff && !firstTransactionCommitted) {
+            pendingFirstFlight=beginFlight
+            ui.postDelayed(beginFlight,FIRST_COMMIT_BUDGET_MS)
+        } else beginFlight.run()
         return true
     }
 
@@ -751,10 +779,11 @@ internal class StageLiveSurfaceExchange private constructor(
 
     fun stop() {
         if (finished.getAndSet(true)) return
-        disarmHeldEndpointWriter()
         val callback=finishCallback
         finishCallback=null
         ui.removeCallbacks(lifetimeWatchdog)
+        pendingFirstFlight?.let { ui.removeCallbacks(it) }
+        pendingFirstFlight=null
         handoffCheck?.let { ui.removeCallbacks(it) }
         handoffCheck=null
         flightDeadline?.let { ui.removeCallbacks(it) }
@@ -767,19 +796,21 @@ internal class StageLiveSurfaceExchange private constructor(
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
             "terminal=$terminalTransactionCommitted unmasked=$unmaskedMove " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
-        trace(
-            "gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
-            " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
-        if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
-            " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
-        NeXtepLog.info("native_swap",
-            "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
-            "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
         val flight=animator
         val reveal=revealAnimator
         animator=null
         revealAnimator=null
         StageConcurrentNativeTrialPolicy.cleanupSteps(
+            { disarmHeldEndpointWriter() },
+            {
+                trace("gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
+                    " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
+                if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
+                    " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
+                NeXtepLog.info("native_swap",
+                    "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
+                    "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
+            },
             { flight?.removeAllListeners(); flight?.removeAllUpdateListeners() },
             { flight?.cancel() },
             { reveal?.removeAllListeners(); reveal?.removeAllUpdateListeners() },

@@ -17,11 +17,12 @@ SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
 PINS = {
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
     ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "a837b852bc954d8dc08f9d0ff7bc9d6012c5aaf1"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "3f7663838fab637cd45e6ad6dc3f12634e93bef8"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "84f90a1c0d1730ac49ad54e79c28782f75594ddf"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
-    MAIN+"StageLiveSurfaceExchange.kt": ("f3681dbfde208d4c976af7938601d8657165f181", "a451f740cb6e19b097a226566e00db168ee50d48"),
+    MAIN+"StageLiveSurfaceExchange.kt": ("f3681dbfde208d4c976af7938601d8657165f181", "d7f790d312590121b0e9d8f3746533f5e1f6054f"),
     MAIN+"StageLiveSurfaceFlightGeometry.kt": ("8849f80b22e3ce76c8ce78db6294c421023f954c", "18d3356bac56d6ce1d1c5d58cf0f369a7db06aac"),
     MAIN+"StagePrivateDualTaskFlightGate.kt": ("de055e62992e593235914bf339fb3127762449ae", "65d5ad2064c711ae3fba16e8762dce3c97fa94d8"),
     MAIN+"StageTransientTapPolicy.kt": ("a5312b523a810cfdb8e82e77618005335d9b9c17", "5041ec241992b3bb3a88f1661855d05704e3add1"),
@@ -131,7 +132,7 @@ def main():
                  for commit in (BASE, ref)]
         if modes != [b"100644", b"100644"]:
             raise SystemExit("unexpected file mode: "+file)
-    print("PASS: committed candidate matches 12 exact file pairs; no extra paths except this auditor.")
+    print("PASS: committed candidate matches 13 exact file pairs; no extra paths except this auditor.")
     check_candidate_contracts(root, ref)
     if args.historical:
         historical_on_normalized_copy(root, ref)
