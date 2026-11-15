@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageConcurrentNativeTrialPolicyTest {
+    @Test fun maskedHandoffRequiresCompositorAcknowledgement() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(first in listOf(false,true)) for(required in listOf(false,true))
+            for(terminal in listOf(false,true)) {
+                val expected=if(first && (!required || terminal))
+                    StageConcurrentNativeTrialPolicy.MovePresentation.ANIMATED
+                else StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED
+                assertEquals(expected,p.movePresentation(first,required,terminal))
+            }
+        assertEquals(64L,p.TERMINAL_COMMIT_BUDGET_MS)
+        // Submission alone or a lost first-commit callback is not evidence
+        // of a fully acknowledged experimental endpoint.
+        assertEquals(StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED,
+            p.movePresentation(true,true,false))
+        assertEquals(StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED,
+            p.movePresentation(false,true,true))
+    }
     @Test fun nativeTeardownRunsAllStepsDespiteVendorAndLoggerFailures() {
         val policy=StageConcurrentNativeTrialPolicy
         for(mask in 0 until 128) for(loggerFails in listOf(false,true)) {
