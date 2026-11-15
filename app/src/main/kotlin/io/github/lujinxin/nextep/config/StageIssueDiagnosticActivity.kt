@@ -50,6 +50,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private val durationButtons = mutableListOf<Button>()
     private var boundToken: Long? = null
     private var boundWasActive = false
+    private var renderedScopeId: String? = null
     private lateinit var note: EditText
     private lateinit var startButton: Button
     private lateinit var markButton: Button
@@ -142,9 +143,8 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         category.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
                 if (::instruction.isInitialized) {
-                    val chosen=if (session.active()) session.selectedCategory()
-                        else StageIssueTestCatalog.cases.getOrNull(position)?.id
-                    showScope(chosen)
+                    if (::startButton.isInitialized) render()
+                    else showScope(if(session.active())session.selectedCategory() else chosenCategory())
                 }
             }
             override fun onNothingSelected(parent:AdapterView<*>?) {}
@@ -190,7 +190,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         reportCard.addView(note,LinearLayout.LayoutParams(-1,-2))
         saveNoteButton=Button(this).apply{text="保存说明／结束后补充";setOnClickListener{
             val expected = boundToken
-            if (expected == null || !session.saveNote(note.text.toString(), expected)) {
+            if (expected == null || !session.saveNote(note.text.toString(), expected, boundWasActive)) {
                 bindNote();render();toast("会话已经变化或尚无报告，请重新保存");return@setOnClickListener
             }
             toast("说明已保存到本机会话或报告")
@@ -287,9 +287,17 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         if(pending || session.active())return
         begin()
     }
+    private fun chosenCategory(): String {
+        // A direct specialty link stays that specialty once a different active
+        // session finishes. The hidden spinner must not inherit its old mode.
+        val requested = intent.getStringExtra(EXTRA_CATEGORY)
+        val selection = if(requested == null) category.selectedItemPosition
+            else StageIssueTestCatalog.selectionIndex(requested)
+        return StageIssueTestCatalog.cases.getOrNull(selection)?.id ?: "all"
+    }
     private fun begin(){
         if(pending || session.active())return
-        val chosen=StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id ?: "all"
+        val chosen=chosenCategory()
         val minutes=durationValues.getOrElse(chosenDuration){StageIssueReportPolicy.DEFAULT_DURATION_MS}
         val version=runCatching{UpdateCoordinator.installed(this).versionName}.getOrNull()?:"未知"
         // The previous report supplement is not a new session draft.
@@ -381,7 +389,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         saveNoteButton.isEnabled=!pending&&boundToken!=null
         category.isEnabled=!active&&!pending
         renderDuration()
-        val id=if(active)session.selectedCategory() else StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id
+        val id=if(active)session.selectedCategory() else chosenCategory()
         showScope(id)
         startButton.visibility=if(active||pending) View.GONE else View.VISIBLE
         markButton.visibility=if(active) View.VISIBLE else View.GONE
@@ -405,6 +413,8 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private fun showScope(id:String?){
         if(!::scope.isInitialized||!::instruction.isInitialized)return
         val selected=StageIssueTestCatalog.find(id)
+        if(renderedScopeId==selected.id)return
+        renderedScopeId=selected.id
         val rows=when(selected.id){
             "all"->StageIssueTestCatalog.modules.map{it.name}
             "performance"->listOf("卡顿","动画","闪烁","耗电","发热")

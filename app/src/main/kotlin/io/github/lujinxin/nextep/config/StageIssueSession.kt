@@ -127,8 +127,10 @@ internal class StageIssueSession(context: Context) {
 
     fun storedPostNote(): String = preferences.getString("post_note", null).orEmpty()
 
-    fun saveNote(value: String, expectedToken: Long): Boolean {
-        if (currentToken() != expectedToken || expectedToken < 0L) return false
+    fun saveNote(value: String, expectedToken: Long, expectedActive: Boolean = true): Boolean {
+        // A delayed editor from the running phase must not overwrite the
+        // completed report supplement even when the session token still matches.
+        if (currentToken() != expectedToken || expectedToken < 0L || active() != expectedActive) return false
         val sanitized = value.filter { it == '\n' || it == '\t' || it.code >= 32 }
             .take(StageIssueReportPolicy.MAX_DESCRIPTION_CHARS)
         if (active()) preferences.edit().putString("note", sanitized).apply()
