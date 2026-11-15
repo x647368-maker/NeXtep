@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Only the instrumentation APK contains this fixture. Shell launches it. -->
+        <activity android:name="io.github.x647368maker.atomicworkbench.visual.RemoteMigrationFixtureActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:process=":aw_migration_fixture"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden|uiMode" />
+    </application>
+</manifest>
