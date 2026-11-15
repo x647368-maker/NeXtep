@@ -322,10 +322,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
 
     private fun finishTest(mode:String){
         if(pending || !session.active())return
+        val token=session.currentToken()
+        if(boundToken!=token) { bindNote(); render(); return }
         pending=true
         uiHandler.removeCallbacks(uiDeadline)
-        val token=session.currentToken()
-        if(boundToken==token) session.saveNote(note.text.toString(),token)
+        session.saveNote(note.text.toString(),token)
         render()
         fun completed(result: Result<String?>) {
             pending=false
@@ -337,8 +338,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
                 else if(!session.active()) toast("本次会话已经结束")
             }
         }
-        runCatching { StageIssueFinishCoordinator.request(this,token,mode,::completed) }
-            .onFailure { completed(Result.failure(it)) }
+        runCatching {
+            StageIssueFinishCoordinator.request(this,token,mode,
+                { receive -> WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true) { receive(it) } },
+                ::completed)
+        }.onFailure { completed(Result.failure(it)) }
     }
     private fun bindNote() {
         if(!::note.isInitialized)return
@@ -361,6 +365,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     }
     private fun render(){
         if(!::status.isInitialized)return
+        bindNote()
         val active=session.active()
         val minutes=session.durationMs()/60_000
         status.text=when{

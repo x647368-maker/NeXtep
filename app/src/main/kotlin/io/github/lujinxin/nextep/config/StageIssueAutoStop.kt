@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
 
 /**
  * One non-wakeup, inexact alarm per opted-in session. Does not wake a sleeping
@@ -51,7 +52,8 @@ class StageIssueTimeoutReceiver : BroadcastReceiver() {
         // Join the UI's in-flight snapshot if present. A write failure leaves the
         // session retryable on the next explicit page visit; no retry alarms.
         runCatching {
-            StageIssueFinishCoordinator.request(context, token, "定时到期（系统可能延期交付）") { outcome ->
+            StageIssueFinishCoordinator.request(context, token, "定时到期（系统可能延期交付）",
+                { receive -> WorkspaceEnergyContract.query(context.applicationContext, includeExchangeDiagnostics = true) { receive(it) } }) { outcome ->
                 try {
                     outcome.exceptionOrNull()?.let {
                         android.util.Log.w("StageIssueTimeout", "Report completion failed", it)

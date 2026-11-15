@@ -9,7 +9,9 @@ import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
 internal object StageIssueFinishCoordinator {
     private val pending = StageIssueCompletionQueue<Result<String?>>()
 
-    fun request(context: Context, token: Long, mode: String, onResult: (Result<String?>) -> Unit) {
+    fun request(context: Context, token: Long, mode: String,
+                query: ((WorkspaceEnergyContract.Snapshot?) -> Unit) -> Unit,
+                onResult: (Result<String?>) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val app = context.applicationContext
         val session = StageIssueSession(app)
@@ -28,7 +30,7 @@ internal object StageIssueFinishCoordinator {
             pending.complete(ticket, result)
         }
         runCatching {
-            WorkspaceEnergyContract.query(app, includeExchangeDiagnostics = true, onResult = ::complete)
+            query(::complete)
         }.onFailure { complete(null) }
     }
 }
