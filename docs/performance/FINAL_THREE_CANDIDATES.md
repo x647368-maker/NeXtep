@@ -9,3 +9,14 @@ This change only implements bounded menu fitting for existing supplied avoidRect
 ## Display observation scheduling decision
 
 5fa5c39 event-wake candidate withdrawn before delivery. Independently compiled exact production helper blob 73e516d772d624a625e10c8adcffe4af5261751f with a deterministic single-move event/ready-time sweep (ready=1..120ms, event=0..120ms, zero query duration, 30ms baseline). 14,520 cases: 2,030 earlier, 2,170 later, 10,320 tied; max improvement 22ms, max regression 21ms; 2,170 require an extra read. Not a measured OEM distribution. Generic Shell task events are not task/destination readiness and a moved unsuccessful poll shifts subsequent phase. Restore the exact prior production tree rather than deliver a marginal speculative gain. Existing serial movement, observation, timeouts and genuine buffer guards retained. Do not conflate the 564 passing tests from earlier commit c466de6 with full latest device validation. Complete both graphic jobs on the resulting head without repeated code churn.
+
+
+## 87 device feedback and approved integration scope
+
+86 rejected on physical OnePlus. Prioritize task handoff latency, flicker, protected card visibility, stable signed exchange paths for identical physical slots, and measured idle/active power. Do not trade live content or resolution for speed.
+- Menu: four existing categories, full readable rows, safe insets, no duplicate settings/about.
+- Smart rail: top/left/right, 3/5/10/15/30 seconds (default 5), persisted, pin/restore, reclaim available space without distortion; one-shot event-driven timer, suspend during touch, drag, exchange and system panels.
+- Frequent apps: preserve tap-to-main; long press main/small/remove, reuse existing task; full four slots require explicit replacement. Recompute safe available geometry without stretching, gesture exclusion or regression of accepted layout.
+- Donation: both QR blank and save failed on device. Verify original payloads, use verified local image resources where possible, real MediaStore image export and truthful success/failure.
+- Competitor-inspired options: optional header swipe to move small task to background, reuse existing cinema modes, top playback, landscape in main, full-screen with workspace restoration; graphical explanations. No paywall. Check existing implementation before adding anything; defer any unvalidated optional behavior rather than risk core regression.
+- Gate on exact-head compilation and regression tests, real device checks, matched thermal/power conditions and exchange latency distributions; no claim of guaranteed OEM behavior from emulators. No main merge/public release before acceptance.
