@@ -23,16 +23,14 @@ internal object StageExchangeTelemetry {
     // Every tap owns a separate bounded history entry. Prior PRs kept
     // only one 680-character tail and could overwrite the actual fallback.
     private val swapTrace=StageSwapTraceBuffer(SystemClock::uptimeMillis)
-    @Volatile private var nativePath="尚无本次进程的窗口交换记录"
     fun beginNativeTap(operation:String="tap_swap") {
-        val id=swapTrace.begin(operation)
-        nativePath="#$id ${StageRuntimeIdentity.BUILD} $operation"
+        swapTrace.begin(operation)
     }
     fun currentNativeTapId(): Long? = swapTrace.activeId()
     fun nativeEvent(stage:String, attemptId:Long?=null) {
-        if (swapTrace.event(stage,attemptId)) {
-            nativePath=(nativePath+" -> "+stage.take(110)).takeLast(680)
-        }
+        // The bounded trace is the sole exported history. Do not also build
+        // an unused, growing text tail on every compositor callback.
+        swapTrace.event(stage,attemptId)
     }
     fun endNativeTap(result:String, attemptId:Long?=null) {
         swapTrace.finish(result,attemptId)

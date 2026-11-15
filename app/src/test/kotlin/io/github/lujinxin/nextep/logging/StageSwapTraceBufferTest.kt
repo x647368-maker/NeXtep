@@ -84,4 +84,21 @@ class StageSwapTraceBufferTest {
         assertTrue(report.contains("private-data-"))
         assertTrue(report.contains("end:timeout")) // outcome must survive a full trace
     }
+
+    @Test fun overflowKeepsLateCompositorHandoffAndDisclosesMissingMiddle() {
+        var now=0L
+        val recorder=StageSwapTraceBuffer({ now })
+        val id=recorder.begin("tap_swap")
+        repeat(120) { i -> now++;recorder.event("stage_$i",id) }
+        now++
+        recorder.event("terminal_commit",id)
+        now++
+        recorder.finish("handoff_timeout",id)
+        val trace=recorder.describe()
+        assertTrue(trace.contains("stage_0@1ms"))
+        assertTrue(trace.contains("terminal_commit@121ms"))
+        assertTrue(trace.contains("end:handoff_timeout@122ms"))
+        assertTrue(trace.contains("[omitted=95]"))
+        assertFalse(trace.contains("stage_60@"))
+    }
 }

@@ -148,6 +148,39 @@
         {
           "before": "异步任务交换：$phasedReport",
           "after": "最近5次异步任务交换：\\n${phasedHistory.describe()}"
+        },
+        {
+          "before": "    @Volatile private var nativePath=\"尚无本次进程的窗口交换记录\"\n    fun beginNativeTap(operation:String=\"tap_swap\") {\n        val id=swapTrace.begin(operation)\n        nativePath=\"#$id ${StageRuntimeIdentity.BUILD} $operation\"\n    }\n    fun currentNativeTapId(): Long? = swapTrace.activeId()\n    fun nativeEvent(stage:String, attemptId:Long?=null) {\n        if (swapTrace.event(stage,attemptId)) {\n            nativePath=(nativePath+\" -> \"+stage.take(110)).takeLast(680)\n        }\n    }",
+          "after": "    fun beginNativeTap(operation:String=\"tap_swap\") {\n        swapTrace.begin(operation)\n    }\n    fun currentNativeTapId(): Long? = swapTrace.activeId()\n    fun nativeEvent(stage:String, attemptId:Long?=null) {\n        // The bounded trace is the sole exported history. Do not also build\n        // an unused, growing text tail on every compositor callback.\n        swapTrace.event(stage,attemptId)\n    }"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageSwapTraceBuffer.kt": {
+      "previous_blob_sha1": "34a6e189a6fcf93f1ebbd315ffe4f24b281b8e2d",
+      "patches": [
+        {
+          "before": "package io.github.x647368maker.atomicworkbench.logging\n\n",
+          "after": "package io.github.x647368maker.atomicworkbench.logging\n\nimport java.util.ArrayDeque\n\n"
+        },
+        {
+          "before": "        val events: MutableList<String> = mutableListOf(),\n",
+          "after": "        val events: MutableList<String> = mutableListOf(),\n        var omitted: Int = 0,\n"
+        },
+        {
+          "before": "    private var active: Attempt? = null\n",
+          "after": "    private var active: Attempt? = null\n    private val eventLimit = maxEvents.coerceAtLeast(2)\n    private val headLimit = eventLimit / 2\n"
+        },
+        {
+          "before": "        if (attempt.events.size >= maxEvents) return",
+          "after": "        // Preserve the start and newest stages, including the actual terminal\n        // handoff. Only middle events may be dropped, and disclose that gap.\n        if (attempt.events.size >= eventLimit) {\n            attempt.events.removeAt(headLimit)\n            attempt.omitted++\n        }"
+        },
+        {
+          "before": "    private fun finishLocked(result: String) {\n        val attempt = active ?: return\n        // Even after a very noisy OEM callback sequence, the final outcome\n        // must never be silently lost to the per-attempt event cap.\n        if (attempt.events.size >= maxEvents && attempt.events.isNotEmpty())\n            attempt.events.removeAt(attempt.events.lastIndex)\n        eventLocked(\"end:${result.take(40)}\")\n        val report = \"#${attempt.id} ${attempt.operation} \" + attempt.events.joinToString(\" > \")\n        // The event count and individual event length already bound this record.\n        // Do not cut at 1000 characters: that can erase the final failure reason.\n        completed.addLast(report)\n        while (completed.size > maxRecords.coerceAtLeast(1)) completed.removeFirst()\n        active = null\n    }\n\n",
+          "after": "    private fun render(attempt: Attempt): String = buildString {\n        append(\"#${attempt.id} ${attempt.operation} \")\n        attempt.events.forEachIndexed { index, value ->\n            if (index > 0) append(\" > \")\n            if (index == headLimit && attempt.omitted > 0) append(\"[omitted=${attempt.omitted}] > \")\n            append(value)\n        }\n    }\n\n    private fun finishLocked(result: String) {\n        val attempt = active ?: return\n        // The bounded history always keeps the terminal event as newest.\n        eventLocked(\"end:${result.take(40)}\")\n        completed.addLast(render(attempt))\n        while (completed.size > maxRecords.coerceAtLeast(1)) completed.removeFirst()\n        active = null\n    }\n\n"
+        },
+        {
+          "before": "        val ongoing = active?.let {\n            \"#${it.id} ${it.operation} \" + it.events.joinToString(\" > \") + \" [ongoing]\"\n        }",
+          "after": "        val ongoing = active?.let { render(it) + \" [ongoing]\" }"
         }
       ]
     }

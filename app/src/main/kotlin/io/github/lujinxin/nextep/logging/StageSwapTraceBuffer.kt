@@ -1,5 +1,7 @@
 package io.github.x647368maker.atomicworkbench.logging
 
+import java.util.ArrayDeque
+
 /**
  * Bounded, local-only trace of the last five user-triggered exchanges.
  * Holds only stage names and uptime deltas: no screenshots, app names, text,
@@ -18,10 +20,13 @@ internal class StageSwapTraceBuffer(
         val operation: String,
         val startMs: Long,
         val events: MutableList<String> = mutableListOf(),
+        var omitted: Int = 0,
     )
     private val completed = ArrayDeque<String>()
     private var serial = 0L
     private var active: Attempt? = null
+    private val eventLimit = maxEvents.coerceAtLeast(2)
+    private val headLimit = eventLimit / 2
 
     @Synchronized fun begin(operation: String): Long {
         finishLocked("superseded")
@@ -43,7 +48,12 @@ internal class StageSwapTraceBuffer(
 
     private fun eventLocked(name: String) {
         val attempt = active ?: return
-        if (attempt.events.size >= maxEvents) return
+        // Preserve the start and newest stages, including the actual terminal
+        // handoff. Only middle events may be dropped, and disclose that gap.
+        if (attempt.events.size >= eventLimit) {
+            attempt.events.removeAt(headLimit)
+            attempt.omitted++
+        }
         val elapsed = (now() - attempt.startMs).coerceAtLeast(0)
         attempt.events.add("${name.take(88)}@${elapsed}ms")
     }
@@ -52,26 +62,27 @@ internal class StageSwapTraceBuffer(
         if (expectedId == null || active?.id == expectedId) finishLocked(result)
     }
 
+    private fun render(attempt: Attempt): String = buildString {
+        append("#${attempt.id} ${attempt.operation} ")
+        attempt.events.forEachIndexed { index, value ->
+            if (index > 0) append(" > ")
+            if (index == headLimit && attempt.omitted > 0) append("[omitted=${attempt.omitted}] > ")
+            append(value)
+        }
+    }
+
     private fun finishLocked(result: String) {
         val attempt = active ?: return
-        // Even after a very noisy OEM callback sequence, the final outcome
-        // must never be silently lost to the per-attempt event cap.
-        if (attempt.events.size >= maxEvents && attempt.events.isNotEmpty())
-            attempt.events.removeAt(attempt.events.lastIndex)
+        // The bounded history always keeps the terminal event as newest.
         eventLocked("end:${result.take(40)}")
-        val report = "#${attempt.id} ${attempt.operation} " + attempt.events.joinToString(" > ")
-        // The event count and individual event length already bound this record.
-        // Do not cut at 1000 characters: that can erase the final failure reason.
-        completed.addLast(report)
+        completed.addLast(render(attempt))
         while (completed.size > maxRecords.coerceAtLeast(1)) completed.removeFirst()
         active = null
     }
 
     @Synchronized fun describe(): String {
         val old = completed.toList()
-        val ongoing = active?.let {
-            "#${it.id} ${it.operation} " + it.events.joinToString(" > ") + " [ongoing]"
-        }
+        val ongoing = active?.let { render(it) + " [ongoing]" }
         return (old + listOfNotNull(ongoing)).takeLast(maxRecords.coerceAtLeast(1))
             .joinToString("\n").ifEmpty { "尚无本次 SystemUI 进程的交换记录" }
     }
