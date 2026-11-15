@@ -228,7 +228,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "专项测试与报告", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "专项测试与报告", "about" to "关于与使用帮助", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
@@ -276,7 +276,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "help" -> help(column)
                 "diagnostics" -> diagnostics(column)
                 "issue_specialties" -> issueSpecialties(column)
-                "about" -> about(column)
+                "about" -> { about(column); help(column) }
                 "feedback" -> feedback(column)
                 "changelog" -> column.addView(StageChangelogPage.create(activity), LinearLayout.LayoutParams(-1, -2))
                 "update" -> column.addView(UpdateSection.create(activity), LinearLayout.LayoutParams(-1, -2))
