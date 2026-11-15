@@ -140,6 +140,7 @@ class LivePreviewInstrumentation : Instrumentation() {
             checks.add(StageTransientDualFlightRegression(this).run(activity,root))
             checks.add(StageLiveMirrorPrimitiveRegression(this).run(activity,root,out))
             checks.addAll(TaskMigrationRegression(this).run(activity,out))
+            checks.add(CrossProcessMigrationRegression(this).run(activity,out))
             checks.addAll(ShadeRegression(this).run(activity,root,out))
             File(out,"render-results.txt").writeText(checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
             result.putString("stream",checks.joinToString("\n")+"\nHWUI_RENDER_PASS\n")
