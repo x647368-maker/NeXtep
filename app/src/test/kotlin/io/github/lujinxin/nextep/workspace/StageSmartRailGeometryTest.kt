@@ -42,5 +42,27 @@ class StageSmartRailGeometryTest {
         assertTrue(hidden.contentScale >= base.contentScale)
         val button = StageSmartRailGeometry.handle(hidden,3f)
         assertTrue(button.bottom <= hidden.sidebarTop + hidden.sidebarWidth)
+        assertTrue(button.width >= 132 && button.height >= 132)
+        assertFalse(button.overlaps(StageTopLayoutMetrics.Box(hidden.contentLeft,
+            hidden.contentTop,hidden.contentWidth,hidden.contentHeight)))
+    }
+
+    @Test fun nearFullTopOverlapKeepsReachableToolbarRecovery() {
+        for ((w,h,_) in shapes) for(d in listOf(1.5f,2f,2.5f,3f,3.5f,4f))
+            for(side in SidebarSide.entries) for(rotation in 0..3) {
+                val base=WorkspaceGeometry.forDisplay(w,h,side,d,
+                    WorkspaceNavigationInsets(24,72,20,48),rotation)
+                val depth=StageTopLayoutMetrics.depth(base,d,4,mainPriority=true)
+                val expanded=base.copy(railAtTop=true,sidebarWidth=depth,
+                    mainTopOverlap=(depth*.99f).toInt())
+                val hidden=StageSmartRailGeometry.reclaim(expanded,d)
+                val handle=StageSmartRailGeometry.handle(hidden,d)
+                assertTrue(hidden.contentScale >= expanded.contentScale)
+                assertTrue(handle.width >= (44*d).toInt() && handle.height >= (44*d).toInt())
+                assertTrue(handle.left >= hidden.availableLeft && handle.right <= hidden.availableRight)
+                assertTrue(handle.top >= hidden.availableTop && handle.bottom <= hidden.availableBottom)
+                assertFalse(handle.overlaps(StageTopLayoutMetrics.Box(hidden.contentLeft,
+                    hidden.contentTop,hidden.contentWidth,hidden.contentHeight)))
+            }
     }
 }

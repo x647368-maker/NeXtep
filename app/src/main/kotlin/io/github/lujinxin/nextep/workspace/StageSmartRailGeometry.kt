@@ -27,7 +27,12 @@ internal object StageSmartRailGeometry {
         val reserve = if (g.railAtTop)
             g.sidebarWidth - minOf(g.mainTopOverlap, g.sidebarWidth - 1)
         else g.sidebarWidth
-        val short = minOf(reserve, thickness(density)).coerceAtLeast(1)
+        val desired = thickness(density)
+        // If the main-priority presentation already consumes almost the whole
+        // rail, keep that main fit and use the existing independent toolbar end.
+        // Do not leave a one-pixel (untappable) recovery affordance.
+        if (reserve < desired) return toolbarHandle(g, density)
+        val short = minOf(reserve, desired).coerceAtLeast(1)
         val w = minOf(g.sidebarPhysicalWidth, if (isHorizontal) length else short, g.availableWidth)
         val h = minOf(g.sidebarPhysicalHeight, if (isHorizontal) short else length, g.availableHeight)
         // Top and legacy landscape top/bottom rails use their real horizontal
@@ -37,6 +42,18 @@ internal object StageSmartRailGeometry {
         val y = (g.sidebarTop + (if (g.railAtTop) reserve - h else g.sidebarPhysicalHeight - h) / 2)
             .coerceIn(g.availableTop, g.availableBottom - h)
         return StageTopLayoutMetrics.Box(x, y, w, h)
+    }
+
+    private fun toolbarHandle(g: WorkspaceGeometry, density: Float): StageTopLayoutMetrics.Box {
+        val size = minOf((48 * density).roundToInt().coerceAtLeast(1), g.controlWidth, g.controlHeight)
+        val pad = (8 * density).roundToInt().coerceAtLeast(0)
+        val horizontalToolbar = g.railAtTop || !g.isLandscape || g.isNativeLandscapeRail
+        val x = if (horizontalToolbar)
+            (g.controlLeft + g.controlWidth - pad - size).coerceAtLeast(g.controlLeft)
+        else g.controlLeft + (g.controlWidth - size) / 2
+        val y = if (horizontalToolbar) g.controlTop + (g.controlHeight - size) / 2
+        else (g.controlTop + g.controlHeight - pad - size).coerceAtLeast(g.controlTop)
+        return StageTopLayoutMetrics.Box(x, y, size, size)
     }
 
     fun towardsContent(g: WorkspaceGeometry, motion: Float): Boolean =
