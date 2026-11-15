@@ -26,6 +26,7 @@ pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.js
 # PR103 only revokes abandoned preview work; preserve the full earlier freeze chain.
 pr103_review=json.loads((root/'scripts/reviewed-pr103-cancel-preview-v83.json').read_text())['files']
 assert set(pr103_review)=={
+ 'scripts/verify-state-continuity.py',
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt',
 }

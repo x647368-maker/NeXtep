@@ -19,6 +19,16 @@
           "after": "}\n\n/** One attempt's worker-only permission. Owner revocation cannot interrupt an\n * already entered capture; all later stages recheck before starting. The\n * existing owner validity/commit gates still control publication and moves. */\ninternal class StageTapCapturePermit {\n    private val cancelled=java.util.concurrent.atomic.AtomicBoolean(false)\n    val revoked:Boolean get()=cancelled.get()\n    fun revoke(){cancelled.set(true)}\n    fun allows(now:Long,deadline:Long):Boolean = !revoked &&\n        StageTransientTapPolicy.canCaptureSecond(now,deadline)\n}\n"
         }
       ]
+    },
+    "scripts/verify-state-continuity.py": {
+      "previous_blob_sha1": "601400c91d7713096faf503834473d42431f045f",
+      "reviewed_blob_sha1": "dc6d577d14ad20476031b753ef921257efaaf212",
+      "patches": [
+        {
+          "before": "# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.\npr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']\ndef undo_pr92(path,data):\n if path not in pr92_review:return data\n spec=pr92_review[path]",
+          "after": "# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.\npr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']\n# PR103 only revokes abandoned preview work; preserve the full earlier freeze chain.\npr103_review=json.loads((root/'scripts/reviewed-pr103-cancel-preview-v83.json').read_text())['files']\nassert set(pr103_review)=={\n 'scripts/verify-state-continuity.py',\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt',\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt',\n}\ndef undo_pr103(path,data):\n if path not in pr103_review:return data\n spec=pr103_review[path]\n blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()\n assert blob(data)==spec['reviewed_blob_sha1'],path\n source=data.decode('utf-8')\n for patch in reversed(spec['patches']):\n  assert source.count(patch['after'])==1,path\n  source=source.replace(patch['after'],patch['before'],1)\n prior=source.encode('utf-8')\n assert blob(prior)==spec['previous_blob_sha1'],path\n return prior\nfor reviewed_path in pr103_review:\n undo_pr103(reviewed_path,(root/reviewed_path).read_bytes())\n_pr103=(k/'systemui/StageTransientTapSwap.kt').read_text()\nassert _pr103.count('capturePermit.allows(SystemClock.uptimeMillis(),deadline)')==3\nassert 'if(capturePermit.revoked){a?.recycle();b?.recycle();return@execute}' in _pr103\nassert 'if(!posted){a?.recycle();b?.recycle()}' in _pr103\nassert 'capturePermit.revoke()\\n            active=null' in _pr103\nassert 'private val cancelled=java.util.concurrent.atomic.AtomicBoolean(false)' in (k/'systemui/StageTransientTapPolicy.kt').read_text()\ndef undo_pr92(path,data):\n data=undo_pr103(path,data)\n if path not in pr92_review:return data\n spec=pr92_review[path]"
+        }
+      ]
     }
   }
 }
