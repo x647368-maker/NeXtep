@@ -16,6 +16,15 @@ internal object StageLiveSurfaceFlightGeometry {
     }
     data class Placement(val scale: Float, val x: Float, val y: Float, val box: Box)
 
+    // One normalized phase curve. Vanishing first and second derivatives
+    // at the joins keep both velocity and acceleration continuous.
+    fun phaseEase(progress:Float):Float {
+        if(!progress.isFinite())return 0f
+        val u=progress.coerceIn(0f,1f).toDouble()
+        return (u*u*u*(10.0+u*(-15.0+6.0*u))).toFloat()
+    }
+
+
     fun flight(from: Box, to: Box, sourceWidth: Int, sourceHeight: Int,
                progress: Float, arcOffsetPx: Float = 0f): Placement? {
         if (!from.valid() || !to.valid() || sourceWidth < 2 || sourceHeight < 2 ||
@@ -82,12 +91,7 @@ internal object StageLiveSurfaceFlightGeometry {
         val toScale = min(to.width / sourceWidth, to.height / sourceHeight)
         if (fromScale <= 0f || toScale <= 0f) return null
         val t = progress.coerceIn(0f,1f)
-        // Smoothstep is stationary at the phase boundary, avoiding a sharp
-        // 90-degree velocity kink while keeping the whole motion monotonic.
-        fun smooth(x: Float): Float {
-            val u=x.coerceIn(0f,1f)
-            return u*u*(3f-2f*u)
-        }
+        // Use the same phase curve for position, scale and crop.
         fun blend(a:Float,b:Float,u:Float) = a+(b-a)*u
         val cx:Float
         val cy:Float
@@ -95,12 +99,12 @@ internal object StageLiveSurfaceFlightGeometry {
         if (sourceSmall) {
             val split=.34f
             if(t<split) {
-                val u=smooth(t/split)
+                val u=phaseEase(t/split)
                 cx=if(byHorizontal) blend(small.cx,main.cx,u) else small.cx
                 cy=if(byHorizontal) small.cy else blend(small.cy,main.cy,u)
                 scale=fromScale
             } else {
-                val u=smooth((t-split)/(1f-split))
+                val u=phaseEase((t-split)/(1f-split))
                 cx=if(byHorizontal) main.cx else blend(small.cx,main.cx,u)
                 cy=if(byHorizontal) blend(small.cy,main.cy,u) else main.cy
                 scale=blend(fromScale,toScale,u)
@@ -108,12 +112,12 @@ internal object StageLiveSurfaceFlightGeometry {
         } else {
             val split=.66f
             if(t<split) {
-                val u=smooth(t/split)
+                val u=phaseEase(t/split)
                 cx=if(byHorizontal) main.cx else blend(main.cx,small.cx,u)
                 cy=if(byHorizontal) blend(main.cy,small.cy,u) else main.cy
                 scale=blend(fromScale,toScale,u)
             } else {
-                val u=smooth((t-split)/(1f-split))
+                val u=phaseEase((t-split)/(1f-split))
                 cx=if(byHorizontal) blend(main.cx,small.cx,u) else small.cx
                 cy=if(byHorizontal) small.cy else blend(main.cy,small.cy,u)
                 scale=toScale
@@ -231,8 +235,8 @@ internal object StageLiveSurfaceFlightGeometry {
 
     private fun coveredViewport(from: Box, to: Box, center: Box, p: Float): Box {
         val growing = from.width * from.height < to.width * to.height
-        val phase = (if (growing) (p - .34f) / .66f else p / .66f).coerceIn(0f, 1f)
-        val u = phase * phase * (3f - 2f * phase)
+        val split = if(growing) .34f else .66f
+        val u = phaseEase(if(growing) (p-split)/(1f-split) else p/split)
         val w = from.width + (to.width - from.width) * u
         val h = from.height + (to.height - from.height) * u
         return Box(center.cx - w * .5f, center.cy - h * .5f,
