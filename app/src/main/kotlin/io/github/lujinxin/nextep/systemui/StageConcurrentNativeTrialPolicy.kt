@@ -78,10 +78,25 @@ internal object StageConcurrentNativeTrialPolicy {
         // The slot task leash can arrive one Shell callback later. This is
         // not a permanent OEM refusal and must not eat all later animations.
         "fallback:slot_task_leash_not_ready",
+        "fallback:mirror_source_changed",
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false
     }
+
+    // Receipt time and UI dispatch time are deliberately distinct. A real
+    // callback received by the original absolute deadline is admissible;
+    // an absent, pre-submit or late callback is not. No extended wait.
+    fun firstReceiptWithinBudget(submittedMs:Long, receivedMs:Long,budgetMs:Long):Boolean =
+        submittedMs>=0L && receivedMs>=submittedMs && budgetMs>=0L &&
+            receivedMs-submittedMs<=budgetMs
+
+    /** Only the active experimental GPU flight needs these local identity
+     * checks. A missing or changed task leash is not permanent OEM denial. */
+    fun sourceIdentityReady(hostAttached:Boolean,handlesValid:Boolean,
+                            incomingMatches:()->Boolean,outgoingMatches:()->Boolean):Boolean =
+        hostAttached && handlesValid &&
+            runCatching { incomingMatches() && outgoingMatches() }.getOrDefault(false)
 
     /**
      * A submitted compositor transaction is not proof of visible pixels.
@@ -99,6 +114,17 @@ internal object StageConcurrentNativeTrialPolicy {
         return firstTransactionCommitted && nativeFrames >= MIN_FRAME_COUNT &&
             elapsedMs >= durationMs - FINAL_FRAME_TOLERANCE_MS
     }
+
+    // The experimental concurrent flight must acknowledge the final
+    // compositor transaction before holding the two animated endpoint layers.
+    // A missing acknowledgement is not pixel proof: hide the layers and move
+    // the real tasks once, without claiming an animated handoff.
+    const val TERMINAL_COMMIT_BUDGET_MS=64L
+    enum class MovePresentation { ANIMATED, UNMASKED }
+    fun movePresentation(firstCommitted:Boolean,terminalRequired:Boolean,
+                         terminalCommitted:Boolean):MovePresentation =
+        if(firstCommitted && (!terminalRequired || terminalCommitted))
+            MovePresentation.ANIMATED else MovePresentation.UNMASKED
 
     // A terminal geometry submission is explicit; never rely solely on
     // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI.
@@ -142,6 +168,14 @@ internal object StageConcurrentNativeTrialPolicy {
 
     fun nextHandoffCheck(nowMs: Long, deadlineMs: Long): Long =
         minOf(nowMs + 16L, deadlineMs)
+
+    /** A failed vendor release must not strand the remaining compositor
+     * resources or prevent completion of the real exchange. Only on teardown. */
+    fun cleanupSteps(vararg steps:()->Unit, onFailure:(Throwable)->Unit) {
+        for(step in steps) {
+            runCatching(step).onFailure { error -> runCatching { onFailure(error) } }
+        }
+    }
 
     fun disableForSession(reason:String) {
         disabledReason=reason.take(100)

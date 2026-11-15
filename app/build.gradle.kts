@@ -27,7 +27,15 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
     dependsOn(embedCurrentReleaseNotes, embedReleaseHistory)
 }
 
+// Explicit private debug-build A/B switch; normal and release builds retain
+// the existing snapshot path. No version or signing change.
+val atomicNativeSurfaceTrial = providers.gradleProperty("atomicNativeSurfaceTrial")
+    .map { it == "true" }.getOrElse(false)
+val atomicPairedRailTrial = providers.gradleProperty("atomicPairedRailTrial")
+    .map { it == "true" }.getOrElse(false) && atomicNativeSurfaceTrial
+
 android {
+    buildFeatures { buildConfig = true }
     namespace = "io.github.x647368maker.atomicworkbench"
     sourceSets.getByName("main").assets.srcDir(embeddedNotesDir.get().asFile)
     sourceSets.getByName("main").assets.srcDir(archivedNotesDir.get().asFile)
@@ -41,6 +49,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench"
         minSdk = 35
         targetSdk = 36
+        buildConfigField("boolean", "ATOMIC_NATIVE_SURFACE_TRIAL", "false")
+        buildConfigField("boolean", "ATOMIC_PAIRED_RAIL_TRIAL", "false")
         versionCode = 86
         versionName = "0.9.71-dev"
         testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
@@ -59,6 +69,8 @@ android {
 
     buildTypes {
         getByName("debug") {
+            buildConfigField("boolean", "ATOMIC_NATIVE_SURFACE_TRIAL", atomicNativeSurfaceTrial.toString())
+            buildConfigField("boolean", "ATOMIC_PAIRED_RAIL_TRIAL", atomicPairedRailTrial.toString())
             // Missing private key permits compile/test validation, never a temporary signature.
             signingConfig = if (System.getenv("ATOMIC_SIGNING_READY") == "true") signingConfigs.getByName("debug") else null
         }

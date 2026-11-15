@@ -22,12 +22,18 @@ internal class StageSparseRailReflowAnimator(
 ) {
     private val power = context.getSystemService(PowerManager::class.java)
     private val active = IdentityHashMap<View, Long>()
+    private val attachment = IdentityHashMap<View, View.OnAttachStateChangeListener>()
     private var generation = 0L
     private val easing = PathInterpolator(.2f, 0f, 0f, 1f)
 
     fun isAnimating(view: View): Boolean = active.containsKey(view)
 
+    private fun unbind(view:View) {
+        attachment.remove(view)?.let { view.removeOnAttachStateChangeListener(it) }
+    }
+
     private fun end(view: View) {
+        unbind(view)
         view.animate().cancel()
         view.scaleX = 1f
         view.scaleY = 1f
@@ -87,6 +93,7 @@ internal class StageSparseRailReflowAnimator(
         // Do not force alpha=1 on a card omitted from the next occupied set:
         // rapid 4->3->2 would otherwise flash a just-closed real task.
         for (view in active.keys.toList()) {
+            unbind(view)
             if (after.containsKey(view)) {
                 end(view)
             } else {
@@ -118,21 +125,42 @@ internal class StageSparseRailReflowAnimator(
             view.scaleY = start.uniformScale
             view.alpha = runningAlpha[view]?.coerceIn(0f, 1f) ?: start.alpha
             active[view] = epoch
-            view.animate()
-                .translationX(0f).translationY(0f)
-                .scaleX(1f).scaleY(1f).alpha(1f)
-                .setDuration(StageSparseRailReflowPolicy.DURATION_MS)
-                .setInterpolator(easing)
-                .withEndAction {
-                    if (active[view] == epoch) {
-                        active.remove(view)
-                        view.scaleX = 1f
-                        view.scaleY = 1f
-                        view.translationX = 0f
-                        view.translationY = 0f
-                        view.alpha = 1f
+            val listener=object:View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) = Unit
+                override fun onViewDetachedFromWindow(v: View) {
+                    // Framework cancellation does not guarantee withEndAction.
+                    // Clear just this card's own epoch and transformations.
+                    if(active[v]==epoch) {
+                        active.remove(v)
+                        end(v)
                     }
-                }.start()
+                }
+            }
+            attachment[view]=listener
+            try {
+                view.addOnAttachStateChangeListener(listener)
+                view.animate()
+                    .translationX(0f).translationY(0f)
+                    .scaleX(1f).scaleY(1f).alpha(1f)
+                    .setDuration(StageSparseRailReflowPolicy.DURATION_MS)
+                    .setInterpolator(easing)
+                    .withEndAction {
+                        if (active[view] == epoch) {
+                            active.remove(view)
+                            unbind(view)
+                            view.scaleX = 1f
+                            view.scaleY = 1f
+                            view.translationX = 0f
+                            view.translationY = 0f
+                            view.alpha = 1f
+                        }
+                    }.start()
+            } catch (error: RuntimeException) {
+                if(active[view]==epoch) {
+                    active.remove(view)
+                    end(view)
+                }
+            }
         }
     }
 }

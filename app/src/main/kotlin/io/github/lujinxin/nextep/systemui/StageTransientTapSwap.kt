@@ -83,8 +83,10 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var firstObserver:android.view.ViewTreeObserver?=null
         private var firstRetry:Runnable?=null
         private var motionCommit:Runnable?=null
+        private var motionObserver:android.view.ViewTreeObserver?=null
         private var motionDeadline:Runnable?=null
         private var terminalCommit:Runnable?=null
+        private var terminalObserver:android.view.ViewTreeObserver?=null
         private var terminalTimeout:Runnable?=null
         private var terminalRetry:Runnable?=null
         private val terminalRecovery=StageTerminalCommitRecovery()
@@ -101,6 +103,14 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(current() && waitingCommit){waitingCommit=false; direct("first_commit_timeout")}
         }
         private val lifetime=Runnable {if(current())finish("lifetime_timeout")}
+        private val attachmentListener=object:View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v:View) = Unit
+            override fun onViewDetachedFromWindow(v:View) {
+                // Do not remove children while the framework is dispatching
+                // detach. Even a quick reattach changes the old frame owner.
+                ui.post { if(current())finish("host_detached") }
+            }
+        }
         private val checkHandoff=object:Runnable{
             override fun run(){
                 if(!current())return
@@ -127,6 +137,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         fun begin(){
             val deadline=SystemClock.uptimeMillis()+StageTransientTapPolicy.CAPTURE_BUDGET_MS
+            host.addOnAttachStateChangeListener(attachmentListener)
             trace("snapshot_capture_begin")
             ui.postDelayed(captureTimeout,StageTransientTapPolicy.CAPTURE_BUDGET_MS)
             ui.postDelayed(lifetime,StageTransientTapPolicy.MAX_ATTEMPT_MS)
@@ -136,11 +147,15 @@ internal class StageTransientTapSwap(private val context:Context) {
                     var incomingFailure="none"
                     var outgoingFailure="not_attempted"
                     val captureStarted=SystemClock.uptimeMillis()
-                    val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    val a=runCatching {
+                        TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    }.getOrElse { incomingFailure="capture_exception";null }
                     val firstCaptured=SystemClock.uptimeMillis()
                     val b=if(a!=null && waitingCapture && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
                         outgoingFailure="none"
-                        TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
+                        runCatching {
+                            TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
+                        }.getOrElse { outgoingFailure="capture_exception";null }
                     } else null
                     val bothCaptured=SystemClock.uptimeMillis()
                     // Cancellation/timeout owns the UI finish; release worker-local snapshots.
@@ -152,17 +167,20 @@ internal class StageTransientTapSwap(private val context:Context) {
                     else null
                     val plannedAt=SystemClock.uptimeMillis()
                     if(!waitingCapture){a?.recycle();b?.recycle();return@execute}
-                    ui.post {
+                    val posted=ui.post {
                         // One bounded timing record, no per-frame trace or new worker.
                         // Split actual capture/planning from main-loop callback delay.
-                        if(current() && waitingCapture)
-                            trace("snapshot_cost_ms="+(firstCaptured-captureStarted)+"/"+
-                                (bothCaptured-firstCaptured)+"/"+(plannedAt-bothCaptured)+"/"+
-                                (SystemClock.uptimeMillis()-plannedAt))
-                        if(current() && waitingCapture && (a==null || b==null))
-                            trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
+                        runCatching {
+                            if(current() && waitingCapture)
+                                trace("snapshot_cost_ms="+(firstCaptured-captureStarted)+"/"+
+                                    (bothCaptured-firstCaptured)+"/"+(plannedAt-bothCaptured)+"/"+
+                                    (SystemClock.uptimeMillis()-plannedAt))
+                            if(current() && waitingCapture && (a==null || b==null))
+                                trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
+                        }
                         captured(a,b,deadline,plan)
                     }
+                    if(!posted){a?.recycle();if(b!==a)b?.recycle()}
                 }
             }.onFailure {
                 waitingCapture=false
@@ -179,7 +197,12 @@ internal class StageTransientTapSwap(private val context:Context) {
                 a?.recycle();b?.recycle();direct("capture_unavailable");return
             }
             if(plan==null){a.recycle();b.recycle();direct("corridor_unavailable");return}
-            val v=FlightView(context,a,b,slot,main,others,backdrop,viewport,plan,mainBackdrop)
+            val v=runCatching {
+                FlightView(context,a,b,slot,main,others,backdrop,viewport,plan,mainBackdrop)
+            }.getOrElse {
+                a.recycle();if(b!==a)b.recycle()
+                direct("view_create_failed");return
+            }
             if(!v.safe){v.release();direct("corridor_unavailable");return}
             view=v
             val added=runCatching{
@@ -250,11 +273,19 @@ internal class StageTransientTapSwap(private val context:Context) {
             runCatching(onVisualStart).onFailure {
                 finish("visual_start_failed");return
             }
-            val backend=v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
-                if(current()){
-                    trace("snapshot_motion_animators_end")
-                    awaitTerminalFrame(v)
+            val backend=runCatching {
+                v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
+                    if(current()){
+                        trace("snapshot_motion_animators_end")
+                        awaitTerminalFrame(v)
+                    }
                 }
+            }.getOrElse {
+                // An unsupported vendor RenderThread/UI start must not lose
+                // the tap, nor leave a partial card animation on the screen.
+                if(moveStarted)finish("motion_start_failed_after_move")
+                else direct("motion_start_failed")
+                return
             }
             trace("snapshot_motion_backend="+backend)
             // RenderThread needs a submitted animation frame BEFORE the
@@ -281,16 +312,19 @@ internal class StageTransientTapSwap(private val context:Context) {
             }
             motionCommit=callback;motionDeadline=deadline
             ui.postDelayed(deadline,48L)
-            runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}
-                .onFailure{trace("snapshot_motion_callback_unavailable")}
+            runCatching{
+                val observer=host.viewTreeObserver
+                motionObserver=observer
+                observer.registerFrameCommitCallback(callback)
+            }.onFailure{trace("snapshot_motion_callback_unavailable")}
             v.invalidate()
         }
         private fun clearMotionCallbacks(){
             motionCommit?.let{cb->
-                runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
+                runCatching{motionObserver?.let{if(it.isAlive)it.unregisterFrameCommitCallback(cb)}}
             }
             motionDeadline?.let{ui.removeCallbacks(it)}
-            motionCommit=null;motionDeadline=null
+            motionCommit=null;motionObserver=null;motionDeadline=null
         }
         private fun awaitTerminalFrame(v:FlightView){
             if(!current() || terminalCommit!=null || flightDone)return
@@ -315,14 +349,18 @@ internal class StageTransientTapSwap(private val context:Context) {
             fun registerAndRender(){
                 // Register BEFORE dirtying the endpoint. An animator's end
                 // callback alone is not proof of an HWUI terminal frame.
-                runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}
-                    .onFailure{trace("snapshot_terminal_callback_unavailable")}
+                runCatching{
+                    val observer=host.viewTreeObserver
+                    terminalObserver=observer
+                    observer.registerFrameCommitCallback(callback)
+                }.onFailure{trace("snapshot_terminal_callback_unavailable")}
                 v.invalidate()
                 host.invalidate()
             }
             val retry=Runnable{
                 if(current() && !flightDone && terminalRecovery.retry()){
-                    runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(callback)}
+                    runCatching{terminalObserver?.let{if(it.isAlive)it.unregisterFrameCommitCallback(callback)}}
+                    terminalObserver=null
                     trace("snapshot_terminal_commit_retry")
                     registerAndRender()
                 }
@@ -335,35 +373,54 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         private fun clearTerminalCallbacks(){
             terminalCommit?.let{cb->
-                runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
+                runCatching{terminalObserver?.let{if(it.isAlive)it.unregisterFrameCommitCallback(cb)}}
             }
             terminalTimeout?.let{ui.removeCallbacks(it)}
             terminalRetry?.let{ui.removeCallbacks(it)}
             terminalRecovery.close()
-            terminalCommit=null;terminalTimeout=null;terminalRetry=null
+            terminalCommit=null;terminalObserver=null;terminalTimeout=null;terminalRetry=null
         }
         private fun direct(why:String){
             if(!current() || moveStarted)return
             trace("snapshot_fallback:"+why)
             removeVisual()
-            if(!stillValid()){finish("stale_fallback");return}
             fallback=true
             flightDone=true
             requestMove()
         }
         private fun requestMove(){
-            if(!current() || moveStarted)return
+            // The first committed frame is not a reservation of the original
+            // task/viewport. Rotation, fold or producer changes can invalidate
+            // it before the motion callback or its deadline requests the move.
+            when(StageTransientTapPolicy.decideMoveRequest(current(),moveStarted,::stillValid)){
+                StageTransientTapPolicy.MoveRequest.IGNORE->return
+                StageTransientTapPolicy.MoveRequest.STALE->{
+                    finish(if(fallback)"stale_fallback" else "stale_before_real_move")
+                    return
+                }
+                StageTransientTapPolicy.MoveRequest.START->Unit
+            }
             moveStarted=true
             trace("snapshot_real_move_requested")
             runCatching {
                 moveAsync { ok ->
-                    if(!current())return@moveAsync
-                    trace("snapshot_real_move_ack="+ok)
-                    if(!ok || fallback){finish(if(ok)"fallback_ready" else "move_failed");return@moveAsync}
-                    moveAck=true
-                    maybeHandoff()
+                    // Keep all ownership/ACK transitions on the same UI
+                    // lane; late or duplicate callbacks cannot finish a
+                    // different attempt or retract a successful first ACK.
+                    if(Looper.myLooper()==ui.looper) acknowledgeMove(ok)
+                    else ui.post { acknowledgeMove(ok) }
                 }
-            }.onFailure{finish("move_exception")}
+            }.onFailure{
+                if(!moveAck)finish("move_exception")
+                else runCatching{trace("snapshot_move_exception_after_ack")}
+            }
+        }
+        private fun acknowledgeMove(ok:Boolean){
+            if(!current() || !moveStarted || moveAck)return
+            if(ok)moveAck=true
+            runCatching { trace("snapshot_real_move_ack="+ok) }
+            if(!ok || fallback){finish(if(ok)"fallback_ready" else "move_failed");return}
+            maybeHandoff()
         }
         private fun maybeHandoff(){
             if(!current() || handoffStarted ||
@@ -376,7 +433,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             clearFirstCallbacks()
             clearMotionCallbacks()
             clearTerminalCallbacks()
-            view?.stopMotion()
+            runCatching { view?.stopMotion() }
             if(visualOwned){visualOwned=false;runCatching(onVisualEnd)}
             val old=view ?: return
             view=null
@@ -399,11 +456,17 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(!current())return
             active=null
             waitingCapture=false;waitingCommit=false
+            host.removeOnAttachStateChangeListener(attachmentListener)
             ui.removeCallbacks(captureTimeout);ui.removeCallbacks(commitTimeout);ui.removeCallbacks(lifetime)
             host.removeCallbacks(checkHandoff)
-            removeVisual()
-            trace("snapshot_end:"+result)
-            onFinished()
+            // One failed visual teardown/diagnostic step cannot leave the
+            // shared coordinator permanently waiting for this attempt.
+            StageConcurrentNativeTrialPolicy.cleanupSteps(
+                { removeVisual() },
+                { trace("snapshot_end:"+result) },
+                { onFinished() },
+                onFailure={ runCatching { trace("snapshot_cleanup_exception:"+it.javaClass.simpleName) } },
+            )
         }
     }
 
@@ -634,8 +697,11 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         fun release(){
             if(released)return
-            released=true;stopMotion()
-            incoming.recycle();if(outgoing!==incoming)outgoing.recycle()
+            released=true
+            try { stopMotion() } finally {
+                try { incoming.recycle() }
+                finally { if(outgoing!==incoming)outgoing.recycle() }
+            }
         }
     }
 }

@@ -4,6 +4,67 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageConcurrentNativeTrialPolicyTest {
+    @Test fun firstReceiptUsesOriginalDeadlineNotDelayedMainDispatch() {
+        val p=StageConcurrentNativeTrialPolicy
+        assertFalse(p.firstReceiptWithinBudget(100,-1,48))
+        assertFalse(p.firstReceiptWithinBudget(-1,100,48))
+        assertFalse(p.firstReceiptWithinBudget(100,99,48))
+        assertTrue(p.firstReceiptWithinBudget(100,100,48))
+        assertTrue(p.firstReceiptWithinBudget(100,148,48))
+        assertFalse(p.firstReceiptWithinBudget(100,149,48))
+        assertFalse(p.firstReceiptWithinBudget(100,100,-1))
+    }
+    @Test fun maskedHandoffRequiresCompositorAcknowledgement() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(first in listOf(false,true)) for(required in listOf(false,true))
+            for(terminal in listOf(false,true)) {
+                val expected=if(first && (!required || terminal))
+                    StageConcurrentNativeTrialPolicy.MovePresentation.ANIMATED
+                else StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED
+                assertEquals(expected,p.movePresentation(first,required,terminal))
+            }
+        assertEquals(64L,p.TERMINAL_COMMIT_BUDGET_MS)
+        // Submission alone or a lost first-commit callback is not evidence
+        // of a fully acknowledged experimental endpoint.
+        assertEquals(StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED,
+            p.movePresentation(true,true,false))
+        assertEquals(StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED,
+            p.movePresentation(false,true,true))
+    }
+    @Test fun nativeTeardownRunsAllStepsDespiteVendorAndLoggerFailures() {
+        val policy=StageConcurrentNativeTrialPolicy
+        for(mask in 0 until 128) for(loggerFails in listOf(false,true)) {
+            val visited=mutableListOf<Int>()
+            var errors=0
+            val steps=Array<()->Unit>(7){index->
+                {
+                    visited.add(index)
+                    if(mask and (1 shl index)!=0) error("release failed")
+                }
+            }
+            policy.cleanupSteps(*steps,onFailure={
+                errors++
+                if(loggerFails) error("logger failed")
+            })
+            assertEquals((0..6).toList(),visited)
+            assertEquals(Integer.bitCount(mask),errors)
+        }
+    }
+    @Test fun nativeSourcePreflightRejectsDetachedOrReplacedLeashes() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(host in listOf(false,true)) for(handles in listOf(false,true))
+            for(incoming in listOf(false,true)) for(outgoing in listOf(false,true)) {
+                var first=0
+                var second=0
+                assertEquals(host && handles && incoming && outgoing,
+                    p.sourceIdentityReady(host,handles,{first++;incoming},{second++;outgoing}))
+                assertEquals(if(host && handles) 1 else 0,first)
+                assertEquals(if(host && handles && incoming) 1 else 0,second)
+            }
+        assertFalse(p.sourceIdentityReady(true,true,{error("stale source")},{true}))
+        assertFalse(p.sourceIdentityReady(true,true,{true},{error("stale target")}))
+        assertTrue(p.transientMirrorOutcome("fallback:mirror_source_changed"))
+    }
     @Test fun existingPhysicalWindowAllowsNoNewViewRoot() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         for((w,h) in listOf(1140 to 2616, 2248 to 2480, 2560 to 1600))
