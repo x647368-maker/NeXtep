@@ -27,6 +27,11 @@ import android.widget.EditText
 import android.widget.TextView
 import io.github.x647368maker.atomicworkbench.config.StageIssueDiagnosticActivity
 import io.github.x647368maker.atomicworkbench.config.StageIssueSession
+import io.github.x647368maker.atomicworkbench.config.StageIssueHistoryPolicy
+import io.github.x647368maker.atomicworkbench.config.StageIssueTestCatalog
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.io.File
 
 /**
@@ -252,7 +257,10 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
         shell("input keyevent 4")
         await("export cancellation restores button"){ui{descendants(activity.window.decorView).filterIsInstance<Button>().any{it.text.toString()=="导出最新TXT报告" && it.isEnabled}}}
         click(activity,"导出最新TXT报告")
-        await("system document picker") {
+        verifyOpenPicker(expected,out,"latest")
+    }
+    private fun verifyOpenPicker(expected:String,out:File,kind:String) {
+        await("system document picker $kind") {
             val root=inst.uiAutomation.rootInActiveWindow
             root!=null && root.packageName?.toString()?.contains("documentsui",ignoreCase=true)==true &&
                 node(root){ it.className?.toString()=="android.widget.EditText" }!=null
@@ -260,7 +268,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
         val editor=checkNotNull(node(inst.uiAutomation.rootInActiveWindow){
             it.className?.toString()=="android.widget.EditText"
         })
-        val name="stage-diagnostic-runtime.txt"
+        val name="stage-diagnostic-$kind.txt"
         check(editor.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,android.os.Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,name)
         })) { "DocumentsUI filename not editable" }
@@ -292,16 +300,49 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                 if(encoded.isEmpty())continue
                 val bytes=runCatching{Base64.decode(encoded,Base64.DEFAULT)}.getOrNull()?:continue
                 actual=bytes;location=path
-                File(out,"diagnostic-export-observed.bin").writeBytes(bytes)
+                File(out,"diagnostic-export-$kind-observed.bin").writeBytes(bytes)
                 if(bytes.contentEquals(wanted)){
-                    File(out,"diagnostic-exported-report.txt").writeBytes(bytes)
+                    File(out,if(kind=="latest") "diagnostic-exported-report.txt" else "diagnostic-history-exported-report.txt").writeBytes(bytes)
                     phase("PASS exact SAF bytes path=$path size=${bytes.size} SHA256=${digest(bytes)}")
                     return
                 }
             }
             Thread.sleep(300)
         }
-        error("SAF bytes mismatch expected=${wanted.size}/${digest(wanted)}, actual=${actual?.size}/${actual?.let{digest(it)}} location=$location")
+        error("SAF $kind bytes mismatch expected=${wanted.size}/${digest(wanted)}, actual=${actual?.size}/${actual?.let{digest(it)}} location=$location")
+    }
+
+    private fun verifyHistoryExport(activity:Activity, first:StageIssueHistoryPolicy.Record, latest:StageIssueHistoryPolicy.Record, out:File) {
+        phase("BEGIN archived report dialog and export")
+        check(first.id!=latest.id && first.text!=latest.text)
+        val format=SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.getDefault())
+        fun title(record:StageIssueHistoryPolicy.Record)=format.format(Date(record.startedAt))+" · "+StageIssueTestCatalog.find(record.category).name
+        fun activeNode(pred:(AccessibilityNodeInfo)->Boolean)=node(inst.uiAutomation.rootInActiveWindow,pred)
+        fun exact(text:String)=activeNode{it.text?.toString()==text}
+        fun press(n:AccessibilityNodeInfo){
+            var target:AccessibilityNodeInfo?=n
+            while(target!=null && !target.isClickable)target=target.parent
+            val clickTarget=checkNotNull(target){"No clickable historical entry"}
+            check(clickTarget.isEnabled && clickTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        }
+        click(activity,"查看历史报告（最近10份）")
+        await("history dialog displays both report titles"){
+            exact("诊断历史（最近10份）")!=null && exact(title(first))!=null && exact(title(latest))!=null
+        }
+        press(checkNotNull(exact(title(first))))
+        await("archived report dialog content"){
+            exact(title(first))!=null && exact(first.text)!=null && exact("导出TXT")!=null
+        }
+        phase("PASS exact archived dialog text")
+        press(checkNotNull(exact("导出TXT")))
+        verifyOpenPicker(first.text,out,"archive")
+        await("latest report remains intact after archived export"){
+            ui {
+                val reopened=StageIssueSession(inst.targetContext)
+                reopened.latestRecord()?.id==latest.id &&
+                    reopened.report(first.id)==first.text && reopened.report(latest.id)==latest.text
+            }
+        }
     }
 
     fun run(out: File): String {
@@ -380,6 +421,9 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             phase("PASS real report history and session isolation")
             val safFailure=runCatching{verifySaf(layout,records.first().text,out)}.exceptionOrNull()
             if(safFailure!=null)phase("FAIL SAF: ${safFailure.message}; continue independent expiry test")
+            val historyFailure=if(safFailure==null)runCatching{verifyHistoryExport(layout,first,records.first(),out)}.exceptionOrNull()
+                else IllegalStateException("Latest file export failed; archived export not verified")
+            if(historyFailure!=null)phase("FAIL archived export: ${historyFailure.message}")
             // Close both prior editors before starting the independent alarm test.
             close(layout);activities.remove(layout)
             close(all);activities.remove(all)
@@ -404,7 +448,8 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             phase("PASS genuine background expiration elapsed=${SystemClock.elapsedRealtime()-expiryToken}ms")
             File(out,"diagnostic-expiry-report.txt").writeText(expired.text)
             if(safFailure!=null)throw IllegalStateException("SAF failed; independent expiry completed",safFailure)
-            val result = "PASS actual Android diagnostics: narrow/wide native home, six scopes, real sessions, marker, stale-note rejection, history, SAF text bytes, real five-minute background OS alarm; OEM not tested"
+            if(historyFailure!=null)throw IllegalStateException("Archived report export failed; independent expiry completed",historyFailure)
+            val result = "PASS actual Android diagnostics: narrow/wide native home, six scopes, real sessions, marker, stale-note rejection, history, latest and archived SAF text bytes, real five-minute background OS alarm; OEM not tested"
             File(out, "diagnostic-ui-results.txt").writeText(result + "\n")
             return result
         } finally {
