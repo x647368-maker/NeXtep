@@ -19,6 +19,18 @@ internal class StageIssueSession(context: Context) {
     private val preferences = app.getSharedPreferences("stage_issue_test_v1", Context.MODE_PRIVATE)
     private val reportHistory = StageIssueHistoryStore(app)
 
+    private fun currentBootCount(): Int = synchronized(StageIssueSession::class.java) {
+        cachedBootCount ?: runCatching {
+            android.provider.Settings.Global.getInt(app.contentResolver, "boot_count", -1)
+        }.getOrDefault(-1).also { cachedBootCount = it }
+    }
+
+    private fun sameBoot(): Boolean? = StageIssueReportPolicy.sameBoot(
+        preferences.getInt("start_boot_count", -1), currentBootCount())
+
+    private fun elapsed(now: Long = SystemClock.elapsedRealtime()): Long? =
+        if (sameBoot() == false) null else StageIssueReportPolicy.elapsedMs(currentToken(), now)
+
     fun latestRecord(): StageIssueHistoryPolicy.Record? {
         val report = latestReport().takeIf { it.isNotBlank() } ?: return null
         val started = preferences.getLong("start_wall", 0L)
@@ -68,14 +80,11 @@ internal class StageIssueSession(context: Context) {
     }
 
     fun markersCount(): Int = markers().size
-    fun elapsedSeconds(): Long? = if (active())
-        StageIssueReportPolicy.elapsedMs(currentToken(), SystemClock.elapsedRealtime())?.div(1000)
-    else null
+    fun elapsedSeconds(): Long? = if (active()) elapsed()?.div(1000) else null
     fun remainingSeconds(): Long? = if (active())
-        StageIssueReportPolicy.remainingMs(currentToken(), SystemClock.elapsedRealtime(),durationMs()).div(1000L)
+        (durationMs() - (elapsed() ?: durationMs())).coerceAtLeast(0L).div(1000L)
     else null
-    fun isDue(): Boolean = active() &&
-        StageIssueReportPolicy.isDue(currentToken(), SystemClock.elapsedRealtime(), durationMs())
+    fun isDue(): Boolean = active() && (elapsed()?.let { it >= durationMs() } ?: true)
     fun mayMark(): Boolean = active() && !isDue() && StageIssueReportPolicy.canMark(
         currentToken(),SystemClock.elapsedRealtime(),markersCount())
     fun storedNote(): String = preferences.getString("note", null).orEmpty()
@@ -95,6 +104,7 @@ internal class StageIssueSession(context: Context) {
             .putBoolean("active", true)
             .putLong("start_elapsed", now)
             .putLong("start_wall", System.currentTimeMillis())
+            .putInt("start_boot_count", currentBootCount())
             .putLong("duration_ms", chosen)
             .putInt("app_pid", android.os.Process.myPid())
             .putString("version", version.take(60))
@@ -161,7 +171,8 @@ internal class StageIssueSession(context: Context) {
                snapshot: WorkspaceEnergyContract.Snapshot?, mode: String): String? {
         if (!active()) return null
         val token = currentToken()
-        val elapsed = StageIssueReportPolicy.elapsedMs(token, SystemClock.elapsedRealtime())
+        val elapsed = elapsed()
+        val bootIdentity = sameBoot()
         val planned = durationMs()
         val startWall = preferences.getLong("start_wall", 0)
         val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -180,7 +191,7 @@ internal class StageIssueSession(context: Context) {
             val requested = StageIssueTestCatalog.modulesFor(category.id)
             val startPid = preferences.getInt("start_pid", -1)
             val both = snapshot != null && startPid >= 0
-            val same = snapshot != null && startPid >= 0 && snapshot.processId == startPid
+            val same = bootIdentity != false && snapshot != null && startPid >= 0 && snapshot.processId == startPid
             val beginSwap = preferences.getLong("start_swap_id", -1L)
             val finalSwap = StageIssueReportPolicy.lastSwapId(snapshot?.exchangeDiagnostics)
             val swaps = when {
@@ -209,7 +220,12 @@ internal class StageIssueSession(context: Context) {
             appendLine("计划结束：${formatter.format(Date(startWall + planned))}（${planned/60_000}分钟）")
             appendLine("实际状态采集：${formatter.format(Date())}")
             appendLine("结束方式：${mode.take(80)}")
-            appendLine("实际采集间隔：${elapsed?.div(1000L)?.toString() ?: "系统重启/时间基准异常"}秒")
+            appendLine("实际采集间隔：${elapsed?.let { "${it/1000L}秒" } ?: "系统重启/时间基准异常，不可比较"}")
+            appendLine("设备启动基准：${when(bootIdentity) {
+                true -> "起止属于相同启动周期"
+                false -> "设备已重启，禁用跨启动周期耗时及计数比较"
+                null -> "ROM未提供可靠启动编号，重启情况不可确认"
+            }}")
             if (elapsed==null || elapsed>planned)
                 appendLine("注意：到期后的系统休眠/任务调度可能使结束快照晚于预定时间；不代表持续测试了更久。")
             appendLine("定时提醒设置：${if(alarmScheduled()) "已安排（非唤醒型，可延期）" else "无法设置，需重新打开 App 补结束"}")
@@ -280,10 +296,10 @@ internal class StageIssueSession(context: Context) {
 
     private fun runtimeDelta(end: WorkspaceEnergyContract.Snapshot?): String {
         val pid=preferences.getInt("start_pid",-1)
-        if (end==null || pid<0 || end.processId!=pid)
-            return "不可比较（系统界面进程不同或数据缺失）"
-        fun diff(v: Long,key:String)=(v-preferences.getLong(key,v))
-            .takeIf{it>=0}?.toString()?:"不可用"
+        if (sameBoot()==false || end==null || pid<0 || end.processId!=pid)
+            return "不可比较（设备重启、系统界面进程不同或数据缺失）"
+        fun diff(v: Long,key:String)=StageIssueReportPolicy.counterDelta(
+            preferences.getLong(key,-1L).takeIf { it>=0 },v)?.toString()?:"不可用"
         val effective = StageCpuEvidence.averageCoreEquivalents(
             preferences.getLong("start_cpu",-1L),end.cpuMs,
             preferences.getLong("start_runtime_elapsed",-1L),end.elapsedMs)
@@ -294,5 +310,11 @@ internal class StageIssueSession(context: Context) {
             "截取+${diff(end.previewCaptures,"start_captures")} " +
             "帧+${diff(end.slotFrames,"start_frames")} " +
             "整个SystemUI进程CPU+${diff(end.cpuMs,"start_cpu")}ms$normalized（包含系统界面，不能归因模块独占）"
+    }
+
+    private companion object {
+        // Read once per app process only when a user opens or runs diagnostics.
+        // The process cannot survive an actual device reboot.
+        private var cachedBootCount: Int? = null
     }
 }

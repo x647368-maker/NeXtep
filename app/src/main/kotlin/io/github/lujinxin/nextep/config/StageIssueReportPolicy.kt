@@ -26,6 +26,12 @@ internal object StageIssueReportPolicy {
     fun canMark(start: Long, current: Long, count: Int): Boolean =
         count < MAX_MARKERS && elapsedMs(start, current)?.let { it <= MAX_DURATION_MS } == true
 
+    fun sameBoot(start: Int, current: Int): Boolean? =
+        if (start >= 0 && current >= 0) start == current else null
+
+    fun counterDelta(start: Long?, end: Long): Long? =
+        if (start != null && start >= 0 && end >= start) end - start else null
+
     fun exchangeSection(startPid: Int, startLastId: Long?, endPid: Int?, diagnostics: String?): String = buildString {
         appendLine("【动画运行诊断｜结束快照】")
         if (endPid == null || diagnostics.isNullOrBlank()) {

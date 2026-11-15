@@ -52,6 +52,17 @@ class StageIssueReportPolicyTest {
         assertTrue(StageIssueReportPolicy.exchangeSection(11,null,11,"x".repeat(24_001)).contains("未完整导出"))
     }
 
+    @Test fun missingBaselineAndRebootNeverPretendZeroActivity() {
+        assertNull(StageIssueReportPolicy.counterDelta(null,100L))
+        assertNull(StageIssueReportPolicy.counterDelta(-1L,100L))
+        assertNull(StageIssueReportPolicy.counterDelta(101L,100L))
+        assertEquals(0L,StageIssueReportPolicy.counterDelta(100L,100L))
+        assertEquals(10L,StageIssueReportPolicy.counterDelta(100L,110L))
+        assertEquals(true,StageIssueReportPolicy.sameBoot(12,12))
+        assertEquals(false,StageIssueReportPolicy.sameBoot(12,13))
+        assertNull(StageIssueReportPolicy.sameBoot(-1,13))
+    }
+
     @Test fun negativeAndResetElapsedUnusable() {
         assertNull(StageIssueReportPolicy.elapsedMs(-1,10))
         assertNull(StageIssueReportPolicy.elapsedMs(10,3))

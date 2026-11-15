@@ -202,6 +202,38 @@
         {
           "before": "            appendLine(\"可检测范围限制：${category.boundary}\")\n            appendLine(\"版本：${version.take(60)}\")",
           "after": "            appendLine(\"可检测范围限制：${category.boundary}\")\n            appendLine(\"【五大专项证据覆盖｜不是自动验收结论】\")\n            val requested = StageIssueTestCatalog.modulesFor(category.id)\n            val startPid = preferences.getInt(\"start_pid\", -1)\n            val both = snapshot != null && startPid >= 0\n            val same = snapshot != null && startPid >= 0 && snapshot.processId == startPid\n            val beginSwap = preferences.getLong(\"start_swap_id\", -1L)\n            val finalSwap = StageIssueReportPolicy.lastSwapId(snapshot?.exchangeDiagnostics)\n            val swaps = when {\n                !same || beginSwap < 0 || finalSwap == null || finalSwap < beginSwap -> \"交换是否在会话期间触发：不可确认\"\n                finalSwap == beginSwap -> \"未观察到新的交换编号（未触发或未记录）\"\n                else -> \"观察到新的交换编号；不代表动画、内容和任务均通过\"\n            }\n            val observedScreen = (0 until autoEventCount()).count {\n                preferences.getString(\"auto_event_$it\",null)?.contains(\"系统通知：\") == true\n            }\n            for (module in StageIssueTestCatalog.modules) {\n                val coverage = if (module.id !in requested) \"未选择（未测试）\" else when(module.id) {\n                    \"performance\" -> \"有电池/温度起止快照（未知值以原始字段为准）；$swaps；精确帧率、闪烁与模块独占功耗未自动判定\"\n                    \"layout\" -> \"${if(both) \"已读取起止工作台快照\" else \"工作台快照不完整\"}；遮挡、智能隐藏与空间利用需手动验证\"\n                    \"content\" -> \"第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常\"\n                    \"compatibility\" -> \"设备及屏幕起止状态；系统屏幕通知${observedScreen}条（可能漏记）；手势、Root/注入兼容性未自动验收\"\n                    \"services\" -> \"工作组、快捷栏、更新签名与收款码尚无自动验证事件；未测试\"\n                    else -> \"不可观测\"\n                }\n                appendLine(\"${module.name}：$coverage\")\n            }\n            appendLine(\"版本：${version.take(60)}\")"
+        },
+        {
+          "before": "    private val reportHistory = StageIssueHistoryStore(app)",
+          "after": "    private val reportHistory = StageIssueHistoryStore(app)\n\n    private fun currentBootCount(): Int = synchronized(StageIssueSession::class.java) {\n        cachedBootCount ?: runCatching {\n            android.provider.Settings.Global.getInt(app.contentResolver, \"boot_count\", -1)\n        }.getOrDefault(-1).also { cachedBootCount = it }\n    }\n\n    private fun sameBoot(): Boolean? = StageIssueReportPolicy.sameBoot(\n        preferences.getInt(\"start_boot_count\", -1), currentBootCount())\n\n    private fun elapsed(now: Long = SystemClock.elapsedRealtime()): Long? =\n        if (sameBoot() == false) null else StageIssueReportPolicy.elapsedMs(currentToken(), now)"
+        },
+        {
+          "before": "    fun elapsedSeconds(): Long? = if (active())\n        StageIssueReportPolicy.elapsedMs(currentToken(), SystemClock.elapsedRealtime())?.div(1000)\n    else null\n    fun remainingSeconds(): Long? = if (active())\n        StageIssueReportPolicy.remainingMs(currentToken(), SystemClock.elapsedRealtime(),durationMs()).div(1000L)\n    else null\n    fun isDue(): Boolean = active() &&\n        StageIssueReportPolicy.isDue(currentToken(), SystemClock.elapsedRealtime(), durationMs())",
+          "after": "    fun elapsedSeconds(): Long? = if (active()) elapsed()?.div(1000) else null\n    fun remainingSeconds(): Long? = if (active())\n        (durationMs() - (elapsed() ?: durationMs())).coerceAtLeast(0L).div(1000L)\n    else null\n    fun isDue(): Boolean = active() && (elapsed()?.let { it >= durationMs() } ?: true)"
+        },
+        {
+          "before": "            .putLong(\"start_elapsed\", now)\n            .putLong(\"start_wall\", System.currentTimeMillis())",
+          "after": "            .putLong(\"start_elapsed\", now)\n            .putLong(\"start_wall\", System.currentTimeMillis())\n            .putInt(\"start_boot_count\", currentBootCount())"
+        },
+        {
+          "before": "        val elapsed = StageIssueReportPolicy.elapsedMs(token, SystemClock.elapsedRealtime())\n        val planned = durationMs()",
+          "after": "        val elapsed = elapsed()\n        val bootIdentity = sameBoot()\n        val planned = durationMs()"
+        },
+        {
+          "before": "            appendLine(\"实际采集间隔：${elapsed?.div(1000L)?.toString() ?: \"系统重启/时间基准异常\"}秒\")",
+          "after": "            appendLine(\"实际采集间隔：${elapsed?.let { \"${it/1000L}秒\" } ?: \"系统重启/时间基准异常，不可比较\"}\")\n            appendLine(\"设备启动基准：${when(bootIdentity) {\n                true -> \"起止属于相同启动周期\"\n                false -> \"设备已重启，禁用跨启动周期耗时及计数比较\"\n                null -> \"ROM未提供可靠启动编号，重启情况不可确认\"\n            }}\")"
+        },
+        {
+          "before": "            val same = snapshot != null && startPid >= 0 && snapshot.processId == startPid",
+          "after": "            val same = bootIdentity != false && snapshot != null && startPid >= 0 && snapshot.processId == startPid"
+        },
+        {
+          "before": "        if (end==null || pid<0 || end.processId!=pid)\n            return \"不可比较（系统界面进程不同或数据缺失）\"\n        fun diff(v: Long,key:String)=(v-preferences.getLong(key,v))\n            .takeIf{it>=0}?.toString()?:\"不可用\"",
+          "after": "        if (sameBoot()==false || end==null || pid<0 || end.processId!=pid)\n            return \"不可比较（设备重启、系统界面进程不同或数据缺失）\"\n        fun diff(v: Long,key:String)=StageIssueReportPolicy.counterDelta(\n            preferences.getLong(key,-1L).takeIf { it>=0 },v)?.toString()?:\"不可用\""
+        },
+        {
+          "before": "$normalized（包含系统界面，不能归因模块独占）\"\n    }\n}",
+          "after": "$normalized（包含系统界面，不能归因模块独占）\"\n    }\n\n    private companion object {\n        // Read once per app process only when a user opens or runs diagnostics.\n        // The process cannot survive an actual device reboot.\n        private var cachedBootCount: Int? = null\n    }\n}"
         }
       ]
     },
@@ -272,6 +304,10 @@
         {
           "before": "    val DURATION_OPTIONS_MS = listOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L)",
           "after": "    val DURATION_OPTIONS_MS = listOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L)"
+        },
+        {
+          "before": "    fun exchangeSection(startPid: Int, startLastId: Long?, endPid: Int?, diagnostics: String?): String = buildString {",
+          "after": "    fun sameBoot(start: Int, current: Int): Boolean? =\n        if (start >= 0 && current >= 0) start == current else null\n\n    fun counterDelta(start: Long?, end: Long): Long? =\n        if (start != null && start >= 0 && end >= start) end - start else null\n\n    fun exchangeSection(startPid: Int, startLastId: Long?, endPid: Int?, diagnostics: String?): String = buildString {"
         }
       ]
     }
