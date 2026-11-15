@@ -13,11 +13,12 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
     private val handler = Handler(Looper.getMainLooper())
     private var listening = false
     private var sessions = emptyList<MediaController>()
-    private val callback = object : MediaController.Callback() {
-        override fun onPlaybackStateChanged(state: PlaybackState?) { changed() }
-        override fun onSessionDestroyed() { bind(runCatching { manager?.getActiveSessions(null) }.getOrNull().orEmpty()) }
-    }
-    private val listener = MediaSessionManager.OnActiveSessionsChangedListener { bind(it.orEmpty()) }
+    // A framework callback already queued before unregister can arrive after
+    // stop() or even after a new start(). Scope registrations to their epoch.
+    private var epoch = 0
+    private var callback: MediaController.Callback? = null
+    private var listener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+    private fun current(token: Int) = listening && token == epoch
     fun observations(): List<StagePlaybackObservation> = sessions.mapNotNull { controller ->
         runCatching {
             val uid = (runCatching { controller.sessionToken.javaClass.getMethod("getUid").invoke(controller.sessionToken) as? Int }.getOrNull()
@@ -34,22 +35,57 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         }.getOrNull()
     }
     fun start() {
-        if (listening) return
+        if (listening || manager == null) return
+        val token = ++epoch
+        val cb = object : MediaController.Callback() {
+            override fun onPlaybackStateChanged(state: PlaybackState?) {
+                if (current(token)) changed()
+            }
+            override fun onSessionDestroyed() {
+                if (!current(token)) return
+                val next = runCatching { manager.getActiveSessions(null) }.getOrNull() ?: return
+                bind(token, next)
+            }
+        }
+        val activeListener = MediaSessionManager.OnActiveSessionsChangedListener {
+            if (current(token)) bind(token, it.orEmpty())
+        }
+        callback = cb
+        listener = activeListener
+        listening = true
         runCatching {
-            manager?.addOnActiveSessionsChangedListener(listener, null, handler)
-            listening = true
-            bind(manager?.getActiveSessions(null).orEmpty())
+            manager.addOnActiveSessionsChangedListener(activeListener, null, handler)
+            bind(token, manager.getActiveSessions(null).orEmpty())
         }.onFailure { stop() }
     }
-    private fun bind(next: List<MediaController>) {
-        sessions.forEach { runCatching { it.unregisterCallback(callback) } }
-        sessions = next
-        sessions.forEach { runCatching { it.registerCallback(callback, handler) } }
+    private fun bind(token: Int, next: List<MediaController>) {
+        if (!current(token)) return
+        val cb = callback ?: return
+        val unique = next.distinctBy { it.sessionToken }
+        // Unchanged sessions keep their existing callback registration.
+        val oldByToken = sessions.associateBy { it.sessionToken }
+        val nextTokens = unique.map { it.sessionToken }.toSet()
+        sessions.filter { it.sessionToken !in nextTokens }.forEach {
+            runCatching { it.unregisterCallback(cb) }
+        }
+        sessions = unique.map { controller ->
+            oldByToken[controller.sessionToken] ?: controller.also {
+                runCatching { it.registerCallback(cb, handler) }
+            }
+        }
         changed()
     }
     fun stop() {
-        if (listening) runCatching { manager?.removeOnActiveSessionsChangedListener(listener) }
+        // Invalidate first, including callbacks delivered during unregister.
+        epoch++
         listening = false
-        sessions.forEach { runCatching { it.unregisterCallback(callback) } }; sessions = emptyList()
+        val oldListener = listener
+        val oldCallback = callback
+        val oldSessions = sessions
+        listener = null; callback = null; sessions = emptyList()
+        oldListener?.let { runCatching { manager?.removeOnActiveSessionsChangedListener(it) } }
+        oldCallback?.let { cb ->
+            oldSessions.forEach { runCatching { it.unregisterCallback(cb) } }
+        }
     }
 }

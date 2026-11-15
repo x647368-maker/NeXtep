@@ -72,7 +72,25 @@ class NeXtepWindowController(
     private var cinemaEpoch = 0
     private var quickGeneration = 0
     private var cinemaApplying = false
-    private val cinemaCheck = Runnable { evaluateCinema() }
+    private var cinemaCheckQueued = false
+    private var cinemaConfirmQueued = false
+    private val cinemaCheck = Runnable { cinemaCheckQueued = false; evaluateCinema() }
+    private val cinemaConfirm = Runnable { cinemaConfirmQueued = false; evaluateCinema(true) }
+    private fun cancelCinemaChecks() {
+        backdropHandler.removeCallbacks(cinemaCheck)
+        backdropHandler.removeCallbacks(cinemaConfirm)
+        cinemaCheckQueued = false
+        cinemaConfirmQueued = false
+    }
+    private fun updateCinemaMonitoring() {
+        if (workspaceVisible && !suspended && core.cinemaMode == StageCinemaPolicy.Mode.AUTO) {
+            mediaSignals.start()
+            scheduleCinemaCheck()
+        } else {
+            mediaSignals.stop()
+            cancelCinemaChecks()
+        }
+    }
     private var windowPickerGeneration = 0
     private var tabletLayoutMotionGeneration = 0
     private var windowRefreshQueued = false
@@ -178,6 +196,7 @@ class NeXtepWindowController(
                 record.view.alpha = if (hidden) 0f else 1f
             }
         }
+        if (!hidden) scheduleCinemaCheck()
     }
     private var stageOrder = List(WORKSPACE_SLOT_COUNT) { it }
     private var stageMainId: Int? = null
@@ -250,7 +269,7 @@ class NeXtepWindowController(
         sparseRailMotion.cancel()
         smartRail.stop(restorePresentation = false)
         cinemaEpoch++; directionDebounce.reset()
-        mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
+        mediaSignals.stop(); cancelCinemaChecks()
         contentDrag.cancel()
         windowPickerGeneration++
         windowPicker.dismiss()
@@ -285,7 +304,7 @@ class NeXtepWindowController(
         cancelPendingResumeContent()
         workspaceVisible = true
         suspended = false
-        mediaSignals.start(); refreshQuickBar()
+        updateCinemaMonitoring(); refreshQuickBar()
         // Wake reuses attached windows and the recorded layout. Re-running show()
         // starts a fresh alpha=0 entry animation and repeats all display setup.
         val geometry = geometry()
@@ -371,7 +390,7 @@ class NeXtepWindowController(
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
         workspaceVisible = true
         syncCoreViewport()
-        mediaSignals.start(); refreshQuickBar()
+        updateCinemaMonitoring(); refreshQuickBar()
         reconfigure().getOrThrow()
         // Compose the first real workbench frame with the same bounded,
         // uniform card movement as tap exchanges. No extra layers or captures.
@@ -424,7 +443,7 @@ class NeXtepWindowController(
         previousRailGeometry = null
         smartRail.stop(restorePresentation = false)
         cinemaEpoch++; directionDebounce.reset()
-        mediaSignals.stop(); backdropHandler.removeCallbacks(cinemaCheck)
+        mediaSignals.stop(); cancelCinemaChecks()
         cinemaPolicy.reset(); cinemaSlot = null; viewport.cinema = false
         slotWindows.forEach { it.setCinema(false) }
         contentDrag.cancel()
@@ -656,7 +675,7 @@ class NeXtepWindowController(
             }
             "cinema_auto", "cinema_manual", "cinema_landscape", "cinema_portrait", "cinema_off" -> {
                 leaveCinema(); core.cinemaMode = when(command) { "cinema_auto" -> StageCinemaPolicy.Mode.AUTO; "cinema_manual" -> StageCinemaPolicy.Mode.MANUAL; "cinema_landscape" -> StageCinemaPolicy.Mode.LANDSCAPE; "cinema_portrait" -> StageCinemaPolicy.Mode.PORTRAIT; else -> StageCinemaPolicy.Mode.OFF }
-                cinemaPolicy.mode = core.cinemaMode; scheduleCinemaCheck()
+                cinemaPolicy.mode = core.cinemaMode; updateCinemaMonitoring()
             }
             "cinema_enter" -> { check(workspaceVisible && !suspended) { "请先开启台前调度" }; showCinemaMenu(records.first { it.title == "StageMainHandle" }.view) }
             "cinema_leave" -> leaveCinema()
@@ -1341,17 +1360,39 @@ class NeXtepWindowController(
     }
 
     private fun scheduleCinemaCheck() {
-        if (!workspaceVisible || suspended) return
-        backdropHandler.removeCallbacks(cinemaCheck)
-        backdropHandler.postDelayed(cinemaCheck, 180)
+        if (!workspaceVisible || suspended || cinemaCheckQueued ||
+            core.cinemaMode != StageCinemaPolicy.Mode.AUTO || cinemaPolicy.isManual) return
+        // Coalesce bursts without indefinitely postponing a stable playback signal.
+        cinemaCheckQueued = backdropHandler.postDelayed(cinemaCheck, 180)
     }
     private fun evaluateCinema(confirm: Boolean = false) {
-        if (!workspaceVisible || suspended || cinemaApplying || groupInputBlocked || workgroups.isSwitching()) return
+        if (!workspaceVisible || suspended || cinemaApplying || groupInputBlocked || workgroups.isSwitching() ||
+            core.cinemaMode != StageCinemaPolicy.Mode.AUTO || cinemaPolicy.isManual) return
         if (slotCoordinator?.isGroupRestoreReady() != true) return
+        // Automation must not override explicit hidden/collapsed layouts or
+        // repeatedly propose an unsupported landscape cinema presentation.
+        if (sidebarCollapsed || smartRail.hidden || viewport.geometry(sidebarSide).isLandscape) {
+            directionDebounce.reset()
+            val retained = cinemaPolicy.task?.let { setOf(it) }.orEmpty()
+            cinemaPolicy.update(null, retained, emptySet(), android.os.SystemClock.uptimeMillis(), retained)
+            return
+        }
         val states = slotCoordinator?.slotStates().orEmpty()
         val occupied = states.filterIsInstance<SlotState.Occupied>()
+        if (occupied.isEmpty()) {
+            directionDebounce.reset()
+            cinemaPolicy.update(null, emptySet(), emptySet(), android.os.SystemClock.uptimeMillis())
+            if (cinemaSlot != null) applyCinemaTask(null)
+            return
+        }
+        val observations = mediaSignals.observations()
+        if (observations.isEmpty() && cinemaPolicy.task == null) {
+            cinemaPolicy.update(null, occupied.mapTo(mutableSetOf()) { it.taskId }, emptySet(),
+                android.os.SystemClock.uptimeMillis(), occupied.mapTo(mutableSetOf()) { it.taskId })
+            return
+        }
         val tasks = taskRepository.runningTasks().associateBy { it.taskId }
-        val bound = StageMediaBinding.bind(tasks.values.map { StageObservedTask(it.taskId, it.component.packageName, it.userId) }, mediaSignals.observations())
+        val bound = StageMediaBinding.bind(tasks.values.map { StageObservedTask(it.taskId, it.component.packageName, it.userId) }, observations)
         val live = occupied.mapTo(mutableSetOf()) { it.taskId }
         val playing = occupied.filter { bound[it.taskId]?.state == StagePlayback.PLAYING }.mapTo(mutableSetOf()) { it.taskId }
         // Missing or ambiguous session data is UNKNOWN, not a command or evidence that playback stopped.
@@ -1371,20 +1412,35 @@ class NeXtepWindowController(
         if (next != before) applyCinemaTask(next, direction == StageVideoDirection.PORTRAIT)
         else if (chosen != null && !cinemaPolicy.isManual && (chosen == StageVideoDirection.PORTRAIT) != cinemaPortrait)
             applyCinemaTask(next, chosen == StageVideoDirection.PORTRAIT)
-        if (!confirm && trusted != null && (next == null || next in playing && !cinemaPolicy.isManual)) {
-            val epoch = cinemaEpoch
-            backdropHandler.postDelayed({ if(epoch == cinemaEpoch) evaluateCinema(true) }, 750)
+        if (!confirm && !cinemaConfirmQueued && trusted != null &&
+            (next == null || next in playing && !cinemaPolicy.isManual)) {
+            // Exactly one bounded confirmation; no anonymous callback backlog.
+            cinemaConfirmQueued = backdropHandler.postDelayed(cinemaConfirm, 750)
         }
     }
     private fun enterCinema(task: Int, portrait: Boolean = core.cinemaMode == StageCinemaPolicy.Mode.PORTRAIT) {
         if (core.cinemaMode == StageCinemaPolicy.Mode.OFF) { showStageMessage("影音布局已关闭，请在设置中改为手动或自动"); return }
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching() || slotCoordinator?.isGroupRestoreReady() != true) return
-        cinemaEpoch++; directionDebounce.reset()
-        cinemaPolicy.enter(task); setSidebarCollapsed(false); applyCinemaTask(task, portrait)
+        if (viewport.geometry(sidebarSide).isLandscape) {
+            showStageMessage("当前横屏排列保留，影音小窗布局请在竖屏使用")
+            return
+        }
+        if (slotCoordinator?.slotStates()?.none { (it as? SlotState.Occupied)?.taskId == task } != false) {
+            showStageMessage("小窗已变化，请重新选择")
+            return
+        }
+        cinemaEpoch++; directionDebounce.reset(); cancelCinemaChecks()
+        // Explicit cinema selection may reveal the rail; automatic selection may not.
+        if (smartRail.hidden) smartRail.interact()
+        setSidebarCollapsed(false)
+        if (!workspaceVisible || suspended || slotCoordinator?.isGroupRestoreReady() != true ||
+            slotCoordinator?.slotStates()?.none { (it as? SlotState.Occupied)?.taskId == task } != false) return
+        cinemaPolicy.enter(task); applyCinemaTask(task, portrait)
     }
     private fun leaveCinema() {
-        cinemaEpoch++; directionDebounce.reset()
+        cinemaEpoch++; directionDebounce.reset(); cancelCinemaChecks()
         cinemaPolicy.leave(); applyCinemaTask(null)
+        smartRail.armWhenReady()
     }
     private fun applyCinemaTask(task: Int?, portrait: Boolean = cinemaPortrait) {
         if (cinemaApplying) return
@@ -1411,7 +1467,7 @@ class NeXtepWindowController(
             items += "小窗 ${index + 1}：${state.component.packageName}" to { enterCinema(state.taskId) }
         } }
         for ((label, mode) in listOf("自动（可靠方向信号）" to StageCinemaPolicy.Mode.AUTO, "手动横屏影音" to StageCinemaPolicy.Mode.LANDSCAPE, "手动竖屏影音" to StageCinemaPolicy.Mode.PORTRAIT, "关闭影音布局" to StageCinemaPolicy.Mode.OFF)) {
-            items += label to { leaveCinema(); core.cinemaMode = mode; cinemaPolicy.mode = mode; scheduleCinemaCheck() }
+            items += label to { leaveCinema(); core.cinemaMode = mode; cinemaPolicy.mode = mode; updateCinemaMonitoring() }
         }
         AtomicPopupMenu.show(context, anchor, items, avoidBounds = menuAvoidBounds())
     }
@@ -1825,7 +1881,10 @@ class NeXtepWindowController(
                 .translationY(if (base.railAtTop || base.isLandscape) offset else 0f)
                 .setDuration(220).setInterpolator(transitionInterpolator).start()
         }
-        if (!value) smartRail.armWhenReady()
+        if (!value) {
+            smartRail.armWhenReady()
+            scheduleCinemaCheck()
+        }
     }
 
     private var sidebarTouchRegionReady = false
