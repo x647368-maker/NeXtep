@@ -84,6 +84,13 @@ internal object StageConcurrentNativeTrialPolicy {
         else -> false
     }
 
+    // Receipt time and UI dispatch time are deliberately distinct. A real
+    // callback received by the original absolute deadline is admissible;
+    // an absent, pre-submit or late callback is not. No extended wait.
+    fun firstReceiptWithinBudget(submittedMs:Long, receivedMs:Long,budgetMs:Long):Boolean =
+        submittedMs>=0L && receivedMs>=submittedMs && budgetMs>=0L &&
+            receivedMs-submittedMs<=budgetMs
+
     /** Only the active experimental GPU flight needs these local identity
      * checks. A missing or changed task leash is not permanent OEM denial. */
     fun sourceIdentityReady(hostAttached:Boolean,handlesValid:Boolean,

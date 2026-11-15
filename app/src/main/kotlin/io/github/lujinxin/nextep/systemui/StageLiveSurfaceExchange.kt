@@ -23,7 +23,9 @@ import io.github.x647368maker.atomicworkbench.BuildConfig
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
 import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Experimental real live SurfaceFlinger flight, NOT a bitmap preview.
@@ -452,6 +454,15 @@ internal class StageLiveSurfaceExchange private constructor(
             "mirror_start crop=${sourceCrop.width()}x${sourceCrop.height()}" +
             " main=${mainStart.width.toInt()}x${mainStart.height.toInt()}")
         finishCallback = onFinished
+        // An executor queued on the UI thread cannot distinguish an absent
+        // compositor receipt from a blocked UI dispatch. Record the actual
+        // callback arrival once, without touching Views or transaction state
+        // on the callback thread. Only the UI thread owns admission or move.
+        val firstReceiptAt=AtomicLong(-1L)
+        var firstSubmitAt=-1L
+        val receiptExecutor=Executor { command -> command.run() }
+        fun receiptInBudget():Boolean = StageConcurrentNativeTrialPolicy.firstReceiptWithinBudget(
+            firstSubmitAt,firstReceiptAt.get(),FIRST_COMMIT_BUDGET_MS)
         try {
             check(host.isAttachedToWindow && !hostDetached)
             host.addOnAttachStateChangeListener(attachmentListener)
@@ -484,18 +495,32 @@ internal class StageLiveSurfaceExchange private constructor(
                 if (Build.VERSION.SDK_INT >= 33) {
                     // A committed transaction is proof that SurfaceFlinger
                     // accepted both layer parents, NOT proof of visible pixels.
-                    tx.addTransactionCommittedListener(host.context.mainExecutor) {
-                        if (finished.get() || hostDetached) return@addTransactionCommittedListener
-                        firstTransactionCommitted = true
-                        trace(
-                            "first_gpu_transaction_committed@${SystemClock.uptimeMillis()-startedAtMs}ms")
-                        NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
-                        pendingFirstFlight?.let { pending ->
-                            ui.removeCallbacks(pending)
-                            ui.post(pending)
+                    if(concurrentHandoff) {
+                        tx.addTransactionCommittedListener(receiptExecutor) {
+                            val received=SystemClock.uptimeMillis()
+                            if (!finished.get() && !hostDetached &&
+                                firstReceiptAt.compareAndSet(-1L,received)) {
+                                ui.post {
+                                    if(isRunning && !hostDetached && !sentMove && receiptInBudget()) {
+                                        pendingFirstFlight?.let { pending ->
+                                            ui.removeCallbacks(pending)
+                                            pending.run()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        tx.addTransactionCommittedListener(host.context.mainExecutor) {
+                            if (finished.get() || hostDetached) return@addTransactionCommittedListener
+                            firstTransactionCommitted = true
+                            trace(
+                                "first_gpu_transaction_committed@${SystemClock.uptimeMillis()-startedAtMs}ms")
+                            NeXtepLog.info("native_swap", "Two real compositor mirror layers accepted in SurfaceFlinger")
                         }
                     }
                 }
+                firstSubmitAt=SystemClock.uptimeMillis()
                 tx.apply()
             } finally { tx.close() }
         } catch (error: Throwable) {
@@ -690,6 +715,21 @@ internal class StageLiveSurfaceExchange private constructor(
             pendingFirstFlight=null
             if(!isRunning)return@Runnable
             if(hostDetached || !host.isAttachedToWindow){stop();return@Runnable}
+            if(concurrentHandoff) {
+                // Both ACK and deadline paths enter this same one-shot main
+                // action. A late callback must not resurrect a retired flight.
+                val received=firstReceiptAt.get()
+                val now=SystemClock.uptimeMillis()
+                firstTransactionCommitted=receiptInBudget()
+                trace("first_commit_receipt_ms="+
+                    (if(received>=0L) received-firstSubmitAt else -1L)+
+                    " ui_dispatch_ms="+(now-firstSubmitAt)+
+                    " budget_ms="+FIRST_COMMIT_BUDGET_MS+
+                    " accepted="+firstTransactionCommitted)
+                if(firstTransactionCommitted) {
+                    trace("first_gpu_transaction_committed@${received-startedAtMs}ms")
+                }
+            }
             if(concurrentHandoff && !firstTransactionCommitted) {
                 trace("native_first_commit_timeout:unmasked_move")
                 // Do not submit a jumped endpoint or hold unconfirmed masks.
@@ -715,9 +755,12 @@ internal class StageLiveSurfaceExchange private constructor(
         lastOutcome=if (immediateMove) "active:lead_in_concurrent_gpu_mirrors"
             else "active:two_live_gpu_mirrors"
         NeXtepLog.info("native_swap","GPU mirrors submitted; pixel visibility not yet proven")
-        if(concurrentHandoff && !firstTransactionCommitted) {
+        if(concurrentHandoff) {
             pendingFirstFlight=beginFlight
-            ui.postDelayed(beginFlight,FIRST_COMMIT_BUDGET_MS)
+            // The absolute receipt deadline is measured from submission,
+            // not from the eventual main-thread callback or timer dispatch.
+            if(receiptInBudget())beginFlight.run()
+            else if(!ui.postAtTime(beginFlight,firstSubmitAt+FIRST_COMMIT_BUDGET_MS))stop()
         } else beginFlight.run()
         return true
     }

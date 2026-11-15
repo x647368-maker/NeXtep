@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageConcurrentNativeTrialPolicyTest {
+    @Test fun firstReceiptUsesOriginalDeadlineNotDelayedMainDispatch() {
+        val p=StageConcurrentNativeTrialPolicy
+        assertFalse(p.firstReceiptWithinBudget(100,-1,48))
+        assertFalse(p.firstReceiptWithinBudget(-1,100,48))
+        assertFalse(p.firstReceiptWithinBudget(100,99,48))
+        assertTrue(p.firstReceiptWithinBudget(100,100,48))
+        assertTrue(p.firstReceiptWithinBudget(100,148,48))
+        assertFalse(p.firstReceiptWithinBudget(100,149,48))
+        assertFalse(p.firstReceiptWithinBudget(100,100,-1))
+    }
     @Test fun maskedHandoffRequiresCompositorAcknowledgement() {
         val p=StageConcurrentNativeTrialPolicy
         for(first in listOf(false,true)) for(required in listOf(false,true))
