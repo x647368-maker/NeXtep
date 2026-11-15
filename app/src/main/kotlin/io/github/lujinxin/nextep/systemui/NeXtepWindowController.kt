@@ -2469,6 +2469,9 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
         attemptNative: Boolean = true,
     ) {
+        // The snapshot/mirror must sample the settled physical rail bounds.
+        // Invalidate a queued or running layout-entry cue before capture.
+        cancelRailLayoutMotion()
         // P0 (3731.mp4 + PR51 real-device feedback): do not capture a
         // TextureView bitmap or await a screenshot before the real task move.
         // On the phased tap path the coordinator already owns an asynchronous,

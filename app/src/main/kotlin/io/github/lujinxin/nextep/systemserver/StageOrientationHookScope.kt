@@ -60,7 +60,9 @@ internal object StageOrientationHookScope {
             val displayId = (invokeZeroArg(display, "getDisplayId") as? Int)
                 ?: (readField(info, "displayId") as? Int)
             val name = readField(info, "name") as? String
-            val requested = invokeZeroArg(activity, "getRequestedOrientation") as? Int
+            // Missing vendor reflection is not evidence of a portrait-capable app.
+            val requested = (invokeZeroArg(activity, "getRequestedOrientation") as? Int)
+                ?: return@runCatching Snapshot(Target.UNKNOWN, false)
             // ColorOS tasks in vendor windowing modes must keep their SizeCompat policy.
             val task = invokeZeroArg(activity, "getTask")
             val mode = (task?.let { invokeZeroArg(it, "getWindowingMode") } as? Int)

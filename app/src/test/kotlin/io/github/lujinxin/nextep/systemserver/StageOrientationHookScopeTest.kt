@@ -75,4 +75,30 @@ class StageOrientationHookScopeTest {
         assertSystemControlled(snap(3, "NeXtep-slot-2", 0, -1, 1))
         assertNull(StageOrientationHookScope.aspectOverride(snap(3,"NeXtep-slot-2",1,-1,1),true,Float.NaN))
     }
+
+    private class MissingOrientation(private val display: TestDisplay, private val task: TestTask,
+        val info: TestActivityInfo) {
+        fun getDisplayContent() = display
+        fun getTask() = task
+    }
+    private class NullOrientation(private val display: TestDisplay, private val task: TestTask,
+        val info: TestActivityInfo) {
+        fun getDisplayContent() = display
+        fun getTask() = task
+        fun getRequestedOrientation(): Int? = null
+    }
+
+    @Test fun unreadableRequestedOrientationDoesNotAuthorizePortraitOverride() {
+        for (displayId in listOf(0,3,11)) for (mode in listOf(1,2,5,6))
+            for (category in listOf(-1,0,1,4)) {
+                val display=TestDisplay(DisplayInfo(displayId,"NeXtep-slot-2"))
+                val task=TestTask(mode)
+                val info=TestActivityInfo(TestApplicationInfo(category))
+                for (activity in listOf(MissingOrientation(display,task,info),NullOrientation(display,task,info))) {
+                    assertSystemControlled(StageOrientationHookScope.snapshot(activity))
+                    assertEquals(StageOrientationHookScope.Target.UNKNOWN,
+                        StageOrientationHookScope.snapshot(activity).target)
+                }
+            }
+    }
 }

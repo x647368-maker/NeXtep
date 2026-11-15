@@ -310,6 +310,15 @@
           "after": "    fun sameBoot(start: Int, current: Int): Boolean? =\n        if (start >= 0 && current >= 0) start == current else null\n\n    fun counterDelta(start: Long?, end: Long): Long? =\n        if (start != null && start >= 0 && end >= start) end - start else null\n\n    fun exchangeSection(startPid: Int, startLastId: Long?, endPid: Int?, diagnostics: String?): String = buildString {"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemserver/StageOrientationHookScope.kt": {
+      "previous_blob_sha1": "ab6de1dfaccd6db00de06f4ccc0778eba8f7e009",
+      "patches": [
+        {
+          "before": "            val requested = invokeZeroArg(activity, \"getRequestedOrientation\") as? Int\n",
+          "after": "            // Missing vendor reflection is not evidence of a portrait-capable app.\n            val requested = (invokeZeroArg(activity, \"getRequestedOrientation\") as? Int)\n                ?: return@runCatching Snapshot(Target.UNKNOWN, false)\n"
+        }
+      ]
     }
   }
 }
