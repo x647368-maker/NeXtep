@@ -197,6 +197,19 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 awaitReleased(rapidA,"rapid-a")
                 awaitReleased(rapidB,"rapid-b")
             }
+            // Prepare the full-resolution sampling region and the unchanged
+            // 12px lattice BEFORE the flight starts. Source exclusion is
+            // based on measured physical root bounds, never expected offsets.
+            val scanHeight=main.bottom-small.top
+            val pixels=IntArray(hostWidth*scanHeight)
+            val positions=ArrayList<Int>()
+            for(y in small.top until main.bottom step 12) {
+                for(x in 0 until hostWidth step 12) {
+                    if(sourceRoots.none { it.contains(x,y) })
+                        positions.add((y-small.top)*hostWidth+x)
+                }
+            }
+            val sampleOffsets=positions.toIntArray()
             // Recreate immediately after cleanup, observe physical moving pixels,
             // and cancel the active flight. Repeat with stale task preflight.
             for(label in listOf("mid","stale")) {
@@ -209,7 +222,6 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     var firstCenters:FloatArray?=null
                     var distinctMoving=false
                     var outsideBoth=false
-                    val pixels=IntArray(hostWidth)
                     val axisX=(main.centerX()-small.centerX()).toFloat()
                     val axisY=(main.centerY()-small.centerY()).toFloat()
                     val axisLength=kotlin.math.hypot(axisX,axisY)
@@ -232,16 +244,18 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             }
                             var up=0;var down=0;var movedUp=0;var movedDown=0
                             var ux=0L;var uy=0L;var dx=0L;var dy=0L
-                            for(y in small.top until main.bottom step 12) {
-                                // Read a row in one call. The scan remains at the
-                                // original 12px resolution; never change the image.
-                                frame.getPixels(pixels,0,hostWidth,origin[0],origin[1]+y,hostWidth,1)
-                                for(x in 0 until hostWidth step 12) {
-                                    if(sourceRoots.any{it.contains(x,y)})continue
-                                    val c=pixels[x]
-                                    if(matches(c,blue)) { up++; ux+=x;uy+=y;if(!small.contains(x,y))movedUp++ }
-                                    if(matches(c,orange)) { down++;dx+=x;dy+=y;if(!main.contains(x,y))movedDown++ }
-                                }
+                            // One read of the original physical bitmap,
+                            // rather than 110 repeated Bitmap JNI row reads.
+                            // Every coordinate and color threshold is unchanged.
+                            frame.getPixels(pixels,0,hostWidth,origin[0],
+                                origin[1]+small.top,hostWidth,scanHeight)
+                            val readAt=SystemClock.uptimeMillis()
+                            for(offset in sampleOffsets) {
+                                val c=pixels[offset]
+                                val x=offset%hostWidth
+                                val y=small.top+offset/hostWidth
+                                if(matches(c,blue)) { up++;ux+=x;uy+=y;if(!small.contains(x,y))movedUp++ }
+                                if(matches(c,orange)) { down++;dx+=x;dy+=y;if(!main.contains(x,y))movedDown++ }
                             }
                             val both=up>12 && down>12 && movedUp>12 && movedDown>12
                             if(!pairedRail)moving=both
@@ -266,7 +280,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                                 }
                                 evidence.add("$label actual_centers=${centers.joinToString()} forward=$forwardIn/$forwardOut bothOutside=$both")
                             }
-                            evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
+                            evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms read=${readAt-captured}ms analysis=${SystemClock.uptimeMillis()-readAt}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
                         }
                     }
                     if(moving && label=="mid") inst.runOnMainSync {
