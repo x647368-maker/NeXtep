@@ -30,6 +30,10 @@
         {
           "before": "            if (resizeMismatch) {\n                ActivityTaskManagerCompat.setTaskResizeable(\n                    task.taskId, TASK_RESIZE_MODE_RESIZEABLE,\n                ).getOrThrow()\n            }\n            if (layoutMismatch) {\n                val token = current.token ?: error(\"Task ${task.taskId} has no slot layout token\")\n                StageExchangeTelemetry.phasedEvent(\"slot_layout_worker\")\n                submitExchangeLayout(token,Rect(),slotGeometry.densityDpi,\n                    fullscreenMode,stillCurrent){ failure->\n                    if(failure!=null){done(failure);return@submitExchangeLayout}\n                    StageExchangeTelemetry.phasedEvent(\"slot_layout_submitted\")\n                    waitForTaskLayoutNonBlocking(current, targetBounds,\n                        slotGeometry.densityDpi, fullscreenMode,stillCurrent) { error ->\n                        if (error != null) done(error) else finish()\n                    }\n                }\n            } else finish()",
           "after": "            fun applyLayout(){\n                if(layoutMismatch){\n                    val token=current.token ?: error(\"Task ${task.taskId} has no slot layout token\")\n                    StageExchangeTelemetry.phasedEvent(\"slot_layout_worker\")\n                    submitExchangeLayout(token,Rect(),slotGeometry.densityDpi,\n                        fullscreenMode,stillCurrent){ failure->\n                        if(failure!=null){done(failure);return@submitExchangeLayout}\n                        StageExchangeTelemetry.phasedEvent(\"slot_layout_submitted\")\n                        waitForTaskLayoutNonBlocking(current,targetBounds,\n                            slotGeometry.densityDpi,fullscreenMode,stillCurrent){ error->\n                            if(error!=null)done(error) else finish()\n                        }\n                    }\n                }else finish()\n            }\n            if(resizeMismatch){\n                StageExchangeTelemetry.phasedEvent(\"slot_resize_mode_worker\")\n                val accepted=exchangeBinderLane.submit(\n                    call={ActivityTaskManagerCompat.setTaskResizeable(\n                        task.taskId,TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()},\n                    complete={resizeResult->\n                        val failure=runCatching {\n                            resizeResult.getOrThrow()\n                            check(stillCurrent()) {\"Stale exchange after slot resize-mode reply\"}\n                        }.exceptionOrNull()\n                        if(failure!=null)done(failure) else applyLayout()\n                    },\n                )\n                if(!accepted)done(IllegalStateException(\n                    \"Serialized exchange Binder lane busy during slot resize-mode update\"))\n            }else applyLayout()"
+        },
+        {
+          "before": "check(latestMain.toLayout()==mainLayout)",
+          "after": "check(latestMain.toLayout().copy(resizeMode=mainLayout.resizeMode)==mainLayout)"
         }
       ]
     },
@@ -68,6 +72,10 @@
         {
           "before": "assert 'restoreTaskLayoutNonBlocking(slotTask' in _pr65_source",
           "after": "assert 'restoreTaskLayoutNonBlocking(source,slotLayout' in _pr65_source"
+        },
+        {
+          "before": "check(latestMain.toLayout()==mainLayout)",
+          "after": "check(latestMain.toLayout().copy(resizeMode=mainLayout.resizeMode)==mainLayout)"
         }
       ]
     }

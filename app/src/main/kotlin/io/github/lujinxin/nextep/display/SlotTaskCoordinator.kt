@@ -1826,7 +1826,7 @@ class SlotTaskCoordinator(
                                             check(tasks.firstOrNull{it.displayId==occupied.displayId}?.taskId==slotTask.taskId)
                                             check(latestMain.displayId==Display.DEFAULT_DISPLAY)
                                             check(tasks.firstOrNull{it.displayId==Display.DEFAULT_DISPLAY}?.taskId==mainTask.taskId)
-                                            check(latestMain.toLayout()==mainLayout)
+                                            check(latestMain.toLayout().copy(resizeMode=mainLayout.resizeMode)==mainLayout)
                                             latestSlot
                                         }.getOrElse { done(it);return@queryTasksNonBlocking }
                                         continuePromotion(refreshed)
