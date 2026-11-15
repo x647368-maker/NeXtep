@@ -72,13 +72,14 @@ internal object PairedRailCandidate {
         val mx=(main.cx+ex)/2;val my=(main.cy+ey)/2
         // Restrict candidates to a finite deterministic set. Smallest accepted
         // offset wins, with fixed sign as tie-break; no per-frame search.
+        val lead=.25f
         for(factor in floatArrayOf(.5f,.75f,1f,1.25f,1.5f,2f)) for(sign in floatArrayOf(1f,-1f)) {
             val lane=min(small.width,small.height)*factor*sign
             val lx=-vy/length*lane;val ly=vx/length*lane
             val keys=listOf(PairBox(at(small.cx,small.cy,ia),at(main.cx,main.cy,oa)),
-                PairBox(at(ex,ey,ia),at(main.cx,main.cy,oz)),
+                PairBox(at(ex,ey,ia),at(main.cx+(mx-lx-main.cx)*lead,main.cy+(my-ly-main.cy)*lead,oz)),
                 PairBox(at(mx+lx,my+ly,ia),at(mx-lx,my-ly,oz)),
-                PairBox(at(main.cx,main.cy,ia),at(ex,ey,oz)),
+                PairBox(at(main.cx+(mx+lx-main.cx)*lead,main.cy+(my+ly-main.cy)*lead,ia),at(ex,ey,oz)),
                 PairBox(at(main.cx,main.cy,iz),at(small.cx,small.cy,oz)))
             if(keys.any{!inside(it.incoming,screen)||!inside(it.outgoing,screen)})continue
             var valid=true;var maximum=0.0
