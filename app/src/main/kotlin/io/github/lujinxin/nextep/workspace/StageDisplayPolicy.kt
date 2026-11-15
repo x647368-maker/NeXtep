@@ -20,7 +20,8 @@ internal object StageDisplayPolicy {
     fun wideTablet(width: Int, height: Int): Boolean {
         val short = minOf(width, height)
         val long = maxOf(width, height)
-        return short >= 1300 && long.toFloat() / short >= 1.45f
+        // High-resolution elongated phone panels must not enter the tablet-only path.
+        return short >= 1300 && long.toFloat() / short >= 1.45f && long.toLong() < 2L * short
     }
 
     fun wideLandscapeTablet(width: Int, height: Int): Boolean =

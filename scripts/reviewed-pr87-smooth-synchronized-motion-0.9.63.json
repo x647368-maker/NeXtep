@@ -394,6 +394,22 @@
         {
           "before": "            manager.addOnActiveSessionsChangedListener(activeListener, null, handler)\n            bind(token, manager.getActiveSessions(null).orEmpty())",
           "after": "            service.addOnActiveSessionsChangedListener(activeListener, null, handler)\n            bind(token, service.getActiveSessions(null).orEmpty())"
+        },
+        {
+          "before": "    private var sessions = emptyList<MediaController>()",
+          "after": "    private var sessions = emptyList<MediaController>()\n    private val registered = mutableSetOf<MediaController>()\n    private var destroyRefresh: Runnable? = null"
+        },
+        {
+          "before": "                if (!current(token)) return\n                val next = runCatching { service.getActiveSessions(null) }.getOrNull() ?: return\n                bind(token, next)",
+          "after": "                if (!current(token) || destroyRefresh != null) return\n                // Collapse queued destruction callbacks into one authoritative read.\n                val refresh = Runnable {\n                    if (!current(token)) return@Runnable\n                    destroyRefresh = null\n                    val next = runCatching { service.getActiveSessions(null) }.getOrNull() ?: return@Runnable\n                    bind(token, next)\n                }\n                destroyRefresh = refresh\n                if (!handler.post(refresh)) destroyRefresh = null"
+        },
+        {
+          "before": "            runCatching { it.unregisterCallback(cb) }\n        }\n        sessions = unique.map { controller ->\n            oldByToken[controller.sessionToken] ?: controller.also {\n                runCatching { it.registerCallback(cb, handler) }\n            }\n        }",
+          "after": "            registered.remove(it)\n            runCatching { it.unregisterCallback(cb) }\n        }\n        sessions = unique.map { controller -> oldByToken[controller.sessionToken] ?: controller }\n        // A failed registration is not a successful subscription; retry only\n        // on the next actual session-list event, without a timer or polling.\n        sessions.filter { it !in registered }.forEach { controller ->\n            runCatching { controller.registerCallback(cb, handler) }.onSuccess { registered.add(controller) }\n        }"
+        },
+        {
+          "before": "        listening = false\n        val oldListener = listener",
+          "after": "        listening = false\n        destroyRefresh?.let { handler.removeCallbacks(it) }\n        destroyRefresh = null\n        registered.clear()\n        val oldListener = listener"
         }
       ]
     },
@@ -407,6 +423,15 @@
         {
           "before": "            if (locked || !screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Keep this attempt alive instead of waiting for another broadcast.",
           "after": "            // While keyguard is locked, display/keyguard callbacks and the existing\n            // lock observer handle wake/unlock. Do not start a competing poll chain.\n            if (locked) return\n            if (!screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Retain the existing wake retry only while unlocked."
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt": {
+      "previous_blob_sha1": "977cffa151e55a10889fe5ff8a5c17590c434c0e",
+      "patches": [
+        {
+          "before": "        return short >= 1300 && long.toFloat() / short >= 1.45f",
+          "after": "        // High-resolution elongated phone panels must not enter the tablet-only path.\n        return short >= 1300 && long.toFloat() / short >= 1.45f && long.toLong() < 2L * short"
         }
       ]
     }
