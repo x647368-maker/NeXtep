@@ -55,6 +55,12 @@ assert 'taskRepository.runningTasks()' not in _pr92_move
 assert 'call={snapshots=taskRepository.runningTasks()}' in _pr92_query
 assert 'exchangeBinderLane.submit(' in _pr92_query
 assert 'check(stillCurrent())' in _pr92_query
+_pr92_layout=_pr92.split('private fun waitForTaskLayoutNonBlocking(',1)[1].split('private fun restoreTaskLayoutNonBlocking(',1)[0]
+assert 'queryTasksNonBlocking(stillCurrent)' in _pr92_layout
+assert 'taskRepository.findTask(' not in _pr92_layout
+_pr92_slot_layout=_pr92.split('private fun ensureSlotLayoutNonBlocking(',1)[1].split('private fun queryTasksNonBlocking(',1)[0]
+assert 'ActivityTaskManagerCompat.setTaskResizeable(' not in _pr92_slot_layout.split('call={',1)[0]
+assert 'call={ActivityTaskManagerCompat.setTaskResizeable(' in _pr92_slot_layout
 def undo_pr91(path,data):
  data=undo_pr92(path,data)
  if path not in pr91_review:return data
@@ -75,8 +81,9 @@ _pr91_move=_pr91.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('
 assert 'exchangeSession?.acceptsForwardWork==true' in _pr91
 assert _pr91.count('stillCurrent=::forwardCurrent')==4
 assert '!cancelled && now() < deadline' in _pr91_session
-assert _pr91_move.count('check(stillCurrent())')==4
-assert _pr91_move.index('Stale exchange during display observation')<_pr91_move.index('taskRepository.runningTasks()')
+assert _pr91_move.count('check(stillCurrent())')==2
+assert 'queryTasksNonBlocking(stillCurrent)' in _pr91_move
+assert 'taskRepository.runningTasks()' not in _pr91_move
 assert 'else runCatching{afterBinder()}.onFailure{done(Result.failure(it))}' in _pr91_move
 def undo_pr90(path,data):
  data=undo_pr91(path,data)

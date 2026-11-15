@@ -2684,29 +2684,29 @@ class SlotTaskCoordinator(
         val taskId=expected.taskId
         val deadline = SystemClock.uptimeMillis() + TASK_LAYOUT_TIMEOUT_MS
         fun observe() {
-            val result = runCatching {
-                check(stillCurrent()) {"Stale exchange during layout observation"}
-                val snapshot = taskRepository.findTask(taskId)
-                if(snapshot!=null)check(snapshot.token==expected.token &&
-                    snapshot.userId==expected.userId && snapshot.displayId==expected.displayId) {
-                    "Exchange task identity or display changed during layout observation"
-                }
-                val matches = snapshot != null &&
-                    snapshot.bounds == bounds && snapshot.densityDpi == densityDpi &&
-                    snapshot.windowingMode == windowingMode
-                if (matches) {
+            queryTasksNonBlocking(stillCurrent){ queryResult->
+                val tasks=queryResult.getOrElse { done(it);return@queryTasksNonBlocking }
+                val snapshot=tasks.firstOrNull{it.taskId==taskId}
+                val identityError=runCatching {
+                    check(stillCurrent()) {"Stale exchange during layout observation"}
+                    if(snapshot!=null)check(snapshot.token==expected.token &&
+                        snapshot.userId==expected.userId && snapshot.displayId==expected.displayId) {
+                        "Exchange task identity or display changed during layout observation"
+                    }
+                }.exceptionOrNull()
+                if(identityError!=null){done(identityError);return@queryTasksNonBlocking}
+                val matches=snapshot!=null && snapshot.bounds==bounds &&
+                    snapshot.densityDpi==densityDpi && snapshot.windowingMode==windowingMode
+                if(matches){
                     StageExchangeTelemetry.phasedEvent("layout_observed")
                     done(null)
-                } else if (SystemClock.uptimeMillis() >= deadline) {
+                }else if(SystemClock.uptimeMillis()>=deadline){
                     done(IllegalStateException(
-                        "Async layout not settled task=$taskId bounds=$bounds density=$densityDpi " +
+                        "Async layout not settled task=$taskId bounds=$bounds density=$densityDpi "+
                             "mode=$windowingMode actual=${snapshot?.bounds}/${snapshot?.densityDpi}/${snapshot?.windowingMode}",
                     ))
-                } else {
-                    exchangeHandler.postDelayed({ observe() }, TASK_LAYOUT_POLL_MS)
-                }
+                }else exchangeHandler.postDelayed({observe()},TASK_LAYOUT_POLL_MS)
             }
-            result.exceptionOrNull()?.let(done)
         }
         observe()
     }
@@ -2799,24 +2799,37 @@ class SlotTaskCoordinator(
                     StageExchangeTelemetry.phasedEvent("slot_layout_complete")
                 }.exceptionOrNull())
             }
-            if (resizeMismatch) {
-                ActivityTaskManagerCompat.setTaskResizeable(
-                    task.taskId, TASK_RESIZE_MODE_RESIZEABLE,
-                ).getOrThrow()
-            }
-            if (layoutMismatch) {
-                val token = current.token ?: error("Task ${task.taskId} has no slot layout token")
-                StageExchangeTelemetry.phasedEvent("slot_layout_worker")
-                submitExchangeLayout(token,Rect(),slotGeometry.densityDpi,
-                    fullscreenMode,stillCurrent){ failure->
-                    if(failure!=null){done(failure);return@submitExchangeLayout}
-                    StageExchangeTelemetry.phasedEvent("slot_layout_submitted")
-                    waitForTaskLayoutNonBlocking(current, targetBounds,
-                        slotGeometry.densityDpi, fullscreenMode,stillCurrent) { error ->
-                        if (error != null) done(error) else finish()
+            fun applyLayout(){
+                if(layoutMismatch){
+                    val token=current.token ?: error("Task ${task.taskId} has no slot layout token")
+                    StageExchangeTelemetry.phasedEvent("slot_layout_worker")
+                    submitExchangeLayout(token,Rect(),slotGeometry.densityDpi,
+                        fullscreenMode,stillCurrent){ failure->
+                        if(failure!=null){done(failure);return@submitExchangeLayout}
+                        StageExchangeTelemetry.phasedEvent("slot_layout_submitted")
+                        waitForTaskLayoutNonBlocking(current,targetBounds,
+                            slotGeometry.densityDpi,fullscreenMode,stillCurrent){ error->
+                            if(error!=null)done(error) else finish()
+                        }
                     }
-                }
-            } else finish()
+                }else finish()
+            }
+            if(resizeMismatch){
+                StageExchangeTelemetry.phasedEvent("slot_resize_mode_worker")
+                val accepted=exchangeBinderLane.submit(
+                    call={ActivityTaskManagerCompat.setTaskResizeable(
+                        task.taskId,TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()},
+                    complete={resizeResult->
+                        val failure=runCatching {
+                            resizeResult.getOrThrow()
+                            check(stillCurrent()) {"Stale exchange after slot resize-mode reply"}
+                        }.exceptionOrNull()
+                        if(failure!=null)done(failure) else applyLayout()
+                    },
+                )
+                if(!accepted)done(IllegalStateException(
+                    "Serialized exchange Binder lane busy during slot resize-mode update"))
+            }else applyLayout()
         }
         started.exceptionOrNull()?.let(done)
     }
