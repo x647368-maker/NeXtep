@@ -57,7 +57,8 @@ class StageLiveSurfaceFlightGeometryTest {
         val g=StageLiveSurfaceFlightGeometry
         val small=b(4f,4f,14f,14f)
         val main=b(1000f,0f,1100f,100f)
-        val blocker=b(24f,4f,28f,8f)
+        // Between the first two interior samples of the unified phase curve.
+        val blocker=b(50f,4f,54f,8f)
         fun overlap(card:StageLiveSurfaceFlightGeometry.Box):Float =
             (minOf(card.right,blocker.right)-maxOf(card.left,blocker.left)).coerceAtLeast(0f)*
                 (minOf(card.bottom,blocker.bottom)-maxOf(card.top,blocker.top)).coerceAtLeast(0f)
