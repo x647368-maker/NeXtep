@@ -266,6 +266,18 @@
         {
           "before": "    fun saveNote(value: String, expectedToken: Long): Boolean {\n        if (currentToken() != expectedToken || expectedToken < 0L) return false",
           "after": "    fun saveNote(value: String, expectedToken: Long, expectedActive: Boolean = true): Boolean {\n        // A delayed editor from the running phase must not overwrite the\n        // completed report supplement even when the session token still matches.\n        if (currentToken() != expectedToken || expectedToken < 0L || active() != expectedActive) return false"
+        },
+        {
+          "before": "    fun recordAutoEvent(token: Long, type: String, screen: String) {\n        if (!active() || currentToken() != token || isDue()) return",
+          "after": "    fun recordAutoEvent(token: Long, type: String, screen: String) =\n        recordAutoEvent(token, type) { screen }\n\n    // Delay the OS screen lookup until after the opt-in, deadline and cap\n    // checks; discarded events must not perform extra device-state reads.\n    fun recordAutoEvent(token: Long, type: String, screen: () -> String) {\n        if (!active() || currentToken() != token || isDue()) return"
+        },
+        {
+          "before": "        val entry = \"第${elapsed}秒｜${type.take(70)}｜屏幕：${screen.take(50)}\"",
+          "after": "        val entry = \"第${elapsed}秒｜${type.take(70)}｜屏幕：${screen().take(50)}\""
+        },
+        {
+          "before": "事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台或功能操作。控制响应仅来自测试App现有设置操作，不覆盖系统菜单的全部调用。",
+          "after": "事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台或功能操作。屏幕与前后台是通用上下文；设置控制响应仅记录所选专项范围内的操作，不覆盖系统菜单的全部调用。"
         }
       ]
     },
@@ -495,6 +507,30 @@
         {
           "before": "                    Intent.ACTION_USER_PRESENT -> \"系统通知：用户解锁\"\n                    else -> return\n                }\n                record(change)\n            }\n        }\n        val registered = runCatching {\n            ContextCompat.registerReceiver(application, listener, filter,\n                ContextCompat.RECEIVER_NOT_EXPORTED)\n            true\n        }.getOrDefault(false)\n        if (registered) receiver = listener\n        else record(\"屏幕变化通知不可用（只保留开始/结束状态）\")\n    }\n\n    private fun record(label: String) {\n        val owner = app ?: return\n        StageIssueSession(owner).recordAutoEvent(token, label, StageIssueSceneSnapshot.screenLabel(owner))\n    }\n\n    fun disable() {\n        val owner = app\n        val registered = receiver\n        val callbacks = lifecycle\n        app = null\n        receiver = null\n        lifecycle = null\n        token = -1L\n        activityTracker.reset()\n        if (owner != null && registered != null)\n            runCatching { owner.unregisterReceiver(registered) }\n        if (owner != null && callbacks != null)\n            runCatching { owner.unregisterActivityLifecycleCallbacks(callbacks) }\n    }\n}\n",
           "after": "                    Intent.ACTION_USER_PRESENT -> \"系统通知：用户解锁\"\n                    else -> return\n                }\n                record(current, change)\n            }\n        }\n        val registered = runCatching {\n            ContextCompat.registerReceiver(application, listener, filter,\n                ContextCompat.RECEIVER_NOT_EXPORTED)\n            true\n        }.getOrDefault(false)\n        if (registered) receiver = listener\n        else record(current, \"屏幕变化通知不可用（只保留开始/结束状态）\")\n    }\n\n    private fun configurationLabel(c: Configuration): String =\n        \"${c.screenWidthDp}×${c.screenHeightDp}dp，方向=${c.orientation}，dpi=${c.densityDpi}\"\n\n    // Only existing user-initiated control calls. Do not log app identities,\n    // workgroup names, launch intents or query/poll results.\n    private fun commandLabel(name: String): String? = when (name) {\n        \"save\", \"new\", \"restore\", \"delete\", \"rename\" -> \"功能服务/工作组/$name\"\n        \"quick_enable\", \"quick_off\", \"quick_collapse\", \"quick_expand\", \"quick_auto\", \"quick_fixed\" -> \"功能服务/快捷栏/$name\"\n        \"add_window\", \"replace_window\", \"close_window\", \"main_priority\", \"main_complete\",\n        \"layout_side\", \"layout_top\", \"adaptive_on\", \"adaptive_off\", \"left\", \"right\",\n        \"collapse\", \"expand\" -> \"布局/$name\"\n        \"cinema_auto\", \"cinema_landscape\", \"cinema_portrait\", \"cinema_off\",\n        \"cinema_enter\", \"cinema_leave\", \"wechat_move\" -> \"应用操作/$name\"\n        else -> null\n    }\n\n    fun commandToken(name: String): Long? =\n        token.takeIf { it >= 0 && commandLabel(name) != null }\n\n    fun recordCommandResult(expectedToken: Long?, name: String, outcome: String) {\n        val current = expectedToken ?: return\n        val label = commandLabel(name) ?: return\n        record(current, \"控制请求响应：$label；$outcome\", captureScreen = false)\n    }\n\n    private fun record(expectedToken: Long, label: String, captureScreen: Boolean = true) {\n        val owner = app ?: return\n        if (token != expectedToken) return\n        val session = StageIssueSession(owner)\n        // An inexact alarm can be delivered late after sleep. Stop observing on\n        // the first subsequent event instead of reading screen state past deadline.\n        if (!session.active() || session.currentToken() != expectedToken || session.isDue()) {\n            disable()\n            return\n        }\n        session.recordAutoEvent(expectedToken, label,\n            if (captureScreen) StageIssueSceneSnapshot.screenLabel(owner) else \"本事件未额外采样\")\n    }\n\n    fun disable() {\n        val owner = app\n        val registered = receiver\n        val callbacks = lifecycle\n        val config = configurationCallbacks\n        app = null\n        receiver = null\n        lifecycle = null\n        configurationCallbacks = null\n        lastConfiguration = null\n        token = -1L\n        activityTracker.reset()\n        if (owner != null && registered != null)\n            runCatching { owner.unregisterReceiver(registered) }\n        if (owner != null && callbacks != null)\n            runCatching { owner.unregisterActivityLifecycleCallbacks(callbacks) }\n        if (owner != null && config != null)\n            runCatching { owner.unregisterComponentCallbacks(config) }\n    }\n}\n"
+        },
+        {
+          "before": "    private var token = -1L\n    private val activityTracker",
+          "after": "    private var token = -1L\n    private var commandScope = emptySet<String>()\n    private val activityTracker"
+        },
+        {
+          "before": "        token = current\n        activityTracker.reset()",
+          "after": "        token = current\n        commandScope = StageIssueTestCatalog.modulesFor(session.selectedCategory())\n        activityTracker.reset()"
+        },
+        {
+          "before": "        session.recordAutoEvent(current,\n            if (activityTracker.isVisible()) \"测试App前台页面可见\" else \"测试App前后台状态未知\",\n            StageIssueSceneSnapshot.screenLabel(application))",
+          "after": "        session.recordAutoEvent(current,\n            if (activityTracker.isVisible()) \"测试App前台页面可见\" else \"测试App前后台状态未知\") {\n            StageIssueSceneSnapshot.screenLabel(application)\n        }"
+        },
+        {
+          "before": "    // Only existing user-initiated control calls. Do not log app identities,\n    // workgroup names, launch intents or query/poll results.\n    private fun commandLabel(name: String): String? = when (name) {\n        \"save\", \"new\", \"restore\", \"delete\", \"rename\" -> \"功能服务/工作组/$name\"\n        \"quick_enable\", \"quick_off\", \"quick_collapse\", \"quick_expand\", \"quick_auto\", \"quick_fixed\" -> \"功能服务/快捷栏/$name\"\n        \"add_window\", \"replace_window\", \"close_window\", \"main_priority\", \"main_complete\",\n        \"layout_side\", \"layout_top\", \"adaptive_on\", \"adaptive_off\", \"left\", \"right\",\n        \"collapse\", \"expand\" -> \"布局/$name\"\n        \"cinema_auto\", \"cinema_landscape\", \"cinema_portrait\", \"cinema_off\",\n        \"cinema_enter\", \"cinema_leave\", \"wechat_move\" -> \"应用操作/$name\"\n        else -> null\n    }",
+          "after": "    // Only existing user-initiated control calls belonging to the selected\n    // diagnostic scope. Do not log identities, names or query/poll results.\n    private fun commandLabel(name: String): String? =\n        StageIssueEvidencePolicy.commandLabel(name, commandScope)"
+        },
+        {
+          "before": "        session.recordAutoEvent(expectedToken, label,\n            if (captureScreen) StageIssueSceneSnapshot.screenLabel(owner) else \"本事件未额外采样\")",
+          "after": "        session.recordAutoEvent(expectedToken, label) {\n            if (captureScreen) StageIssueSceneSnapshot.screenLabel(owner) else \"本事件未额外采样\"\n        }"
+        },
+        {
+          "before": "        token = -1L\n        activityTracker.reset()",
+          "after": "        token = -1L\n        commandScope = emptySet()\n        activityTracker.reset()"
         }
       ]
     },

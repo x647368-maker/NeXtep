@@ -23,6 +23,7 @@ internal object StageIssueEventObserver {
     private var configurationCallbacks: ComponentCallbacks? = null
     private var lastConfiguration: String? = null
     private var token = -1L
+    private var commandScope = emptySet<String>()
     private val activityTracker = StageIssueForegroundTracker()
 
     fun enable(context: Context) {
@@ -37,14 +38,16 @@ internal object StageIssueEventObserver {
         disable()
         app = application
         token = current
+        commandScope = StageIssueTestCatalog.modulesFor(session.selectedCategory())
         activityTracker.reset()
         // The registration happens during onResume, after onStart. Seed the
         // visible page; older already-started activities may stop afterward.
         // Ignore their unobserved onStop rather than invent a background event.
         if (context is Activity) activityTracker.seed(context)
         session.recordAutoEvent(current,
-            if (activityTracker.isVisible()) "测试App前台页面可见" else "测试App前后台状态未知",
-            StageIssueSceneSnapshot.screenLabel(application))
+            if (activityTracker.isVisible()) "测试App前台页面可见" else "测试App前后台状态未知") {
+            StageIssueSceneSnapshot.screenLabel(application)
+        }
 
         lifecycle = object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, state: Bundle?) {}
@@ -106,18 +109,10 @@ internal object StageIssueEventObserver {
     private fun configurationLabel(c: Configuration): String =
         "${c.screenWidthDp}×${c.screenHeightDp}dp，方向=${c.orientation}，dpi=${c.densityDpi}"
 
-    // Only existing user-initiated control calls. Do not log app identities,
-    // workgroup names, launch intents or query/poll results.
-    private fun commandLabel(name: String): String? = when (name) {
-        "save", "new", "restore", "delete", "rename" -> "功能服务/工作组/$name"
-        "quick_enable", "quick_off", "quick_collapse", "quick_expand", "quick_auto", "quick_fixed" -> "功能服务/快捷栏/$name"
-        "add_window", "replace_window", "close_window", "main_priority", "main_complete",
-        "layout_side", "layout_top", "adaptive_on", "adaptive_off", "left", "right",
-        "collapse", "expand" -> "布局/$name"
-        "cinema_auto", "cinema_landscape", "cinema_portrait", "cinema_off",
-        "cinema_enter", "cinema_leave", "wechat_move" -> "应用操作/$name"
-        else -> null
-    }
+    // Only existing user-initiated control calls belonging to the selected
+    // diagnostic scope. Do not log identities, names or query/poll results.
+    private fun commandLabel(name: String): String? =
+        StageIssueEvidencePolicy.commandLabel(name, commandScope)
 
     fun commandToken(name: String): Long? =
         token.takeIf { it >= 0 && commandLabel(name) != null }
@@ -138,8 +133,9 @@ internal object StageIssueEventObserver {
             disable()
             return
         }
-        session.recordAutoEvent(expectedToken, label,
-            if (captureScreen) StageIssueSceneSnapshot.screenLabel(owner) else "本事件未额外采样")
+        session.recordAutoEvent(expectedToken, label) {
+            if (captureScreen) StageIssueSceneSnapshot.screenLabel(owner) else "本事件未额外采样"
+        }
     }
 
     fun disable() {
@@ -153,6 +149,7 @@ internal object StageIssueEventObserver {
         configurationCallbacks = null
         lastConfiguration = null
         token = -1L
+        commandScope = emptySet()
         activityTracker.reset()
         if (owner != null && registered != null)
             runCatching { owner.unregisterReceiver(registered) }

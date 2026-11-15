@@ -64,7 +64,12 @@ internal class StageIssueSession(context: Context) {
      * A bounded event log from real OS callbacks, not from periodic sampling.
      * If Android kills this process, transitions in that interval are unknown.
      */
-    fun recordAutoEvent(token: Long, type: String, screen: String) {
+    fun recordAutoEvent(token: Long, type: String, screen: String) =
+        recordAutoEvent(token, type) { screen }
+
+    // Delay the OS screen lookup until after the opt-in, deadline and cap
+    // checks; discarded events must not perform extra device-state reads.
+    fun recordAutoEvent(token: Long, type: String, screen: () -> String) {
         if (!active() || currentToken() != token || isDue()) return
         val count = autoEventCount()
         if (count >= maxAutoEvents) {
@@ -74,7 +79,7 @@ internal class StageIssueSession(context: Context) {
         }
         val elapsed = StageIssueReportPolicy.elapsedMs(token, SystemClock.elapsedRealtime())
             ?.div(1000L) ?: return
-        val entry = "第${elapsed}秒｜${type.take(70)}｜屏幕：${screen.take(50)}"
+        val entry = "第${elapsed}秒｜${type.take(70)}｜屏幕：${screen().take(50)}"
         preferences.edit()
             .putString("auto_event_$count",entry.take(170))
             .putInt("auto_event_count",count+1)
@@ -261,7 +266,7 @@ internal class StageIssueSession(context: Context) {
             }
             if (preferences.getBoolean("auto_events_truncated",false))
                 appendLine("注意：状态事件超出上限，后续事件未写入。")
-            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台或功能操作。控制响应仅来自测试App现有设置操作，不覆盖系统菜单的全部调用。")
+            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台或功能操作。屏幕与前后台是通用上下文；设置控制响应仅记录所选专项范围内的操作，不覆盖系统菜单的全部调用。")
             appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
             if (bootIdentity == false) appendLine("设备已重启：以下交换记录仅为结束快照，不与起始编号或进程号比较。")
