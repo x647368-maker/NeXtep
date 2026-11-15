@@ -12,6 +12,9 @@ import java.util.concurrent.TimeUnit
 import android.content.Intent
 import android.os.SystemClock
 import android.graphics.Bitmap
+import android.graphics.Rect
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.util.Base64
 import java.security.MessageDigest
 import android.widget.LinearLayout
@@ -112,11 +115,48 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
         else emptyList()
         return listOf(root) + children
     }
-    private fun click(activity: Activity, title: String) = ui {
-        val view = descendants(activity.window.decorView).filterIsInstance<Button>()
-            .firstOrNull { it.isShown && it.text.toString() == title }
-            ?: error("Missing native diagnostic control: $title")
-        check(view.isEnabled && view.performClick()) { "Diagnostic action rejected: $title" }
+    private fun click(activity: Activity, title: String) {
+        val view=ui {
+            val button=descendants(activity.window.decorView).filterIsInstance<Button>()
+                .firstOrNull{it.isShown && it.text.toString()==title}
+                ?:error("Missing native diagnostic control: $title")
+            check(button.isEnabled){"Diagnostic action disabled: $title"}
+            // The long native scope and report cards are scrollable. A direct
+            // performClick would pass even if a user could not reach the button.
+            button.requestRectangleOnScreen(Rect(0,0,button.width,button.height),true)
+            button
+        }
+        var point:Pair<Float,Float>?=null
+        await("touchable $title") {
+            point=ui {
+                if(!activity.hasWindowFocus() || !view.isEnabled || !view.isAttachedToWindow ||
+                    view.width<=0 || view.height<=0) return@ui null
+                val local=Rect()
+                if(!view.getLocalVisibleRect(local) || local.width()<view.width*.5f ||
+                    local.height()<view.height*.5f) return@ui null
+                val position=IntArray(2);view.getLocationOnScreen(position)
+                val x=position[0]+local.exactCenterX()
+                val y=position[1]+local.exactCenterY()
+                val window=Rect();activity.window.decorView.getWindowVisibleDisplayFrame(window)
+                if(!window.contains(x.toInt(),y.toInt()))null else x to y
+            }
+            point!=null
+        }
+        val (x,y)=checkNotNull(point)
+        val down=SystemClock.uptimeMillis()
+        fun event(action:Int){
+            val motion=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,y,0)
+            try{
+                motion.source=InputDevice.SOURCE_TOUCHSCREEN
+                check(inst.uiAutomation.injectInputEvent(motion,true)){"InputDispatcher rejected $title"}
+            }finally{motion.recycle()}
+        }
+        event(MotionEvent.ACTION_DOWN)
+        Thread.sleep(45)
+        event(MotionEvent.ACTION_UP)
+        phase("PASS dispatched real touch $title at $x,$y")
+        // Drain posted UI callbacks without an unbounded waitForIdleSync.
+        ui{Unit}
     }
     private fun hasText(activity: Activity, title: String): Boolean = ui {
         descendants(activity.window.decorView).filterIsInstance<TextView>()
