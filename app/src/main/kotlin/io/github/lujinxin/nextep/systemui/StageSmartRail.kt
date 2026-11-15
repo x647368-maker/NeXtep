@@ -13,12 +13,13 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     var hidden = false; private set
     private var retries = 0
     private var pending = false
+    private var touching = false
     private val idle = Runnable { pending = false; hideNow() }
 
     private fun arm() {
         handler.removeCallbacks(idle)
         pending = false
-        if (enabled && !pinned && !hidden) {
+        if (enabled && !pinned && !hidden && !touching) {
             pending = true
             handler.postDelayed(idle, idleSeconds * 1000L)
         }
@@ -30,7 +31,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     fun armWhenReady() {
         // A busy app may send many task notifications per second. Those are
         // not touches and must not indefinitely restart the idle countdown.
-        if (!enabled || pinned || hidden || pending) return
+        if (!enabled || pinned || hidden || pending || touching) return
         retries = 0
         arm()
     }
@@ -59,6 +60,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     }
     fun touch(active: Boolean) {
         // A long press/drag must never disappear underneath the user's finger.
+        touching = active
         if (!active) { interact(); return }
         handler.removeCallbacks(idle)
         pending = false
@@ -67,7 +69,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     fun hideNow() {
         handler.removeCallbacks(idle)
         pending = false
-        if (!enabled || pinned || hidden) return
+        if (!enabled || pinned || hidden || touching) return
         if (allowed()) {
             retries = 0
             hidden = true
@@ -81,6 +83,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
         }
     }
     fun stop() {
+        touching = false
         handler.removeCallbacks(idle)
         pending = false
         retries = 0
