@@ -106,7 +106,29 @@ internal object StageIssueEventObserver {
     private fun configurationLabel(c: Configuration): String =
         "${c.screenWidthDp}×${c.screenHeightDp}dp，方向=${c.orientation}，dpi=${c.densityDpi}"
 
-    private fun record(expectedToken: Long, label: String) {
+    // Only existing user-initiated control calls. Do not log app identities,
+    // workgroup names, launch intents or query/poll results.
+    private fun commandLabel(name: String): String? = when (name) {
+        "save", "new", "restore", "delete", "rename" -> "功能服务/工作组/$name"
+        "quick_enable", "quick_off", "quick_collapse", "quick_expand", "quick_auto", "quick_fixed" -> "功能服务/快捷栏/$name"
+        "add_window", "replace_window", "close_window", "main_priority", "main_complete",
+        "layout_side", "layout_top", "adaptive_on", "adaptive_off", "left", "right",
+        "collapse", "expand" -> "布局/$name"
+        "cinema_auto", "cinema_landscape", "cinema_portrait", "cinema_off",
+        "cinema_enter", "cinema_leave", "wechat_move" -> "应用操作/$name"
+        else -> null
+    }
+
+    fun commandToken(name: String): Long? =
+        token.takeIf { it >= 0 && commandLabel(name) != null }
+
+    fun recordCommandResult(expectedToken: Long?, name: String, outcome: String) {
+        val current = expectedToken ?: return
+        val label = commandLabel(name) ?: return
+        record(current, "控制请求响应：$label；$outcome", captureScreen = false)
+    }
+
+    private fun record(expectedToken: Long, label: String, captureScreen: Boolean = true) {
         val owner = app ?: return
         if (token != expectedToken) return
         val session = StageIssueSession(owner)
@@ -116,7 +138,8 @@ internal object StageIssueEventObserver {
             disable()
             return
         }
-        session.recordAutoEvent(expectedToken, label, StageIssueSceneSnapshot.screenLabel(owner))
+        session.recordAutoEvent(expectedToken, label,
+            if (captureScreen) StageIssueSceneSnapshot.screenLabel(owner) else "本事件未额外采样")
     }
 
     fun disable() {
