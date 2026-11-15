@@ -71,13 +71,6 @@ class SlotTaskCoordinator(
     private val slotRecords = MutableList(slots.size) { SlotRecord() }
     private val exchangeHandler = Handler(Looper.getMainLooper())
     private val exchangeBinderLane = StageExchangeBinderLane { action -> exchangeHandler.post(action) }
-    // Owner-only: an existing Shell event can advance one waiting display poll.
-    // It never substitutes for the real Binder observation or starts a second query.
-    private val displayObservationWake = StageDisplayObservationWake(
-        SystemClock::uptimeMillis,
-        { delay, action -> exchangeHandler.postDelayed(action, delay) },
-        { action -> exchangeHandler.removeCallbacks(action) },
-    )
     private var exchangeSession: ExchangeSession<TaskLayout>? = null
     private data class ConfirmedOutput(val generation: Int, val slot: Int, val task: Int,
                                        val mark: VirtualDisplaySlot.OutputFrameMark)
@@ -141,7 +134,6 @@ class SlotTaskCoordinator(
     fun onTasksChanged() {
         ensureMainThread()
         if (!active || suspended) return
-        displayObservationWake.onTaskChanged()
         refreshPolicy.onTaskChanged(SystemClock.uptimeMillis())
         scheduleReconciliation(TASK_CHANGE_COALESCE_MS)
     }
@@ -2927,7 +2919,6 @@ class SlotTaskCoordinator(
                 StageExchangeTelemetry.phasedEvent("display_${displayId}_binder_done")
                 check(stillCurrent()) {"Stale exchange after actual display Binder reply"}
                 val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-                displayObservationWake.reset()
                 fun observe() {
                     queryTasksNonBlocking(stillCurrent){ queryResult->
                         val running=queryResult.getOrElse { done(Result.failure(it));return@queryTasksNonBlocking }
@@ -2950,7 +2941,7 @@ class SlotTaskCoordinator(
                             }
                         }.getOrElse { done(Result.failure(it));return@queryTasksNonBlocking }
                         if(observed!=null)done(Result.success(observed))
-                        else displayObservationWake.schedule(DISPLAY_MOVE_POLL_MS) { observe() }
+                        else exchangeHandler.postDelayed({observe()},DISPLAY_MOVE_POLL_MS)
                     }
                 }
                 observe()

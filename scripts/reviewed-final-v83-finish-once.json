@@ -2,7 +2,7 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
       "previous_blob_sha1": "2e30e5d8d59151f8751fe76be3edb8163784fb0b",
-      "reviewed_blob_sha1": "a41f458defae3922ebb5f84e4d6f86598f8338eb",
+      "reviewed_blob_sha1": "707eb69b9fda80668e70fb1d382ea999599f8efa",
       "patches": [
         {
           "before": "        var animationFinished = false\n        fun finish() {\n            if (token != transitionGeneration) return\n            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null",
@@ -11,22 +11,6 @@
         {
           "before": "        val promotedTask = promotedRecoveryTaskId?.let(taskRepository::findTask)?.takeIf {\n            it.userId == promotedRecoveryUserId && it.component.packageName == component.packageName && it.displayId == Display.DEFAULT_DISPLAY\n        }\n        if (promotedTask != null) {\n            if (taskRepository.foregroundTask()?.taskId != promotedTask.taskId) {",
           "after": "        // Identity and foreground order come from one fresh task-list read.\n        // Presentation below still performs its original independent live lookup.\n        val recovery = StagePromotedRecoverySnapshot.select(\n            query = taskRepository::runningTasks,\n            expectedId = promotedRecoveryTaskId,\n            taskId = { it.taskId },\n            isExpected = { it.userId == promotedRecoveryUserId &&\n                it.component.packageName == component.packageName },\n            isMainDisplay = { it.displayId == Display.DEFAULT_DISPLAY },\n        )\n        val promotedTask = recovery.task\n        if (promotedTask != null) {\n            if (!recovery.isForeground) {"
-        },
-        {
-          "before": "    private var exchangeSession: ExchangeSession<TaskLayout>? = null",
-          "after": "    // Owner-only: an existing Shell event can advance one waiting display poll.\n    // It never substitutes for the real Binder observation or starts a second query.\n    private val displayObservationWake = StageDisplayObservationWake(\n        SystemClock::uptimeMillis,\n        { delay, action -> exchangeHandler.postDelayed(action, delay) },\n        { action -> exchangeHandler.removeCallbacks(action) },\n    )\n    private var exchangeSession: ExchangeSession<TaskLayout>? = null"
-        },
-        {
-          "before": "        refreshPolicy.onTaskChanged(SystemClock.uptimeMillis())\n        scheduleReconciliation(TASK_CHANGE_COALESCE_MS)",
-          "after": "        displayObservationWake.onTaskChanged()\n        refreshPolicy.onTaskChanged(SystemClock.uptimeMillis())\n        scheduleReconciliation(TASK_CHANGE_COALESCE_MS)"
-        },
-        {
-          "before": "                val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS\n                fun observe() {",
-          "after": "                val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS\n                displayObservationWake.reset()\n                fun observe() {"
-        },
-        {
-          "before": "                        else exchangeHandler.postDelayed({observe()},DISPLAY_MOVE_POLL_MS)",
-          "after": "                        else displayObservationWake.schedule(DISPLAY_MOVE_POLL_MS) { observe() }"
         }
       ]
     },
