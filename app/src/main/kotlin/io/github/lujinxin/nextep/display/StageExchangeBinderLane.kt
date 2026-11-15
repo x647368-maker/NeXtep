@@ -5,10 +5,10 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
- * Only the already authorized synchronous move IPC is offloaded.
- * The session's owner retains its reservation until the actual IPC returns;
- * cancel never pretends a submitted Binder call has completed. No retry,
- * parallel mutation, idle polling or permanent worker.
+ * Serializes authorized exchange Binder mutations and bounded task-list queries.
+ * The session owner retains reservations until each actual IPC/query returns;
+ * cancel never fabricates completion. No parallel mutation, idle polling
+ * or permanent worker.
  */
 internal class StageExchangeBinderLane(private val postToOwner: (() -> Unit) -> Unit) {
     private val owner=Thread.currentThread()

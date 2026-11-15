@@ -1679,7 +1679,34 @@ class SlotTaskCoordinator(
 
     private fun startPhasedSwap(slotIndex: Int, occupied: SlotState.Occupied, token: Int, expectedMainTaskId: Int?, complete: (Boolean) -> Unit) {
         StageExchangeTelemetry.phasedEvent("snapshot_start")
-        val initialTasks = taskRepository.runningTasks()
+        val exchangeGeometry=geometryProvider()
+        val stillPreparing={
+            token==transitionGeneration && active && !suspended &&
+                slotRecords[slotIndex].state==occupied &&
+                slots[slotIndex].displayId()==occupied.displayId &&
+                geometryProvider()==exchangeGeometry
+        }
+        queryTasksNonBlocking(stillPreparing){ result->
+            val initialTasks=result.getOrElse { error->
+                NeXtepLog.warn("slot_coordinator","Async exchange snapshot query failed",error)
+                complete(false)
+                return@queryTasksNonBlocking
+            }
+            runCatching {
+                startPhasedSwapWithTasks(slotIndex,occupied,token,expectedMainTaskId,
+                    initialTasks,exchangeGeometry,complete)
+            }.onFailure { error->
+                NeXtepLog.error("slot_coordinator","Async exchange preparation failed",error)
+                complete(false)
+            }
+        }
+    }
+
+    private fun startPhasedSwapWithTasks(
+        slotIndex: Int, occupied: SlotState.Occupied, token: Int,
+        expectedMainTaskId: Int?, initialTasks: List<TaskRepository.TaskSnapshot>,
+        exchangeGeometry: WorkspaceGeometry, complete: (Boolean) -> Unit,
+    ) {
         val slotTask = initialTasks.firstOrNull { it.taskId == occupied.taskId } ?: error("Slot task exited")
         val mainTask = initialTasks.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY } ?: error("Main task exited")
         check(mainTask.taskId == expectedMainTaskId) { "Main task changed during preview" }
@@ -1689,7 +1716,6 @@ class SlotTaskCoordinator(
         val record = slotRecords[slotIndex]
         val slotLayout = record.originalLayout ?: defaultMainLayout(slotTask.resizeMode)
         val mainLayout = mainTask.toLayout()
-        val exchangeGeometry = geometryProvider()
         StageExchangeTelemetry.phasedEvent("snapshot_ready")
 
         var mutationStarted = false
@@ -1717,161 +1743,196 @@ class SlotTaskCoordinator(
                 // safety and non-tap/legacy callers.
                 override val nonBlocking: Boolean get() = true
                 override fun promoteAsync(done: (Throwable?) -> Unit) {
-                    var sameTurnSource:TaskRepository.TaskSnapshot?=null
-                    val preliminary = runCatching {
+                    val preliminary=runCatching {
                         StageExchangeTelemetry.phasedEvent("promote_start")
-                        check(token == transitionGeneration && active && !suspended)
+                        check(token==transitionGeneration && active && !suspended)
                         check(forwardCurrent())
-                        check(geometryProvider() == exchangeGeometry)
-                        val before = taskRepository.runningTasks()
-                        val checkedSlot=current(slotTask,before)
-                        check(checkedSlot.displayId == occupied.displayId)
-                        check(before.firstOrNull { it.displayId == occupied.displayId }?.taskId == slotTask.taskId)
-                        check(current(mainTask, before).displayId == Display.DEFAULT_DISPLAY)
-                        check(before.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == mainTask.taskId)
-                        check(current(mainTask, before).toLayout() == mainLayout)
-                        mutationStarted = true
-                        if (mainTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE)
-                            ActivityTaskManagerCompat.setTaskResizeable(mainTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
-                        if (slotTask.resizeMode != TASK_RESIZE_MODE_RESIZEABLE)
-                            ActivityTaskManagerCompat.setTaskResizeable(slotTask.taskId, TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
-                        // Reuse the exact source proof only if this main-loop
-                        // turn made NO intervening WCT/resize/Binder mutation.
-                        if(mainTask.resizeMode==TASK_RESIZE_MODE_RESIZEABLE &&
-                            slotTask.resizeMode==TASK_RESIZE_MODE_RESIZEABLE)
-                            sameTurnSource=checkedSlot
+                        check(geometryProvider()==exchangeGeometry)
                     }.exceptionOrNull()
-                    if (preliminary != null) { done(preliminary); return }
-                    moveTaskToDisplayNonBlocking(slotTask, Display.DEFAULT_DISPLAY,
-                        sameTurnSource=sameTurnSource, stillCurrent=::forwardCurrent) { result ->
-                        val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
-                        val stale = runCatching {
-                            check(token == transitionGeneration && active && !suspended)
-                        }.exceptionOrNull()
-                        if (stale != null) { done(stale); return@moveTaskToDisplayNonBlocking }
-                        restoreTaskLayoutNonBlocking(slotTask, slotLayout, restoreResizeMode = false,
-                            observed=observed, stillCurrent=::forwardCurrent) { layoutError ->
-                            if (layoutError != null) { done(layoutError); return@restoreTaskLayoutNonBlocking }
-                            // This is a real synchronous ATM mutation too. Do not
-                            // block the owner Looper while it waits for the reply.
-                            // The exchange session stays PROMOTING and owns both
-                            // tasks until the same serialized lane actually returns.
-                            val staleBeforeFront=runCatching {
-                                check(token == transitionGeneration && active && !suspended)
+                    if(preliminary!=null){done(preliminary);return}
+                    queryTasksNonBlocking(::forwardCurrent){ beforeResult->
+                        val before=beforeResult.getOrElse { done(it);return@queryTasksNonBlocking }
+                        val checked=runCatching {
+                            val checkedSlot=current(slotTask,before)
+                            check(checkedSlot.displayId==occupied.displayId)
+                            check(before.firstOrNull{it.displayId==occupied.displayId}?.taskId==slotTask.taskId)
+                            val checkedMain=current(mainTask,before)
+                            check(checkedMain.displayId==Display.DEFAULT_DISPLAY)
+                            check(before.firstOrNull{it.displayId==Display.DEFAULT_DISPLAY}?.taskId==mainTask.taskId)
+                            check(checkedMain.toLayout()==mainLayout)
+                            checkedSlot to checkedMain
+                        }.getOrElse { done(it);return@queryTasksNonBlocking }
+
+                        fun continuePromotion(source:TaskRepository.TaskSnapshot){
+                            val ready=runCatching {
                                 check(forwardCurrent())
+                                mutationStarted=true
                             }.exceptionOrNull()
-                            if(staleBeforeFront!=null){
-                                done(staleBeforeFront)
-                                return@restoreTaskLayoutNonBlocking
+                            if(ready!=null){done(ready);return}
+                            moveTaskToDisplayNonBlocking(source,Display.DEFAULT_DISPLAY,
+                                sameTurnSource=source,stillCurrent=::forwardCurrent){ result->
+                                val observed=result.getOrElse { done(it);return@moveTaskToDisplayNonBlocking }
+                                restoreTaskLayoutNonBlocking(source,slotLayout,restoreResizeMode=false,
+                                    observed=observed,stillCurrent=::forwardCurrent){ layoutError->
+                                    if(layoutError!=null){done(layoutError);return@restoreTaskLayoutNonBlocking}
+                                    val stale=runCatching{check(forwardCurrent())}.exceptionOrNull()
+                                    if(stale!=null){done(stale);return@restoreTaskLayoutNonBlocking}
+                                    StageExchangeTelemetry.phasedEvent("promote_front_worker")
+                                    val accepted=exchangeBinderLane.submit(
+                                        call={taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()},
+                                        complete={frontResult->
+                                            done(runCatching {
+                                                frontResult.getOrThrow()
+                                                check(token==transitionGeneration && active && !suspended)
+                                                check(forwardCurrent())
+                                                StageExchangeTelemetry.phasedEvent("promote_complete")
+                                            }.exceptionOrNull())
+                                        },
+                                    )
+                                    if(!accepted)done(IllegalStateException(
+                                        "Serialized exchange front Binder lane unexpectedly busy"))
+                                }
                             }
-                            StageExchangeTelemetry.phasedEvent("promote_front_worker")
+                        }
+
+                        val needsResize=checked.second.resizeMode!=TASK_RESIZE_MODE_RESIZEABLE ||
+                            checked.first.resizeMode!=TASK_RESIZE_MODE_RESIZEABLE
+                        if(!needsResize){
+                            continuePromotion(checked.first)
+                        }else{
+                            mutationStarted=true
+                            StageExchangeTelemetry.phasedEvent("resize_mode_worker")
                             val accepted=exchangeBinderLane.submit(
-                                call={taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()},
-                                complete={frontResult->
-                                    done(runCatching {
-                                        frontResult.getOrThrow()
-                                        check(token == transitionGeneration && active && !suspended)
+                                call={
+                                    if(checked.second.resizeMode!=TASK_RESIZE_MODE_RESIZEABLE)
+                                        ActivityTaskManagerCompat.setTaskResizeable(
+                                            mainTask.taskId,TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                                    if(checked.first.resizeMode!=TASK_RESIZE_MODE_RESIZEABLE)
+                                        ActivityTaskManagerCompat.setTaskResizeable(
+                                            slotTask.taskId,TASK_RESIZE_MODE_RESIZEABLE).getOrThrow()
+                                },
+                                complete={ resizeResult->
+                                    val resizeError=runCatching {
+                                        resizeResult.getOrThrow()
                                         check(forwardCurrent())
-                                        StageExchangeTelemetry.phasedEvent("promote_complete")
-                                    }.exceptionOrNull())
+                                    }.exceptionOrNull()
+                                    if(resizeError!=null)done(resizeError)
+                                    else queryTasksNonBlocking(::forwardCurrent){ refreshedResult->
+                                        val refreshed=runCatching {
+                                            val tasks=refreshedResult.getOrThrow()
+                                            val latestSlot=current(slotTask,tasks)
+                                            val latestMain=current(mainTask,tasks)
+                                            check(latestSlot.displayId==occupied.displayId)
+                                            check(tasks.firstOrNull{it.displayId==occupied.displayId}?.taskId==slotTask.taskId)
+                                            check(latestMain.displayId==Display.DEFAULT_DISPLAY)
+                                            check(tasks.firstOrNull{it.displayId==Display.DEFAULT_DISPLAY}?.taskId==mainTask.taskId)
+                                            check(latestMain.toLayout()==mainLayout)
+                                            latestSlot
+                                        }.getOrElse { done(it);return@queryTasksNonBlocking }
+                                        continuePromotion(refreshed)
+                                    }
                                 },
                             )
                             if(!accepted)done(IllegalStateException(
-                                "Serialized exchange front Binder lane unexpectedly busy"))
+                                "Serialized exchange resize Binder lane unexpectedly busy"))
                         }
                     }
                 }
 
                 override fun demoteAndVerifyAsync(done: (Throwable?) -> Unit) {
-                    var sameTurnSource:TaskRepository.TaskSnapshot?=null
-                    val preliminary = runCatching {
+                    val preliminary=runCatching {
                         StageExchangeTelemetry.phasedEvent("demote_start")
-                        check(token == transitionGeneration && active && !suspended)
-                        check(geometryProvider() == exchangeGeometry)
-                        check(slots[slotIndex].displayId() == occupied.displayId)
+                        check(token==transitionGeneration && active && !suspended)
+                        check(geometryProvider()==exchangeGeometry)
+                        check(slots[slotIndex].displayId()==occupied.displayId)
                         check(forwardCurrent())
-                        val promoted = taskRepository.runningTasks()
-                        check(current(slotTask, promoted).displayId == Display.DEFAULT_DISPLAY)
-                        val checkedMain=current(mainTask,promoted)
-                        check(checkedMain.displayId == Display.DEFAULT_DISPLAY)
-                        check(promoted.firstOrNull { it.displayId == Display.DEFAULT_DISPLAY }?.taskId == slotTask.taskId)
-                        sameTurnSource=checkedMain
                     }.exceptionOrNull()
-                    if (preliminary != null) { done(preliminary); return }
-                    var observedFront:TaskRepository.TaskSnapshot?=null
-                    moveTaskToDisplayNonBlocking(mainTask, occupied.displayId,
-                        sameTurnSource=sameTurnSource,
-                        observedDemotionSlot=slotIndex,
-                        onObservedDestinationFront={observedFront=it},
-                        stillCurrent=::forwardCurrent) { result ->
-                        val observed=result.getOrElse { done(it); return@moveTaskToDisplayNonBlocking }
-                        val preliminary = runCatching {
-                            check(token == transitionGeneration && active && !suspended)
-                            mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
-                        }.exceptionOrNull()
-                        if (preliminary != null) { done(preliminary); return@moveTaskToDisplayNonBlocking }
-                        ensureSlotLayoutNonBlocking(slotIndex, mainTask, mainLayout, observed=observed,
-                            stillCurrent=::forwardCurrent) { layoutError ->
-                            if (layoutError != null) { done(layoutError); return@ensureSlotLayoutNonBlocking }
-                            done(runCatching {
-                                check(token == transitionGeneration && active && !suspended)
+                    if(preliminary!=null){done(preliminary);return}
+                    queryTasksNonBlocking(::forwardCurrent){ promotedResult->
+                        val promoted=promotedResult.getOrElse { done(it);return@queryTasksNonBlocking }
+                        val checkedMain=runCatching {
+                            check(current(slotTask,promoted).displayId==Display.DEFAULT_DISPLAY)
+                            val main=current(mainTask,promoted)
+                            check(main.displayId==Display.DEFAULT_DISPLAY)
+                            check(promoted.firstOrNull{it.displayId==Display.DEFAULT_DISPLAY}?.taskId==slotTask.taskId)
+                            main
+                        }.getOrElse { done(it);return@queryTasksNonBlocking }
+                        var observedFront:TaskRepository.TaskSnapshot?=null
+                        moveTaskToDisplayNonBlocking(mainTask,occupied.displayId,
+                            sameTurnSource=checkedMain,observedDemotionSlot=slotIndex,
+                            onObservedDestinationFront={observedFront=it},
+                            stillCurrent=::forwardCurrent){ result->
+                            val observed=result.getOrElse { done(it);return@moveTaskToDisplayNonBlocking }
+                            val preliminary=runCatching {
                                 check(forwardCurrent())
-                                // Sample immediately after the exact verified foreground task's
-                                // existing target layout fit, BEFORE main presentation work.
-                                // A WCT/layout mismatch cannot opt into this checkpoint.
+                                mainTaskPresenter.restoreForMove(mainTask.taskId).getOrThrow()
+                            }.exceptionOrNull()
+                            if(preliminary!=null){done(preliminary);return@moveTaskToDisplayNonBlocking}
+                            ensureSlotLayoutNonBlocking(slotIndex,mainTask,mainLayout,observed=observed,
+                                stillCurrent=::forwardCurrent){ layoutError->
+                                if(layoutError!=null){done(layoutError);return@ensureSlotLayoutNonBlocking}
                                 val earlyCanvas=slots[slotIndex].geometry()
                                 val earlyMark=if(observedFront===observed && earlyCanvas!=null &&
                                     observed.resizeMode==TASK_RESIZE_MODE_RESIZEABLE &&
                                     !observed.vendorWindowed && observed.windowingMode==fullscreenWindowingMode() &&
                                     observed.bounds==Rect(0,0,earlyCanvas.width,earlyCanvas.height) &&
                                     observed.densityDpi==earlyCanvas.densityDpi &&
-                                    observed.displayId==occupied.displayId) {
+                                    observed.displayId==occupied.displayId){
                                     slots[slotIndex].outputFrameMark()?.takeIf{it.displayId==occupied.displayId}
-                                } else null
-                                mainTaskPresenter.presentTask(slotTask.taskId, geometryProvider()).getOrThrow()
-                                val committed = taskRepository.runningTasks()
-                                check(current(slotTask, committed).displayId == Display.DEFAULT_DISPLAY)
-                                val parked=current(mainTask, committed)
-                                check(parked.displayId == occupied.displayId)
-                                // Earlier evidence is optional, requiring the actual foreground
-                                // slot task and final canvas, not merely a display move ACK.
-                                val canvas=slots[slotIndex].geometry()
-                                confirmedOutput=if (canvas != null &&
-                                    committed.firstOrNull { it.displayId==occupied.displayId }?.taskId==mainTask.taskId &&
-                                    !parked.vendorWindowed && parked.windowingMode==fullscreenWindowingMode() &&
-                                    parked.bounds==Rect(0,0,canvas.width,canvas.height) &&
-                                    parked.densityDpi==canvas.densityDpi) {
-                                    slots[slotIndex].outputFrameMark()?.takeIf {
-                                        it.displayId==occupied.displayId
-                                    }?.let { finalMark ->
-                                        val earlier=earlyMark?.takeIf {
-                                            StageEarlySlotOutputPolicy.allowEarlier(
-                                                it.displayId,finalMark.displayId,it.texture,finalMark.texture,
-                                                it.surface,finalMark.surface,it.sequence,finalMark.sequence,
-                                                earlyCanvas==canvas)
-                                        }
-                                        if(earlier!=null)
-                                            StageExchangeTelemetry.phasedEvent("slot_early_verified_output_mark")
-                                        ConfirmedOutput(token,slotIndex,mainTask.taskId,earlier?:finalMark)
-                                    }
-                                } else null
-                                StageExchangeTelemetry.phasedEvent(if (confirmedOutput!=null)
-                                    "slot_verified_output_mark" else "slot_output_mark_deferred")
-                                record.originalLayout = mainLayout
-                                record.retainedTaskId = mainTask.taskId
-                                record.migrationRecoveryComponent = null
-                                record.migrationRecoveryDeadline = 0L
-                                record.migrationRecoveryAttempts = 0
-                                setState(slotIndex, SlotState.Occupied(occupied.displayId, mainTask.taskId, mainTask.component),
-                                    "phased exchange committed")
-                                promotedRecoveryTaskId = slotTask.taskId
-                                promotedRecoveryUserId = slotTask.userId
-                                promotedRecoveryComponent = slotTask.component
-                                promotedRecoveryDeadline = SystemClock.uptimeMillis() + MIGRATION_RECOVERY_WINDOW_MS
-                                promotedRecoveryAttempts = 0
-                                schedulePromotedTaskRecovery()
-                                StageExchangeTelemetry.phasedEvent("demote_complete")
-                            }.exceptionOrNull())
+                                }else null
+                                val presentationError=runCatching {
+                                    check(forwardCurrent())
+                                    mainTaskPresenter.presentTask(slotTask.taskId,geometryProvider()).getOrThrow()
+                                }.exceptionOrNull()
+                                if(presentationError!=null){done(presentationError);return@ensureSlotLayoutNonBlocking}
+                                queryTasksNonBlocking(::forwardCurrent){ committedResult->
+                                    val commitError=runCatching {
+                                        val committed=committedResult.getOrThrow()
+                                        check(forwardCurrent())
+                                        check(current(slotTask,committed).displayId==Display.DEFAULT_DISPLAY)
+                                        val parked=current(mainTask,committed)
+                                        check(parked.displayId==occupied.displayId)
+                                        // Earlier evidence is optional, requiring the actual foreground
+                                        // slot task and final canvas, not merely a display move ACK.
+                                        val canvas=slots[slotIndex].geometry()
+                                        confirmedOutput=if(canvas!=null &&
+                                            committed.firstOrNull{it.displayId==occupied.displayId}?.taskId==mainTask.taskId &&
+                                            !parked.vendorWindowed && parked.windowingMode==fullscreenWindowingMode() &&
+                                            parked.bounds==Rect(0,0,canvas.width,canvas.height) &&
+                                            parked.densityDpi==canvas.densityDpi){
+                                            slots[slotIndex].outputFrameMark()?.takeIf{it.displayId==occupied.displayId}
+                                                ?.let{finalMark->
+                                                    val earlier=earlyMark?.takeIf{
+                                                        StageEarlySlotOutputPolicy.allowEarlier(
+                                                            it.displayId,finalMark.displayId,it.texture,finalMark.texture,
+                                                            it.surface,finalMark.surface,it.sequence,finalMark.sequence,
+                                                            earlyCanvas==canvas)
+                                                    }
+                                                    if(earlier!=null)
+                                                        StageExchangeTelemetry.phasedEvent("slot_early_verified_output_mark")
+                                                    ConfirmedOutput(token,slotIndex,mainTask.taskId,earlier?:finalMark)
+                                                }
+                                        }else null
+                                        StageExchangeTelemetry.phasedEvent(if(confirmedOutput!=null)
+                                            "slot_verified_output_mark" else "slot_output_mark_deferred")
+                                        record.originalLayout=mainLayout
+                                        record.retainedTaskId=mainTask.taskId
+                                        record.migrationRecoveryComponent=null
+                                        record.migrationRecoveryDeadline=0L
+                                        record.migrationRecoveryAttempts=0
+                                        setState(slotIndex,SlotState.Occupied(occupied.displayId,mainTask.taskId,mainTask.component),
+                                            "phased exchange committed")
+                                        promotedRecoveryTaskId=slotTask.taskId
+                                        promotedRecoveryUserId=slotTask.userId
+                                        promotedRecoveryComponent=slotTask.component
+                                        promotedRecoveryDeadline=SystemClock.uptimeMillis()+MIGRATION_RECOVERY_WINDOW_MS
+                                        promotedRecoveryAttempts=0
+                                        schedulePromotedTaskRecovery()
+                                        StageExchangeTelemetry.phasedEvent("demote_complete")
+                                    }.exceptionOrNull()
+                                    done(commitError)
+                                }
+                            }
                         }
                     }
                 }
@@ -2760,6 +2821,28 @@ class SlotTaskCoordinator(
         started.exceptionOrNull()?.let(done)
     }
 
+    private fun queryTasksNonBlocking(
+        stillCurrent: () -> Boolean,
+        done: (Result<List<TaskRepository.TaskSnapshot>>) -> Unit,
+    ) {
+        val before=runCatching { check(stillCurrent()) {"Stale exchange before task query"} }.exceptionOrNull()
+        if(before!=null){done(Result.failure(before));return}
+        var snapshots:List<TaskRepository.TaskSnapshot>?=null
+        val accepted=exchangeBinderLane.submit(
+            call={snapshots=taskRepository.runningTasks()},
+            complete={ result->
+                val outcome=runCatching {
+                    result.getOrThrow()
+                    check(stillCurrent()) {"Stale exchange after task query"}
+                    checkNotNull(snapshots) {"Task query returned no snapshot result"}
+                }
+                done(outcome)
+            },
+        )
+        if(!accepted)done(Result.failure(
+            IllegalStateException("Serialized exchange Binder lane busy during task query")))
+    }
+
     private fun moveTaskToDisplayNonBlocking(
         expected: TaskRepository.TaskSnapshot, displayId: Int,
         sameTurnSource:TaskRepository.TaskSnapshot?=null,
@@ -2813,34 +2896,30 @@ class SlotTaskCoordinator(
                 check(stillCurrent()) {"Stale exchange after actual display Binder reply"}
                 val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
                 fun observe() {
-                val result = runCatching {
-                    check(stillCurrent()) {"Stale exchange during display observation"}
-                    // findTask already reads the full running task list. Keep
-                    // the same single observation but reuse its foreground proof
-                    // for the optional early buffer checkpoint, not another query.
-                    val running=taskRepository.runningTasks()
-                    check(stillCurrent()) {"Exchange expired during display observation"}
-                    val current=running.firstOrNull{it.taskId==taskId}
-                    if (current != null) checkIdentity(current)
-                    if (current != null && current.displayId == displayId) {
-                        if(onObservedDestinationFront!=null &&
-                            running.firstOrNull{it.displayId==displayId}?.taskId==taskId)
-                            onObservedDestinationFront.invoke(current)
-                        StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
-                        NeXtepLog.info("task_continuity",
-                            "async_move_observed task=$taskId display=$displayId")
-                        done(Result.success(current))
-                    } else if (SystemClock.uptimeMillis() >= deadline) {
-                        done(Result.failure(IllegalStateException(
-                            "Async task move did not settle task=$taskId expected=$displayId actual=${current?.displayId}"
-                        )))
-                    } else {
-                        // No sleep: let the compositor draw other frames.
-                        exchangeHandler.postDelayed({ observe() }, DISPLAY_MOVE_POLL_MS)
+                    queryTasksNonBlocking(stillCurrent){ queryResult->
+                        val running=queryResult.getOrElse { done(Result.failure(it));return@queryTasksNonBlocking }
+                        val observed=runCatching {
+                            check(stillCurrent()) {"Exchange expired during display observation"}
+                            val current=running.firstOrNull{it.taskId==taskId}
+                            if(current!=null)checkIdentity(current)
+                            if(current!=null && current.displayId==displayId){
+                                if(onObservedDestinationFront!=null &&
+                                    running.firstOrNull{it.displayId==displayId}?.taskId==taskId)
+                                    onObservedDestinationFront.invoke(current)
+                                StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
+                                NeXtepLog.info("task_continuity",
+                                    "async_move_observed task=$taskId display=$displayId")
+                                current
+                            }else{
+                                if(SystemClock.uptimeMillis()>=deadline)
+                                    error("Async task move did not settle task=$taskId expected=$displayId actual=${current?.displayId}")
+                                null
+                            }
+                        }.getOrElse { done(Result.failure(it));return@queryTasksNonBlocking }
+                        if(observed!=null)done(Result.success(observed))
+                        else exchangeHandler.postDelayed({observe()},DISPLAY_MOVE_POLL_MS)
                     }
                 }
-                result.exceptionOrNull()?.let { done(Result.failure(it)) }
-            }
                 observe()
             }
             val accepted=exchangeBinderLane.submit(

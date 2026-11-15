@@ -21,7 +21,42 @@ pr89_review=json.loads((root/'scripts/reviewed-pr89-foreground-binder-0.9.65.jso
 pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').read_text())['files']
 # PR91: cancel only forward observation, never release a submitted IPC early.
 pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
+# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.
+pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']
+def undo_pr92(path,data):
+ if path not in pr92_review:return data
+ spec=pr92_review[path]
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,(path,patch['after'][:100])
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
+ assert blob==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr92_review:
+ undo_pr92(reviewed_path,(root/reviewed_path).read_bytes())
+_pr92=(k/'display/SlotTaskCoordinator.kt').read_text()
+_pr92_start=_pr92.split('private fun startPhasedSwap(',1)[1].split('private fun startPhasedSwapWithTasks(',1)[0]
+_pr92_promote=_pr92.split('override fun promoteAsync(',1)[1].split('override fun demoteAndVerifyAsync(',1)[0]
+_pr92_demote=_pr92.split('override fun demoteAndVerifyAsync(',1)[1].split('override fun promote()',1)[0]
+_pr92_move=_pr92.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('private fun moveTaskToDisplayAndWait(',1)[0]
+_pr92_query=_pr92.split('private fun queryTasksNonBlocking(',1)[1].split('private fun moveTaskToDisplayNonBlocking(',1)[0]
+assert 'queryTasksNonBlocking(stillPreparing)' in _pr92_start
+assert 'taskRepository.runningTasks()' not in _pr92_start
+assert 'queryTasksNonBlocking(::forwardCurrent)' in _pr92_promote
+assert 'taskRepository.runningTasks()' not in _pr92_promote
+assert 'ActivityTaskManagerCompat.setTaskResizeable(' not in _pr92_promote.split('call={',1)[0]
+assert 'ActivityTaskManagerCompat.setTaskResizeable(' in _pr92_promote.split('call={',1)[1]
+assert 'queryTasksNonBlocking(::forwardCurrent)' in _pr92_demote
+assert 'taskRepository.runningTasks()' not in _pr92_demote
+assert 'queryTasksNonBlocking(stillCurrent)' in _pr92_move
+assert 'taskRepository.runningTasks()' not in _pr92_move
+assert 'call={snapshots=taskRepository.runningTasks()}' in _pr92_query
+assert 'exchangeBinderLane.submit(' in _pr92_query
+assert 'check(stillCurrent())' in _pr92_query
 def undo_pr91(path,data):
+ data=undo_pr92(path,data)
  if path not in pr91_review:return data
  spec=pr91_review[path]
  source=data.decode('utf-8')
