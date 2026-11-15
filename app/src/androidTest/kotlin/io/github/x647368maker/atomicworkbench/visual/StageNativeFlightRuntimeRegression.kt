@@ -54,6 +54,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
         lateinit var small:Rect
         lateinit var main:Rect
         lateinit var other:Rect
+        lateinit var sourceRoots:List<Rect>
+        var hostWidth=0
         val evidence=mutableListOf<String>()
         fun shot():Bitmap=checkNotNull(inst.uiAutomation.takeScreenshot())
         fun save(frame:Bitmap,name:String) {
@@ -70,7 +72,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             .apply { isAccessible=true }
         class Attempt(val flight:StageLiveSurfaceExchange,val a:SurfaceControl,val b:SurfaceControl,
                       val ended:CountDownLatch,val finishes:AtomicInteger,val moves:AtomicInteger)
-        fun begin(cancelImmediately:Boolean=false):Attempt {
+        fun begin(cancelImmediately:Boolean=false,detachImmediately:Boolean=false):Attempt {
             var result:Attempt?=null
             inst.runOnMainSync {
                 var a:SurfaceControl?=null
@@ -105,6 +107,11 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         { finishes.incrementAndGet();StageExchangeTelemetry.endNativeTap("instrumented_finish",traceId);ended.countDown() },true))
                     result=Attempt(engine,ma,mb,ended,finishes,moves)
                     if(cancelImmediately) { engine.stop();engine.stop() }
+                    if(detachImmediately) {
+                        // Actual framework detach, not an injected isAttached flag.
+                        activity.setContentView(FrameLayout(activity).apply { setBackgroundColor(background) })
+                        check(!host.isAttachedToWindow) { "Old compositor host was not detached" }
+                    }
                 } finally {
                     if(result==null) {
                         val failedFlight=flight
@@ -118,7 +125,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             }
             return checkNotNull(result)
         }
-        fun awaitReleased(a:Attempt,label:String) {
+        fun awaitHandlesReleased(a:Attempt,label:String) {
             check(a.ended.await(4,TimeUnit.SECONDS)) { "No completion after $label" }
             check(a.finishes.get()==1 && a.moves.get()==0) { "Duplicate finish or unexpected move: $label" }
             inst.runOnMainSync {
@@ -126,6 +133,9 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     "Live mirror handle remained after $label"
                 }
             }
+        }
+        fun awaitReleased(a:Attempt,label:String) {
+            awaitHandlesReleased(a,label)
             var restored=false
             for(i in 1..8) {
                 Thread.sleep(55)
@@ -145,7 +155,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             inst.runOnMainSync {
                 host.removeAllViews();host.setBackgroundColor(background)
                 host.getLocationOnScreen(origin)
-                check(host.width>=1000 && host.height>=1800) { "Unexpected API37 test display" }
+                hostWidth=host.width
+                check(hostWidth>=1000 && host.height>=1800) { "Unexpected API37 test display" }
                 small=Rect(80,450,260,690)
                 main=Rect(400,1050,940,1770)
                 other=Rect(820,450,1000,690)
@@ -164,9 +175,28 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             }
             inst.waitForIdleSync()
             Thread.sleep(300)
+            inst.runOnMainSync {
+                // Source positions include the status-bar inset; a requested
+                // PopupWindow offset is NOT its actual physical position.
+                sourceRoots=listOf(first,second).map { view ->
+                    check(view.isAttachedToWindow && view.width>0 && view.height>0)
+                    val at=IntArray(2);view.getLocationOnScreen(at)
+                    Rect(at[0]-origin[0],at[1]-origin[1],
+                        at[0]-origin[0]+view.width,at[1]-origin[1]+view.height)
+                }
+            }
+            evidence.add("hostOrigin=${origin.joinToString()} sourceRoots=${sourceRoots.joinToString()}")
             // Interrupt before a later commit/timer can start the animation.
             val early=begin(cancelImmediately=true)
             awaitReleased(early,"early")
+            if(pairedRail) {
+                // No screenshot/sleep between two actual sessions. Posted
+                // callbacks from the old session must not finish its successor.
+                val rapidA=begin(cancelImmediately=true)
+                val rapidB=begin(cancelImmediately=true)
+                awaitReleased(rapidA,"rapid-a")
+                awaitReleased(rapidB,"rapid-b")
+            }
             // Recreate immediately after cleanup, observe physical moving pixels,
             // and cancel the active flight. Repeat with stale task preflight.
             for(label in listOf("mid","stale")) {
@@ -177,6 +207,13 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     var last:Bitmap?=null
                     var firstMoving:Bitmap?=null
                     var firstCenters:FloatArray?=null
+                    var distinctMoving=false
+                    var outsideBoth=false
+                    val pixels=IntArray(hostWidth)
+                    val axisX=(main.centerX()-small.centerX()).toFloat()
+                    val axisY=(main.centerY()-small.centerY()).toFloat()
+                    val axisLength=kotlin.math.hypot(axisX,axisY)
+                    fun projection(x:Float,y:Float)=(x*axisX+y*axisY)/axisLength
                     val start=SystemClock.uptimeMillis()
                     val deadline=start+1450L
                     // Retain only one screenshot while sampling. Compression
@@ -195,26 +232,39 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             }
                             var up=0;var down=0;var movedUp=0;var movedDown=0
                             var ux=0L;var uy=0L;var dx=0L;var dy=0L
-                            for(y in small.top until main.bottom step 12)
-                                for(x in 0 until host.width step 12) {
-                                    val c=pixel(frame,x,y)
+                            for(y in small.top until main.bottom step 12) {
+                                // Read a row in one call. The scan remains at the
+                                // original 12px resolution; never change the image.
+                                frame.getPixels(pixels,0,hostWidth,origin[0],origin[1]+y,hostWidth,1)
+                                for(x in 0 until hostWidth step 12) {
+                                    if(sourceRoots.any{it.contains(x,y)})continue
+                                    val c=pixels[x]
                                     if(matches(c,blue)) { up++; ux+=x;uy+=y;if(!small.contains(x,y))movedUp++ }
                                     if(matches(c,orange)) { down++;dx+=x;dy+=y;if(!main.contains(x,y))movedDown++ }
                                 }
+                            }
                             val both=up>12 && down>12 && movedUp>12 && movedDown>12
                             if(!pairedRail)moving=both
-                            else if(both) {
+                            else if(up>12 && down>12) {
                                 val centers=floatArrayOf(ux.toFloat()/up,uy.toFloat()/up,dx.toFloat()/down,dy.toFloat()/down)
+                                val forwardIn=projection(centers[0]-small.centerX(),centers[1]-small.centerY())
+                                val forwardOut=projection(main.centerX()-centers[2],main.centerY()-centers[3])
+                                if(both)outsideBoth=true
                                 val prior=firstCenters
-                                if(prior==null) { firstCenters=centers;firstMoving=frame }
-                                else {
-                                    // Both moving clusters must change their actual
-                                    // screen positions by more than one sampling cell.
-                                    val d1=kotlin.math.hypot(centers[0]-prior[0],centers[1]-prior[1])
-                                    val d2=kotlin.math.hypot(centers[2]-prior[2],centers[3]-prior[3])
-                                    moving=d1>12f && d2>12f
-                                    evidence.add("$label distinct displacement blue=$d1 orange=$d2")
+                                if(prior==null && forwardIn>12f && forwardOut>12f) {
+                                    firstCenters=centers;firstMoving=frame
+                                } else if(prior!=null) {
+                                    val d1=projection(centers[0]-prior[0],centers[1]-prior[1])
+                                    val d2=projection(prior[2]-centers[2],prior[3]-centers[3])
+                                    if(d1>12f && d2>12f)distinctMoving=true
+                                    evidence.add("$label distinct forward displacement blue=$d1 orange=$d2")
+                                    // Mid is an interruption test, not proof of
+                                    // a completed swap. The stale-terminal case
+                                    // ALSO requires actual external footprint
+                                    // pixels from both departing mirrors.
+                                    moving=distinctMoving && (label=="mid" || outsideBoth) && d1>12f && d2>12f
                                 }
+                                evidence.add("$label actual_centers=${centers.joinToString()} forward=$forwardIn/$forwardOut bothOutside=$both")
                             }
                             evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
                         }
@@ -234,7 +284,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         evidence.add("$label samples=$samples elapsed=${SystemClock.uptimeMillis()-start}ms ended=${attempt.ended.count==0L}")
                     }
                     check(moving) {
-                        "No two moving real GPU card pixel regions during $label; samples=$samples; inspect native-flight-runtime.txt and native-flight-trace.txt"
+                        "No two moving real GPU card pixel regions during $label; samples=$samples distinct=$distinctMoving bothOutside=$outsideBoth; inspect native-flight-runtime.txt and native-flight-trace.txt"
                     }
                     awaitReleased(attempt,label)
                     if(label=="stale") inst.runOnMainSync {
@@ -249,7 +299,27 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     }
                 } finally { inst.runOnMainSync { attempt.flight.stop() } }
             }
-            return if(pairedRail) "PASS paired contain trial: two distinct dual-moving physical frames, protected slot, cancellation and stale migration rejection"
+            if(pairedRail) {
+                val detached=begin(detachImmediately=true)
+                awaitHandlesReleased(detached,"host-detach")
+                inst.runOnMainSync {
+                    check(!host.isAttachedToWindow)
+                    p1?.dismiss();p2?.dismiss()
+                }
+                var gone=false
+                for(i in 1..8) {
+                    Thread.sleep(55)
+                    val frame=shot()
+                    try {
+                        gone=matches(pixel(frame,small.centerX(),small.centerY()),background) &&
+                            matches(pixel(frame,main.centerX(),main.centerY()),background)
+                        if(gone) { save(frame,"native-flight-clean-host-detach.png");break }
+                    } finally { frame.recycle() }
+                }
+                check(gone) { "Detached host left visible mirror/mask pixels" }
+                evidence.add("host-detach: actual detach, one finish, no move, both handles released, pixels restored")
+            }
+            return if(pairedRail) "PASS paired contain trial: distinct source-excluded moving frames, both outgoing footprints, protected slot, rapid cancellation, host detach and stale migration rejection"
                 else "PASS production native GPU animator: moving live roots, protected slot, early/mid cancellation, stale migration rejection, repeat cleanup"
         } finally {
             File(out,"native-flight-runtime.txt").writeText(evidence.joinToString("\n"))

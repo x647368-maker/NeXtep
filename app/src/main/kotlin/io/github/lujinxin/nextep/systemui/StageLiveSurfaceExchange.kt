@@ -332,9 +332,14 @@ internal class StageLiveSurfaceExchange private constructor(
                 }
                 val incomingCrop = StageLiveSurfaceFlightGeometry.Crop(
                     localCrop.left, localCrop.top, localCrop.right, localCrop.bottom)
-                val pairedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && BuildConfig.ATOMIC_PAIRED_RAIL_TRIAL)
+                val pairedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && BuildConfig.ATOMIC_PAIRED_RAIL_TRIAL) {
+                    val began=SystemClock.elapsedRealtimeNanos()
                     planPairedRail(from,to,incomingCrop,outgoingCrop,StageLiveSurfaceFlightGeometry.Box(
-                        0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),obstacles) else null
+                        0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),obstacles).also { plan ->
+                        StageExchangeTelemetry.nativeEvent("paired_prepare_us="+
+                            (SystemClock.elapsedRealtimeNanos()-began)/1000L+" accepted="+(plan!=null))
+                    }
+                } else null
                 // Only contain bounds are certified by the new trial.
                 // Keep the original covered/contain route when rejected.
                 val coveredFlight = pairedPlan==null && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
@@ -548,11 +553,15 @@ internal class StageLiveSurfaceExchange private constructor(
             trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
             if (moveAsync != null) {
+                // First callback owns the result, even if the provider throws
+                // after calling it synchronously. Do not discard a verified
+                // migration or allow a second callback to retract it.
+                val ackClaimed=AtomicBoolean(false)
                 runCatching {
                     moveAsync { ok ->
-                        ui.post {
+                        if(ackClaimed.compareAndSet(false,true)) ui.post {
                             if (!isRunning || moveComplete) return@post
-                            if (!ok) { stop(); return@post }
+                            if (hostDetached || !host.isAttachedToWindow || !ok) { stop(); return@post }
                             moveComplete = true
                             moveCompletedAt = SystemClock.uptimeMillis()
                             trace(
@@ -561,8 +570,10 @@ internal class StageLiveSurfaceExchange private constructor(
                         }
                     }
                 }.onFailure {
-                    NeXtepLog.warn("native_swap", "Real phased move failed",it)
-                    stop()
+                    if(ackClaimed.compareAndSet(false,true)) {
+                        runCatching { NeXtepLog.warn("native_swap", "Real phased move failed",it) }
+                        stop()
+                    } else runCatching { trace("native_move_exception_after_callback") }
                 }
             } else {
                 val ok=runCatching(move).getOrDefault(false)
