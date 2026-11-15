@@ -1627,9 +1627,8 @@ class SlotTaskCoordinator(
         var moveRequested = false
         var animationFinished = false
         fun finish() {
-            if (token != transitionGeneration) return
-            if (exchangeSession?.settled == false) return
-            if (!animationFinished) return
+            if (!StagePhasedFinishGate.canFinish(token==transitionGeneration,
+                    transitionInProgress,exchangeSession?.settled!=false,animationFinished)) return
             StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)
             confirmedOutput=null
             exchangeSession = null

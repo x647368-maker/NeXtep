@@ -23,6 +23,28 @@ pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').
 pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
 # PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.
 pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']
+# Phased finish-once guard: normalize only the exact scoped changes first.
+finish_once_review=json.loads((root/'scripts/reviewed-phased-finish-once-v83.json').read_text())['files']
+assert set(finish_once_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt','scripts/verify-state-continuity.py'}
+def undo_finish_once(path,data):
+ if path not in finish_once_review:return data
+ spec=finish_once_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in finish_once_review:
+ undo_finish_once(reviewed_path,(root/reviewed_path).read_bytes())
+_finish_once=(k/'display/SlotTaskCoordinator.kt').read_text().split('private fun runPhasedMainTransition(',1)[1].split('private fun startPhasedSwap(',1)[0]
+assert 'StagePhasedFinishGate.canFinish(token==transitionGeneration,' in _finish_once
+assert 'transitionInProgress,exchangeSession?.settled!=false,animationFinished)' in _finish_once
+assert _finish_once.index('transitionInProgress = false')<_finish_once.index('slots.forEach { it.view.setBusy(suspended')
+assert 'current && inProgress && settled && visualFinished' in (k/'display/StagePhasedFinishGate.kt').read_text()
 # PR103 only revokes abandoned preview work; preserve the full earlier freeze chain.
 pr103_review=json.loads((root/'scripts/reviewed-pr103-cancel-preview-v83.json').read_text())['files']
 assert set(pr103_review)=={
@@ -31,6 +53,7 @@ assert set(pr103_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt',
 }
 def undo_pr103(path,data):
+ data=undo_finish_once(path,data)
  if path not in pr103_review:return data
  spec=pr103_review[path]
  blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()

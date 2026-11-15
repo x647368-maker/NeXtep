@@ -1,0 +1,24 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
+      "previous_blob_sha1": "2e30e5d8d59151f8751fe76be3edb8163784fb0b",
+      "reviewed_blob_sha1": "daaff7b8bdd1fc9a4c7502b03e9c7ef49b8ee8bf",
+      "patches": [
+        {
+          "before": "        var animationFinished = false\n        fun finish() {\n            if (token != transitionGeneration) return\n            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null",
+          "after": "        var animationFinished = false\n        fun finish() {\n            if (!StagePhasedFinishGate.canFinish(token==transitionGeneration,\n                    transitionInProgress,exchangeSession?.settled!=false,animationFinished)) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null"
+        }
+      ]
+    },
+    "scripts/verify-state-continuity.py": {
+      "previous_blob_sha1": "dc6d577d14ad20476031b753ef921257efaaf212",
+      "reviewed_blob_sha1": "75848cda4cfc1c141d9bba4213f4a03f5e2d4d2e",
+      "patches": [
+        {
+          "before": "# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.\npr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']\n# PR103 only revokes abandoned preview work; preserve the full earlier freeze chain.\npr103_review=json.loads((root/'scripts/reviewed-pr103-cancel-preview-v83.json').read_text())['files']\nassert set(pr103_review)=={\n 'scripts/verify-state-continuity.py',\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt',\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt',\n}\ndef undo_pr103(path,data):\n if path not in pr103_review:return data\n spec=pr103_review[path]",
+          "after": "# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.\npr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']\n# Phased finish-once guard: normalize only the exact scoped changes first.\nfinish_once_review=json.loads((root/'scripts/reviewed-phased-finish-once-v83.json').read_text())['files']\nassert set(finish_once_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt','scripts/verify-state-continuity.py'}\ndef undo_finish_once(path,data):\n if path not in finish_once_review:return data\n spec=finish_once_review[path]\n blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()\n assert blob(data)==spec['reviewed_blob_sha1'],path\n source=data.decode('utf-8')\n for patch in reversed(spec['patches']):\n  assert source.count(patch['after'])==1,path\n  source=source.replace(patch['after'],patch['before'],1)\n prior=source.encode('utf-8')\n assert blob(prior)==spec['previous_blob_sha1'],path\n return prior\nfor reviewed_path in finish_once_review:\n undo_finish_once(reviewed_path,(root/reviewed_path).read_bytes())\n_finish_once=(k/'display/SlotTaskCoordinator.kt').read_text().split('private fun runPhasedMainTransition(',1)[1].split('private fun startPhasedSwap(',1)[0]\nassert 'StagePhasedFinishGate.canFinish(token==transitionGeneration,' in _finish_once\nassert 'transitionInProgress,exchangeSession?.settled!=false,animationFinished)' in _finish_once\nassert _finish_once.index('transitionInProgress = false')<_finish_once.index('slots.forEach { it.view.setBusy(suspended')\nassert 'current && inProgress && settled && visualFinished' in (k/'display/StagePhasedFinishGate.kt').read_text()\n# PR103 only revokes abandoned preview work; preserve the full earlier freeze chain.\npr103_review=json.loads((root/'scripts/reviewed-pr103-cancel-preview-v83.json').read_text())['files']\nassert set(pr103_review)=={\n 'scripts/verify-state-continuity.py',\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt',\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt',\n}\ndef undo_pr103(path,data):\n data=undo_finish_once(path,data)\n if path not in pr103_review:return data\n spec=pr103_review[path]"
+        }
+      ]
+    }
+  }
+}
