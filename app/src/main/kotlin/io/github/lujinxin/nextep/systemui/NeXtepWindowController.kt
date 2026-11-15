@@ -1239,26 +1239,82 @@ class NeXtepWindowController(
 
     private fun quickSelected(entry: io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository.AppEntry, anchor: View, long: Boolean) {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
-        fun open(slot: Int? = null) {
-            val engine = slotCoordinator ?: return
-            if (!engine.isGroupRestoreReady()) { showStageMessage("窗口正在切换"); return }
-            val existing = StageQuickPolicy.existing("${entry.userId}:${entry.component.packageName}",
-                taskRepository.runningTasks().associate { "${it.userId}:${it.component.packageName}" to it.taskId })
-            val result = if (slot == null) engine.openInMain(entry.launchIntent(), preferredTaskId = existing) else engine.replaceWindow(slot, entry.launchIntent())
-            result.onFailure { showStageMessage(it.message ?: "应用未打开") }
-            frequentApps.observe(entry.component.packageName, entry.userId)
+        fun ready(): SlotTaskCoordinator? {
+            if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return null
+            val engine = slotCoordinator ?: return null
+            if (!engine.isGroupRestoreReady()) {
+                showStageMessage("窗口正在切换，请稍后重试")
+                return null
+            }
+            return engine
+        }
+        // Use the same exact-component / first same-user package resolution as
+        // the coordinator, never a last-wins package map that overwrites tasks.
+        fun existingSlot(engine: SlotTaskCoordinator): Int? {
+            val task = taskRepository.findTaskForComponent(entry.component,
+                io.github.x647368maker.atomicworkbench.apps.LauncherAppRepository.userHandle(entry.userId),
+                allowPackageFallback = entry.component.packageName != TriggerBroadcastContract.MODULE_PACKAGE)
+                ?: return null
+            return StageQuickSlotPolicy.ownedSlot(task.taskId, task.displayId,
+                engine.slotStates().map { state ->
+                    (state as? SlotState.Occupied)?.let { StageQuickSlotPolicy.Owner(it.taskId, it.displayId) }
+                })
+        }
+        fun reveal() {
+            if (sidebarCollapsed) setSidebarCollapsed(false)
+            if (smartRail.hidden) smartRail.interact()
+        }
+        fun open() {
+            val engine = ready() ?: return
+            val source = existingSlot(engine)
+            val result = if (source != null) {
+                reveal()
+                // Existing small-window tasks follow the established phased
+                // exchange path, rather than the synchronous top-app promotion.
+                if (ready() !== engine) return
+                engine.openFromLauncher(entry.launchIntent())
+            } else engine.openInMain(entry.launchIntent())
+            result.onSuccess { frequentApps.observe(entry.component.packageName, entry.userId) }
+                .onFailure { showStageMessage(it.message ?: "应用未打开") }
+        }
+        fun small(target: Int? = null, expected: Int? = null) {
+            val engine = ready() ?: return
+            val source = existingSlot(engine)
+            val ids = engine.slotStates().map { (it as? SlotState.Occupied)?.taskId }
+            when (StageQuickSlotPolicy.action(ids, source, target, expected)) {
+                StageQuickSlotPolicy.Action.STALE -> showStageMessage("小窗已变化，请重新选择")
+                StageQuickSlotPolicy.Action.ALREADY_PRESENT -> {
+                    reveal()
+                    showStageMessage("应用已在小窗 ${source!! + 1}，保留原任务")
+                }
+                StageQuickSlotPolicy.Action.FULL -> showStageMessage("四个小窗已满，请明确选择要替换的小窗")
+                StageQuickSlotPolicy.Action.ADD -> {
+                    addStageWindow(engine,entry.launchIntent())
+                        .onSuccess { frequentApps.observe(entry.component.packageName, entry.userId) }
+                        .onFailure { showStageMessage(it.message ?: "小窗未打开") }
+                }
+                StageQuickSlotPolicy.Action.REPLACE -> {
+                    reveal()
+                    if (ready() !== engine) return
+                    // Revealing a rail can trigger a synchronous layout callback.
+                    if ((engine.slotStates().getOrNull(target!!) as? SlotState.Occupied)?.taskId != expected) {
+                        showStageMessage("小窗已变化，请重新选择")
+                        return
+                    }
+                    engine.replaceWindow(target,entry.launchIntent())
+                        .onSuccess { frequentApps.observe(entry.component.packageName, entry.userId) }
+                        .onFailure { showStageMessage(it.message ?: "小窗未打开") }
+                }
+            }
         }
         if (!long) { open(); return }
         val actions = mutableListOf<Pair<String, () -> Unit>>()
         actions += "启动 / 切换到主窗" to { open() }
-        actions += "添加到小窗" to {
-            slotCoordinator?.let { addStageWindow(it,entry.launchIntent()).onFailure { error -> showStageMessage(error.message ?: "小窗未打开") } }
-        }
-        slotCoordinator?.slotStates()?.forEachIndexed { index, state -> if (state is SlotState.Occupied) {
+        val menuStates = slotCoordinator?.slotStates().orEmpty()
+        if (menuStates.any { it !is SlotState.Occupied }) actions += "添加到小窗" to { small() }
+        menuStates.forEachIndexed { index, state -> if (state is SlotState.Occupied) {
             val expected = state.taskId
-            actions += "替换小窗 ${index + 1}" to {
-                if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId == expected) open(index)
-            }
+            actions += "替换小窗 ${index + 1}" to { small(index,expected) }
         } }
         val g = currentGeometry()
         val pinLimit = maxOf(6,io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
