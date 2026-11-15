@@ -9,6 +9,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
     private val prefs = context.getSharedPreferences("atomic_smart_rail_v1", Context.MODE_PRIVATE)
     var enabled = prefs.getBoolean("enabled", false); private set
     var pinned = prefs.getBoolean("pinned", false); private set
+    var idleSeconds = prefs.getInt("idle_seconds", 5).takeIf { it in listOf(3, 5, 10, 15, 30) } ?: 5; private set
     var hidden = false; private set
     private var retries = 0
     private var pending = false
@@ -19,7 +20,7 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
         pending = false
         if (enabled && !pinned && !hidden) {
             pending = true
-            handler.postDelayed(idle, 3500)
+            handler.postDelayed(idle, idleSeconds * 1000L)
         }
     }
     /** Event-driven rearm after a new foreground task or workspace activation.
@@ -37,6 +38,12 @@ internal class StageSmartRail(context: Context, private val handler: Handler,
         enabled = value; prefs.edit().putBoolean("enabled", value).apply()
         retries = 0
         if (!value) stop() else interact()
+    }
+    fun setIdleSeconds(value: Int) {
+        require(value in listOf(3, 5, 10, 15, 30))
+        idleSeconds = value
+        prefs.edit().putInt("idle_seconds", value).apply()
+        interact()
     }
     fun setPinned(value: Boolean) {
         pinned = value; prefs.edit().putBoolean("pinned", value).apply()
