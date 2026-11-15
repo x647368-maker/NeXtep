@@ -16,7 +16,7 @@ REVIEW_TARGET = "b4ef45a111702da7bee85029c981ccc31a9411e5"
 SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
-NEW = {"app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c", "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": "dc9e1769f44047613a545a76d6b2f7687aad87d8", "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "099b6e29101c369e11d4c1ee40a2aaac0f532630"}
+NEW = {"app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c", "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": "dc9e1769f44047613a545a76d6b2f7687aad87d8", "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "68c3d904110a75116fce7085f86fd3b33c648d19"}
 PINS = {
     MAIN+"StageSparseRailReflowAnimator.kt": ("fde92eb3dd4f5d13cb3b6d1b4dfdc9d82ed2618b", "f24f84845cabbcc61c9deedd6194e708fe29e424"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageSparseRailMotionRegression.kt": ("0beb558911b7b41e45fb40a9cdfd5593baf93b64", "087cc5efbdfc91318ce539d48ee616d9a5ef43cd"),

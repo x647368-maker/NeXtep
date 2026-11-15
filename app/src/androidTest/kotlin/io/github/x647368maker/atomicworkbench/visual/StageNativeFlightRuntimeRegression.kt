@@ -109,7 +109,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     if(cancelImmediately) { engine.stop();engine.stop() }
                     if(detachImmediately) {
                         // Actual framework detach, not an injected isAttached flag.
-                        activity.setContentView(FrameLayout(activity).apply { setBackgroundColor(background) })
+                        activity.setContentView(FrameLayout(activity).apply { setBackgroundColor(this@StageNativeFlightRuntimeRegression.background) })
                         check(!host.isAttachedToWindow) { "Old compositor host was not detached" }
                     }
                 } finally {
