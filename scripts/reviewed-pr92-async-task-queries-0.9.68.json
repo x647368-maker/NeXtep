@@ -51,7 +51,7 @@
         },
         {
           "before": "assert _pr91_move.count('check(stillCurrent())')==4\nassert _pr91_move.index('Stale exchange during display observation')<_pr91_move.index('taskRepository.runningTasks()')",
-          "after": "assert _pr91_move.count('check(stillCurrent())')==2\nassert 'queryTasksNonBlocking(stillCurrent)' in _pr91_move\nassert 'taskRepository.runningTasks()' not in _pr91_move"
+          "after": "assert _pr91_move.count('check(stillCurrent())')==3\nassert 'queryTasksNonBlocking(stillCurrent)' in _pr91_move\nassert 'taskRepository.runningTasks()' not in _pr91_move"
         },
         {
           "before": "assert 'check(stillCurrent())' in _pr92_query\ndef undo_pr91(path,data):",

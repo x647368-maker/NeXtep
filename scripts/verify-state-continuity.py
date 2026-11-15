@@ -81,7 +81,7 @@ _pr91_move=_pr91.split('private fun moveTaskToDisplayNonBlocking(',1)[1].split('
 assert 'exchangeSession?.acceptsForwardWork==true' in _pr91
 assert _pr91.count('stillCurrent=::forwardCurrent')==4
 assert '!cancelled && now() < deadline' in _pr91_session
-assert _pr91_move.count('check(stillCurrent())')==2
+assert _pr91_move.count('check(stillCurrent())')==3
 assert 'queryTasksNonBlocking(stillCurrent)' in _pr91_move
 assert 'taskRepository.runningTasks()' not in _pr91_move
 assert 'else runCatching{afterBinder()}.onFailure{done(Result.failure(it))}' in _pr91_move
