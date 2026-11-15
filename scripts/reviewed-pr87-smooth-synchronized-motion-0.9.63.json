@@ -320,6 +320,14 @@
         {
           "before": "        attemptNative: Boolean = true,\n    ) {\n        // P0 (3731.mp4 + PR51 real-device feedback):",
           "after": "        attemptNative: Boolean = true,\n    ) {\n        // The snapshot/mirror must sample the settled physical rail bounds.\n        // Invalidate a queued or running layout-entry cue before capture.\n        cancelRailLayoutMotion()\n        // P0 (3731.mp4 + PR51 real-device feedback):"
+        },
+        {
+          "before": "    private var lastN5ParallelObservedMs: Long = 0L",
+          "after": "    private var lastN5ParallelObservedMs: Long = 0L\n    private var lastN5ParallelAttemptMs: Long? = null"
+        },
+        {
+          "before": "        if (SystemClock.uptimeMillis() - lastN5ParallelObservedMs < 800L) return",
+          "after": "        val now = SystemClock.uptimeMillis()\n        if (lastN5ParallelAttemptMs?.let { now - it < 800L } == true) return\n        // Throttle attempts, including failed queries and transient SystemUI foregrounds.\n        // Keep the successful observation timestamp separate for diagnostic age.\n        lastN5ParallelAttemptMs = now"
         }
       ]
     },
