@@ -137,6 +137,19 @@
           "after": "                    val plannedAt=SystemClock.uptimeMillis()\n                    if(!waitingCapture){a?.recycle();b?.recycle();return@execute}\n                    ui.post {"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageExchangeTelemetry.kt": {
+      "previous_blob_sha1": "3cfd83f310511dd68b0367025b6ce8c76956ace6",
+      "patches": [
+        {
+          "before": "    // One-shot, in-memory async task timing. No timer, capture, frame loop or I/O.\n    private var phasedStartedAt = 0L\n    private var phasedLastAt = 0L\n    private val phasedSegments = StringBuilder()\n    @Volatile private var phasedReport = \"尚无异步任务交换样本\"\n    fun beginPhased(label:String) {\n        val t=SystemClock.uptimeMillis()\n        phasedStartedAt=t\n        phasedLastAt=t\n        phasedSegments.setLength(0)\n        phasedSegments.append(label.take(28))\n    }\n    fun phasedEvent(event:String) {\n        if(phasedStartedAt==0L || phasedSegments.length>=850)return\n        val t=SystemClock.uptimeMillis()\n        phasedSegments.append(\" / \").append(event.take(36))\n            .append('=').append((t-phasedLastAt).coerceAtLeast(0L)).append(\"ms\")\n        phasedLastAt=t\n    }\n    fun endPhased(success:Boolean) {\n        if(phasedStartedAt==0L)return\n        val ms=(SystemClock.uptimeMillis()-phasedStartedAt).coerceAtLeast(0L)\n        phasedReport=\"ok=$success total=${ms}ms | $phasedSegments\"\n        phasedStartedAt=0L\n        phasedSegments.setLength(0)\n    }\n",
+          "after": "    // Bounded history keeps completion and late-stage timing even when a\n    // verbose exchange exceeds the old single 850-character report.\n    private val phasedHistory = StagePhasedTimingHistory(SystemClock::uptimeMillis)\n    fun beginPhased(label:String) = phasedHistory.begin(label)\n    fun phasedEvent(event:String) = phasedHistory.event(event)\n    fun endPhased(success:Boolean) = phasedHistory.finish(\"ok=$success\")\n    fun cancelPhased() = phasedHistory.finish(\"cancelled\")\n"
+        },
+        {
+          "before": "异步任务交换：$phasedReport",
+          "after": "最近5次异步任务交换：\\n${phasedHistory.describe()}"
+        }
+      ]
     }
   }
 }

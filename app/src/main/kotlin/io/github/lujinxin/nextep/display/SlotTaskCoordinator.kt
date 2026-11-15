@@ -1158,11 +1158,20 @@ class SlotTaskCoordinator(
     fun cancelPendingExchange() {
         exchangeSession?.takeUnless { it.settled }?.let { it.cancel(); return }
         if (!visualTransitionPending) return
+        // No unsettled ownership transaction remains. A cancelled preview
+        // must close its timings and must not leak a committed prior session
+        // into the next attempt's finish result.
+        StageExchangeTelemetry.cancelPhased()
+        confirmedOutput = null
+        exchangeSession = null
         transitionGeneration += 1
         visualTransitionPending = false
         transitionInProgress = false
         pendingSelection = null
         slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
+        val actions = exchangeEndActions.toList()
+        exchangeEndActions.clear()
+        actions.forEach { exchangeHandler.post(it) }
     }
 
     private fun swapSlots(sourceIndex: Int, targetIndex: Int) {
@@ -1622,6 +1631,9 @@ class SlotTaskCoordinator(
         transitionInProgress = true
         visualTransitionPending = true
         pendingSelection = null
+        // Match the synchronous transition's ownership boundary. A delayed
+        // launch-presentation callback cannot refit the old main mid-exchange.
+        mainSelectionGeneration += 1
         clearPromotedTaskRecovery()
         slots.forEach { it.view.setBusy(true) }
         var moveRequested = false
@@ -2060,16 +2072,17 @@ class SlotTaskCoordinator(
         mainSlotIndex: Int? = null,
         operation: () -> Unit,
     ): Result<Unit> {
+        if (transitionInProgress || recentSelectionPending) {
+            NeXtepLog.warn("slot_coordinator", "Ignored concurrent transition $label")
+            return Result.failure(IllegalStateException("Another slot transition is settling"))
+        }
+        // Reject busy requests before any synchronous foreground Binder read.
         if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&
             onPhasedMainSlotAnimation != null) {
             val main = taskRepository.foregroundTask()
             if (isExchangeableMainTask(main)) {
                 return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)
             }
-        }
-        if (transitionInProgress || recentSelectionPending) {
-            NeXtepLog.warn("slot_coordinator", "Ignored concurrent transition $label")
-            return Result.failure(IllegalStateException("Another slot transition is settling"))
         }
         val animated = animation != null || mainSlotIndex != null
         val expectedSlotState = mainSlotIndex?.let { slotRecords[it].state }

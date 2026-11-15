@@ -2,7 +2,7 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
       "previous_blob_sha1": "2e30e5d8d59151f8751fe76be3edb8163784fb0b",
-      "reviewed_blob_sha1": "707eb69b9fda80668e70fb1d382ea999599f8efa",
+      "reviewed_blob_sha1": "bf03710f149b0b0133495bfe78fd48ff39f6a3d2",
       "patches": [
         {
           "before": "        var animationFinished = false\n        fun finish() {\n            if (token != transitionGeneration) return\n            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null",
@@ -11,6 +11,18 @@
         {
           "before": "        val promotedTask = promotedRecoveryTaskId?.let(taskRepository::findTask)?.takeIf {\n            it.userId == promotedRecoveryUserId && it.component.packageName == component.packageName && it.displayId == Display.DEFAULT_DISPLAY\n        }\n        if (promotedTask != null) {\n            if (taskRepository.foregroundTask()?.taskId != promotedTask.taskId) {",
           "after": "        // Identity and foreground order come from one fresh task-list read.\n        // Presentation below still performs its original independent live lookup.\n        val recovery = StagePromotedRecoverySnapshot.select(\n            query = taskRepository::runningTasks,\n            expectedId = promotedRecoveryTaskId,\n            taskId = { it.taskId },\n            isExpected = { it.userId == promotedRecoveryUserId &&\n                it.component.packageName == component.packageName },\n            isMainDisplay = { it.displayId == Display.DEFAULT_DISPLAY },\n        )\n        val promotedTask = recovery.task\n        if (promotedTask != null) {\n            if (!recovery.isForeground) {"
+        },
+        {
+          "before": "        StageExchangeTelemetry.beginPhased(\"slot=$slotIndex\")\n        confirmedOutput=null\n        transitionInProgress = true\n        visualTransitionPending = true\n        pendingSelection = null\n        clearPromotedTaskRecovery()",
+          "after": "        StageExchangeTelemetry.beginPhased(\"slot=$slotIndex\")\n        confirmedOutput=null\n        transitionInProgress = true\n        visualTransitionPending = true\n        pendingSelection = null\n        // Match the synchronous transition's ownership boundary. A delayed\n        // launch-presentation callback cannot refit the old main mid-exchange.\n        mainSelectionGeneration += 1\n        clearPromotedTaskRecovery()"
+        },
+        {
+          "before": "    fun cancelPendingExchange() {\n        exchangeSession?.takeUnless { it.settled }?.let { it.cancel(); return }\n        if (!visualTransitionPending) return\n        transitionGeneration += 1\n        visualTransitionPending = false\n        transitionInProgress = false\n        pendingSelection = null\n        slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }\n    }",
+          "after": "    fun cancelPendingExchange() {\n        exchangeSession?.takeUnless { it.settled }?.let { it.cancel(); return }\n        if (!visualTransitionPending) return\n        // No unsettled ownership transaction remains. A cancelled preview\n        // must close its timings and must not leak a committed prior session\n        // into the next attempt's finish result.\n        StageExchangeTelemetry.cancelPhased()\n        confirmedOutput = null\n        exchangeSession = null\n        transitionGeneration += 1\n        visualTransitionPending = false\n        transitionInProgress = false\n        pendingSelection = null\n        slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }\n        val actions = exchangeEndActions.toList()\n        exchangeEndActions.clear()\n        actions.forEach { exchangeHandler.post(it) }\n    }"
+        },
+        {
+          "before": "        if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&\n            onPhasedMainSlotAnimation != null) {\n            val main = taskRepository.foregroundTask()\n            if (isExchangeableMainTask(main)) {\n                return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)\n            }\n        }\n        if (transitionInProgress || recentSelectionPending) {\n            NeXtepLog.warn(\"slot_coordinator\", \"Ignored concurrent transition $label\")\n            return Result.failure(IllegalStateException(\"Another slot transition is settling\"))\n        }",
+          "after": "        if (transitionInProgress || recentSelectionPending) {\n            NeXtepLog.warn(\"slot_coordinator\", \"Ignored concurrent transition $label\")\n            return Result.failure(IllegalStateException(\"Another slot transition is settling\"))\n        }\n        // Reject busy requests before any synchronous foreground Binder read.\n        if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&\n            onPhasedMainSlotAnimation != null) {\n            val main = taskRepository.foregroundTask()\n            if (isExchangeableMainTask(main)) {\n                return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)\n            }\n        }"
         }
       ]
     },
