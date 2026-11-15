@@ -52,6 +52,7 @@ class NeXtepWindowController(
     private var initialized = false
     private var slotCoordinator: SlotTaskCoordinator? = null
     private var sidebarCollapsed = false
+    private var railHandleTouching = false
     private var shownWindowCount = 0
     private val sparseRailMotion = StageSparseRailReflowAnimator(context)
     private var previousRailGeometry: WorkspaceGeometry? = null
@@ -170,7 +171,7 @@ class NeXtepWindowController(
     }
     private val backdropHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val smartRail = StageSmartRail(context, backdropHandler,
-        { workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked &&
+        { workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked && !railHandleTouching &&
             cinemaSlot == null && !workgroups.isSwitching() && slotCoordinator?.isGroupRestoreReady() == true &&
             !isExchangePending() && !swapAnimator.isRunning && !previewCapturePending &&
             !transientTapSwap.isRunning && liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&
@@ -267,6 +268,7 @@ class NeXtepWindowController(
 
     fun suspendForLock() {
         sparseRailMotion.cancel()
+        railHandleTouching = false
         smartRail.stop(restorePresentation = false)
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); cancelCinemaChecks()
@@ -441,6 +443,7 @@ class NeXtepWindowController(
     fun hide() {
         sparseRailMotion.cancel()
         previousRailGeometry = null
+        railHandleTouching = false
         smartRail.stop(restorePresentation = false)
         cinemaEpoch++; directionDebounce.reset()
         mediaSignals.stop(); cancelCinemaChecks()
@@ -1044,7 +1047,8 @@ class NeXtepWindowController(
         setWindowBounds(record.title, params, geometry)
         if (record.title == "NeXtepTopBar") renderQuickChrome()
         if (record.title == "AtomicSidebarHandle") (record.view as? android.widget.TextView)?.apply {
-            text = if (!sidebarCollapsed) "‹›" else if (geometry.railAtTop || geometry.isLandscape)
+            text = if (!sidebarCollapsed) "‹›" else if (
+                io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture.horizontalRail(geometry))
                 (if (geometry.railAtTop || geometry.isSidebarAtTop) "⌄ 展开小窗" else "⌃ 展开小窗")
                 else if (geometry.sidebarSide == SidebarSide.LEFT) "›\n展开" else "‹\n展开"
             textSize = if (sidebarCollapsed) 13f else 14f
@@ -1827,34 +1831,69 @@ class NeXtepWindowController(
         }
         contentDescription = "滑动收起或展开侧栏"
         isClickable = true
+        fun canChangeRail(): Boolean = workspaceVisible && !suspended &&
+            !groupInputBlocked && !workgroups.isSwitching() &&
+            slotCoordinator?.isGroupRestoreReady() == true &&
+            !isExchangePending() && !swapAnimator.isRunning &&
+            !previewCapturePending && !transientTapSwap.isRunning &&
+            liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&
+            SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED
         setOnClickListener {
-            if (smartRail.hidden) {
-                if (SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) smartRail.interact()
-            } else if (smartRail.enabled && !sidebarCollapsed) smartRail.hideNow()
+            if (railHandleTouching || !canChangeRail()) return@setOnClickListener
+            if (smartRail.hidden) smartRail.interact()
+            else if (smartRail.enabled && !sidebarCollapsed) smartRail.hideNow()
             else setSidebarCollapsed(!sidebarCollapsed)
         }
         var downX = 0f
         var downY = 0f
+        var initialGeometry: WorkspaceGeometry? = null
+        var initialHidden = false
+        var initialCollapsed = false
         setOnTouchListener { view, event ->
             when (event.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; true }
-                android.view.MotionEvent.ACTION_UP -> {
-                    val g = geometry()
-                    if (smartRail.hidden) {
-                        val horizontal = io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(g)
-                        val motion = if (horizontal) event.rawY - downY else event.rawX - downX
-                        if (kotlin.math.abs(motion) <= dp(24) ||
-                            io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.towardsContent(g, motion))
-                            view.performClick()
-                        return@setOnTouchListener true
-                    }
-                    val delta = if (g.railAtTop || g.isLandscape) event.rawY - downY else event.rawX - downX
-                    val outward = if (g.railAtTop) false else if (g.isLandscape) !g.isSidebarAtTop else g.sidebarSide == SidebarSide.RIGHT
-                    if (kotlin.math.abs(delta) > dp(24)) setSidebarCollapsed((delta > 0) == outward)
-                    else view.performClick()
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX; downY = event.rawY
+                    initialGeometry = geometry()
+                    initialHidden = smartRail.hidden; initialCollapsed = sidebarCollapsed
+                    railHandleTouching = true
                     true
                 }
-                android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_CANCEL -> true
+                android.view.MotionEvent.ACTION_UP -> {
+                    railHandleTouching = false
+                    val started = initialGeometry
+                    initialGeometry = null
+                    val g = geometry()
+                    if (started == null || started != g || initialHidden != smartRail.hidden ||
+                        initialCollapsed != sidebarCollapsed) {
+                        smartRail.armWhenReady()
+                        return@setOnTouchListener true
+                    }
+                    val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+                    val decision = io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture
+                        .decision(g,event.rawX-downX,event.rawY-downY,slop,maxOf(dp(24),slop*2f))
+                    when (decision) {
+                        io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture.Decision.TAP -> view.performClick()
+                        io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture.Decision.INWARD -> {
+                            if (canChangeRail()) {
+                                if (smartRail.hidden) smartRail.interact()
+                                else if (sidebarCollapsed) setSidebarCollapsed(false)
+                            }
+                        }
+                        io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture.Decision.OUTWARD -> {
+                            if (!smartRail.hidden && !sidebarCollapsed && canChangeRail()) setSidebarCollapsed(true)
+                        }
+                        else -> Unit
+                    }
+                    smartRail.armWhenReady()
+                    true
+                }
+                android.view.MotionEvent.ACTION_POINTER_DOWN, android.view.MotionEvent.ACTION_CANCEL -> {
+                    initialGeometry = null
+                    railHandleTouching = false
+                    smartRail.armWhenReady()
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE, android.view.MotionEvent.ACTION_POINTER_UP -> true
                 else -> false
             }
         }
@@ -1874,12 +1913,11 @@ class NeXtepWindowController(
             // Retain TextureViews and tasks; a GONE sidebar would destroy their displays.
             record.view.animate().cancel()
             val base = viewport.geometry(sidebarSide)
-            val distance = if (base.railAtTop || base.isLandscape) base.sidebarPhysicalHeight.toFloat() else base.sidebarPhysicalWidth.toFloat()
-            val outward = if (base.railAtTop) false else if (base.isLandscape) !base.isSidebarAtTop else base.sidebarSide == SidebarSide.RIGHT
-            val offset = if (value) distance * (if (outward) 1 else -1) else 0f
+            val offset = if (value) io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture
+                .collapseOffset(base) else 0f to 0f
             record.view.animate().alpha(if (value) 0f else 1f)
-                .translationX(if (base.railAtTop || base.isLandscape) 0f else offset)
-                .translationY(if (base.railAtTop || base.isLandscape) offset else 0f)
+                .translationX(offset.first)
+                .translationY(offset.second)
                 .setDuration(220).setInterpolator(transitionInterpolator).start()
         }
         if (!value) {
