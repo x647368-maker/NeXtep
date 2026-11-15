@@ -1649,17 +1649,10 @@ class NeXtepWindowController(
 
     private fun closeMainWindow() {
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
-        runCatching {
-            val engine = checkNotNull(slotCoordinator)
-            check(engine.isGroupRestoreReady()) { "窗口正在切换" }
-            val task = checkNotNull(taskRepository.foregroundTask())
-            check(task.component.packageName != TriggerBroadcastContract.resolveHomePackage(context) &&
-                task.component.packageName != TriggerBroadcastContract.SYSTEM_UI_PACKAGE && task.windowingMode == 1 && !task.vendorWindowed) { "当前主窗不能关闭" }
-            io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat.parkInDefaultDisplay(
-                checkNotNull(task.token), Rect(), task.densityDpi, task.windowingMode).getOrThrow()
-            mainTaskPresenter.restoreForMove(task.taskId).getOrThrow()
-            engine.onTasksChanged(); scheduleStageFocus()
-        }.onFailure { showStageMessage(it.message ?: "主窗未关闭") }
+        val engine = slotCoordinator ?: return
+        engine.closeCurrentMain()
+            .onSuccess { engine.onTasksChanged(); scheduleStageFocus() }
+            .onFailure { showStageMessage(it.message ?: "主窗未关闭") }
     }
 
     private fun showWindowMenu(index: Int, anchor: View) {

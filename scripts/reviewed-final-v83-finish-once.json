@@ -2,7 +2,7 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
       "previous_blob_sha1": "2e30e5d8d59151f8751fe76be3edb8163784fb0b",
-      "reviewed_blob_sha1": "bf03710f149b0b0133495bfe78fd48ff39f6a3d2",
+      "reviewed_blob_sha1": "54157643576f07527f4ef5801e3f5ba706f014ba",
       "patches": [
         {
           "before": "        var animationFinished = false\n        fun finish() {\n            if (token != transitionGeneration) return\n            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null",
@@ -23,6 +23,10 @@
         {
           "before": "        if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&\n            onPhasedMainSlotAnimation != null) {\n            val main = taskRepository.foregroundTask()\n            if (isExchangeableMainTask(main)) {\n                return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)\n            }\n        }\n        if (transitionInProgress || recentSelectionPending) {\n            NeXtepLog.warn(\"slot_coordinator\", \"Ignored concurrent transition $label\")\n            return Result.failure(IllegalStateException(\"Another slot transition is settling\"))\n        }",
           "after": "        if (transitionInProgress || recentSelectionPending) {\n            NeXtepLog.warn(\"slot_coordinator\", \"Ignored concurrent transition $label\")\n            return Result.failure(IllegalStateException(\"Another slot transition is settling\"))\n        }\n        // Reject busy requests before any synchronous foreground Binder read.\n        if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&\n            onPhasedMainSlotAnimation != null) {\n            val main = taskRepository.foregroundTask()\n            if (isExchangeableMainTask(main)) {\n                return runPhasedMainTransition(mainSlotIndex, checkNotNull(main).taskId)\n            }\n        }"
+        },
+        {
+          "before": "    fun closeWindow(index: Int): Result<Unit> = runCatching {",
+          "after": "    /** Park the current real main task without finishing its Activity.\n     * Reuse the same owner gate as open/replace/exchange. In particular\n     * invalidate delayed launch-presentation callbacks before changing tasks. */\n    fun closeCurrentMain(): Result<Unit> {\n        ensureMainThread()\n        if (!isGroupRestoreReady()) return Result.failure(IllegalStateException(\"窗口正在切换\"))\n        return runTransition(\"park current main\") {\n            val task = checkNotNull(taskRepository.foregroundTask()) { \"当前主窗不可用\" }\n            check(isExchangeableMainTask(task)) { \"当前主窗不能关闭\" }\n            WindowContainerTransactionCompat.parkInDefaultDisplay(\n                checkNotNull(task.token), Rect(), task.densityDpi, task.windowingMode).getOrThrow()\n            mainTaskPresenter.restoreForMove(task.taskId).getOrThrow()\n        }\n    }\n\n    fun closeWindow(index: Int): Result<Unit> = runCatching {"
         }
       ]
     },

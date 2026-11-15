@@ -410,6 +410,21 @@ class SlotTaskCoordinator(
         }.getOrThrow()
     }
 
+    /** Park the current real main task without finishing its Activity.
+     * Reuse the same owner gate as open/replace/exchange. In particular
+     * invalidate delayed launch-presentation callbacks before changing tasks. */
+    fun closeCurrentMain(): Result<Unit> {
+        ensureMainThread()
+        if (!isGroupRestoreReady()) return Result.failure(IllegalStateException("窗口正在切换"))
+        return runTransition("park current main") {
+            val task = checkNotNull(taskRepository.foregroundTask()) { "当前主窗不可用" }
+            check(isExchangeableMainTask(task)) { "当前主窗不能关闭" }
+            WindowContainerTransactionCompat.parkInDefaultDisplay(
+                checkNotNull(task.token), Rect(), task.densityDpi, task.windowingMode).getOrThrow()
+            mainTaskPresenter.restoreForMove(task.taskId).getOrThrow()
+        }
+    }
+
     fun closeWindow(index: Int): Result<Unit> = runCatching {
         ensureMainThread()
         check(isGroupRestoreReady()) { "工作区正在切换" }
