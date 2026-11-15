@@ -143,4 +143,60 @@ class StageSnapshotMotionTest {
         assertEquals(.5001f,StageSnapshotMotion.hardwareEnd(.5f,.5f,.0001f),.00001f)
         assertEquals(.2f,StageSnapshotMotion.hardwareEnd(.8f,.2f,.0001f),.00001f)
     }
+
+    @Test fun boundedCrossingReducesOcclusionWithoutChangingCenterRouteOrEndpoints(){
+        val random=kotlin.random.Random(20261115)
+        var improved=0
+        for(n in 0 until 1500){
+            val w=listOf(1080f,1440f,2208f,2560f,1600f)[n%5]
+            val h=listOf(2400f,3168f,1840f,1600f,2560f)[n%5]
+            val screen=b(0f,0f,w,h)
+            val rail=(n/5)%3
+            val count=1+random.nextInt(4)
+            val cards=(0 until count).map{j->
+                val t=(j+.1f)/count;val t2=(j+.85f)/count
+                when(rail){
+                    0->b(w*.02f,h*t,w*.23f,h*t2)
+                    1->b(w*.77f,h*t,w*.98f,h*t2)
+                    else->b(w*t,h*.02f,w*t2,h*.22f)
+                }
+            }
+            val main=when(rail){
+                0->b(w*.25f,h*.06f,w*.98f,h*.94f)
+                1->b(w*.02f,h*.06f,w*.75f,h*.94f)
+                else->b(w*.03f,h*.24f,w*.97f,h*.96f)
+            }
+            val index=random.nextInt(count)
+            val others=cards.filterIndexed{j,_->j!=index}
+            val actual=checkNotNull(StageSnapshotMotion.pairedFlights(cards[index],main,
+                random.nextInt(120,2500),random.nextInt(120,3000),random.nextInt(120,2500),
+                random.nextInt(120,3000),screen,others))
+            // Same 85 route and bias, but with crossing adjustment disabled.
+            val prior=StageSnapshotMotion.PairFlight(actual.up.copy(crossingCompactness=0f),
+                actual.down.copy(crossingCompactness=0f))
+            var minOld=1f;var minNew=1f
+            var lastUp=actual.up.pose(0f);var lastDown=actual.down.pose(0f)
+            for(i in 0..128){
+                val progress=i/128f
+                val old=StageSnapshotMotion.visibleFractions(prior,progress,screen,others)
+                val now=StageSnapshotMotion.visibleFractions(actual,progress,screen,others)
+                assertTrue("up visibility n=$n i=$i",now.first+.005f>=old.first)
+                assertTrue("down visibility n=$n i=$i",now.second+.005f>=old.second)
+                minOld=minOf(minOld,old.first,old.second)
+                minNew=minOf(minNew,now.first,now.second)
+                val up=actual.up.pose(progress);val down=actual.down.pose(progress)
+                for((a,z) in listOf(up to prior.up.pose(progress),down to prior.down.pose(progress))){
+                    assertEquals(z.cx,a.cx,0f);assertEquals(z.cy,a.cy,0f)
+                    if(i==0 || i==128)assertEquals(z.scale,a.scale,0f)
+                }
+                if(actual.up.growing)assertTrue(up.scale+.00001f>=lastUp.scale)
+                else assertTrue(up.scale<=lastUp.scale+.00001f)
+                if(actual.down.growing)assertTrue(down.scale+.00001f>=lastDown.scale)
+                else assertTrue(down.scale<=lastDown.scale+.00001f)
+                lastUp=up;lastDown=down
+            }
+            if(minNew>minOld+.01f)improved++
+        }
+        assertTrue("Too few useful crossing improvements: $improved",improved>=400)
+    }
 }

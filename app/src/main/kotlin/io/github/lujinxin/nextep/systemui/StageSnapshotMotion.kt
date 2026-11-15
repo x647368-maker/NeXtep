@@ -16,7 +16,7 @@ internal object StageSnapshotMotion {
     }
     data class Pose(val cx:Float,val cy:Float,val scale:Float)
     data class Flight(val from:Box,val to:Box,val width:Int,val height:Int,
-                      val arc:Float,val growing:Boolean,val sizeBias:Float=0f){
+                      val arc:Float,val growing:Boolean,val sizeBias:Float=0f,val crossingCompactness:Float=0f){
         private val s0=min(from.w/width,from.h/height)
         private val s1=min(to.w/width,to.h/height)
         private val dx=to.cx-from.cx
@@ -35,7 +35,10 @@ internal object StageSnapshotMotion {
             val gentle=q*q*(2f-q)
             val compact=q*q*q
             val fraction=gentle+(compact-gentle)*sizeBias
-            val u=if(growing)fraction else 1f-fraction
+            // Only the in-flight size changes. Both endpoint scales and center route
+            // remain exact. The bounded compactness curve is monotonic.
+            val adjusted=fraction*(1f-crossingCompactness*4f*q*(1f-q))
+            val u=if(growing)adjusted else 1f-adjusted
             return Pose(from.cx+dx*p-dy/length*bend,
                 from.cy+dy*p+dx/length*bend,s0+(s1-s0)*u)
         }
@@ -124,8 +127,24 @@ internal object StageSnapshotMotion {
             }
         }
         // Transfer only the geometric route, never canonical bitmap sizes.
-        return PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias),
+        val chosen=PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias),
             d.copy(arc=best.down.arc,sizeBias=best.down.sizeBias))
+        // Keep the physical signed route fixed. Score only the crossing-size
+        // adjustment against real source dimensions, once on the capture worker.
+        val baseline=(1..31).map{visibleFractions(chosen,it/32f,screen,excluded)}
+        val minUp=baseline.minOf{it.first};val minDown=baseline.minOf{it.second}
+        if(minUp>=.95f && minDown>=.95f)return chosen
+        var result=chosen;var bestGain=.05f
+        for(compactness in floatArrayOf(.12f,.24f)){
+            val candidate=PairFlight(chosen.up.copy(crossingCompactness=compactness),
+                chosen.down.copy(crossingCompactness=compactness))
+            val fractions=(1..31).map{visibleFractions(candidate,it/32f,screen,excluded)}
+            if(fractions.indices.any{fractions[it].first+.001f<baseline[it].first ||
+                    fractions[it].second+.001f<baseline[it].second})continue
+            val gain=(fractions.minOf{it.first}-minUp)+(fractions.minOf{it.second}-minDown)
+            if(gain>bestGain){result=candidate;bestGain=gain}
+        }
+        return result
     }
     /** Hardware animator interpolates scalar start/end. For parallel axes
      * use a subpixel terminal delta, then restore exact endpoint on commit.

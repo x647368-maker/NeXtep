@@ -1,0 +1,22 @@
+{
+  "files": {
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt": {
+      "previous_blob_sha1": "52569967486fdd687fda0fda87aa254025e18c21",
+      "reviewed_blob_sha1": "6359b53da0b060e0dc79531ce6cac8b3efa0c598",
+      "patches": [
+        {
+          "before": "val arc:Float,val growing:Boolean,val sizeBias:Float=0f){",
+          "after": "val arc:Float,val growing:Boolean,val sizeBias:Float=0f,val crossingCompactness:Float=0f){"
+        },
+        {
+          "before": "            val u=if(growing)fraction else 1f-fraction",
+          "after": "            // Only the in-flight size changes. Both endpoint scales and center route\n            // remain exact. The bounded compactness curve is monotonic.\n            val adjusted=fraction*(1f-crossingCompactness*4f*q*(1f-q))\n            val u=if(growing)adjusted else 1f-adjusted"
+        },
+        {
+          "before": "        return PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias),\n            d.copy(arc=best.down.arc,sizeBias=best.down.sizeBias))",
+          "after": "        val chosen=PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias),\n            d.copy(arc=best.down.arc,sizeBias=best.down.sizeBias))\n        // Keep the physical signed route fixed. Score only the crossing-size\n        // adjustment against real source dimensions, once on the capture worker.\n        val baseline=(1..31).map{visibleFractions(chosen,it/32f,screen,excluded)}\n        val minUp=baseline.minOf{it.first};val minDown=baseline.minOf{it.second}\n        if(minUp>=.95f && minDown>=.95f)return chosen\n        var result=chosen;var bestGain=.05f\n        for(compactness in floatArrayOf(.12f,.24f)){\n            val candidate=PairFlight(chosen.up.copy(crossingCompactness=compactness),\n                chosen.down.copy(crossingCompactness=compactness))\n            val fractions=(1..31).map{visibleFractions(candidate,it/32f,screen,excluded)}\n            if(fractions.indices.any{fractions[it].first+.001f<baseline[it].first ||\n                    fractions[it].second+.001f<baseline[it].second})continue\n            val gain=(fractions.minOf{it.first}-minUp)+(fractions.minOf{it.second}-minDown)\n            if(gain>bestGain){result=candidate;bestGain=gain}\n        }\n        return result"
+        }
+      ]
+    }
+  }
+}

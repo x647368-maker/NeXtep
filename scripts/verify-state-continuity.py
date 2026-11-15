@@ -184,8 +184,25 @@ assert 'firstRecovery.retry()' in _pr88
 assert 'firstRetry?.let{ui.removeCallbacks(it)}' in _pr88
 assert 'firstRecovery.close()' in _pr88
 assert 'snapshot_cost_ms=' in _pr88
+# v86 crossing geometry is an independently reversible, exact source change.
+v86_crossing_review=json.loads((root/'scripts/reviewed-final-v86-crossing.json').read_text())['files']
+assert set(v86_crossing_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt'}
+def undo_v86_crossing(path,data):
+ if path not in v86_crossing_review:return data
+ spec=v86_crossing_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in v86_crossing_review:
+ undo_v86_crossing(reviewed_path,(root/reviewed_path).read_bytes())
 def undo_pr87_smooth(path,data):
- data=undo_pr88(path,data)
+ data=undo_pr88(path,undo_v86_crossing(path,data))
  if path not in pr87_smooth_review:return data
  spec=pr87_smooth_review[path]
  source=data.decode('utf-8')
