@@ -49,6 +49,7 @@ internal class StageIssueSession(context: Context) {
         preferences.getLong("duration_ms", StageIssueReportPolicy.DEFAULT_DURATION_MS))
     fun selectedCategory(): String = preferences.getString("category", null) ?: "other"
     fun latestReport(): String {
+        if (active()) return ""
         val original = preferences.getString("report_core", null)
             ?: preferences.getString("report", null).orEmpty()
         val extra = preferences.getString("post_note", null).orEmpty()
@@ -124,11 +125,17 @@ internal class StageIssueSession(context: Context) {
         return now
     }
 
-    fun saveNote(value: String) {
-        val sanitized = StageIssueReportPolicy.note(value).takeIf { it != "用户未填写" }.orEmpty()
+    fun storedPostNote(): String = preferences.getString("post_note", null).orEmpty()
+
+    fun saveNote(value: String, expectedToken: Long): Boolean {
+        if (currentToken() != expectedToken || expectedToken < 0L) return false
+        val sanitized = value.filter { it == '\n' || it == '\t' || it.code >= 32 }
+            .take(StageIssueReportPolicy.MAX_DESCRIPTION_CHARS)
         if (active()) preferences.edit().putString("note", sanitized).apply()
         else if (latestReport().isNotBlank())
             preferences.edit().putString("post_note", sanitized).apply()
+        else return false
+        return true
     }
 
     fun setStartRuntime(token: Long, snapshot: WorkspaceEnergyContract.Snapshot?) {
@@ -271,7 +278,13 @@ internal class StageIssueSession(context: Context) {
             appendLine("注意：电量/温度属于整机，CPU计数来自整个SystemUI进程。接电测试不能用电量增长证明省电；判断模块独立增量须在相同条件下做断电、工作台关闭/开启对照。")
             appendLine("隐私：不含系统完整日志/私有聊天/应用列表；分享前请检查自行填写的内容。")
         }.take(StageIssueReportPolicy.MAX_REPORT_CHARS)
-        preferences.edit().putBoolean("active", false).putString("report_core",report).apply()
+        // Do not advertise a generated report until the terminal transition is durable.
+        if (!preferences.edit().putBoolean("active", false).putString("report_core",report).commit()) {
+            // SharedPreferences updates its in-process map even when disk I/O fails.
+            // Restore retryable state; the caller reports the failure, not success.
+            preferences.edit().putBoolean("active", true).remove("report_core").apply()
+            error("报告保存失败")
+        }
         StageIssueAutoStop.cancel(app, token)
         StageIssueEventObserver.disable()
         return report

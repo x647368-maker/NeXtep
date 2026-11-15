@@ -49,6 +49,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private var chosenDuration = 1
     private val durationButtons = mutableListOf<Button>()
     private var boundToken: Long? = null
+    private var boundWasActive = false
     private lateinit var note: EditText
     private lateinit var startButton: Button
     private lateinit var markButton: Button
@@ -61,11 +62,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private val durationValues = StageIssueReportPolicy.DURATION_OPTIONS_MS
 
     private val saveDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        if (uri == null) { pendingExportId = null; return@registerForActivityResult }
+        if (uri == null) { pendingExportId = null; render(); return@registerForActivityResult }
         val id = pendingExportId
         pendingExportId = null
         val report = id?.let { runCatching { session.report(it) }.getOrNull() }
-        if (report.isNullOrBlank()) { toast("所选报告已不可用，请重新选择"); return@registerForActivityResult }
+        if (report.isNullOrBlank()) { render(); toast("所选报告已不可用，请重新选择"); return@registerForActivityResult }
         exporting = true
         render()
         val resolver = applicationContext.contentResolver
@@ -90,6 +91,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         pendingExportId = savedInstanceState?.getString("diagnostic_export_id")
         chosenDuration = savedInstanceState?.getInt("diagnostic_duration",1)?.coerceIn(durationValues.indices) ?: 1
         boundToken = savedInstanceState?.takeIf { it.containsKey("diagnostic_token") }?.getLong("diagnostic_token")
+        boundWasActive = savedInstanceState?.getBoolean("diagnostic_was_active") ?: false
         supportActionBar?.hide()
         WindowCompat.setDecorFitsSystemWindows(window,false)
         val density=resources.displayMetrics.density
@@ -187,11 +189,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         }
         reportCard.addView(note,LinearLayout.LayoutParams(-1,-2))
         saveNoteButton=Button(this).apply{text="保存说明／结束后补充";setOnClickListener{
-            if (session.active() && boundToken != session.currentToken()) {
-                render();toast("会话已经变化，请重新进入诊断");return@setOnClickListener
+            val expected = boundToken
+            if (expected == null || !session.saveNote(note.text.toString(), expected)) {
+                bindNote();render();toast("会话已经变化或尚无报告，请重新保存");return@setOnClickListener
             }
-            session.saveNote(note.text.toString())
-            toast("说明已保存到本机报告")
+            toast("说明已保存到本机会话或报告")
         }}
         reportCard.addView(saveNoteButton,LinearLayout.LayoutParams(-1,-2))
         exportButton=Button(this).apply{text="导出最新TXT报告";setOnClickListener{
@@ -230,16 +232,15 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         if(session.active()){
             category.setSelection(StageIssueTestCatalog.selectionIndex(session.selectedCategory()))
             chosenDuration=durationValues.indexOf(session.durationMs()).coerceAtLeast(0)
-            if(boundToken!=session.currentToken()) note.setText(session.storedNote())
-            boundToken=session.currentToken()
         }
+        bindNote()
         if (session.active()) StageIssueEventObserver.enable(this)
         checkDueAndArmUi()
         render()
     }
     override fun onPause(){
         uiHandler.removeCallbacks(uiDeadline)
-        if(::note.isInitialized && session.active() && boundToken==session.currentToken())session.saveNote(note.text.toString())
+        if(::note.isInitialized && session.active()) boundToken?.let { session.saveNote(note.text.toString(),it) }
         super.onPause()
     }
     override fun onDestroy(){uiHandler.removeCallbacks(uiDeadline);super.onDestroy()}
@@ -250,14 +251,16 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         if(::category.isInitialized) outState.putInt("diagnostic_category",category.selectedItemPosition)
         if(::note.isInitialized) outState.putString("diagnostic_note",note.text.toString())
         boundToken?.let {outState.putLong("diagnostic_token",it)}
+        outState.putBoolean("diagnostic_was_active",boundWasActive)
         super.onSaveInstanceState(outState)
     }
 
     private fun exportRecord(record: StageIssueHistoryPolicy.Record) {
         if (pendingExportId != null || exporting) return
         pendingExportId = record.id
+        render()
         runCatching { saveDocument.launch("台前调度-故障报告-${record.startedAt}.txt") }
-            .onFailure { pendingExportId = null; toast("无法打开保存位置") }
+            .onFailure { pendingExportId = null; render(); toast("无法打开保存位置") }
     }
 
     private fun showHistory() {
@@ -289,10 +292,14 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         val chosen=StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id ?: "all"
         val minutes=durationValues.getOrElse(chosenDuration){StageIssueReportPolicy.DEFAULT_DURATION_MS}
         val version=runCatching{UpdateCoordinator.installed(this).versionName}.getOrNull()?:"未知"
+        // The previous report supplement is not a new session draft.
+        val freshNote = if (session.latestRecord() == null) note.text.toString() else ""
         val token=runCatching { session.begin(BatterySample.read(this),chosen,minutes,version,
-            note.text.toString(),StageIssueSceneSnapshot.read(this)) }
+            freshNote,StageIssueSceneSnapshot.read(this)) }
             .getOrElse { toast("无法开启诊断：${it.message ?: "存储不可用"}"); render(); return }
         boundToken=token
+        boundWasActive=true
+        note.setText(freshNote)
         StageIssueEventObserver.enable(this)
         WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true){ snapshot ->
             session.setStartRuntime(token,snapshot)
@@ -303,7 +310,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         toast("已开始，${minutes/60_000}分钟到期（系统休眠可能延期生成报告）")
     }
     private fun mark(){
-        if(pending || !session.mayMark()){toast("标记已超时或达到次数上限");return}
+        if(pending || boundToken!=session.currentToken() || !session.mayMark()){toast("会话已变化、标记已超时或达到次数上限");return}
         val index=session.mark(BatterySample.read(this),StageIssueSceneSnapshot.read(this))
         if(index!=null){
             val token=session.currentToken()
@@ -318,23 +325,30 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         pending=true
         uiHandler.removeCallbacks(uiDeadline)
         val token=session.currentToken()
-        if(boundToken==token) session.saveNote(note.text.toString())
+        if(boundToken==token) session.saveNote(note.text.toString(),token)
         render()
-        WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true){snap->
-            val result=runCatching {
-                if(session.active() && session.currentToken()==token)
-                    session.finish(session.storedVersion(),session.storedNote(),
-                        BatterySample.read(this),snap,mode)
-                else null
-            }
+        fun completed(result: Result<String?>) {
             pending=false
             if(!isDestroyed){
+                bindNote()
                 render()
                 if(result.isFailure) toast("报告保存失败，请重新尝试结束")
                 else if(result.getOrNull()!=null) toast("报告已经生成，可以补充说明后导出")
                 else if(!session.active()) toast("本次会话已经结束")
             }
         }
+        runCatching { StageIssueFinishCoordinator.request(this,token,mode,::completed) }
+            .onFailure { completed(Result.failure(it)) }
+    }
+    private fun bindNote() {
+        if(!::note.isInitialized)return
+        val active=session.active()
+        val token=session.currentToken().takeIf { it >= 0L && (active || session.latestRecord()!=null) }
+        if(token!=boundToken || active!=boundWasActive) {
+            note.setText(when { active -> session.storedNote(); token!=null -> session.storedPostNote(); else -> "" })
+        }
+        boundToken=token
+        boundWasActive=active
     }
     private fun checkDueAndArmUi(){
         uiHandler.removeCallbacks(uiDeadline)
@@ -359,7 +373,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         markButton.isEnabled=active&&!pending&&session.mayMark()
         stopButton.isEnabled=active&&!pending
         exportButton.isEnabled=!active&&!pending&&!exporting&&pendingExportId==null&&session.latestReport().isNotBlank()
-        saveNoteButton.isEnabled=!pending
+        saveNoteButton.isEnabled=!pending&&boundToken!=null
         category.isEnabled=!active&&!pending
         renderDuration()
         val id=if(active)session.selectedCategory() else StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id
