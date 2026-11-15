@@ -78,10 +78,18 @@ internal object StageConcurrentNativeTrialPolicy {
         // The slot task leash can arrive one Shell callback later. This is
         // not a permanent OEM refusal and must not eat all later animations.
         "fallback:slot_task_leash_not_ready",
+        "fallback:mirror_source_changed",
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false
     }
+
+    /** Only the active experimental GPU flight needs these local identity
+     * checks. A missing or changed task leash is not permanent OEM denial. */
+    fun sourceIdentityReady(hostAttached:Boolean,handlesValid:Boolean,
+                            incomingMatches:()->Boolean,outgoingMatches:()->Boolean):Boolean =
+        hostAttached && handlesValid &&
+            runCatching { incomingMatches() && outgoingMatches() }.getOrDefault(false)
 
     /**
      * A submitted compositor transaction is not proof of visible pixels.
