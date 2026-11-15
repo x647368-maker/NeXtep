@@ -95,6 +95,8 @@ class NeXtepWindowController(
     private var windowPickerGeneration = 0
     private var tabletLayoutMotionGeneration = 0
     private var railLayoutMotionView: View? = null
+    private var railLayoutDrawObserver: ViewTreeObserver? = null
+    private var railLayoutDrawListener: ViewTreeObserver.OnPreDrawListener? = null
     private var windowRefreshQueued = false
     private fun scheduleWindowRefresh() {
         if (windowRefreshQueued) return
@@ -1520,6 +1522,11 @@ class NeXtepWindowController(
 
     private fun cancelRailLayoutMotion() {
         tabletLayoutMotionGeneration++
+        railLayoutDrawListener?.let { listener ->
+            railLayoutDrawObserver?.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
+        }
+        railLayoutDrawObserver = null
+        railLayoutDrawListener = null
         val panel = railLayoutMotionView ?: return
         railLayoutMotionView = null
         panel.animate().cancel()
@@ -1533,7 +1540,8 @@ class NeXtepWindowController(
         distanceDp: Int, durationMs: Long) {
         cancelRailLayoutMotion()
         fun allowed(): Boolean = workspaceVisible && !suspended && !sidebarCollapsed &&
-            !smartRail.hidden && !groupInputBlocked && !workgroups.isSwitching() &&
+            !smartRail.hidden && !railHandleTouching && !groupInputBlocked && !workgroups.isSwitching() &&
+            slotCoordinator?.isGroupRestoreReady() == true &&
             cinemaSlot == null && !isExchangePending() && !swapAnimator.isRunning &&
             !previewCapturePending && !transientTapSwap.isRunning &&
             liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&
@@ -1558,30 +1566,41 @@ class NeXtepWindowController(
         ) ?: return
         val panel = records.firstOrNull { it.title == "NeXtepSidebar" }?.view ?: return
         val generation = tabletLayoutMotionGeneration
-        railLayoutMotionView = panel
-        panel.postOnAnimation {
-            if (generation != tabletLayoutMotionGeneration || railLayoutMotionView !== panel) return@postOnAnimation
-            val actual = geometry()
-            if (!allowed() || !panel.isAttachedToWindow || panel.visibility != View.VISIBLE ||
-                actual != target || panel.width != target.sidebarPhysicalWidth ||
-                panel.height != target.sidebarPhysicalHeight) {
-                // The destination layout was superseded or has not been drawn;
-                // never move old geometry or wait/poll for another frame.
-                railLayoutMotionView = null
-                return@postOnAnimation
+        val observer = panel.viewTreeObserver
+        if (!observer.isAlive || !panel.isAttachedToWindow) return
+        // Choreographer's animation callback precedes measure/layout. Use a
+        // single pre-draw callback instead to inspect the actual new bounds.
+        // Pending callbacks own no View transform; only a started entry does.
+        val listener = object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (observer.isAlive) observer.removeOnPreDrawListener(this)
+                else if (panel.viewTreeObserver.isAlive) panel.viewTreeObserver.removeOnPreDrawListener(this)
+                if (railLayoutDrawListener !== this || generation != tabletLayoutMotionGeneration) return true
+                railLayoutDrawObserver = null
+                railLayoutDrawListener = null
+                val actual = geometry()
+                if (!allowed() || !panel.isAttachedToWindow || panel.visibility != View.VISIBLE ||
+                    actual != target || panel.width != target.sidebarPhysicalWidth ||
+                    panel.height != target.sidebarPhysicalHeight) return true
+                panel.animate().cancel()
+                railLayoutMotionView = panel
+                panel.alpha = .86f
+                panel.translationX = entry.dx
+                panel.translationY = entry.dy
+                panel.animate().alpha(1f).translationX(0f).translationY(0f)
+                    .setDuration(entry.durationMs)
+                    .setInterpolator(transitionInterpolator)
+                    .withEndAction {
+                        if (generation == tabletLayoutMotionGeneration && railLayoutMotionView === panel)
+                            railLayoutMotionView = null
+                    }.start()
+                return true
             }
-            panel.animate().cancel()
-            panel.alpha = .86f
-            panel.translationX = entry.dx
-            panel.translationY = entry.dy
-            panel.animate().alpha(1f).translationX(0f).translationY(0f)
-                .setDuration(entry.durationMs)
-                .setInterpolator(transitionInterpolator)
-                .withEndAction {
-                    if (generation == tabletLayoutMotionGeneration && railLayoutMotionView === panel)
-                        railLayoutMotionView = null
-                }.start()
         }
+        railLayoutDrawObserver = observer
+        railLayoutDrawListener = listener
+        observer.addOnPreDrawListener(listener)
+        panel.invalidate()
     }
 
     private fun showMainMenu() {
