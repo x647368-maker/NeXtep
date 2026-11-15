@@ -49,6 +49,7 @@ internal class StageIssueSession(context: Context) {
         preferences.getLong("duration_ms", StageIssueReportPolicy.DEFAULT_DURATION_MS))
     fun selectedCategory(): String = preferences.getString("category", null) ?: "other"
     fun latestReport(): String {
+        if (active()) return ""
         val original = preferences.getString("report_core", null)
             ?: preferences.getString("report", null).orEmpty()
         val extra = preferences.getString("post_note", null).orEmpty()
@@ -63,16 +64,22 @@ internal class StageIssueSession(context: Context) {
      * A bounded event log from real OS callbacks, not from periodic sampling.
      * If Android kills this process, transitions in that interval are unknown.
      */
-    fun recordAutoEvent(token: Long, type: String, screen: String) {
+    fun recordAutoEvent(token: Long, type: String, screen: String) =
+        recordAutoEvent(token, type) { screen }
+
+    // Delay the OS screen lookup until after the opt-in, deadline and cap
+    // checks; discarded events must not perform extra device-state reads.
+    fun recordAutoEvent(token: Long, type: String, screen: () -> String) {
         if (!active() || currentToken() != token || isDue()) return
         val count = autoEventCount()
         if (count >= maxAutoEvents) {
-            preferences.edit().putBoolean("auto_events_truncated", true).apply()
+            if (!preferences.getBoolean("auto_events_truncated", false))
+                preferences.edit().putBoolean("auto_events_truncated", true).apply()
             return
         }
         val elapsed = StageIssueReportPolicy.elapsedMs(token, SystemClock.elapsedRealtime())
             ?.div(1000L) ?: return
-        val entry = "第${elapsed}秒｜${type.take(70)}｜屏幕：${screen.take(50)}"
+        val entry = "第${elapsed}秒｜${type.take(70)}｜屏幕：${screen().take(50)}"
         preferences.edit()
             .putString("auto_event_$count",entry.take(170))
             .putInt("auto_event_count",count+1)
@@ -123,11 +130,19 @@ internal class StageIssueSession(context: Context) {
         return now
     }
 
-    fun saveNote(value: String) {
-        val sanitized = StageIssueReportPolicy.note(value).takeIf { it != "用户未填写" }.orEmpty()
+    fun storedPostNote(): String = preferences.getString("post_note", null).orEmpty()
+
+    fun saveNote(value: String, expectedToken: Long, expectedActive: Boolean = true): Boolean {
+        // A delayed editor from the running phase must not overwrite the
+        // completed report supplement even when the session token still matches.
+        if (currentToken() != expectedToken || expectedToken < 0L || active() != expectedActive) return false
+        val sanitized = value.filter { it == '\n' || it == '\t' || it.code >= 32 }
+            .take(StageIssueReportPolicy.MAX_DESCRIPTION_CHARS)
         if (active()) preferences.edit().putString("note", sanitized).apply()
         else if (latestReport().isNotBlank())
             preferences.edit().putString("post_note", sanitized).apply()
+        else return false
+        return true
     }
 
     fun setStartRuntime(token: Long, snapshot: WorkspaceEnergyContract.Snapshot?) {
@@ -182,7 +197,7 @@ internal class StageIssueSession(context: Context) {
         val finalNote = note.takeIf { it.isNotBlank() } ?: storedNote()
         val report = buildString {
             appendLine("台前调度｜用户自愿开启的故障测试报告")
-            appendLine("只记录开始/结束快照、手动标记和系统主动通知的少量状态变化；不轮询、不截图、不抓取崩溃堆栈。")
+            appendLine("只记录开始/结束快照、手动标记和系统主动通知的少量状态变化（含应用配置变化）；不轮询、不截图、不抓取崩溃堆栈。")
             appendLine("屏幕变化通知和测试App前后台事件仅在测试已开启且App进程存活时可能记录；若进程被杀或ROM限制广播，中途会有空白。")
             appendLine("测试类型：${category.name}")
             appendLine("操作说明：${category.instructions}")
@@ -202,13 +217,23 @@ internal class StageIssueSession(context: Context) {
             val observedScreen = (0 until autoEventCount()).count {
                 preferences.getString("auto_event_$it",null)?.contains("系统通知：") == true
             }
+            val observedConfiguration = (0 until autoEventCount()).count {
+                preferences.getString("auto_event_$it",null)?.contains("设备配置变化：") == true
+            }
+            fun observedReplies(prefix: String): Int = (0 until autoEventCount()).count {
+                preferences.getString("auto_event_$it", null)?.contains("控制请求响应：$prefix") == true
+            }
+            val layoutReplies = observedReplies("布局/")
+            val mediaReplies = observedReplies("应用操作/")
+            val groupReplies = observedReplies("功能服务/工作组/")
+            val quickReplies = observedReplies("功能服务/快捷栏/")
             for (module in StageIssueTestCatalog.modules) {
                 val coverage = if (module.id !in requested) "未选择（未测试）" else when(module.id) {
                     "performance" -> "有电池/温度起止快照（未知值以原始字段为准）；$swaps；精确帧率、闪烁与模块独占功耗未自动判定"
-                    "layout" -> "${if(both) "已读取起止工作台快照" else "工作台快照不完整"}；遮挡、智能隐藏与空间利用需手动验证"
-                    "content" -> "第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常"
-                    "compatibility" -> "设备及屏幕起止状态；系统屏幕通知${observedScreen}条（可能漏记）；手势、Root/注入兼容性未自动验收"
-                    "services" -> "工作组、快捷栏、更新签名与收款码尚无自动验证事件；未测试"
+                    "layout" -> "${if(both) "已读取起止工作台快照" else "工作台快照不完整"}；记录布局控制响应${layoutReplies}条（可能漏记）；遮挡、智能隐藏与空间利用需手动验证"
+                    "content" -> "记录影音/应用控制响应${mediaReplies}条（可能漏记）；第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常"
+                    "compatibility" -> "设备及屏幕起止状态；系统屏幕通知${observedScreen}条、应用配置变化${observedConfiguration}条（均可能漏记）；配置变化不等于物理铰链状态或适配通过；手势、Root/注入兼容性未自动验收"
+                    "services" -> "工作组控制响应${groupReplies}条、快捷栏控制响应${quickReplies}条（可能漏记）；仅系统协议响应，不证明实际恢复或显示正确；更新签名、收款码尚未自动验证"
                     else -> "不可观测"
                 }
                 appendLine("${module.name}：$coverage")
@@ -235,18 +260,19 @@ internal class StageIssueSession(context: Context) {
             appendLine("结束设备状态：${StageIssueSceneSnapshot.read(app)}")
             appendLine("开始工作台：${preferences.getString("start_runtime","无法读取")}")
             appendLine("结束工作台：${runtimeLine(snapshot)}")
-            appendLine("自动屏幕及测试App前后台事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
+            appendLine("自动屏幕、应用配置、测试App前后台及控制响应事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
             for (event in 0 until autoEventCount()) {
                 appendLine("状态事件#${event+1}：${preferences.getString("auto_event_$event","不可用")}")
             }
             if (preferences.getBoolean("auto_events_truncated",false))
                 appendLine("注意：状态事件超出上限，后续事件未写入。")
-            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台。")
+            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台或功能操作。屏幕与前后台是通用上下文；设置控制响应仅记录所选专项范围内的操作，不覆盖系统菜单的全部调用。")
             appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
+            if (bootIdentity == false) appendLine("设备已重启：以下交换记录仅为结束快照，不与起始编号或进程号比较。")
             appendLine(StageIssueReportPolicy.exchangeSection(
-                preferences.getInt("start_pid", -1),
-                preferences.getLong("start_swap_id", -1L).takeIf { it >= 0L },
+                if (bootIdentity == false) -1 else preferences.getInt("start_pid", -1),
+                if (bootIdentity == false) null else preferences.getLong("start_swap_id", -1L).takeIf { it >= 0L },
                 snapshot?.processId, snapshot?.exchangeDiagnostics))
             appendLine("手动标记：${labels.size}次（不要求使用）")
             for (index in labels.indices) {
@@ -259,7 +285,13 @@ internal class StageIssueSession(context: Context) {
             appendLine("注意：电量/温度属于整机，CPU计数来自整个SystemUI进程。接电测试不能用电量增长证明省电；判断模块独立增量须在相同条件下做断电、工作台关闭/开启对照。")
             appendLine("隐私：不含系统完整日志/私有聊天/应用列表；分享前请检查自行填写的内容。")
         }.take(StageIssueReportPolicy.MAX_REPORT_CHARS)
-        preferences.edit().putBoolean("active", false).putString("report_core",report).apply()
+        // Do not advertise a generated report until the terminal transition is durable.
+        if (!preferences.edit().putBoolean("active", false).putString("report_core",report).commit()) {
+            // SharedPreferences updates its in-process map even when disk I/O fails.
+            // Restore retryable state; the caller reports the failure, not success.
+            preferences.edit().putBoolean("active", true).remove("report_core").apply()
+            error("报告保存失败")
+        }
         StageIssueAutoStop.cancel(app, token)
         StageIssueEventObserver.disable()
         return report

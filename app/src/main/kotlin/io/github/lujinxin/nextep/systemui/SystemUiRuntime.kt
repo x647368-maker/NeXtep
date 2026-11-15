@@ -50,6 +50,7 @@ object SystemUiRuntime {
     private val configQueryFailures = AtomicInteger(0)
     private val configRetry = Runnable { refreshWorkspaceConfig(retryAttempt = true) }
     private val taskRefreshQueued = AtomicBoolean(false)
+    private val wakeRetryBudget = StageWakeRetryBudget()
     private val taskRefresh = Runnable {
         taskRefreshQueued.set(false)
         // The queued callback can arrive just after closing or locking.
@@ -62,7 +63,9 @@ object SystemUiRuntime {
         // workbench is not displayed. No UI refresh is useful in that state;
         // activation and unlock explicitly reconcile current task ownership.
         if (!isWorkspaceInteractive()) return
-        if (taskRefreshQueued.compareAndSet(false, true)) lifecycleHandler.post(taskRefresh)
+        if (taskRefreshQueued.compareAndSet(false, true) && !lifecycleHandler.post(taskRefresh)) {
+            taskRefreshQueued.set(false)
+        }
     }
     private val configReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -119,6 +122,12 @@ object SystemUiRuntime {
             val screenReady = isScreenReady()
             val keyguardLocked = isKeyguardLocked(applicationContext)
             if (!screenReady || keyguardLocked) {
+                // The lock observer is already responsible for the locked fallback.
+                // Cancel a stale unlock retry instead of running a second poll chain.
+                if (keyguardLocked) {
+                    lifecycleHandler.removeCallbacks(resumeAfterUnlock)
+                    wakeRetryBudget.cancel()
+                }
                 if (!workspaceController.isSuspended()) {
                     workspaceController.suspendForLock()
                     publishWorkspaceSurfaceState(false)
@@ -147,23 +156,34 @@ object SystemUiRuntime {
                 StageLockPowerPolicy.observationIntervalMs(ready, locked))
         } else {
             lifecycleHandler.removeCallbacks(resumeAfterUnlock)
+            wakeRetryBudget.cancel()
         }
     }
     private val resumeAfterUnlock = object : Runnable {
         override fun run() {
             lifecycleHandler.removeCallbacks(this)
-            if (!::workspaceController.isInitialized || !workspaceController.isSuspended()) return
+            if (!::workspaceController.isInitialized || !workspaceController.isSuspended()) {
+                wakeRetryBudget.cancel()
+                return
+            }
             val locked = isKeyguardLocked(applicationContext)
             val screenReady = isScreenReady()
             windowController.updateSuspendedOutputs(
                 StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))
-            if (locked || !screenReady) {
-                // USER_PRESENT can precede the physical display becoming ready.
-                // Keep this attempt alive instead of waiting for another broadcast.
-                lifecycleHandler.postDelayed(this,
-                    StageLockPowerPolicy.resumeRetryMs(screenReady, locked))
+            // The existing lock observer and physical-display/keyguard events remain authoritative.
+            if (locked) {
+                wakeRetryBudget.cancel()
                 return
             }
+            if (!screenReady) {
+                // Only a real wake signal grants a bounded fast retry window.
+                if (wakeRetryBudget.take() && !lifecycleHandler.postDelayed(this,
+                        StageLockPowerPolicy.resumeRetryMs(screenReady, locked))) {
+                    wakeRetryBudget.cancel()
+                }
+                return
+            }
+            wakeRetryBudget.cancel()
             val resumed = workspaceController.resumeAfterLock()
             publishWorkspaceSurfaceState(resumed)
             if (!resumed) WorkspaceStateBridge.requestInactiveFromSystemUi(applicationContext)
@@ -439,6 +459,7 @@ object SystemUiRuntime {
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> {
                     lifecycleHandler.removeCallbacks(resumeAfterUnlock)
+                    wakeRetryBudget.cancel()
                     workspaceController.suspendForLock()
                     windowController.updateSuspendedOutputs(screenAwake = false)
                     publishWorkspaceSurfaceState(false)
@@ -446,7 +467,8 @@ object SystemUiRuntime {
                 }
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
                     lifecycleHandler.removeCallbacks(resumeAfterUnlock)
-                    lifecycleHandler.post(resumeAfterUnlock)
+                    wakeRetryBudget.begin()
+                    if (!lifecycleHandler.post(resumeAfterUnlock)) wakeRetryBudget.cancel()
                     return
                 }
             }

@@ -13,6 +13,9 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
     private val handler = Handler(Looper.getMainLooper())
     private var listening = false
     private var sessions = emptyList<MediaController>()
+    private val registered = mutableSetOf<MediaController>()
+    private val sessionKeys = mutableMapOf<MediaController, StageMediaKey>()
+    private var destroyRefresh: Runnable? = null
     // A framework callback already queued before unregister can arrive after
     // stop() or even after a new start(). Scope registrations to their epoch.
     private var epoch = 0
@@ -21,9 +24,20 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
     private fun current(token: Int) = listening && token == epoch
     fun observations(): List<StagePlaybackObservation> = sessions.mapNotNull { controller ->
         runCatching {
-            val uid = (runCatching { controller.sessionToken.javaClass.getMethod("getUid").invoke(controller.sessionToken) as? Int }.getOrNull()
-                ?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid)
-                ?: return@runCatching null
+            val key = sessionKeys[controller] ?: run {
+                val token = controller.sessionToken
+                val directUid = runCatching { token.javaClass.getMethod("getUid").invoke(token) as? Int }.getOrNull()
+                    ?.takeIf { it >= 0 }
+                val uid = directUid
+                    ?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid
+                        ?.takeIf { it >= 0 }
+                    ?: return@runCatching null
+                // Only the session owner's immutable token UID is safe to cache.
+                // The fallback activity may change or become unavailable at any time.
+                StageMediaKey(controller.packageName, uid / 100000, token).also {
+                    if (directUid != null) sessionKeys[controller] = it
+                }
+            }
             val state = when (controller.playbackState?.state) {
                 PlaybackState.STATE_PLAYING -> StagePlayback.PLAYING
                 PlaybackState.STATE_PAUSED -> StagePlayback.PAUSED
@@ -31,7 +45,7 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
                 PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE -> StagePlayback.STOPPED
                 else -> StagePlayback.UNKNOWN
             }
-            StagePlaybackObservation(StageMediaKey(controller.packageName, uid / 100000, controller.sessionToken), state)
+            StagePlaybackObservation(key, state)
         }.getOrNull()
     }
     fun start() {
@@ -43,9 +57,16 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
                 if (current(token)) changed()
             }
             override fun onSessionDestroyed() {
-                if (!current(token)) return
-                val next = runCatching { service.getActiveSessions(null) }.getOrNull() ?: return
-                bind(token, next)
+                if (!current(token) || destroyRefresh != null) return
+                // Collapse queued destruction callbacks into one authoritative read.
+                val refresh = Runnable {
+                    if (!current(token)) return@Runnable
+                    destroyRefresh = null
+                    val next = runCatching { service.getActiveSessions(null) }.getOrNull() ?: return@Runnable
+                    bind(token, next)
+                }
+                destroyRefresh = refresh
+                if (!handler.post(refresh)) destroyRefresh = null
             }
         }
         val activeListener = MediaSessionManager.OnActiveSessionsChangedListener {
@@ -67,12 +88,15 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         val oldByToken = sessions.associateBy { it.sessionToken }
         val nextTokens = unique.map { it.sessionToken }.toSet()
         sessions.filter { it.sessionToken !in nextTokens }.forEach {
+            registered.remove(it)
+            sessionKeys.remove(it)
             runCatching { it.unregisterCallback(cb) }
         }
-        sessions = unique.map { controller ->
-            oldByToken[controller.sessionToken] ?: controller.also {
-                runCatching { it.registerCallback(cb, handler) }
-            }
+        sessions = unique.map { controller -> oldByToken[controller.sessionToken] ?: controller }
+        // A failed registration is not a successful subscription; retry only
+        // on the next actual session-list event, without a timer or polling.
+        sessions.filter { it !in registered }.forEach { controller ->
+            runCatching { controller.registerCallback(cb, handler) }.onSuccess { registered.add(controller) }
         }
         changed()
     }
@@ -80,6 +104,10 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         // Invalidate first, including callbacks delivered during unregister.
         epoch++
         listening = false
+        destroyRefresh?.let { handler.removeCallbacks(it) }
+        destroyRefresh = null
+        registered.clear()
+        sessionKeys.clear()
         val oldListener = listener
         val oldCallback = callback
         val oldSessions = sessions

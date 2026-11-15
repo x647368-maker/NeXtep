@@ -24,6 +24,22 @@ class StageDisplayPolicyTest {
             StageDisplayPolicy.initial(2560, 1600, 560, false, true, SidebarSide.RIGHT))
     }
 
+    @Test fun highResolutionElongatedPhonesDoNotEnterTabletOnlyPolicy() {
+        for ((w,h) in listOf(1440 to 2880, 1440 to 3200, 2160 to 4800)) {
+            for ((x,y) in listOf(w to h, h to w)) {
+                assertFalse(StageDisplayPolicy.wideTablet(x,y))
+                assertFalse(StageDisplayPolicy.wideLandscapeTablet(x,y))
+                assertEquals(5, StageDisplayPolicy.quickBarCapacity(x,y))
+                assertEquals(0, StageDisplayPolicy.safeTabletTopInset(x,y,3f,0))
+            }
+        }
+        assertTrue(StageDisplayPolicy.wideTablet(1600,3199))
+        assertFalse(StageDisplayPolicy.wideTablet(1600,3200))
+        assertTrue(StageDisplayPolicy.wideTablet(2560,1600))
+        assertTrue(StageDisplayPolicy.wideTablet(1600,2560))
+        assertFalse(StageDisplayPolicy.wideTablet(2248,2480))
+    }
+
     @Test fun displayClassUsesRealSizeAndLogicalDensityNotModelName() {
         assertFalse(StageDisplayPolicy.expanded(1264,2780,512))
         assertFalse(StageDisplayPolicy.expanded(1140,2616,480))

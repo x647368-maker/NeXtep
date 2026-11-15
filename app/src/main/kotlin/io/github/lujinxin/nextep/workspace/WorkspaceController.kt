@@ -55,9 +55,12 @@ class WorkspaceController(
         return runCatching {
             // Reveal the retained windows independently of HOME/app task readiness.
             // The slot coordinator already retries foreground fitting after wake.
-            val geometry = windowController.currentGeometry()
-            SystemUiRootTransformController.setGeometry(geometry)
-            windowController.resumeAfterLock()
+            val requested = windowController.currentGeometry()
+            SystemUiRootTransformController.setGeometry(requested)
+            // A fold/rotation can settle during window restoration. Publish the
+            // geometry actually applied to the retained windows, not the earlier request.
+            val geometry = windowController.resumeAfterLock()
+            if (geometry != requested) SystemUiRootTransformController.setGeometry(geometry)
             SystemServerWorkspaceBridge.publish(applicationContext, true, geometry)
             // NotificationShade also hosts the exiting keyguard. Unlock must
             // leave that native window untouched; fit it on the next shade gesture.

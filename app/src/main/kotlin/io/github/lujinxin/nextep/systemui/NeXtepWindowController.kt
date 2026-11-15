@@ -511,10 +511,16 @@ class NeXtepWindowController(
 
     private var lastN5ParallelScene: StageNativeParallelDiagnostics.Scene? = null
     private var lastN5ParallelObservedMs: Long = 0L
+    private var lastN5ParallelAttemptMs: Long? = null
 
     /** Called while the native app is still foreground, before opening diagnostics. */
     private fun observeN5ParallelForeground() {
         if (!workspaceVisible || suspended) return
+        val now = SystemClock.uptimeMillis()
+        if (lastN5ParallelAttemptMs?.let { now - it < 800L } == true) return
+        // Rate-limit the entire diagnostic probe, including viewport reads on compact screens.
+        // Keep the successful observation timestamp separate for diagnostic age.
+        lastN5ParallelAttemptMs = now
         // Skip Binder task queries on phone and native landscape tablet profiles.
         // Only the near-square expanded physical canvas needs this diagnostic.
         val g = currentGeometry()
@@ -523,8 +529,7 @@ class NeXtepWindowController(
         if (shortSide <= 1 || dpi <= 0 ||
             shortSide * 160f / dpi < 600f ||
             maxOf(g.screenWidth, g.screenHeight).toFloat() / shortSide > 1.35f) return
-        if (SystemClock.uptimeMillis() - lastN5ParallelObservedMs < 800L) return
-        val scene = runCatching { nativeParallelScene() }.getOrNull() ?: return
+        val scene = runCatching { nativeParallelScene(g, dpi) }.getOrNull() ?: return
         val foreground = scene.tasks.firstOrNull { it.display == 0 } ?: return
         if (foreground.app == "com.android.systemui" ||
             foreground.app == "io.github.x647368maker.atomicworkbench") return
@@ -552,8 +557,11 @@ class NeXtepWindowController(
         ?: Result.failure(IllegalStateException("Slot coordinator unavailable"))
 
     fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry {
-        syncCoreViewport()
-        return viewport.geometry(sidebarSide, refreshViewport).let {
+        // Select the layout scope and geometry from the same physical measurement.
+        // An explicit refresh must not re-read the display after selecting its side.
+        val preparedScope = if (refreshViewport) viewport.prepareLayoutScope() else null
+        syncCoreViewport(preparedScope)
+        return viewport.geometry(sidebarSide).let {
             if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
             else {
                 val base = if (viewport.activeCount == 0)
@@ -748,15 +756,17 @@ class NeXtepWindowController(
     } }
 
     /** Read-only scene details; only called on task changes / explicit diagnostics. */
-    private fun nativeParallelScene(): StageNativeParallelDiagnostics.Scene {
-        val g = currentGeometry()
+    private fun nativeParallelScene(
+        g: WorkspaceGeometry = currentGeometry(),
+        dpi: Int = context.resources.displayMetrics.densityDpi,
+    ): StageNativeParallelDiagnostics.Scene {
         val tasks = runCatching { taskRepository.runningTasks() }.getOrDefault(emptyList())
         val activityCounts = runCatching { context.getSystemService(android.app.ActivityManager::class.java)
             ?.getRunningTasks(8).orEmpty().associate { it.taskId to it.numActivities } }.getOrDefault(emptyMap())
         return StageNativeParallelDiagnostics.Scene(
             screenWidth = g.screenWidth,
             screenHeight = g.screenHeight,
-            densityDpi = context.resources.displayMetrics.densityDpi,
+            densityDpi = dpi,
             railAtTop = g.railAtTop,
             controlHeight = g.controlHeight,
             sidebarWidth = g.sidebarPhysicalWidth,
@@ -1194,16 +1204,17 @@ class NeXtepWindowController(
 
     private fun showStageMessage(value: String) = android.widget.Toast.makeText(context, value, android.widget.Toast.LENGTH_LONG).show()
 
-    private fun syncCoreViewport() {
-        core.layoutScope = viewport.prepareLayoutScope()
+    private fun syncCoreViewport(preparedScope: String? = null) {
+        core.layoutScope = preparedScope ?: viewport.prepareLayoutScope()
         sidebarSide = viewport.selectedSidebarSide()
-        viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0
+        val states = slotCoordinator?.slotStates().orEmpty()
+        viewport.activeCount = states.count { it is SlotState.Occupied }
         viewport.adaptive = core.adaptive
         viewport.mainPriority = core.mainPriority
         viewport.mainInputRegionReady = sidebarTouchRegionReady
         viewport.quickExpanded = core.enabled && core.expanded
         cinemaSlot?.let { index ->
-            if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
+            if ((states.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
                 cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()
             }
         }
@@ -3009,6 +3020,11 @@ class NeXtepWindowController(
             backdropHandler.post {
                 homePreviewCapturePending = false
                 val snapshot = result.getOrNull()
+                // A late result while hidden or locked must not refresh the viewport.
+                if (suspended || !workspaceVisible) {
+                    snapshot?.recycle()
+                    return@post
+                }
                 val current = currentGeometry()
                 val currentBounds = Rect(current.contentLeft, current.contentTop, current.contentRight, current.contentBottom)
                 if (token != homePreviewGeneration.get() || suspended || !workspaceVisible ||
@@ -3228,7 +3244,6 @@ class NeXtepWindowController(
             topAppStrip?.setStageStatus(workgroups.statusLabel(), label, sidebarCollapsed)
             stageFocusBadge?.apply {
                 text = label
-                val g = geometry()
                 visibility = View.GONE
             }
             // Focus is the centered real task. Avoid a debug-looking cyan frame.

@@ -26,14 +26,25 @@ import java.util.concurrent.TimeUnit
 /** Real Android HWUI + live Surface producer. No root, third-party apps or task mocks. */
 class LivePreviewInstrumentation : Instrumentation() {
     private var nativeMirrorOnly = false
+    private var diagnosticOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
+        diagnosticOnly = arguments?.getString("diagnosticOnly") == "true"
         start()
     }
     override fun onStart() {
         val result=Bundle()
         try {
+            if (diagnosticOnly) {
+                check(!nativeMirrorOnly) { "Choose exactly one dedicated instrumentation mode" }
+                val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
+                val status=StageIssueUiRegression(this).run(out)
+                check(status.startsWith("PASS actual Android diagnostics"))
+                result.putString("stream",status+"\nDIAGNOSTIC_RUNTIME_PASS\n")
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             val activity=startActivitySync(Intent().setClassName(targetContext.packageName,
                 targetContext.packageName+".config.MainActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             val root=FrameLayout(activity)

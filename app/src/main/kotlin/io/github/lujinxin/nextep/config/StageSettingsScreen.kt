@@ -46,9 +46,28 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var stateText: TextView? = null
     private var master: Switch? = null
     private var settingSwitch = false
+    private var wideLayout = false
+    private var navigationScroll: ScrollView? = null
+    private var navigationY = 0
     var page = "home"
         private set
     val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor); isFocusableInTouchMode = true }
+    init {
+        view.addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
+            if (page == "update" || r <= l || b <= t) return@addOnLayoutChangeListener
+            val next = StageHomeLayout.useTwoPane(r-l, b-t, activity.resources.displayMetrics.density)
+            if (next != wideLayout) view.post {
+                if (!activity.isDestroyed && page != "update" && isWide() != wideLayout) open(page)
+            }
+        }
+    }
+    private fun isWide(): Boolean {
+        val metrics = activity.resources.displayMetrics
+        val config = activity.resources.configuration
+        val w = view.width.takeIf { it > 0 } ?: (config.screenWidthDp * metrics.density).toInt()
+        val h = view.height.takeIf { it > 0 } ?: (config.screenHeightDp * metrics.density).toInt()
+        return StageHomeLayout.useTwoPane(w,h,metrics.density)
+    }
     private val originalStatusBarColor=activity.window.statusBarColor
     private val originalNavigationBarColor=activity.window.navigationBarColor
     private val originalSystemUiFlags=activity.window.decorView.systemUiVisibility
@@ -99,9 +118,22 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             intArrayOf(blue, if (dark) Color.rgb(75, 77, 81) else Color.rgb(204, 206, 210)))
         setOnCheckedChangeListener { _, value -> if (!settingSwitch) action(value) }
     }
-    fun back(): Boolean { if (page == "home") return false; open("home"); return true }
+    fun back(): Boolean {
+        if (page=="home") return false
+        if (wideLayout) {
+            val section=StageHomeLayout.sectionIndex(page)
+            if (section==0) return false
+            open(if(section!=null) "home" else StageHomeLayout.sectionPage(StageHomeLayout.sectionForPage(page)))
+        } else open("home")
+        return true
+    }
     fun open(target: String) {
-        page = target; body = null; stateText = null; master = null
+        navigationScroll?.let { navigationY = it.scrollY }
+        navigationScroll = null
+        body = null; stateText = null; master = null
+        wideLayout = isWide() && target != "update"
+        val detailTarget=StageHomeLayout.detailPage(target,wideLayout)
+        page=detailTarget
         if (target == "update") {
             view.background = StageUpdateBackdrop()
             activity.window.statusBarColor = Color.rgb(15,13,35)
@@ -204,36 +236,58 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
             addView(columnHost, ViewGroup.LayoutParams(-1, -2))
         }
-        view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        if (wideLayout) {
+            val split = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+            val rail = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10),dp(10),dp(10),dp(14))
+                setBackgroundColor(if (dark) Color.rgb(25,27,32) else Color.rgb(237,239,247))
+            }
+            addHomeHeader(rail)
+            val navigation = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            rail.addView(navigation)
+            renderSectionNavigation(navigation,StageHomeLayout.sectionForPage(detailTarget))
+            val navScroll = ScrollView(activity).apply {
+                isFillViewport = true; isVerticalScrollBarEnabled = false
+                addView(rail, ViewGroup.LayoutParams(-1,-2))
+            }
+            navigationScroll = navScroll
+            val available = view.width.takeIf { it > 0 } ?: dp(activity.resources.configuration.screenWidthDp)
+            split.addView(navScroll, LinearLayout.LayoutParams(
+                StageHomeLayout.navigationWidth(available,activity.resources.displayMetrics.density), -1))
+            split.addView(View(activity).apply { setBackgroundColor(dividerColor) },
+                LinearLayout.LayoutParams(dp(1).coerceAtLeast(1),-1))
+            split.addView(scroll, LinearLayout.LayoutParams(0,-1,1f))
+            split.addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->
+                if (r > l) {
+                    val width = StageHomeLayout.navigationWidth(r-l,activity.resources.displayMetrics.density)
+                    if (navScroll.layoutParams.width != width)
+                        navScroll.layoutParams = (navScroll.layoutParams as LinearLayout.LayoutParams).apply { this.width = width }
+                }
+            }
+            view.addView(split, FrameLayout.LayoutParams(-1,-1))
+            navScroll.post { if (navigationScroll === navScroll) navScroll.scrollTo(0,navigationY) }
+        } else view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (target == "update" && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             scroll.alpha = 0f
             scroll.translationY = dp(14).toFloat()
             scroll.animate().alpha(1f).translationY(0f).setDuration(240L).start()
         }
-        if (target == "home") {
-            val header = LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), 0, dp(10), 0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
-            }
-            val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-            words.addView(label("台前调度", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
-            stateText = label(homeState(), 13f, secondary).apply { setPadding(0, dp(6), 0, 0) }
-            words.addView(stateText)
-            header.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
-            master = toggle(active) { setStage(it) }.apply {
-                minimumHeight = dp(48); contentDescription = "台前调度开关"
-            }
-            header.addView(master, LinearLayout.LayoutParams(dp(52), dp(48)))
-            column.addView(header)
-            body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-            column.addView(body); renderHome()
+        val sectionIndex=StageHomeLayout.sectionIndex(detailTarget)
+        if (wideLayout && sectionIndex!=null) {
+            renderSectionDetail(column,sectionIndex)
+        } else if (detailTarget == "home") {
+            addHomeHeader(column)
+            val navigation = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            body = navigation
+            column.addView(navigation); renderHome(navigation)
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "故障测试与报告", "about" to "关于与使用帮助", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
-                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
+                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { back() }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
-            header.addView(label(titles[target] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
+            header.addView(label(titles[detailTarget] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             if (target == "update") {
                 val more = label("⋮", 28f, Color.WHITE).apply {
                     gravity = Gravity.CENTER
@@ -267,7 +321,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 header.addView(more, LinearLayout.LayoutParams(dp(48), dp(48)))
             }
             column.addView(header)
-            when (target) {
+            when (detailTarget) {
                 "core" -> corePage(column)
                 "windows" -> windows(column)
                 "groups" -> groupPage(column)
@@ -275,7 +329,8 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "tile" -> tile(column)
                 "help" -> help(column)
                 "diagnostics" -> diagnostics(column)
-                "about" -> about(column)
+                "issue_specialties" -> issueSpecialties(column)
+                "about" -> { about(column); help(column) }
                 "feedback" -> feedback(column)
                 "changelog" -> column.addView(StageChangelogPage.create(activity), LinearLayout.LayoutParams(-1, -2))
                 "update" -> column.addView(UpdateSection.create(activity), LinearLayout.LayoutParams(-1, -2))
@@ -289,26 +344,117 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
     }
     private fun homeState(): String = "${if (connected) { if (active) "已开启" else "已关闭" } else "待连接"} · $versionName"
-    private fun renderHome() {
-        val root = body ?: return; root.removeAllViews()
-        if (UpdateCoordinator.available(activity) != null)
-            row(group(root), "发现台前调度新版本", icon = "info") { open("update") }
-        row(group(root), "故障测试与报告", "手动开启 · 标记问题 · 自行导出，平时不监控", "diagnostics") {
-            activity.startActivity(Intent(activity, StageIssueDiagnosticActivity::class.java))
+    private fun addHomeHeader(parent: LinearLayout) {
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10),0,dp(10),0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
         }
-        for (section in StageHomeLayout.sections) {
-            root.addView(label(section.title, 12f, secondary).apply {
-                setPadding(dp(16), dp(StageHomeLayout.SECTION_TOP_DP), dp(16), 0)
-            })
-            val card = group(root)
-            for (item in section.items) row(card, item.name, icon = item.icon, color = blue) {
+        val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        words.addView(label("台前调度", if (wideLayout) 21f else 30f).apply { typeface = Typeface.DEFAULT_BOLD })
+        stateText = label(homeState(), 12f, secondary).apply { setPadding(0,dp(6),0,0) }
+        words.addView(stateText)
+        header.addView(words, LinearLayout.LayoutParams(0,-2,1f))
+        master = toggle(active) { setStage(it) }.apply {
+            minimumHeight = dp(48); contentDescription = "台前调度开关"
+        }
+        header.addView(master, LinearLayout.LayoutParams(dp(52),dp(48)))
+        parent.addView(header)
+    }
+    private fun sectionGlyph(index:Int)=listOf("groups","diagnostics","tile")[index]
+    private fun renderSectionNavigation(root:LinearLayout,selected:Int) {
+        for((index,section) in StageHomeLayout.sections.withIndex()) {
+            val color=if(index==selected) Color.WHITE else ink
+            val entry=LinearLayout(activity).apply {
+                orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+                minimumHeight=dp(52);setPadding(dp(12),dp(8),dp(12),dp(8))
+                isClickable=true;isFocusable=true;isSelected=index==selected
+                if(isSelected)background=GradientDrawable().apply{setColor(blue);cornerRadius=dp(12).toFloat()}
+                addView(StageSettingsIcon(activity,sectionGlyph(index),color),LinearLayout.LayoutParams(dp(24),dp(24)).apply{marginEnd=dp(12)})
+                addView(label(section.title,16f,color).apply{typeface=Typeface.DEFAULT_BOLD},LinearLayout.LayoutParams(0,-2,1f))
+                contentDescription=section.title
+                setOnClickListener{open(StageHomeLayout.sectionPage(index))}
+            }
+            root.addView(entry,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8)})
+        }
+    }
+    private fun renderSectionDetail(root:LinearLayout,index:Int) {
+        val section=StageHomeLayout.sections[index]
+        val title=LinearLayout(activity).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(12),dp(12),0,dp(8))}
+        title.addView(StageSettingsIcon(activity,sectionGlyph(index),blue),LinearLayout.LayoutParams(dp(28),dp(28)).apply{marginEnd=dp(12)})
+        title.addView(label(section.title,24f).apply{typeface=Typeface.DEFAULT_BOLD})
+        root.addView(title)
+        if(index==2 && UpdateCoordinator.available(activity)!=null)
+            row(group(root),"发现台前调度新版本",icon="info"){open("update")}
+        val card=group(root)
+        val descriptions=mapOf(
+            "windows" to "顶部 / 侧边布局、比例与样式",
+            "core" to "常用应用、快捷启动与切换",
+            "groups" to "保存布局、快速恢复工作状态",
+            "gestures" to "手势操作与触发方式",
+            "tile" to "控制中心开关、智能隐藏等",
+            "issue_all" to "记录有效诊断事件",
+            "issue_specialties" to "五大专项、历史报告与导出")
+        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,ink){
+            if(item.page=="issue_all")launchIssue("all") else{
                 open(item.page)
-                if (item.page in listOf("core", "windows", "groups")) refresh()
+                if(item.page in listOf("core","windows","groups"))refresh()
             }
         }
-        root.addView(label("ZMW小武 × GPT\n基于 NeXtep 二次开发", 11f, secondary).apply {
-            gravity=Gravity.CENTER; setLineSpacing(dp(3).toFloat(),1f); setPadding(0,dp(14),0,dp(6))
-        })
+        val footer=LinearLayout(activity).apply{
+            orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+            setPadding(dp(12),dp(24),dp(12),dp(8))
+        }
+        footer.addView(ImageView(activity).apply{setImageResource(R.drawable.ic_atomic_workbench)},
+            LinearLayout.LayoutParams(dp(36),dp(36)).apply{marginEnd=dp(12)})
+        val words=LinearLayout(activity).apply{orientation=LinearLayout.VERTICAL}
+        words.addView(label("台前调度 · Atomic Workbench",12f).apply{typeface=Typeface.DEFAULT_BOLD})
+        words.addView(label("二次开发：ZMW小武 × GPT",11f,secondary))
+        footer.addView(words,LinearLayout.LayoutParams(0,-2,1f))
+        footer.addView(label(versionName,11f,secondary).apply {
+            gravity=Gravity.CENTER;setPadding(dp(8),dp(6),dp(8),dp(6))
+            background=GradientDrawable().apply{setColor(cardColor);cornerRadius=dp(14).toFloat()}
+        },LinearLayout.LayoutParams(-2,-2))
+        root.addView(footer)
+    }
+    private fun renderHome(root: LinearLayout, selected: String? = null) {
+        root.removeAllViews()
+        if (UpdateCoordinator.available(activity) != null)
+            row(group(root), "发现台前调度新版本", icon = "info") { open("update") }
+         for (section in StageHomeLayout.sections) {
+            val heading = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16),dp(StageHomeLayout.SECTION_TOP_DP),dp(16),0)
+            }
+            val glyph = when (section.title) { "工作台" -> "groups"; "故障诊断" -> "diagnostics"; else -> "tile" }
+            val accent = when (section.title) { "工作台" -> blue; "故障诊断" -> Color.rgb(142,88,224); else -> secondary }
+            heading.addView(StageSettingsIcon(activity,glyph,accent),
+                LinearLayout.LayoutParams(dp(22),dp(22)).apply { marginEnd=dp(8) })
+            heading.addView(label(section.title, if (wideLayout) 15f else 18f).apply { typeface = Typeface.DEFAULT_BOLD })
+            root.addView(heading)
+            val card = group(root)
+            for (item in section.items) {
+                val entry = row(card, item.name, icon = item.icon, color = if (wideLayout) blue else ink) {
+                if (item.page == "issue_all") launchIssue("all") else {
+                    open(item.page)
+                    if (item.page in listOf("core", "windows", "groups")) refresh()
+                }
+                }
+                if (item.page == selected) {
+                    entry.isSelected = true
+                    entry.setBackgroundColor(if (dark) Color.rgb(34,57,87) else Color.rgb(219,234,255))
+                }
+            }
+        }
+        val footer = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            setPadding(dp(4),dp(22),dp(4),dp(8))
+        }
+        footer.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) },
+            LinearLayout.LayoutParams(dp(32),dp(32)).apply { marginEnd=dp(10) })
+        footer.addView(label("台前调度 · Atomic Workbench\nZMW小武 × GPT\n基于 NeXtep 二次开发 · $versionName", 11f, secondary).apply {
+            setLineSpacing(dp(3).toFloat(),1f)
+        },LinearLayout.LayoutParams(-2,-2,0f))
+        root.addView(footer)
     }
     private fun windows(root: LinearLayout) {
         val manage = group(root)
@@ -392,6 +538,33 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 .setPositiveButton("知道了", null).show()
         }
         root.addView(hint("主窗把手：点击打开菜单，向左滑动关闭主窗。小窗沿侧栏外侧方向滑动关闭；顶部横排时向左滑动。\n\n退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
+    }
+    private fun launchIssue(category: String? = null, history: Boolean = false) {
+        val intent = Intent(activity, StageIssueDiagnosticActivity::class.java)
+        if (category != null) intent.putExtra(StageIssueDiagnosticActivity.EXTRA_CATEGORY, category)
+        if (history) intent.putExtra(StageIssueDiagnosticActivity.EXTRA_HISTORY, true)
+        activity.startActivity(intent)
+    }
+    private fun issueSpecialties(root: LinearLayout) {
+        root.addView(hint("快速记录运行问题 · 生成本机报告 · 帮助定位"))
+        val hero = group(root)
+        row(hero, "一键综合诊断", "自动记录有效诊断事件，覆盖五大专项", "diagnostics") { launchIssue("all") }
+        hero.addView(Button(activity).apply {
+            text = "立即诊断"; isAllCaps = false; setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { setColor(blue); cornerRadius = dp(26).toFloat() }
+            minimumHeight = dp(48); setOnClickListener { launchIssue("all") }
+        }, LinearLayout.LayoutParams(-1,dp(52)).apply { setMargins(dp(16),dp(4),dp(16),dp(14)) })
+        for (item in StageIssueTestCatalog.modules) {
+            val visual = StageIssuePresentation.module(item.id)
+            row(group(root), item.name, visual.description, visual.icon, visual.tint) { launchIssue(item.id) }
+        }
+        val tools = group(root)
+        row(tools, "历史报告", "查看或导出本机报告", "issue_document") { launchIssue(history = true) }
+        val health = StageHomeLayout.systemDiagnostics
+        row(tools, health.name, "查看注入状态、刷新连接或退出旧工作区", health.icon) {
+            open(health.page); refresh()
+        }
+        root.addView(hint("五大专项与综合诊断共用一个会话；已有测试运行时继续该会话，不重复启动。"))
     }
     private var slotDiagnostics = "尚未取得槽位状态"
     private fun diagnostics(root: LinearLayout) {
@@ -590,12 +763,14 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private fun command(name: String, id: String? = null, title: String? = null, launch: Intent? = null, slot: Int? = null, expectedTask: Int? = null) {
         if (activity.isDestroyed || name == "query" && queryPending) return
         if (name == "query") queryPending = true
+        val diagnosticToken = StageIssueEventObserver.commandToken(name)
+        fun diagnostic(outcome: String) = StageIssueEventObserver.recordCommandResult(diagnosticToken, name, outcome)
         var completed = false
         fun unavailable() {
             connected = false; status = "系统组件未连接"; stateText?.text = homeState()
             if (page == "diagnostics") open("diagnostics")
         }
-        val timeout = Runnable { if (!completed && !activity.isDestroyed) { completed = true; queryPending = false; unavailable() } }
+        val timeout = Runnable { if (!completed && !activity.isDestroyed) { completed = true; queryPending = false; diagnostic("等待响应超时"); unavailable() } }
         handler.postDelayed(timeout, 6000)
         val intent = Intent(StageControlContract.ACTION).setPackage(TriggerBroadcastContract.SYSTEM_UI_PACKAGE)
             .putExtra(StageControlContract.COMMAND, name).putExtra(StageControlContract.ID, id).putExtra(StageControlContract.NAME, title)
@@ -607,11 +782,12 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     if (completed || activity.isDestroyed) return
                     completed = true; handler.removeCallbacks(timeout); queryPending = false
                     val reply = getResultExtras(false)
-                    if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null || reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) { unavailable(); return }
+                    if (resultCode != TriggerBroadcastContract.RESULT_HANDLED || reply == null || reply.getInt(TriggerBroadcastContract.EXTRA_RUNTIME_PROTOCOL_VERSION) != TriggerBroadcastContract.RUNTIME_PROTOCOL_VERSION) { diagnostic("无有效协议响应"); unavailable(); return }
                     connected = true; active = reply.getBoolean(TriggerBroadcastContract.EXTRA_ACTIVE)
                     status = if (active) "已开启" else "已关闭"
                     stateText?.text = homeState(); syncSwitch()
-                    if (!reply.getBoolean(StageControlContract.OK)) { toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return }
+                    if (!reply.getBoolean(StageControlContract.OK)) { diagnostic("系统返回操作失败"); toast(reply.getString(StageControlContract.MESSAGE) ?: "操作失败"); return }
+                    diagnostic("系统返回OK（不代表画面验收）")
                     reply.getString(StageControlContract.GROUPS)?.let { raw -> runCatching {
                         val snapshot = JSONObject(raw); groups = snapshot.getJSONArray("groups")
                         activeId = snapshot.optString("active").takeIf { it.isNotBlank() && it != "null" }
@@ -629,12 +805,12 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     }
                 }
             }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())
-        }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); unavailable() }
+        }.onFailure { completed = true; queryPending = false; handler.removeCallbacks(timeout); diagnostic("控制请求发送失败"); unavailable() }
     }
 }
 
 /** Small colored setting glyphs, drawn natively and aligned like system list icons. */
-private class StageSettingsIcon(context: Context, private val kind: String, color: Int) : View(context) {
+internal class StageSettingsIcon(context: Context, private val kind: String, color: Int) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 2.1f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     override fun onDraw(canvas: Canvas) {
         val save = canvas.save(); val scale = minOf(width, height) / 24f
@@ -652,6 +828,17 @@ private class StageSettingsIcon(context: Context, private val kind: String, colo
             "update" -> { canvas.drawArc(4f,4f,20f,20f,205f,220f,false,paint); canvas.drawLine(17f,4f,20f,4f,paint); canvas.drawLine(20f,4f,20f,7f,paint); canvas.drawArc(4f,4f,20f,20f,25f,145f,false,paint); canvas.drawLine(4f,17f,4f,20f,paint); canvas.drawLine(4f,20f,7f,20f,paint) }
             "book" -> { rect(2f,4f,11f,20f);rect(13f,4f,22f,20f);canvas.drawLine(12f,6f,12f,20f,paint);canvas.drawLine(5f,9f,8f,9f,paint);canvas.drawLine(16f,9f,19f,9f,paint) }
             "about" -> { canvas.drawCircle(12f,12f,9f,paint);canvas.drawCircle(12f,9f,2.8f,paint);canvas.drawArc(7f,12f,17f,20f,185f,170f,false,paint) }
+            "issue_document" -> { rect(5f,2f,19f,22f); for(y in listOf(8f,12f,16f)) canvas.drawLine(8f,y,16f,y,paint) }
+            "issue_speed" -> { canvas.drawArc(3f,3f,21f,21f,145f,250f,false,paint);canvas.drawLine(12f,12f,17f,7f,paint);canvas.drawCircle(12f,12f,1.5f,paint) }
+            "issue_bolt" -> { canvas.drawPath(Path().apply { moveTo(13f,2f);lineTo(4f,14f);lineTo(11f,14f);lineTo(10f,22f);lineTo(20f,10f);lineTo(13f,10f);close() },paint) }
+            "issue_swap" -> { canvas.drawLine(3f,8f,21f,8f,paint);canvas.drawLine(21f,8f,16f,3f,paint);canvas.drawLine(21f,16f,3f,16f,paint);canvas.drawLine(3f,16f,8f,21f,paint) }
+            "issue_layers" -> { for(y in listOf(0f,5f,10f)) canvas.drawPath(Path().apply { moveTo(12f,2f+y);lineTo(22f,7f+y);lineTo(12f,12f+y);lineTo(2f,7f+y);close() },paint) }
+            "issue_media" -> { rect(3f,3f,21f,21f);canvas.drawPath(Path().apply {moveTo(9f,7f);lineTo(17f,12f);lineTo(9f,17f);close()},paint) }
+            "issue_battery" -> {rect(2f,6f,20f,18f);canvas.drawLine(22f,10f,22f,14f,paint);canvas.drawLine(13f,8f,10f,12f,paint);canvas.drawLine(10f,12f,14f,12f,paint);canvas.drawLine(14f,12f,11f,16f,paint)}
+            "issue_temperature" -> {canvas.drawCircle(12f,17f,4f,paint);canvas.drawLine(9f,14f,9f,4f,paint);canvas.drawLine(15f,14f,15f,4f,paint);canvas.drawArc(9f,1f,15f,7f,180f,180f,false,paint)}
+            "issue_lock" -> {rect(5f,10f,19f,22f);canvas.drawArc(8f,2f,16f,12f,180f,180f,false,paint);canvas.drawLine(8f,10f,8f,7f,paint);canvas.drawLine(16f,10f,16f,7f,paint)}
+            "issue_shield" -> {canvas.drawPath(Path().apply {moveTo(12f,2f);lineTo(21f,6f);lineTo(20f,14f);quadTo(18f,19f,12f,22f);quadTo(6f,19f,4f,14f);lineTo(3f,6f);close()},paint);canvas.drawLine(8f,12f,11f,15f,paint);canvas.drawLine(11f,15f,17f,9f,paint)}
+            "issue_cube" -> {canvas.drawPath(Path().apply {moveTo(12f,2f);lineTo(21f,7f);lineTo(21f,17f);lineTo(12f,22f);lineTo(3f,17f);lineTo(3f,7f);close()},paint);canvas.drawLine(3f,7f,12f,12f,paint);canvas.drawLine(21f,7f,12f,12f,paint);canvas.drawLine(12f,12f,12f,22f,paint)}
             "heart" -> { val p=Path().apply { moveTo(12f,21f); cubicTo(9f,18f,2f,14f,2f,9f); cubicTo(2f,3f,9f,1f,12f,7f); cubicTo(15f,1f,22f,3f,22f,9f); cubicTo(22f,14f,15f,18f,12f,21f); close() }; canvas.drawPath(p,paint) }
             else -> { canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawLine(12f, 11f, 12f, 17f, paint); canvas.drawPoint(12f, 7f, paint) }
         }; canvas.restoreToCount(save)
