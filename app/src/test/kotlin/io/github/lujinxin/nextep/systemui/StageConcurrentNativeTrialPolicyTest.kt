@@ -4,6 +4,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageConcurrentNativeTrialPolicyTest {
+    @Test fun nativeTeardownRunsAllStepsDespiteVendorAndLoggerFailures() {
+        val policy=StageConcurrentNativeTrialPolicy
+        for(mask in 0 until 128) for(loggerFails in listOf(false,true)) {
+            val visited=mutableListOf<Int>()
+            var errors=0
+            val steps=Array<()->Unit>(7){index->
+                {
+                    visited.add(index)
+                    if(mask and (1 shl index)!=0) error("release failed")
+                }
+            }
+            policy.cleanupSteps(*steps,onFailure={
+                errors++
+                if(loggerFails) error("logger failed")
+            })
+            assertEquals((0..6).toList(),visited)
+            assertEquals(Integer.bitCount(mask),errors)
+        }
+    }
     @Test fun nativeSourcePreflightRejectsDetachedOrReplacedLeashes() {
         val p=StageConcurrentNativeTrialPolicy
         for(host in listOf(false,true)) for(handles in listOf(false,true))
