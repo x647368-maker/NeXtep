@@ -720,7 +720,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 // action. A late callback must not resurrect a retired flight.
                 val received=firstReceiptAt.get()
                 val now=SystemClock.uptimeMillis()
-                firstTransactionCommitted=receiptInBudget()
+                firstTransactionCommitted=StageConcurrentNativeTrialPolicy.firstReceiptWithinBudget(
+                    firstSubmitAt,received,FIRST_COMMIT_BUDGET_MS)
                 trace("first_commit_receipt_ms="+
                     (if(received>=0L) received-firstSubmitAt else -1L)+
                     " ui_dispatch_ms="+(now-firstSubmitAt)+
@@ -759,8 +760,11 @@ internal class StageLiveSurfaceExchange private constructor(
             pendingFirstFlight=beginFlight
             // The absolute receipt deadline is measured from submission,
             // not from the eventual main-thread callback or timer dispatch.
-            if(receiptInBudget())beginFlight.run()
-            else if(!ui.postAtTime(beginFlight,firstSubmitAt+FIRST_COMMIT_BUDGET_MS))stop()
+            // Always queue UI admission until start() has returned; the
+            // owning controller must get a chance to publish this flight.
+            val wakeAt=if(receiptInBudget())SystemClock.uptimeMillis()
+                else firstSubmitAt+FIRST_COMMIT_BUDGET_MS
+            if(!ui.postAtTime(beginFlight,wakeAt))stop()
         } else beginFlight.run()
         return true
     }
