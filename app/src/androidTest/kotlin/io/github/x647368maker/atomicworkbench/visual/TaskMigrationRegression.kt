@@ -165,9 +165,17 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 var firstOwnerNs=0L
                 var endedNs=0L
                 var moveReturnedNs=0L
+                var moveReturnedUptime=0L
                 var queries=0
                 var callbacks=0
-                var deadline=0L
+                // All four modes measure the observation budget from actual IPC return,
+                // not from the asynchronously scheduled owner callback.
+                val observationBudgetMs=700L
+                fun markMoveReturned(){
+                    moveReturnedNs=now()
+                    moveReturnedUptime=SystemClock.uptimeMillis()
+                }
+                fun observationDeadline()=moveReturnedUptime+observationBudgetMs
                 fun ownerStep(action:()->Unit){
                     val entered=now()
                     try{
@@ -215,13 +223,14 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 fun acceptBatch(batch:TaskRepository.ExchangeTaskBatch){
                     val state=repository.publishExchangeTasks(batch).firstOrNull{it.taskId==id}
                     verify(id,state)
+                    check(SystemClock.uptimeMillis()<observationDeadline()) {"Async display observation exceeded matched post-IPC budget"}
                     if(state?.displayId==destination)outcome=Result.success(Unit)
                     else{
-                        check(SystemClock.uptimeMillis()<deadline){"Async display observation timed out"}
                         check(owner.postDelayed({ownerStep{observeAsync()}},30L))
                     }
                 }
                 observeAsync={
+                    check(SystemClock.uptimeMillis()<observationDeadline()) {"Async display observation budget expired before query"}
                     queries++
                     onLane({repository.readExchangeTasks()},::acceptBatch)
                 }
@@ -235,36 +244,31 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                             queries++
                             onLane({
                                 ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
-                                moveReturnedNs=now()
-                                val expiry=SystemClock.uptimeMillis()+700L
-                                repository.readExchangeTasks() to expiry
-                            }){(batch,expiry)->
-                                deadline=expiry
-                                acceptBatch(batch)
-                            }
+                                markMoveReturned()
+                                repository.readExchangeTasks()
+                            },::acceptBatch)
                         }else if(async){
                             onLane({
                                 ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
-                                moveReturnedNs=now()
+                                markMoveReturned()
                             }){
-                                deadline=SystemClock.uptimeMillis()+700
                                 observeAsync()
                             }
                         }else{
                             StageExchangeTelemetry.measure("exchange_move"){
                                 StageExchangeTelemetry.measure("probe_display_binder"){
                                     ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
-                                    moveReturnedNs=now()
+                                    markMoveReturned()
                                 }
                                 StageExchangeTelemetry.measure("probe_display_observation"){
-                                    deadline=SystemClock.uptimeMillis()+700
                                     while(true){
+                                        check(SystemClock.uptimeMillis()<observationDeadline()) {"Sync observation budget expired before query"}
                                         queries++
                                         val batch=repository.readExchangeTasks()
                                         val state=repository.publishExchangeTasks(batch).firstOrNull{it.taskId==id}
                                         verify(id,state)
+                                        check(SystemClock.uptimeMillis()<observationDeadline()) {"Sync display observation exceeded matched post-IPC budget"}
                                         if(state?.displayId==destination)break
-                                        check(SystemClock.uptimeMillis()<deadline){"Sync display observation timed out"}
                                         SystemClock.sleep(30)
                                     }
                                 }
@@ -375,7 +379,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             lines.add("matched_summary mode=async n=16 elapsed_median_ms=${median(asyncElapsed)} owner_busy_median_ms=${median(asyncOwner)} callback_wait_median_ms=${median(ordinaryCallback)} "+frameMetrics(laneGaps))
             lines.add("matched_summary mode=async_barrier n=16 elapsed_median_ms=${median(barrierElapsed)} owner_busy_median_ms=${median(barrierOwner)} callback_wait_median_ms=${median(barrierCallback)} "+frameMetrics(barrierGaps))
             lines.add("matched_summary mode=async_batch n=16 elapsed_median_ms=${median(batchElapsed)} owner_busy_median_ms=${median(batchOwner)} callback_wait_median_ms=${median(batchCallback)} "+frameMetrics(batchGaps))
-            lines.add("direction_dispatch scope: clipped actual owner callback arrival intervals; coverage=false means incomplete bracketing; legacy frame metrics retained; no visual readiness or FPS claim. Observation deadline origins remain mode-specific in this probe.")
+            lines.add("direction_dispatch scope: clipped actual owner callback arrival intervals; coverage=false means incomplete bracketing; legacy frame metrics retained; no visual readiness or FPS claim. All four modes use the same strict 700ms post-IPC observation budget; test-only, not a change to production deadline semantics.")
             lines.add("Scope: async_barrier and async_batch are test-only candidates; batch merges successful move and first read, never worker publication; no production scheduling modification and no assumed improvement.")
             // Guard test is outside measured intervals.
             val guardFinished=CountDownLatch(1)
