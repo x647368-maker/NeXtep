@@ -396,6 +396,19 @@
           "after": "            service.addOnActiveSessionsChangedListener(activeListener, null, handler)\n            bind(token, service.getActiveSessions(null).orEmpty())"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/SystemUiRuntime.kt": {
+      "previous_blob_sha1": "eb7ce127ee6b7492c8ed5af9737b9dcd80299f16",
+      "patches": [
+        {
+          "before": "            if (!screenReady || keyguardLocked) {\n                if (!workspaceController.isSuspended()) {",
+          "after": "            if (!screenReady || keyguardLocked) {\n                // The lock observer is already responsible for the locked fallback.\n                // Cancel a stale unlock retry instead of running a second poll chain.\n                if (keyguardLocked) lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n                if (!workspaceController.isSuspended()) {"
+        },
+        {
+          "before": "            if (locked || !screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Keep this attempt alive instead of waiting for another broadcast.",
+          "after": "            // While keyguard is locked, display/keyguard callbacks and the existing\n            // lock observer handle wake/unlock. Do not start a competing poll chain.\n            if (locked) return\n            if (!screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Retain the existing wake retry only while unlocked."
+        }
+      ]
     }
   }
 }
