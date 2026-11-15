@@ -130,7 +130,8 @@ assert _pr89.count('taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow(
 assert 'call={taskRepository.bringTaskToFront(slotTask.taskId).getOrThrow()}' in _pr89
 assert 'frontResult.getOrThrow()' in _pr89 and 'if(!accepted)done(IllegalStateException(' in _pr89
 assert _pr89.index('frontResult.getOrThrow()')<_pr89.index('StageExchangeTelemetry.phasedEvent("promote_complete")')
-assert _pr89.count('check(token == transitionGeneration && active && !suspended)')>=3
+assert _pr89.count('check(token==transitionGeneration && active && !suspended)')==2
+assert _pr89.count('check(forwardCurrent())')>=4
 def undo_pr88(path,data):
  data=undo_pr89(path,data)
  if path not in pr88_review:return data
