@@ -52,9 +52,18 @@ assert 'queryTasksNonBlocking(::forwardCurrent)' in _pr92_demote
 assert 'taskRepository.runningTasks()' not in _pr92_demote
 assert 'queryTasksNonBlocking(stillCurrent)' in _pr92_move
 assert 'taskRepository.runningTasks()' not in _pr92_move
-assert 'call={snapshots=taskRepository.runningTasks()}' in _pr92_query
+assert 'call={batch=taskRepository.readExchangeTasks()}' in _pr92_query
 assert 'exchangeBinderLane.submit(' in _pr92_query
-assert 'check(stillCurrent())' in _pr92_query
+assert _pr92_query.index('Stale exchange after task query')<_pr92_query.index('taskRepository.publishExchangeTasks(')
+assert 'transitionInProgress && visualTransitionPending' in _pr92_start
+_pr92_repo=(k/'task/TaskRepository.kt').read_text()
+_pr92_read=_pr92_repo.split('internal fun readExchangeTasks()',1)[1].split('internal fun publishExchangeTasks(',1)[0]
+_pr92_publish=_pr92_repo.split('internal fun publishExchangeTasks(',1)[1].split('private fun readTasks(',1)[0]
+assert 'TaskSurfaceCompat.observeTaskState' not in _pr92_read
+assert 'states.add(id to state)' in _pr92_read
+assert 'Looper.getMainLooper()' in _pr92_publish
+assert 'TaskSurfaceCompat.observeTaskState(id,state)' in _pr92_publish
+assert 'readTasks(TaskSurfaceCompat::observeTaskState)' in _pr92_repo
 _pr92_layout=_pr92.split('private fun waitForTaskLayoutNonBlocking(',1)[1].split('private fun restoreTaskLayoutNonBlocking(',1)[0]
 assert 'queryTasksNonBlocking(stillCurrent)' in _pr92_layout
 assert 'taskRepository.findTask(' not in _pr92_layout

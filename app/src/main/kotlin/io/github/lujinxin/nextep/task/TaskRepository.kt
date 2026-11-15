@@ -108,22 +108,48 @@ class TaskRepository(context: Context) {
         NeXtepLog.info("task_repository", "Brought taskId=$taskId to front")
     }
 
-    @Suppress("DEPRECATION")
     fun runningTasks(): List<TaskSnapshot> = try {
-        WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()
-        val raw=io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_binder") {
-            activityManager?.getRunningTasks(MAX_TASK_QUERY).orEmpty()
-        }
-        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_decode") { raw.mapNotNull(::snapshot) }
+        readTasks(TaskSurfaceCompat::observeTaskState)
     } catch (error: Throwable) {
         NeXtepLog.error("task_repository", "Running task query failed", error)
         emptyList()
     }
 
-    private fun snapshot(info: ActivityManager.RunningTaskInfo): TaskSnapshot? {
+    // Worker path decodes only. An invalid exchange reply must not mutate
+    // observed Surface ownership or discard an existing slot fit.
+    internal data class ExchangeTaskBatch(
+        val snapshots: List<TaskSnapshot>,
+        val observations: List<Pair<Int, TaskInfoCompat.WindowState>>,
+    )
+
+    internal fun readExchangeTasks(): ExchangeTaskBatch {
+        val states=ArrayList<Pair<Int, TaskInfoCompat.WindowState>>()
+        val snapshots=readTasks { id,state -> states.add(id to state) }
+        return ExchangeTaskBatch(snapshots,states)
+    }
+
+    internal fun publishExchangeTasks(batch: ExchangeTaskBatch): List<TaskSnapshot> {
+        check(android.os.Looper.myLooper()==android.os.Looper.getMainLooper())
+        batch.observations.forEach { (id,state) -> TaskSurfaceCompat.observeTaskState(id,state) }
+        return batch.snapshots
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readTasks(observe: (Int, TaskInfoCompat.WindowState)->Unit): List<TaskSnapshot> {
+        WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()
+        val raw=io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_binder") {
+            activityManager?.getRunningTasks(MAX_TASK_QUERY).orEmpty()
+        }
+        return io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("query_decode") {
+            raw.mapNotNull { snapshot(it,observe) }
+        }
+    }
+
+    private fun snapshot(info: ActivityManager.RunningTaskInfo,
+                         observe: (Int,TaskInfoCompat.WindowState)->Unit): TaskSnapshot? {
         val component = info.topActivity ?: info.baseActivity ?: return null
         val windowState = TaskInfoCompat.readWindowState(info) ?: return null
-        TaskSurfaceCompat.observeTaskState(info.taskId, windowState)
+        observe(info.taskId, windowState)
         return TaskSnapshot(
             taskId = info.taskId,
             displayId = windowState.displayId,

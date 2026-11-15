@@ -1682,6 +1682,7 @@ class SlotTaskCoordinator(
         val exchangeGeometry=geometryProvider()
         val stillPreparing={
             token==transitionGeneration && active && !suspended &&
+                transitionInProgress && visualTransitionPending &&
                 slotRecords[slotIndex].state==occupied &&
                 slots[slotIndex].displayId()==occupied.displayId &&
                 geometryProvider()==exchangeGeometry
@@ -2840,14 +2841,17 @@ class SlotTaskCoordinator(
     ) {
         val before=runCatching { check(stillCurrent()) {"Stale exchange before task query"} }.exceptionOrNull()
         if(before!=null){done(Result.failure(before));return}
-        var snapshots:List<TaskRepository.TaskSnapshot>?=null
+        var batch:TaskRepository.ExchangeTaskBatch?=null
         val accepted=exchangeBinderLane.submit(
-            call={snapshots=taskRepository.runningTasks()},
+            call={batch=taskRepository.readExchangeTasks()},
             complete={ result->
                 val outcome=runCatching {
                     result.getOrThrow()
                     check(stillCurrent()) {"Stale exchange after task query"}
-                    checkNotNull(snapshots) {"Task query returned no snapshot result"}
+                    // Pure worker results cannot publish Surface state after
+                    // the animation/session has been cancelled or invalidated.
+                    taskRepository.publishExchangeTasks(
+                        checkNotNull(batch) {"Task query returned no snapshot result"})
                 }
                 done(outcome)
             },
