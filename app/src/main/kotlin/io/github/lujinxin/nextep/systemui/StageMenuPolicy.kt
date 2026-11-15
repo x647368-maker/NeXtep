@@ -5,9 +5,9 @@ internal object StageMenuPolicy {
     fun group(label:String):Int {
         val s=label.removePrefix("✓ ")
         return when {
-            s in listOf("顶部横排","左侧排列","右侧排列","完整显示布局","主窗口优先布局")->0
+            s in listOf("顶部横排","左侧排列","右侧排列","完整显示布局","主窗口优先布局","切换全屏（保留工作区）")->0
             s in listOf("添加小窗","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）")->1
-            s.contains("侧栏") || s.contains("常用应用快捷栏") || s=="影音布局与自动模式"->2
+            s.contains("侧栏") || s.contains("常用应用") || s=="影音布局与自动模式"->2
             else->3
         }
     }
