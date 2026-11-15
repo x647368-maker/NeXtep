@@ -23,7 +23,27 @@ pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').
 pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
 # PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.
 pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']
+# Internal v83 final candidate: normalize the exactly reviewed owner-turn scope.
+final_owner_review=json.loads((root/'scripts/reviewed-final-v83-owner-turn.json').read_text())['files']
+assert set(final_owner_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/ExchangeSession.kt','scripts/verify-state-continuity.py'}
+def undo_final_owner(path,data):
+ if path not in final_owner_review:return data
+ spec=final_owner_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in final_owner_review:
+ undo_final_owner(reviewed_path,(root/reviewed_path).read_bytes())
+import subprocess,sys
+subprocess.run([sys.executable,str(root/'scripts/evaluate-final-v83-pairs.py'),'--self-test'],check=True)
 def undo_pr92(path,data):
+ data=undo_final_owner(path,data)
  if path not in pr92_review:return data
  spec=pr92_review[path]
  source=data.decode('utf-8')

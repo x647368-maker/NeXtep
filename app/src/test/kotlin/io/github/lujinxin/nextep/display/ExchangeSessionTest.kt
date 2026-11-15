@@ -205,8 +205,9 @@ class ExchangeSessionTest {
         assertEquals(0, demotions)
         assertTrue(queue.isEmpty()) // no blocking poll spins or scheduled fake success
         pendingPromote!!(null)
-        queue.removeFirst().invoke()
         assertEquals(ExchangeSession.Phase.DEMOTE_PENDING, session.phase)
+        assertEquals(0, demotions)
+        assertEquals(1, queue.size)
         queue.removeFirst().invoke()
         assertEquals(ExchangeSession.Phase.DEMOTING, session.phase)
         assertEquals(1, demotions)
@@ -246,6 +247,101 @@ class ExchangeSessionTest {
         assertEquals(ExchangeSession.Phase.RESTORED, session.phase)
         assertEquals(1, rollback)
         assertEquals(false, result)
+    }
+
+
+    private class OwnerTurnFixture {
+        val queue = java.util.concurrent.LinkedBlockingQueue<() -> Unit>()
+        var clock = 0L
+        var reply: ((Throwable?) -> Unit)? = null
+        var demotions = 0
+        var restorations = 0
+        var completions = 0
+        var result: Boolean? = null
+        val session = ExchangeSession(
+            33, 100L,
+            ExchangeSession.Origin(101, 0, "main", 0, "main"),
+            ExchangeSession.Origin(202, 0, "slot", 7, "slot"),
+            { clock }, { queue.add(it) },
+            object : ExchangeSession.Driver {
+                override val nonBlocking = true
+                override fun promote() = error("unexpected sync promotion")
+                override fun demoteAndVerify() = error("unexpected sync demotion")
+                override fun restoreAndVerify() { restorations++ }
+                override fun promoteAsync(done: (Throwable?) -> Unit) { reply = done }
+                override fun demoteAndVerifyAsync(done: (Throwable?) -> Unit) {
+                    demotions++
+                    done(null)
+                }
+            }, { completions++; result = it },
+        )
+        fun start() { session.start(); queue.remove().invoke() }
+        fun drain() { repeat(8) { queue.poll()?.invoke() }; check(queue.isEmpty()) }
+    }
+
+    @Test fun alreadyQueuedCancellationStillPrecedesDemotion() {
+        val f = OwnerTurnFixture()
+        f.start()
+        f.queue.add { f.session.cancel() }
+        f.reply!!(null)
+        assertEquals(0, f.demotions)
+        assertFalse(f.session.settled)
+        f.drain()
+        assertEquals(0, f.demotions)
+        assertEquals(1, f.restorations)
+        assertEquals(false, f.result)
+    }
+
+    @Test fun expiryBetweenPromotionReplyAndMutationStillRollsBack() {
+        val f = OwnerTurnFixture()
+        f.start()
+        f.reply!!(null)
+        f.clock = 100L
+        f.drain()
+        assertEquals(0, f.demotions)
+        assertEquals(1, f.restorations)
+        assertEquals(false, f.result)
+    }
+
+    @Test fun duplicatePromotionReplyDoesNotQueueAnotherMutation() {
+        val f = OwnerTurnFixture()
+        f.start()
+        f.reply!!(null)
+        f.reply!!(IllegalStateException("duplicate"))
+        assertEquals(1, f.queue.size)
+        f.drain()
+        assertEquals(1, f.demotions)
+        assertEquals(1, f.completions)
+        assertEquals(true, f.result)
+    }
+
+    @Test fun failedPromotionReplyStillDefersRollback() {
+        val f = OwnerTurnFixture()
+        f.start()
+        f.reply!!(IllegalStateException("failed promotion"))
+        assertEquals(0, f.restorations)
+        assertFalse(f.session.settled)
+        assertEquals(1, f.queue.size)
+        f.drain()
+        assertEquals(0, f.demotions)
+        assertEquals(1, f.restorations)
+        assertEquals(false, f.result)
+    }
+
+    @Test fun offOwnerReplyStillDispatchesToOwnerBeforeMutation() {
+        val f = OwnerTurnFixture()
+        f.start()
+        val thread = Thread { f.reply!!(null) }
+        thread.start(); thread.join(2000)
+        assertFalse(thread.isAlive)
+        assertEquals(ExchangeSession.Phase.PROMOTING, f.session.phase)
+        assertEquals(1, f.queue.size)
+        f.queue.remove().invoke()
+        assertEquals(ExchangeSession.Phase.DEMOTE_PENDING, f.session.phase)
+        assertEquals(0, f.demotions)
+        f.drain()
+        assertEquals(1, f.demotions)
+        assertEquals(true, f.result)
     }
 
 }
