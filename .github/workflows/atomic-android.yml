@@ -315,11 +315,13 @@ jobs:
         run: |
           set -euo pipefail
           adb shell settings put global animator_duration_scale 3
+          adb logcat -c
           trap 'adb shell settings put global animator_duration_scale 1' EXIT
           set +e
           timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e nativeFlightOnly true -w io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation | tee native-flight-instrumentation.txt
           status=${PIPESTATUS[0]}
           set -e
+          adb logcat -d > native-flight-logcat.txt || true
           adb exec-out run-as io.github.x647368maker.atomicworkbench tar -C files/visual-regression -cf - . > native-flight-results.tar || true
           if [ -s native-flight-results.tar ]; then tar -xf native-flight-results.tar -C visual-results; fi
           test "$status" -eq 0
@@ -335,6 +337,7 @@ jobs:
             native-mirror-instrumentation.txt
             native-mirror-logcat.txt
             native-flight-instrumentation.txt
+            native-flight-logcat.txt
             /tmp/emulator-api37.log
 
   # Isolated PR117-only build evidence; never publish or upload the trial APK.

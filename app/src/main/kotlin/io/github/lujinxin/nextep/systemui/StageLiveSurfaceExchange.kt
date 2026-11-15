@@ -72,7 +72,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private val finished = AtomicBoolean(false)
     // Scoped to one flight: even a brief detach/reattach invalidates the
     // compositor parent and original viewport. Never reuse their old stamps.
-    private var hostDetached=false
+    @Volatile private var hostDetached=false
     private val detachCleanup=Runnable { stop() }
     private val attachmentListener=object:View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(v:View) = Unit
@@ -107,7 +107,7 @@ internal class StageLiveSurfaceExchange private constructor(
         val density=host.resources.displayMetrics.density
         val radiusSetter=cornerMethod
         val writer=TaskSurfaceCompat.HeldMirrorWriter { transaction, frame ->
-            if (finished.get() || endpointWriteFailed.get()) return@HeldMirrorWriter
+            if (finished.get() || hostDetached || endpointWriteFailed.get()) return@HeldMirrorWriter
             val incoming=frame.taskId==inStamp.taskId
             val stamp=if(incoming) inStamp else outStamp
             val expectedDisplay=if(incoming) outStamp.displayId else inStamp.displayId
@@ -121,7 +121,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
                 frame.scale,frame.x,frame.y,detachedRoot) ?: return@HeldMirrorWriter
             runCatching {
-                if (finished.get() || !mirror.isValid) return@runCatching
+                if (finished.get() || hostDetached || !mirror.isValid) return@runCatching
                 // Crop and transform are submitted with the task's new frame.
                 // Keep corner radius optional (the same OEM API as the flight).
                 transaction.setCrop(mirror,Rect(fit.left,fit.top,fit.right,fit.bottom))

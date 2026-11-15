@@ -16,15 +16,15 @@ REVIEW_TARGET = "b4ef45a111702da7bee85029c981ccc31a9411e5"
 SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
-NEW = {"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "2630f2ce782dd47947ea9717ae040ec37a7b57ee"}
+NEW = {"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "fd52ad7f0b22e47ace11300938ccaa3b5ee70fca"}
 PINS = {
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "2ce8336fd6dbd34e2c9e352bf2871506c786e803"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
-    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "956bac76978ea131af63b98def1af5d9ef4991d8"),
+    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "376fda410f2d1ef1578f8450c393d9c8230aed01"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "3f7663838fab637cd45e6ad6dc3f12634e93bef8"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "84f90a1c0d1730ac49ad54e79c28782f75594ddf"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
-    MAIN+"StageLiveSurfaceExchange.kt": ("f3681dbfde208d4c976af7938601d8657165f181", "1008981e521762d7eb63e5f1c180cf2e2998802c"),
+    MAIN+"StageLiveSurfaceExchange.kt": ("f3681dbfde208d4c976af7938601d8657165f181", "4c29ba3a8ce6ba6f31ad57639b5dfa9e82fe2719"),
     MAIN+"StageLiveSurfaceFlightGeometry.kt": ("8849f80b22e3ce76c8ce78db6294c421023f954c", "18d3356bac56d6ce1d1c5d58cf0f369a7db06aac"),
     MAIN+"StagePrivateDualTaskFlightGate.kt": ("de055e62992e593235914bf339fb3127762449ae", "65d5ad2064c711ae3fba16e8762dce3c97fa94d8"),
     MAIN+"StageTransientTapPolicy.kt": ("a5312b523a810cfdb8e82e77618005335d9b9c17", "5041ec241992b3bb3a88f1661855d05704e3add1"),

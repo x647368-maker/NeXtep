@@ -15,6 +15,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.PopupWindow
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import io.github.x647368maker.atomicworkbench.systemui.StageGpuMirrorOcclusion
 import io.github.x647368maker.atomicworkbench.systemui.StageLiveSurfaceExchange
 import io.github.x647368maker.atomicworkbench.systemui.StageLiveSurfaceFlightGeometry
@@ -87,6 +88,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     // then verify that real migration never begins.
                     val incoming=TaskSurfaceCompat.MirrorSourceStamp(-1001,91,Any(),ma)
                     val outgoing=TaskSurfaceCompat.MirrorSourceStamp(-1002,0,Any(),mb)
+                    StageExchangeTelemetry.beginNativeTap("instrumented_live_root_flight")
+                    val traceId=StageExchangeTelemetry.currentNativeTapId()
                     val engine=constructor.newInstance(host,ma,mb,Rect(0,0,180,240),
                         Rect(0,0,270,360),box(small),box(main),null,covers,false,
                         incoming,outgoing,true) as StageLiveSurfaceExchange
@@ -96,7 +99,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     val moves=AtomicInteger()
                     check(engine.start(360,{ complete -> moves.incrementAndGet();complete(false) },
                         { moves.incrementAndGet();false },{ false },{ false },
-                        { finishes.incrementAndGet();ended.countDown() },true))
+                        { finishes.incrementAndGet();StageExchangeTelemetry.endNativeTap("instrumented_finish",traceId);ended.countDown() },true))
                     result=Attempt(engine,ma,mb,ended,finishes,moves)
                     if(cancelImmediately) { engine.stop();engine.stop() }
                 } finally {
@@ -167,10 +170,21 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 val attempt=begin()
                 try {
                     var moving=false
-                    val deadline=SystemClock.uptimeMillis()+1450L
+                    var samples=0
+                    var last:Bitmap?=null
+                    val start=SystemClock.uptimeMillis()
+                    val deadline=start+1450L
+                    // Retain only one screenshot while sampling. Compression
+                    // and evidence writes on failure happen AFTER observation.
+                    try {
                     while(SystemClock.uptimeMillis()<deadline && attempt.ended.count>0 && !moving) {
+                        val requested=SystemClock.uptimeMillis()
                         val frame=shot()
-                        try {
+                        val captured=SystemClock.uptimeMillis()
+                        last?.recycle()
+                        last=frame
+                        samples++
+                        run {
                             check(matches(pixel(frame,other.centerX(),other.centerY()),protectedColor)) {
                                 "Protected unselected slot changed during $label"
                             }
@@ -182,10 +196,19 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                                     if(matches(c,orange)) { down++; if(!main.contains(x,y))movedDown++ }
                                 }
                             moving=up>12 && down>12 && movedUp>12 && movedDown>12
-                            if(moving)save(frame,"native-flight-moving-$label.png")
-                        } finally { frame.recycle() }
+                            evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
+                        }
                     }
-                    check(moving) { "No two moving real GPU card pixel regions during $label" }
+                    } finally {
+                        last?.let { frame ->
+                            try { save(frame,if(moving)"native-flight-moving-$label.png" else "native-flight-failed-moving-$label.png") }
+                            finally { frame.recycle() }
+                        }
+                        evidence.add("$label samples=$samples elapsed=${SystemClock.uptimeMillis()-start}ms ended=${attempt.ended.count==0L}")
+                    }
+                    check(moving) {
+                        "No two moving real GPU card pixel regions during $label; samples=$samples; inspect native-flight-runtime.txt and native-flight-trace.txt"
+                    }
                     if(label=="mid")inst.runOnMainSync { attempt.flight.stop();attempt.flight.stop() }
                     awaitReleased(attempt,label)
                     if(label=="stale") inst.runOnMainSync {
@@ -203,6 +226,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             return "PASS production native GPU animator: moving live roots, protected slot, early/mid cancellation, stale migration rejection, repeat cleanup"
         } finally {
             File(out,"native-flight-runtime.txt").writeText(evidence.joinToString("\n"))
+            File(out,"native-flight-trace.txt").writeText(StageExchangeTelemetry.nativeDescription()+"\nOutcome: "+StageLiveSurfaceExchange.lastOutcome())
             inst.runOnMainSync { p1?.dismiss();p2?.dismiss();host.removeAllViews() }
         }
     }
