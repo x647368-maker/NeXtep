@@ -19,6 +19,27 @@ internal object StageMenuPlacement {
         val w get()=r-l;val h get()=b-t
         fun overlap(o:Box):Long=(minOf(r,o.r)-maxOf(l,o.l)).coerceAtLeast(0).toLong()*(minOf(b,o.b)-maxOf(t,o.t)).coerceAtLeast(0)
     }
+    /** Prefer a scrollable menu wholly outside live cards to an oversized popup.
+     * At least one full touch row plus padding; never remove any action.
+     * If no usable rectangle is available, minimize overlap without shrinking
+     * below the supplied accessible minimum. All dimensions are physical px.
+     */
+    fun fit(safe:Box,anchor:Box,width:Int,height:Int,avoid:List<Box>,gap:Int,
+            minWidth:Int,minHeight:Int,widthStep:Int,heightStep:Int):Box {
+        val w=width.coerceIn(1,safe.w.coerceAtLeast(1))
+        val h=height.coerceIn(1,safe.h.coerceAtLeast(1))
+        fun sizes(max:Int,min:Int,step:Int):List<Int> {
+            val floor=min.coerceIn(1,max)
+            return ((max downTo floor step step.coerceAtLeast(1)).toList()+floor).distinct()
+        }
+        val ideal=place(safe,anchor,w,h,avoid,gap)
+        if(avoid.none { ideal.overlap(it)>0L })return ideal
+        val candidates=sizes(h,minHeight,heightStep).flatMap { ch ->
+            sizes(w,minWidth,widthStep).map { cw -> place(safe,anchor,cw,ch,avoid,gap) }
+        }
+        return candidates.minWithOrNull(compareBy<Box>{box->avoid.sumOf{box.overlap(it)}}
+            .thenByDescending{it.h}.thenByDescending{it.w}) ?: ideal
+    }
     fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {
         val homeX=anchor.l;val homeY=anchor.b+gap
         val xs=mutableListOf(homeX,anchor.r-w,safe.l,safe.r-w)
