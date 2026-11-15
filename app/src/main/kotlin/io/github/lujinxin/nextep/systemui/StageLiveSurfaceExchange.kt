@@ -576,7 +576,11 @@ internal class StageLiveSurfaceExchange private constructor(
             flightDuration,ValueAnimator.getDurationScale()))
         val flightAnimator=ValueAnimator.ofFloat(0f,1f).apply {
             duration=flightDuration
-            interpolator=PathInterpolator(.4f,0f,.2f,1f)
+            // Geometry supplies the C2 ease for each physical phase. Use a
+            // single uniform clock in the concurrent experimental flight,
+            // not an additional global ease that compresses the second phase.
+            interpolator=if(immediateMove) android.view.animation.LinearInterpolator()
+                else PathInterpolator(.4f,0f,.2f,1f)
             addUpdateListener {
                 if (!isRunning || frameComplete) return@addUpdateListener
                 val fraction=it.animatedValue as Float
