@@ -23,7 +23,34 @@ pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').
 pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
 # PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.
 pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']
+# PR103 only revokes abandoned preview work; preserve the full earlier freeze chain.
+pr103_review=json.loads((root/'scripts/reviewed-pr103-cancel-preview-v83.json').read_text())['files']
+assert set(pr103_review)=={
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt',
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt',
+}
+def undo_pr103(path,data):
+ if path not in pr103_review:return data
+ spec=pr103_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in pr103_review:
+ undo_pr103(reviewed_path,(root/reviewed_path).read_bytes())
+_pr103=(k/'systemui/StageTransientTapSwap.kt').read_text()
+assert _pr103.count('capturePermit.allows(SystemClock.uptimeMillis(),deadline)')==3
+assert 'if(capturePermit.revoked){a?.recycle();b?.recycle();return@execute}' in _pr103
+assert 'if(!posted){a?.recycle();b?.recycle()}' in _pr103
+assert 'capturePermit.revoke()\n            active=null' in _pr103
+assert 'private val cancelled=java.util.concurrent.atomic.AtomicBoolean(false)' in (k/'systemui/StageTransientTapPolicy.kt').read_text()
 def undo_pr92(path,data):
+ data=undo_pr103(path,data)
  if path not in pr92_review:return data
  spec=pr92_review[path]
  source=data.decode('utf-8')
