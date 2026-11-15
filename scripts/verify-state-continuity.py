@@ -242,9 +242,12 @@ assert 'WorkspaceWallpaperBackdrop.crop(it,0,0,0,wallpaperRotation,g.displayRota
 assert 'canvas.clipRect(mainRect)' in _pr85 and 'canvas.clipOutRect(slotRect)' in _pr85
 assert 'if(!mainRevealed)' in _pr85 and 'mainBackdrop.draw(canvas)' in _pr85
 assert 'if(mainBackdrop==null)' in _pr85 and 'canvas.clipRect(slotRect)' in _pr85
-assert _pr85_coordinator.count('sameTurnSource=sameTurnSource')==2
+assert 'sameTurnSource=source' in _pr85_coordinator
 assert 'sameTurnSource=checkedMain' in _pr85_coordinator
-assert 'slotTask.resizeMode==TASK_RESIZE_MODE_RESIZEABLE)\n                            sameTurnSource=checkedSlot' in _pr85_coordinator
+assert 'val needsResize=checked.second.resizeMode!=TASK_RESIZE_MODE_RESIZEABLE ||' in _pr85_coordinator
+assert 'latestSlot=current(slotTask,tasks)' in _pr85_coordinator
+assert 'latestMain=current(mainTask,tasks)' in _pr85_coordinator
+assert 'check(latestMain.toLayout()==mainLayout)' in _pr85_coordinator
 assert 'check(it.displayId==expected.displayId)' in _pr85_coordinator
 assert 'checkIdentity(before)' in _pr85_coordinator and 'checkIdentity(current)' in _pr85_coordinator
 assert 'slots[slotIndex].outputFrameMark()' in _pr85_coordinator
