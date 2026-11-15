@@ -75,7 +75,14 @@ internal object AtomicPopupMenu {
             val xy=IntArray(2);anchor.getLocationOnScreen(xy)
             fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
             val pos=StageMenuPlacement.compact(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),
-                width,height,dp(160),dp(60),avoid.map{it.box()},dp(8))
+                width,height,
+                // The short primary category page must remain fully readable.
+                // Prefer an empty rectangle that fits it; if none exists, the
+                // placement policy minimizes temporary overlap. Only longer
+                // action lists may shrink to a scrolling one-row viewport.
+                if(grouped && !secondary) width else dp(160),
+                if(grouped && !secondary) height else dp(60),
+                avoid.map{it.box()},dp(8))
             if(initialized)popup.update(pos.l,pos.t,pos.w,pos.h) else {
                 popup.width=pos.w;popup.height=pos.h
                 popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,pos.l,pos.t);initialized=true
