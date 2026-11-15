@@ -22,7 +22,7 @@ PINS = {
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageSparseRailMotionRegression.kt": ("0beb558911b7b41e45fb40a9cdfd5593baf93b64", "087cc5efbdfc91318ce539d48ee616d9a5ef43cd"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "128788ac6fe1ee75e8c83dfe5b65efdd005ca7d5"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
-    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "c2e7d71e542faa476c8a009d75099bacf8a97a75"),
+    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "b26df5077feacec006813b1087b2ac84c9d709f9"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "34f4058cbc0ae0db18cf3c6ee2f82de303b3e135"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "35cf704cfcece47001b45911dad3ea209e3e3155"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
