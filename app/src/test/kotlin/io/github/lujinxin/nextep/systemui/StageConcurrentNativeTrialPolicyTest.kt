@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageConcurrentNativeTrialPolicyTest {
+    @Test fun nativeSourcePreflightRejectsDetachedOrReplacedLeashes() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(host in listOf(false,true)) for(handles in listOf(false,true))
+            for(incoming in listOf(false,true)) for(outgoing in listOf(false,true)) {
+                var first=0
+                var second=0
+                assertEquals(host && handles && incoming && outgoing,
+                    p.sourceIdentityReady(host,handles,{first++;incoming},{second++;outgoing}))
+                assertEquals(if(host && handles) 1 else 0,first)
+                assertEquals(if(host && handles && incoming) 1 else 0,second)
+            }
+        assertFalse(p.sourceIdentityReady(true,true,{error("stale source")},{true}))
+        assertFalse(p.sourceIdentityReady(true,true,{true},{error("stale target")}))
+        assertTrue(p.transientMirrorOutcome("fallback:mirror_source_changed"))
+    }
     @Test fun existingPhysicalWindowAllowsNoNewViewRoot() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         for((w,h) in listOf(1140 to 2616, 2248 to 2480, 2560 to 1600))
