@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: atomic-${{ github.ref }}
-  cancel-in-progress: true
+  # Finish any previous real emulator evidence run before a new PR117 push.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/atomic-workbench/v87-motion-preflight-guard' }}
 
 permissions:
   contents: read
@@ -130,6 +131,10 @@ jobs:
           path: api101-unit-results/
       - name: Build and test; retry only transient dependency downloads
         run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+      - name: Confirm ordinary debug keeps native trial disabled
+        if: github.ref == 'refs/heads/atomic-workbench/v87-motion-preflight-guard'
+        run: |
+          grep -R --include=BuildConfig.java -E 'ATOMIC_NATIVE_SURFACE_TRIAL[[:space:]]*=[[:space:]]*false;' app/build/generated/source/buildConfig/debug
       - name: Verify offline release notes are embedded unchanged
         shell: bash
         run: |
@@ -313,3 +318,38 @@ jobs:
             native-mirror-instrumentation.txt
             native-mirror-logcat.txt
             /tmp/emulator-api37.log
+
+  # Isolated PR117-only build evidence; never publish or upload the trial APK.
+  native-trial-build:
+    if: github.ref == 'refs/heads/atomic-workbench/v87-motion-preflight-guard'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - name: Verify isolated candidate scope
+        run: python3 scripts/verify-v87-native-candidate.py
+      - name: Compile explicit native trial and run actual Android project unit tests
+        run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest -PatomicNativeSurfaceTrial=true
+      - name: Verify generated debug gate really is enabled
+        run: |
+          grep -R --include=BuildConfig.java -E 'ATOMIC_NATIVE_SURFACE_TRIAL[[:space:]]*=[[:space:]]*true;' app/build/generated/source/buildConfig/debug
+          test -n "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atomic-private-native-trial-unit-results
+          path: app/build/test-results/testDebugUnitTest/

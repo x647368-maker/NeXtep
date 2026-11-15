@@ -258,76 +258,89 @@ internal class StageLiveSurfaceExchange private constructor(
             val outgoingCrop=StageLiveSurfaceFlightGeometry.mainMirrorCrop(
                 to,fullScreenWidth,fullScreenHeight,detached==true)
                 ?: return markUnavailable("invalid_bounds")
-            StageExchangeTelemetry.nativeEvent(
-                "mirror_root=${detached?.let { if(it) "detached" else "retained" } ?: "unknown_legacy"}")
-            // The mirror must follow the app TASK, not the rail's ViewRoot.
-            // That root switches the producer during the two-stage exchange,
-            // which caused PR59 to show the new app twice while still flying.
-            StageExchangeTelemetry.nativeEvent(
-                TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
-            val outgoingBefore=TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)
-            val incomingBefore=TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)
-            val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
-                ?: return markUnavailable("no_owned_main_task_mirror")
-            val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
-                sourceTaskId, sourceDisplayId,
-            ) ?: run {
-                outgoing.release()
-                return markUnavailable("slot_task_leash_not_ready")
-            }
-            val incoming = slotMirror.surface
-            val localCrop = Rect(slotMirror.crop)
-            val obstacles = otherSlotBounds.map {
-                StageLiveSurfaceFlightGeometry.Box(
-                    it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat(),
+            // Vendor APIs can throw after the first handle has been acquired.
+            // Every early return and constructor failure must release all
+            // locally owned surfaces independently; never release task leashes.
+            var ownedOutgoing:SurfaceControl?=null
+            var ownedIncoming:SurfaceControl?=null
+            var ownedMasks:StageGpuMirrorOcclusion?=null
+            var transferred=false
+            try {
+                StageExchangeTelemetry.nativeEvent(
+                    "mirror_root=${detached?.let { if(it) "detached" else "retained" } ?: "unknown_legacy"}")
+                // The mirror must follow the app TASK, not the rail's ViewRoot.
+                // That root switches the producer during the two-stage exchange,
+                // which caused PR59 to show the new app twice while still flying.
+                StageExchangeTelemetry.nativeEvent(
+                    TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
+                val outgoingBefore=TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)
+                val incomingBefore=TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)
+                val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
+                    ?: return markUnavailable("no_owned_main_task_mirror")
+                ownedOutgoing=outgoing
+                val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
+                    sourceTaskId, sourceDisplayId,
+                ) ?: return markUnavailable("slot_task_leash_not_ready")
+                val incoming = slotMirror.surface
+                ownedIncoming=incoming
+                val localCrop = Rect(slotMirror.crop)
+                val obstacles = otherSlotBounds.map {
+                    StageLiveSurfaceFlightGeometry.Box(
+                        it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat(),
+                    )
+                }
+                if (!StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
+                        from, to, localCrop.width(), localCrop.height(), obstacles,
+                        mainCropWidth=outgoingCrop.right-outgoingCrop.left,
+                        mainCropHeight=outgoingCrop.bottom-outgoingCrop.top)) {
+                    return markUnavailable("rail_corridor_blocked")
+                }
+                val incomingCrop = StageLiveSurfaceFlightGeometry.Crop(
+                    localCrop.left, localCrop.top, localCrop.right, localCrop.bottom)
+                val coveredFlight = StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
+                    from, to, incomingCrop, outgoingCrop, obstacles)
+                StageExchangeTelemetry.nativeEvent(
+                    "mirror_crop_mode=" + if (coveredFlight) "covered_safe" else "contain_reveal")
+                if (!outgoing.isValid || !incoming.isValid) {
+                    return markUnavailable("invalid_native_handles")
+                }
+                // Both mirrors must still refer to the observed task/leash pair.
+                // Never animate a replacement task, or mistake a changing producer
+                // for permanent OEM denial. Release before attaching any layer.
+                val stableIncoming=incomingBefore?.takeIf {
+                    it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId))
+                }
+                val stableOutgoing=outgoingBefore?.takeIf {
+                    it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0))
+                }
+                if (stableIncoming==null || stableOutgoing==null) {
+                    return markUnavailable("mirror_source_changed")
+                }
+                val masks = StageGpuMirrorOcclusion.create()
+                    ?: return markUnavailable("atomic_occlusion_unavailable")
+                ownedMasks=masks
+                val exchange=StageLiveSurfaceExchange(
+                    host, incoming, outgoing, localCrop,
+                    outgoingCrop.toAndroidRect(),
+                    from,to,backdrop,masks,coveredFlight,
+                    stableIncoming,stableOutgoing,
+                    detached==true,
+                )
+                // Transfer ownership only once the exchange object exists.
+                lastOutcome="capable:two_owned_tasks_and_atomic_masks"
+                transferred=true
+                return exchange
+            } catch(error:Exception) {
+                runCatching { NeXtepLog.warn("native_swap","Native mirror acquisition failed",error) }
+                return markUnavailable("native_acquisition_exception")
+            } finally {
+                if(!transferred) StageConcurrentNativeTrialPolicy.cleanupSteps(
+                    { ownedMasks?.release() },
+                    { ownedIncoming?.release() },
+                    { ownedOutgoing?.release() },
+                    onFailure={ NeXtepLog.warn("native_swap","Native acquisition cleanup failed",it) },
                 )
             }
-            if (!StageLiveSurfaceFlightGeometry.corridorAvoidsOtherSlots(
-                    from, to, localCrop.width(), localCrop.height(), obstacles,
-                    mainCropWidth=outgoingCrop.right-outgoingCrop.left,
-                    mainCropHeight=outgoingCrop.bottom-outgoingCrop.top)) {
-                outgoing.release()
-                incoming.release()
-                return markUnavailable("rail_corridor_blocked")
-            }
-            val incomingCrop = StageLiveSurfaceFlightGeometry.Crop(
-                localCrop.left, localCrop.top, localCrop.right, localCrop.bottom)
-            val coveredFlight = StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
-                from, to, incomingCrop, outgoingCrop, obstacles)
-            StageExchangeTelemetry.nativeEvent(
-                "mirror_crop_mode=" + if (coveredFlight) "covered_safe" else "contain_reveal")
-            if (!outgoing.isValid || !incoming.isValid) {
-                outgoing.release()
-                incoming.release()
-                return markUnavailable("invalid_native_handles")
-            }
-            // Both mirrors must still refer to the observed task/leash pair.
-            // Never animate a replacement task, or mistake a changing producer
-            // for permanent OEM denial. Release before attaching any layer.
-            val stableIncoming=incomingBefore?.takeIf {
-                it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId))
-            }
-            val stableOutgoing=outgoingBefore?.takeIf {
-                it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0))
-            }
-            if (stableIncoming==null || stableOutgoing==null) {
-                outgoing.release()
-                incoming.release()
-                return markUnavailable("mirror_source_changed")
-            }
-            val masks = StageGpuMirrorOcclusion.create() ?: run {
-                outgoing.release()
-                incoming.release()
-                return markUnavailable("atomic_occlusion_unavailable")
-            }
-            lastOutcome="capable:two_owned_tasks_and_atomic_masks"
-            return StageLiveSurfaceExchange(
-                host, incoming, outgoing, localCrop,
-                outgoingCrop.toAndroidRect(),
-                from,to,backdrop,masks,coveredFlight,
-                stableIncoming,stableOutgoing,
-                detached==true,
-            )
         }
 
         private fun createWindowMirror(view: View): SurfaceControl? = runCatching {
