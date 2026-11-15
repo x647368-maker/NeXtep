@@ -43,6 +43,7 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             ) == true) { "Cannot reach command $label by scrolling the popup" }
             settle()
         }
+        android.util.Log.i("StageMenuRegression","physical tap label=$label bounds=$b")
         val t=SystemClock.uptimeMillis()
         for(a in listOf(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP)){
             val e=MotionEvent.obtain(t,SystemClock.uptimeMillis(),a,b.exactCenterX(),b.exactCenterY(),0);e.source=InputDevice.SOURCE_TOUCHSCREEN
@@ -142,6 +143,16 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                     val callbackDeadline = SystemClock.uptimeMillis() + 2000L
                     while (fired.get() != index && SystemClock.uptimeMillis() < callbackDeadline) {
                         Thread.sleep(25)
+                    }
+                    if(fired.get()!=index) {
+                        ui { android.util.Log.e("StageMenuRegression",
+                            "callback missing mode=$mode index=$index showing=${AtomicPopupMenu.isShowing()} panel=${SystemUiPanelMonitor.state()}") }
+                        inst.uiAutomation.takeScreenshot()?.let { shot ->
+                            File(out,"menu-callback-failure-$mode-$index.png").outputStream().use {
+                                shot.compress(Bitmap.CompressFormat.PNG,100,it)
+                            }
+                            shot.recycle()
+                        }
                     }
                     check(fired.get()==index){"Wrong callback $mode $index -> $fired"};ui{check(!AtomicPopupMenu.isShowing())}
                 }

@@ -20,7 +20,35 @@ internal object AtomicPopupMenu {
     private val handler=Handler(Looper.getMainLooper())
     private val gate=StagePanelMenuGate({SystemUiPanelMonitor.state()},{SystemClock.uptimeMillis()},
         {delay,action->handler.postDelayed({action()},delay)},::dismissActive)
-    private fun dismissActive(){active?.contentView?.animate()?.cancel();active?.dismiss();active=null}
+    // One user selection owns one main-queue action, independently of HWUI
+    // animator end callbacks. Native panel/open/exit and external dismiss
+    // invalidate pending work, including the turn after popup dismissal.
+    private var pendingAction:Runnable?=null
+    private fun cancelPendingAction() {
+        pendingAction?.let { handler.removeCallbacks(it) }
+        pendingAction=null
+    }
+    private fun scheduleAction(delay:Long, run:()->Unit):Boolean {
+        check(pendingAction==null)
+        lateinit var task:Runnable
+        task=Runnable {
+            if(pendingAction===task) {
+                pendingAction=null
+                run()
+            }
+        }
+        pendingAction=task
+        if(handler.postDelayed(task,delay))return true
+        pendingAction=null
+        return false
+    }
+    private fun dismissActive(){
+        cancelPendingAction()
+        val popup=active
+        active=null
+        popup?.contentView?.animate()?.cancel()
+        popup?.dismiss()
+    }
     fun dismissAll(){gate.cancel()}
     internal fun isShowing()=active?.isShowing==true
     fun onPanelChanged(){gate.panelChanged()}
@@ -57,7 +85,13 @@ internal object AtomicPopupMenu {
             animationStyle=0
         }
         active=popup
-        popup.setOnDismissListener{content.animate().cancel();if(active===popup)active=null}
+        popup.setOnDismissListener{
+            content.animate().cancel()
+            if(active===popup) {
+                active=null
+                cancelPendingAction()
+            }
+        }
         val grouped=StageMenuPolicy.isMain(items.map{it.first})
         var initialized=false
         fun fit(secondary:Boolean) {
@@ -98,22 +132,48 @@ internal object AtomicPopupMenu {
                 setOnClickListener{click()}
             },LinearLayout.LayoutParams(-1,-2))
         }
-        fun action(label:String,run:()->Unit) = row(label) {
+        fun action(label:String,run:()->Unit) = row(label) select@{
+            if(active!==popup || !popup.isShowing || pendingAction!=null)return@select
+            if(!anchor.isAttachedToWindow ||
+                SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED) {
+                dismissActive()
+                return@select
+            }
+            io.github.x647368maker.atomicworkbench.logging.NeXtepLog.debug("workspace_menu","selection accepted")
             content.animate().cancel()
-            content.animate().alpha(0f).setDuration(70).withEndAction {
-                if(active!==popup || !popup.isShowing)return@withEndAction
-                popup.dismiss()
-                anchor.post {
-                    if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return@post
-                    runCatching(run).onFailure {
-                        io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("workspace_menu","Action failed",it)
-                        Toast.makeText(context,it.message ?: "操作未完成，请稍后重试",Toast.LENGTH_SHORT).show()
+            content.animate().alpha(0f).setDuration(70).start()
+            // The fade is purely visual: a canceled animator must not swallow
+            // an accepted click. A single bounded main-queue task owns it.
+            if(!scheduleAction(70) {
+                if(active!==popup || !popup.isShowing || !anchor.isAttachedToWindow ||
+                    SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED) {
+                    dismissActive()
+                } else {
+                    // This is the selected dismissal, not an outside cancel.
+                    // Clear ownership before dismiss; cancel/new request still
+                    // invalidate the next main-queue turn.
+                    active=null
+                    popup.dismiss()
+                    if(!scheduleAction(0) {
+                        if(anchor.isAttachedToWindow &&
+                            SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
+                            io.github.x647368maker.atomicworkbench.logging.NeXtepLog.debug("workspace_menu","selection dispatch")
+                            runCatching(run).onFailure {
+                                io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("workspace_menu","Action failed",it)
+                                Toast.makeText(context,it.message ?: "操作未完成，请稍后重试",Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            io.github.x647368maker.atomicworkbench.logging.NeXtepLog.debug("workspace_menu","selection rejected after dismissal")
+                        }
+                    }) {
+                        io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("workspace_menu","Action dispatch unavailable")
                     }
                 }
-            }.start()
+            })dismissActive()
         }
         lateinit var page:(Int?)->Unit
-        page={ category ->
+        page=pageChange@{ category ->
+            if(pendingAction!=null)return@pageChange
             if(active===popup && SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
                 content.animate().cancel();rows.removeAllViews();content.scrollTo(0,0)
                 if(grouped && category==null) {
