@@ -11,12 +11,18 @@ import android.hardware.display.DisplayManager
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
 import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
 import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import io.github.x647368maker.atomicworkbench.display.StageExchangeBinderLane
+import io.github.x647368maker.atomicworkbench.task.TaskRepository
+import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
 
 /** Real AOSP task reparenting, not coloured Surface producers or a ColorOS claim.
  * No production task-engine changes are evaluated as a performance fix here.
@@ -51,23 +57,6 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             val end=SystemClock.uptimeMillis()+5000
             while(frames[slot].get()<=previous && SystemClock.uptimeMillis()<end) Thread.sleep(20)
             check(frames[slot].get()>previous) { "Real task did not produce a fresh display buffer slot=$slot" }
-        }
-        fun move(id: Int, destination: Int) {
-            val start=SystemClock.elapsedRealtimeNanos()
-            i.runOnMainSync {
-                StageExchangeTelemetry.measure("exchange_move") {
-                StageExchangeTelemetry.measure("probe_display_binder") {
-                    ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
-                }
-                // Preserve production readiness deadlines and polling for this baseline only.
-                StageExchangeTelemetry.measure("probe_display_observation") {
-                    val end=SystemClock.uptimeMillis()+700
-                    while(taskDisplay(id)!=destination && SystemClock.uptimeMillis()<end) SystemClock.sleep(30)
-                    check(taskDisplay(id)==destination) { "Display migration not observed task=$id destination=$destination" }
-                }
-                }
-            }
-            lines.add("move task=$id display=$destination main_thread_ms=${(SystemClock.elapsedRealtimeNanos()-start)/1_000_000.0}")
         }
         i.uiAutomation.adoptShellPermissionIdentity()
         try {
@@ -116,27 +105,260 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             }
             val comparison="rejected candidate metadata comparison (production unchanged): 128 decodes/batch, 8 alternating UI-thread batches, same four real task snapshots; baseline_median_ms=${baseline.sorted()[4]/1_000_000.0} cached_median_ms=${cached.sorted()[4]/1_000_000.0}; state_fields_equal=true; not full exchange or ColorOS FPS"
             lines.add(comparison);File(out,"task-decoder-comparison.txt").writeText(comparison)
-            i.runOnMainSync { Choreographer.getInstance().postFrameCallback(callback) }
-            Thread.sleep(80)
-            // The same four tasks and VD dimensions are used for every round trip.
-            for(round in 0..1) for(slot in 0..3) {
-                move(ids[slot],0)
-                check(taskDisplay(ids[slot])==0)
-                val before=frames[slot].get()
-                move(ids[slot],displays[slot].display.displayId)
-                awaitFrame(slot,before)
-                lines.add("round=$round slot=$slot task_id_retained=true fresh_buffers=${frames[slot].get()-before}")
+            // Matched probes: same real tasks, same query/decode/publication,
+            // same destination verification and 30ms observation interval.
+            // Alternate round-trip order to reduce warm-up and time-order bias.
+            val repository=TaskRepository(original)
+            val owner=Handler(Looper.getMainLooper())
+            lateinit var lane:StageExchangeBinderLane
+            lateinit var barrierLane:StageExchangeBinderLane
+            lateinit var originalStates:Map<Int,TaskRepository.TaskSnapshot>
+            i.runOnMainSync {
+                lane=StageExchangeBinderLane { action->owner.post(action) }
+                // Only the completion message changes: no front-of-queue
+                // priority, no new production code, same main Looper.
+                val barrierHandler=Handler.createAsync(Looper.getMainLooper())
+                barrierLane=StageExchangeBinderLane { action->barrierHandler.post(action) }
+                originalStates=repository.publishExchangeTasks(repository.readExchangeTasks())
+                    .filter{it.taskId in ids}.associateBy{it.taskId}
             }
-            i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
+            check(originalStates.size==4)
+            val syncGaps=mutableListOf<Long>()
+            val laneGaps=mutableListOf<Long>()
+            val syncElapsed=mutableListOf<Double>()
+            val asyncElapsed=mutableListOf<Double>()
+            val syncOwner=mutableListOf<Double>()
+            val asyncOwner=mutableListOf<Double>()
+            fun now()=SystemClock.elapsedRealtimeNanos()
+            fun ms(ns:Long)=ns/1_000_000.0
+            fun verify(id:Int,state:TaskRepository.TaskSnapshot?){
+                if(state==null)return
+                val origin=checkNotNull(originalStates[id])
+                check(state.taskId==id && state.token==origin.token && state.userId==origin.userId){
+                    "Real task identity changed during matched display move"
+                }
+            }
+            val barrierGaps=mutableListOf<Long>()
+            val barrierElapsed=mutableListOf<Double>()
+            val barrierOwner=mutableListOf<Double>()
+            val ordinaryCallback=mutableListOf<Double>()
+            val barrierCallback=mutableListOf<Double>()
+            val batchGaps=mutableListOf<Long>()
+            val batchElapsed=mutableListOf<Double>()
+            val batchOwner=mutableListOf<Double>()
+            val batchCallback=mutableListOf<Double>()
+            fun matchedMove(id:Int,destination:Int,mode:String){
+                val async=mode!="sync"
+                val selectedLane=if(mode=="async_barrier")barrierLane else lane
+                val finished=CountDownLatch(1)
+                val startTime=now()
+                var outcome:Result<Unit>?=null
+                var ownerNs=0L
+                var workerNs=0L
+                var dispatchNs=0L
+                var callbackNs=0L
+                var firstOwnerNs=0L
+                var endedNs=0L
+                var queries=0
+                var callbacks=0
+                var deadline=0L
+                fun ownerStep(action:()->Unit){
+                    val entered=now()
+                    try{
+                        check(Looper.myLooper()==Looper.getMainLooper())
+                        action()
+                    }catch(error:Throwable){
+                        outcome=Result.failure(error)
+                    }finally{
+                        ownerNs+=now()-entered
+                        if(outcome!=null){
+                            endedNs=now()
+                            finished.countDown()
+                        }
+                    }
+                }
+                fun <T> onLane(work:()->T,accept:(T)->Unit){
+                    val queued=now()
+                    var workerEnd=0L
+                    var value:Result<T>?=null
+                    check(selectedLane.submit({
+                        val began=now()
+                        dispatchNs+=began-queued
+                        try{
+                            check(Looper.myLooper()!=Looper.getMainLooper())
+                            value=runCatching(work)
+                            checkNotNull(value).getOrThrow()
+                            Unit
+                        }finally{
+                            workerEnd=now()
+                            workerNs+=workerEnd-began
+                        }
+                    }){ack->
+                        val entered=now()
+                        ownerStep {
+                            callbacks++
+                            callbackNs+=entered-workerEnd
+                            ack.getOrThrow()
+                            accept(checkNotNull(value).getOrThrow())
+                        }
+                    }) {"Production exchange lane unexpectedly busy"}
+                }
+                // Publish only on the owner. Batched first observation is
+                // read-only and may not bypass identity or destination proof.
+                lateinit var observeAsync:()->Unit
+                fun acceptBatch(batch:TaskRepository.ExchangeTaskBatch){
+                    val state=repository.publishExchangeTasks(batch).firstOrNull{it.taskId==id}
+                    verify(id,state)
+                    if(state?.displayId==destination)outcome=Result.success(Unit)
+                    else{
+                        check(SystemClock.uptimeMillis()<deadline){"Async display observation timed out"}
+                        check(owner.postDelayed({ownerStep{observeAsync()}},30L))
+                    }
+                }
+                observeAsync={
+                    queries++
+                    onLane({repository.readExchangeTasks()},::acceptBatch)
+                }
+                check(owner.post {
+                    firstOwnerNs=now()-startTime
+                    ownerStep {
+                        if(mode=="async_batch"){
+                            // Candidate only: combine an actual successful move
+                            // and its first uncommitted read in one worker call.
+                            // The ordinary main Handler is retained.
+                            queries++
+                            onLane({
+                                ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
+                                val expiry=SystemClock.uptimeMillis()+700L
+                                repository.readExchangeTasks() to expiry
+                            }){(batch,expiry)->
+                                deadline=expiry
+                                acceptBatch(batch)
+                            }
+                        }else if(async){
+                            onLane({ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()}){
+                                deadline=SystemClock.uptimeMillis()+700
+                                observeAsync()
+                            }
+                        }else{
+                            StageExchangeTelemetry.measure("exchange_move"){
+                                StageExchangeTelemetry.measure("probe_display_binder"){
+                                    ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
+                                }
+                                StageExchangeTelemetry.measure("probe_display_observation"){
+                                    deadline=SystemClock.uptimeMillis()+700
+                                    while(true){
+                                        queries++
+                                        val batch=repository.readExchangeTasks()
+                                        val state=repository.publishExchangeTasks(batch).firstOrNull{it.taskId==id}
+                                        verify(id,state)
+                                        if(state?.displayId==destination)break
+                                        check(SystemClock.uptimeMillis()<deadline){"Sync display observation timed out"}
+                                        SystemClock.sleep(30)
+                                    }
+                                }
+                            }
+                            outcome=Result.success(Unit)
+                        }
+                    }
+                })
+                check(finished.await(8,TimeUnit.SECONDS)){"Matched move did not complete"}
+                checkNotNull(outcome).getOrThrow()
+                val elapsed=ms(endedNs-startTime)
+                val busy=ms(ownerNs)
+                when(mode){
+                    "sync"->{syncElapsed.add(elapsed);syncOwner.add(busy)}
+                    "async"->{asyncElapsed.add(elapsed);asyncOwner.add(busy);ordinaryCallback.add(ms(callbackNs))}
+                    "async_barrier"->{barrierElapsed.add(elapsed);barrierOwner.add(busy);barrierCallback.add(ms(callbackNs))}
+                    "async_batch"->{batchElapsed.add(elapsed);batchOwner.add(busy);batchCallback.add(ms(callbackNs))}
+                    else->error("Unknown probe mode")
+                }
+                lines.add("matched_move mode=$mode task=$id display=$destination elapsed_ms=$elapsed "+
+                    "owner_busy_ms=$busy worker_ms=${ms(workerNs)} dispatch_ms=${ms(dispatchNs)} "+
+                    "callback_wait_ms=${ms(callbackNs)} initial_owner_wait_ms=${ms(firstOwnerNs)} queries=$queries callbacks=$callbacks")
+            }
+            for(round in 0..1)for(slot in 0..3){
+                // Balanced alternating order over the same four live tasks.
+                val orders=listOf(
+                    listOf("sync","async","async_batch","async_barrier"),
+                    listOf("async","async_barrier","sync","async_batch"),
+                    listOf("async_barrier","async_batch","async","sync"),
+                    listOf("async_batch","sync","async_barrier","async"),
+                    listOf("async_barrier","async_batch","async","sync").reversed(),
+                    listOf("async_batch","sync","async_barrier","async").reversed(),
+                    listOf("sync","async","async_batch","async_barrier").reversed(),
+                    listOf("async","async_barrier","sync","async_batch").reversed())
+                val order=orders[(round*4+slot)%orders.size]
+                for(mode in order){
+                    i.runOnMainSync {
+                        gaps.clear();lastFrame=0L; sampling=true
+                        Choreographer.getInstance().postFrameCallback(callback)
+                    }
+                    Thread.sleep(80)
+                    try{
+                        matchedMove(ids[slot],0,mode)
+                        val before=frames[slot].get()
+                        matchedMove(ids[slot],displays[slot].display.displayId,mode)
+                        awaitFrame(slot,before)
+                        lines.add("matched_round=$round slot=$slot mode=$mode task_identity_retained=true fresh_buffers=${frames[slot].get()-before}")
+                        Thread.sleep(80)
+                    }finally{
+                        i.runOnMainSync {
+                            sampling=false; Choreographer.getInstance().removeFrameCallback(callback)
+                            when(mode){
+                                "sync"->syncGaps.addAll(gaps)
+                                "async"->laneGaps.addAll(gaps)
+                                "async_barrier"->barrierGaps.addAll(gaps)
+                                "async_batch"->batchGaps.addAll(gaps)
+                                else->error("Unknown probe mode")
+                            }
+                        }
+                    }
+                }
+            }
+            fun median(values:List<Double>):Double {
+                val sorted=values.sorted()
+                check(sorted.size==16)
+                return (sorted[7]+sorted[8])/2.0
+            }
+            val baselineGap=syncGaps.maxOrNull()
+            val baselineSamples=syncGaps.size
+            fun frameMetrics(values:List<Long>):String{
+                if(values.isEmpty())return "frame_gap_samples=0"
+                val sorted=values.sorted()
+                val p95=sorted[((sorted.size-1)*.95).toInt()]
+                return "max_frame_gap_ms=${sorted.last()} frame_gap_p95_ms=$p95 samples=${sorted.size} over33ms=${sorted.count{it>33}}"
+            }
+            lines.add("matched_summary mode=sync n=16 elapsed_median_ms=${median(syncElapsed)} owner_busy_median_ms=${median(syncOwner)} "+frameMetrics(syncGaps))
+            lines.add("matched_summary mode=async n=16 elapsed_median_ms=${median(asyncElapsed)} owner_busy_median_ms=${median(asyncOwner)} callback_wait_median_ms=${median(ordinaryCallback)} "+frameMetrics(laneGaps))
+            lines.add("matched_summary mode=async_barrier n=16 elapsed_median_ms=${median(barrierElapsed)} owner_busy_median_ms=${median(barrierOwner)} callback_wait_median_ms=${median(barrierCallback)} "+frameMetrics(barrierGaps))
+            lines.add("matched_summary mode=async_batch n=16 elapsed_median_ms=${median(batchElapsed)} owner_busy_median_ms=${median(batchOwner)} callback_wait_median_ms=${median(batchCallback)} "+frameMetrics(batchGaps))
+            lines.add("Scope: async_barrier and async_batch are test-only candidates; batch merges successful move and first read, never worker publication; no production scheduling modification and no assumed improvement.")
+            // Guard test is outside measured intervals.
+            val guardFinished=CountDownLatch(1)
+            var rejected=false
+            i.runOnMainSync {
+                check(lane.submit({
+                    val batch=repository.readExchangeTasks()
+                    rejected=runCatching{repository.publishExchangeTasks(batch)}.isFailure
+                }){ack->
+                    ack.getOrThrow()
+                    guardFinished.countDown()
+                })
+            }
+            check(guardFinished.await(8,TimeUnit.SECONDS) && rejected){"Worker must never publish task/Surface observations"}
+            lines.add("PASS matched alternating real-task moves: same production query and verification; owner-only publication guard")
             val report=StageExchangeTelemetry.describe()
             check(report.contains(io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.BUILD) && report.contains("probe_display_binder") && report.contains("main=true"))
             File(out,"exchange-profile-probe.txt").writeText(report)
-            lines.add("main_frame_gap_max_ms=${gaps.maxOrNull()} samples=${gaps.size}")
+            lines.add("main_frame_gap_max_ms=$baselineGap samples=$baselineSamples")
             lines.add("Scope: real framework moves only; production crop, input, overlay and vendor task engine are not emulated")
             File(out,"real-task-migration.txt").writeText(lines.joinToString("\n"))
-            return listOf("PASS four real AOSP tasks retained IDs and resumed fresh buffers across 16 display moves; timings recorded, no phone performance claim")
+            return listOf("PASS four real AOSP tasks retained identities and new buffers across 64 matched display moves; four modes, no phone performance claim",
+                "PASS matched production Binder lane and task repository; owner-only publication guard; separate elapsed and owner-busy timings")
         } finally {
             i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
+            i.runOnMainSync { taskIds.forEach{TaskSurfaceCompat.forgetTaskSurface(it)} }
             taskIds.forEach { id -> runCatching { ActivityTaskManagerCompat.removeTask(id).getOrThrow() } }
             displays.forEach { it.release() };readers.forEach { it.close() }
             consumer.quitSafely()

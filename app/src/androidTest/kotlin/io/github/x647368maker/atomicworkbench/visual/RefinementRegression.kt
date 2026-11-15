@@ -78,8 +78,9 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         val listener=Window.OnFrameMetricsAvailableListener{_,m,_->synchronized(metrics){metrics.add(m.getMetric(FrameMetrics.TOTAL_DURATION))}}
         ui{activity.window.addOnFrameMetricsAvailableListener(listener,Handler(metricThread.looper))}
         val commands=listOf("切换全屏（保留工作区）","顶部横排","左侧排列","右侧排列","收起常用应用快捷栏","完整显示布局","✓ 主窗口优先布局","添加小窗","影音布局与自动模式","开启智能侧栏（静置收起）","固定侧栏","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）","退出台前调度")
-        var fired=-1
-        val actions=commands.mapIndexed{i,label->label to {fired=i}}
+        val fired=java.util.concurrent.atomic.AtomicInteger(-1)
+        var delivered=CountDownLatch(1)
+        val actions=commands.mapIndexed{i,label->label to {fired.set(i);delivered.countDown()}}
         val expected=(0..3).map{category->commands.indices.filter{StageMenuPolicy.group(commands[it])==category}}
         val m=activity.resources.displayMetrics
         val counts=mutableListOf<String>()
@@ -108,20 +109,18 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 click("‹  ${StageMenuPolicy.groups[category]}")
                 ui{AtomicPopupMenu.dismissAll()};settle()
                 for(index in expected[category]){
-                    fired=-1;ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click("${StageMenuPolicy.groups[category]}  ›");click(commands[index])
-                    // Menu actions dismiss with a 70ms compositor fade and then post
-                    // their callback on the anchor. An HWUI-saturated emulator can
-                    // dispatch this after the general 180ms idle settle. Retain
-                    // the exact callback assertion, but await the real delivery.
-                    val callbackDeadline = SystemClock.uptimeMillis() + 2000L
-                    while (fired != index && SystemClock.uptimeMillis() < callbackDeadline) {
-                        Thread.sleep(25)
-                    }
-                    check(fired==index){"Wrong callback $mode $index -> $fired"};check(!AtomicPopupMenu.isShowing())
+                    fired.set(-1);delivered=CountDownLatch(1)
+                    ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click("${StageMenuPolicy.groups[category]}  ›");click(commands[index])
+                    // Wait for the actual posted action, not an assumed HWUI fade duration.
+                    // A missing or wrong action must still fail; never click a second time.
+                    check(delivered.await(2,TimeUnit.SECONDS)){"Missing callback $mode $index"}
+                    check(fired.get()==index){"Wrong callback $mode $index -> ${fired.get()}"}
+                    ui{check(!AtomicPopupMenu.isShowing())}
                 }
             }
-            var scrolled=-1
-            ui{AtomicPopupMenu.show(activity,anchor,(0..19).map{i->"SCROLL_ACTION_$i" to {scrolled=i}},avoid)};settle()
+            val scrolled=java.util.concurrent.atomic.AtomicInteger(-1)
+            val scrollDelivered=CountDownLatch(1)
+            ui{AtomicPopupMenu.show(activity,anchor,(0..19).map{i->"SCROLL_ACTION_$i" to {scrolled.set(i);scrollDelivered.countDown()}},avoid)};settle()
             fun scrollNode(n:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
                 if(n==null)return null
                 if(n.isScrollable)return n
@@ -130,7 +129,10 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             }
             val scroll=checkNotNull(scrollNode(inst.uiAutomation.rootInActiveWindow)){"Bounded menu cannot scroll"}
             repeat(4){scroll.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);settle()}
-            click("SCROLL_ACTION_19");check(scrolled==19){"Last scrolled command was not dispatched"}
+            click("SCROLL_ACTION_19")
+            check(scrollDelivered.await(2,TimeUnit.SECONDS)){"Last scrolled command was not dispatched"}
+            check(scrolled.get()==19){"Wrong scrolled command: ${scrolled.get()}"}
+            ui{check(!AtomicPopupMenu.isShowing())}
             check(textures.toSet()==initial && destroyed==0){"Presentation rebuilt TextureView producers"}
             counts.add("$mode=13 callbacks, 4 back navigations, producer identities unchanged")
         }
