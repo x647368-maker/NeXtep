@@ -61,4 +61,18 @@ class StageMenuPlacementTest {
         val p=choose(avoid);inside(safe,p)
         assertTrue(avoid.all{p.overlap(it)==0L})
     }
+    @Test fun fullMenuDoesNotCollapseWhenOnlyOneRowFitsOutsideTasks(){
+        val avoid=listOf(b(0,60,400,800))
+        val p=StageMenuPlacement.place(safe,anchor,208,252,avoid,8)
+        assertEquals(208,p.w)
+        assertEquals(252,p.h)
+        inside(safe,p)
+    }
+    @Test fun fullMenuPrefersUncoveredSpaceWhenAvailable(){
+        val avoid=listOf(b(0,320,400,800))
+        val p=StageMenuPlacement.place(safe,anchor,208,252,avoid,8)
+        assertEquals(252,p.h)
+        assertEquals(0L,p.overlap(avoid.first()))
+        inside(safe,p)
+    }
 }
