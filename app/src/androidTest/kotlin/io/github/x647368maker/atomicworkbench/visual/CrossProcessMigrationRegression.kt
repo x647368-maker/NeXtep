@@ -66,6 +66,9 @@ internal class CrossProcessMigrationRegression(private val i:Instrumentation) {
         var adopted=false
         var fixtureId:Int?=null
         var cleanFixtureTasks=false
+        // A watchdog may revoke future work, but cannot acknowledge an IPC
+        // or release a fixture display while a submitted operation is outstanding.
+        var outstanding:Pair<AtomicReference<String>,CountDownLatch>?=null
         try {
             i.uiAutomation.adoptShellPermissionIdentity()
             adopted=true
@@ -168,6 +171,8 @@ internal class CrossProcessMigrationRegression(private val i:Instrumentation) {
                 val sessionDeadline=SystemClock.uptimeMillis()+4000L
                 val finish=CountDownLatch(1)
                 val ticket=AtomicReference("READY")
+                check(outstanding==null)
+                outstanding=ticket to finish
                 var terminal:Result<Unit>?=null
                 var ended=0L
                 var moveReturnedAt=0L
@@ -247,8 +252,10 @@ internal class CrossProcessMigrationRegression(private val i:Instrumentation) {
                     ticket.set("REVOKED")
                     error("Remote matched move did not return; no next mutation permitted")
                 }
-                checkNotNull(terminal).getOrThrow()
+                // Owner has consumed the actual final reply, including failures.
                 ticket.set("REVOKED")
+                outstanding=null
+                checkNotNull(terminal).getOrThrow()
                 val m=Measurement(ms(ended-started),ms(callbackWait),ms(ownerBusy))
                 val direction=if(target==android.view.Display.DEFAULT_DISPLAY)"to_main" else "to_side"
                 measurements.getOrPut(mode to target){mutableListOf()}.add(m)
@@ -282,6 +289,18 @@ internal class CrossProcessMigrationRegression(private val i:Instrumentation) {
             record(result)
             return result
         } finally {
+            val pending=outstanding
+            pending?.first?.set("REVOKED")
+            // Give the real terminal owner callback a bounded drain interval.
+            // A hard hang remains a failed instrumentation run; deliberately
+            // leave the isolated test resources to emulator/process teardown.
+            // Never issue a competing task removal or display release on timeout.
+            val safeToClean=pending==null || runCatching{
+                pending.second.await(4,TimeUnit.SECONDS)
+            }.getOrDefault(false)
+            if(!safeToClean){
+                runCatching{record("FAIL cleanup_deferred: actual owner completion still outstanding; isolated process/emulator teardown required")}
+            }else{
             if(adopted){
                 // Only the dedicated fixture component is eligible for removal.
                 if(cleanFixtureTasks){
@@ -299,6 +318,7 @@ internal class CrossProcessMigrationRegression(private val i:Instrumentation) {
             consumer.join(2000L)
             reader?.close()
             if(adopted)i.uiAutomation.dropShellPermissionIdentity()
+            }
         }
     }
 }
