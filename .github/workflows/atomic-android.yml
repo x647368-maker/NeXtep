@@ -309,6 +309,23 @@ jobs:
       - name: Verify genuine API37 two live GPU mirrors with a strict dedicated test
         timeout-minutes: 5
         run: bash scripts/run-native-mirror-regression.sh
+      - name: Observe actual native flight pixels and interruption on API37
+        if: github.ref == 'refs/heads/atomic-workbench/v87-motion-preflight-guard'
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          adb shell settings put global animator_duration_scale 3
+          trap 'adb shell settings put global animator_duration_scale 1' EXIT
+          set +e
+          timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e nativeFlightOnly true -w io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation | tee native-flight-instrumentation.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          adb exec-out run-as io.github.x647368maker.atomicworkbench tar -C files/visual-regression -cf - . > native-flight-results.tar || true
+          if [ -s native-flight-results.tar ]; then tar -xf native-flight-results.tar -C visual-results; fi
+          test "$status" -eq 0
+          grep -F NATIVE_FLIGHT_PASS native-flight-instrumentation.txt
+          test -s visual-results/native-flight-moving-mid.png
+          test -s visual-results/native-flight-moving-stale.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -317,6 +334,7 @@ jobs:
             visual-results/
             native-mirror-instrumentation.txt
             native-mirror-logcat.txt
+            native-flight-instrumentation.txt
             /tmp/emulator-api37.log
 
   # Isolated PR117-only build evidence; never publish or upload the trial APK.

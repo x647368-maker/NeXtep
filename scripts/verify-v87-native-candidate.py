@@ -16,9 +16,11 @@ REVIEW_TARGET = "b4ef45a111702da7bee85029c981ccc31a9411e5"
 SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
+NEW = {"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "2630f2ce782dd47947ea9717ae040ec37a7b57ee"}
 PINS = {
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "2ce8336fd6dbd34e2c9e352bf2871506c786e803"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
-    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "b375591a80b22a68c832a36e9680d07ed8860ea8"),
+    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "956bac76978ea131af63b98def1af5d9ef4991d8"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "3f7663838fab637cd45e6ad6dc3f12634e93bef8"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "84f90a1c0d1730ac49ad54e79c28782f75594ddf"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
@@ -33,7 +35,7 @@ PINS = {
 }
 
 def check_scope(changed, observed):
-    expected = set(PINS)
+    expected = set(PINS) | set(NEW)
     missing = expected - changed
     unexpected = changed - expected - {SELF}
     errors = []
@@ -95,7 +97,7 @@ def historical_on_normalized_copy(root, ref):
         git(root, "worktree", "add", "--detach", "--quiet", str(view), ref)
         try:
             git(view, "restore", "--source", BASE, "--staged", "--worktree", "--", *PINS)
-            git(view, "rm", "--force", "--", SELF)
+            git(view, "rm", "--force", "--", SELF, *NEW)
             if git(view, "write-tree").strip() != base_tree:
                 raise SystemExit("normalized tree is not identical to historical base")
             if git(view, "diff", "--name-only").strip():
@@ -132,7 +134,13 @@ def main():
                  for commit in (BASE, ref)]
         if modes != [b"100644", b"100644"]:
             raise SystemExit("unexpected file mode: "+file)
-    print("PASS: committed candidate matches 13 exact file pairs; no extra paths except this auditor.")
+    for file, pin in NEW.items():
+        actual = git(root, "rev-parse", ref+":"+file).decode().strip()
+        mode = git(root, "ls-tree", ref, "--", file).split(b" ", 1)[0]
+        old = git(root, "ls-tree", BASE, "--", file)
+        if actual != pin or mode != b"100644" or old:
+            raise SystemExit("unexpected new test object: "+file)
+    print("PASS: committed candidate matches 14 exact file pairs and 1 new pinned test; no extra paths except this auditor.")
     check_candidate_contracts(root, ref)
     if args.historical:
         historical_on_normalized_copy(root, ref)
