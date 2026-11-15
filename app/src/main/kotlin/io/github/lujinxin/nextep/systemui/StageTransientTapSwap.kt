@@ -136,11 +136,15 @@ internal class StageTransientTapSwap(private val context:Context) {
                     var incomingFailure="none"
                     var outgoingFailure="not_attempted"
                     val captureStarted=SystemClock.uptimeMillis()
-                    val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    val a=runCatching {
+                        TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
+                    }.getOrElse { incomingFailure="capture_exception";null }
                     val firstCaptured=SystemClock.uptimeMillis()
                     val b=if(a!=null && waitingCapture && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
                         outgoingFailure="none"
-                        TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
+                        runCatching {
+                            TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
+                        }.getOrElse { outgoingFailure="capture_exception";null }
                     } else null
                     val bothCaptured=SystemClock.uptimeMillis()
                     // Cancellation/timeout owns the UI finish; release worker-local snapshots.
@@ -152,17 +156,20 @@ internal class StageTransientTapSwap(private val context:Context) {
                     else null
                     val plannedAt=SystemClock.uptimeMillis()
                     if(!waitingCapture){a?.recycle();b?.recycle();return@execute}
-                    ui.post {
+                    val posted=ui.post {
                         // One bounded timing record, no per-frame trace or new worker.
                         // Split actual capture/planning from main-loop callback delay.
-                        if(current() && waitingCapture)
-                            trace("snapshot_cost_ms="+(firstCaptured-captureStarted)+"/"+
-                                (bothCaptured-firstCaptured)+"/"+(plannedAt-bothCaptured)+"/"+
-                                (SystemClock.uptimeMillis()-plannedAt))
-                        if(current() && waitingCapture && (a==null || b==null))
-                            trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
+                        runCatching {
+                            if(current() && waitingCapture)
+                                trace("snapshot_cost_ms="+(firstCaptured-captureStarted)+"/"+
+                                    (bothCaptured-firstCaptured)+"/"+(plannedAt-bothCaptured)+"/"+
+                                    (SystemClock.uptimeMillis()-plannedAt))
+                            if(current() && waitingCapture && (a==null || b==null))
+                                trace("snapshot_capture_result:slot="+incomingFailure+",main="+outgoingFailure)
+                        }
                         captured(a,b,deadline,plan)
                     }
+                    if(!posted){a?.recycle();if(b!==a)b?.recycle()}
                 }
             }.onFailure {
                 waitingCapture=false
@@ -179,7 +186,12 @@ internal class StageTransientTapSwap(private val context:Context) {
                 a?.recycle();b?.recycle();direct("capture_unavailable");return
             }
             if(plan==null){a.recycle();b.recycle();direct("corridor_unavailable");return}
-            val v=FlightView(context,a,b,slot,main,others,backdrop,viewport,plan,mainBackdrop)
+            val v=runCatching {
+                FlightView(context,a,b,slot,main,others,backdrop,viewport,plan,mainBackdrop)
+            }.getOrElse {
+                a.recycle();if(b!==a)b.recycle()
+                direct("view_create_failed");return
+            }
             if(!v.safe){v.release();direct("corridor_unavailable");return}
             view=v
             val added=runCatching{
@@ -250,11 +262,19 @@ internal class StageTransientTapSwap(private val context:Context) {
             runCatching(onVisualStart).onFailure {
                 finish("visual_start_failed");return
             }
-            val backend=v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
-                if(current()){
-                    trace("snapshot_motion_animators_end")
-                    awaitTerminalFrame(v)
+            val backend=runCatching {
+                v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
+                    if(current()){
+                        trace("snapshot_motion_animators_end")
+                        awaitTerminalFrame(v)
+                    }
                 }
+            }.getOrElse {
+                // An unsupported vendor RenderThread/UI start must not lose
+                // the tap, nor leave a partial card animation on the screen.
+                if(moveStarted)finish("motion_start_failed_after_move")
+                else direct("motion_start_failed")
+                return
             }
             trace("snapshot_motion_backend="+backend)
             // RenderThread needs a submitted animation frame BEFORE the
@@ -366,13 +386,20 @@ internal class StageTransientTapSwap(private val context:Context) {
             trace("snapshot_real_move_requested")
             runCatching {
                 moveAsync { ok ->
-                    if(!current())return@moveAsync
-                    trace("snapshot_real_move_ack="+ok)
-                    if(!ok || fallback){finish(if(ok)"fallback_ready" else "move_failed");return@moveAsync}
-                    moveAck=true
-                    maybeHandoff()
+                    // Keep all ownership/ACK transitions on the same UI
+                    // lane; late or duplicate callbacks cannot finish a
+                    // different attempt or retract a successful first ACK.
+                    if(Looper.myLooper()==ui.looper) acknowledgeMove(ok)
+                    else ui.post { acknowledgeMove(ok) }
                 }
             }.onFailure{finish("move_exception")}
+        }
+        private fun acknowledgeMove(ok:Boolean){
+            if(!current() || !moveStarted || moveAck)return
+            if(ok)moveAck=true
+            runCatching { trace("snapshot_real_move_ack="+ok) }
+            if(!ok || fallback){finish(if(ok)"fallback_ready" else "move_failed");return}
+            maybeHandoff()
         }
         private fun maybeHandoff(){
             if(!current() || handoffStarted ||
@@ -385,7 +412,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             clearFirstCallbacks()
             clearMotionCallbacks()
             clearTerminalCallbacks()
-            view?.stopMotion()
+            runCatching { view?.stopMotion() }
             if(visualOwned){visualOwned=false;runCatching(onVisualEnd)}
             val old=view ?: return
             view=null
@@ -410,9 +437,14 @@ internal class StageTransientTapSwap(private val context:Context) {
             waitingCapture=false;waitingCommit=false
             ui.removeCallbacks(captureTimeout);ui.removeCallbacks(commitTimeout);ui.removeCallbacks(lifetime)
             host.removeCallbacks(checkHandoff)
-            removeVisual()
-            trace("snapshot_end:"+result)
-            onFinished()
+            // One failed visual teardown/diagnostic step cannot leave the
+            // shared coordinator permanently waiting for this attempt.
+            StageConcurrentNativeTrialPolicy.cleanupSteps(
+                { removeVisual() },
+                { trace("snapshot_end:"+result) },
+                { onFinished() },
+                onFailure={ runCatching { trace("snapshot_cleanup_exception:"+it.javaClass.simpleName) } },
+            )
         }
     }
 
@@ -643,8 +675,11 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         fun release(){
             if(released)return
-            released=true;stopMotion()
-            incoming.recycle();if(outgoing!==incoming)outgoing.recycle()
+            released=true
+            try { stopMotion() } finally {
+                try { incoming.recycle() }
+                finally { if(outgoing!==incoming)outgoing.recycle() }
+            }
         }
     }
 }
