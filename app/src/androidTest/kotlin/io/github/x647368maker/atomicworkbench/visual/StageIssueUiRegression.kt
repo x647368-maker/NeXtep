@@ -184,6 +184,43 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
     private fun shell(command: String): String =
         ParcelFileDescriptor.AutoCloseInputStream(inst.uiAutomation.executeShellCommand(command))
             .bufferedReader().use { it.readText() }
+    // Sparse, test-only OS evidence. Do not wake the device, change standby
+    // policy, trigger the receiver, or poll AlarmManager in the background.
+    private fun alarmEvidence(out:File,label:String,token:Long){
+        val pkg=inst.targetContext.packageName
+        val stamp=SystemClock.elapsedRealtime()
+        val report=File(out,"diagnostic-alarm-$label.txt")
+        report.writeText("elapsed=$stamp token=$token planned=${token+300000L}\n")
+        for(command in listOf("dumpsys alarm","dumpsys deviceidle","dumpsys power",
+            "am get-standby-bucket $pkg","dumpsys activity broadcasts")){
+            report.appendText("\n===== $command =====\n")
+            val captured=runCatching{shell(command)}.getOrElse{"unavailable: ${it.message}"}
+            report.appendText(captured+"\n")
+            if(command=="dumpsys alarm"){
+                val lines=captured.lineSequence().filter{
+                    it.contains(pkg) || it.contains("ISSUE_TIMEOUT") || it.contains("stageissue://deadline")
+                }.take(40).toList()
+                phase("OS alarm evidence $label: ${lines.joinToString(" | ").take(1800)}")
+            }
+        }
+    }
+    private fun layoutEvidence(activity:Activity,comprehensive:Boolean){
+        ui {
+            val nodes=descendants(activity.window.decorView).filterIsInstance<TextView>()
+            fun y(text:String):Int {
+                val view=nodes.firstOrNull{it.isShown && it.text.toString()==text}
+                    ?:error("Missing original-design layout element: $text")
+                return IntArray(2).also{view.getLocationOnScreen(it)}[1]
+            }
+            val duration=y("5 分钟")
+            val first=y(if(comprehensive)"窗口交换与动画" else "卡顿")
+            val start=y(if(comprehensive)"开始综合诊断" else "开始专项诊断")
+            val details=y("展开高级诊断详情")
+            check((if(comprehensive) duration<first else first<duration) &&
+                start>maxOf(duration,first) && details>start){"Wrong original-design control order"}
+        }
+        phase("PASS original-design control order comprehensive=$comprehensive")
+    }
     // Capture actual compositor pixels only after the intended Activity has
     // focus and the entry transition has settled. Never draw a View to a fake bitmap.
     private fun screenshot(out: File, name: String, activity:Activity) {
@@ -407,6 +444,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                 val screen=page(id)
                 activities.add(screen)
                 await("specialty $id") { hasText(screen,title) && hasText(screen,"开始专项诊断") }
+                if(id=="performance")layoutEvidence(screen,false)
                 screenshot(out,"diagnostic-scope-$id.png",screen)
                 close(screen)
                 activities.remove(screen)
@@ -414,10 +452,11 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             val all = page("all").also { activities.add(it) }
             await("all scope") { hasText(all, "故障测试与报告") && hasText(all, "全面综合诊断") && hasText(all, "开始综合诊断") }
             check(hasText(all,"展开高级诊断详情"))
+            layoutEvidence(all,true)
+            screenshot(out,"diagnostic-scope-all.png",all)
             click(all,"展开高级诊断详情")
             check(hasText(all,"收起高级诊断详情"))
             click(all,"收起高级诊断详情")
-            screenshot(out,"diagnostic-scope-all.png",all)
             click(all, "5 分钟")
             click(all, "开始综合诊断")
             await("real active session") { ui { session.active() && session.selectedCategory() == "all" && session.durationMs() == 300000L } }
@@ -473,6 +512,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             await("actual time-limited test started") { ui { session.active() && session.durationMs()==300000L } }
             val expiryToken=ui { session.currentToken() }
             check(ui{session.alarmScheduled()}){"Actual non-wakeup alarm was not scheduled"}
+            alarmEvidence(out,"scheduled",expiryToken)
             close(expiry);activities.remove(expiry)
             shell("input keyevent 3")
             val deadline=expiryToken+420000L
@@ -480,7 +520,22 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             // OS alarm may end this session. No fake time or test alarm.
             phase("BEGIN five-minute background OS alarm, no diagnostic Activity")
             while(ui { session.active() } && SystemClock.elapsedRealtime()<deadline) Thread.sleep(1000)
-            check(!ui { session.active() }) { "Real background automatic expiry failed within 120s allowance" }
+            val delivered=ui{!session.active()}
+            alarmEvidence(out,if(delivered)"completed" else "deadline-missed",expiryToken)
+            if(!delivered){
+                // Preserve the original strict background gate. Explicit
+                // re-entry is a separate product recovery check, never a pass
+                // for the natural background alarm.
+                phase("FAIL natural background alarm; checking explicit overdue recovery separately")
+                val reopened=page("performance").also{activities.add(it)}
+                await("overdue report recovered on real page re-entry"){ui{!session.active() && session.latestRecord()!=null}}
+                val recovered=ui{checkNotNull(session.latestRecord())}
+                check(recovered.category=="performance" && recovered.text.contains("到期"))
+                check(ui{session.reports().size==3})
+                File(out,"diagnostic-overdue-recovery-report.txt").writeText(recovered.text)
+                close(reopened);activities.remove(reopened)
+                error("Real background automatic expiry failed within 120s allowance; explicit re-entry recovery verified separately")
+            }
             check(SystemClock.elapsedRealtime()-expiryToken>=300000L)
             val expired=ui { checkNotNull(session.latestRecord()) }
             check(expired.category=="performance" && expired.text.contains("到期"))
