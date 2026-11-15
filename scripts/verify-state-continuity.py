@@ -726,7 +726,7 @@ _pr65_source=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTa
 _pr65_layout=_pr65_source.split('private fun waitForTaskLayoutNonBlocking(',1)[1].split('private fun moveTaskToDisplayNonBlocking(',1)[0]
 assert 'SystemClock.sleep(' not in _pr65_layout
 assert 'exchangeHandler.postDelayed(' in _pr65_layout
-assert 'restoreTaskLayoutNonBlocking(slotTask' in _pr65_source
+assert 'restoreTaskLayoutNonBlocking(source,slotLayout' in _pr65_source
 assert 'ensureSlotLayoutNonBlocking(slotIndex' in _pr65_source
 
 # PR64: reverse ONLY SHA-reviewed phased async observation/handoff changes
