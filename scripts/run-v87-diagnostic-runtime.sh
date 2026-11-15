@@ -16,10 +16,16 @@ adb shell wm size 1272x2772
 adb shell wm density 512
 adb shell input keyevent 82
 adb logcat -c
+# Stream immediate checkpoint evidence even if instrumentation never returns.
+adb logcat -v threadtime -s StageDiagnosticTest:I '*:S' | tee diagnostic-results/phase-live.txt &
+phase_logger=$!
+trap 'kill "$phase_logger" 2>/dev/null || true' EXIT
 set +e
 timeout --signal=TERM --kill-after=20s 660s adb shell am instrument -w -e diagnosticOnly true io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation | tee diagnostic-instrumentation.txt
 status=${PIPESTATUS[0]}
 set -e
+echo "Diagnostic instrumentation process status=$status"
+kill "$phase_logger" 2>/dev/null || true
 adb exec-out run-as io.github.x647368maker.atomicworkbench tar -C files/visual-regression -cf - . > /tmp/atomic-diagnostic/results.tar || true
 if [ -s /tmp/atomic-diagnostic/results.tar ]; then tar -xf /tmp/atomic-diagnostic/results.tar -C diagnostic-results || true; fi
 adb logcat -d > diagnostic-results/logcat.txt
