@@ -230,7 +230,15 @@ def undo_pr87(path,data):
  return prior
 for reviewed_path in pr87_review:
  undo_pr87(reviewed_path,(root/reviewed_path).read_bytes())
-_pr87=(k/'systemui/StageSnapshotMotion.kt').read_text()
+_pr86_motion_current=(k/'systemui/StageSnapshotMotion.kt').read_text()
+assert 'val chosen=PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias)' in _pr86_motion_current
+assert 'if(gain>bestGain){result=candidate;bestGain=gain}' in _pr86_motion_current
+assert 'fractions[it].first+.001f<baseline[it].first' in _pr86_motion_current
+assert 'fractions[it].second+.001f<baseline[it].second' in _pr86_motion_current
+_pr87=undo_v86_crossing(
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',
+ _pr86_motion_current.encode('utf-8')
+).decode('utf-8')
 _pr87_swap=(k/'systemui/StageTransientTapSwap.kt').read_text()
 _pr87_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
 assert '?: atStart.copy(sequence=ackSequence)' in _pr87_controller

@@ -16,7 +16,7 @@
     },
     "scripts/verify-state-continuity.py": {
       "previous_blob_sha1": "601400c91d7713096faf503834473d42431f045f",
-      "reviewed_blob_sha1": "96db1a40805be6e2289014ddae8ad4da3d6968f1",
+      "reviewed_blob_sha1": "f9aa5ae5ea4ae8d1763ec6cfa58b12267ea5c0a0",
       "patches": [
         {
           "before": "# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.\npr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']\ndef undo_pr92(path,data):\n if path not in pr92_review:return data\n spec=pr92_review[path]",
@@ -25,6 +25,10 @@
         {
           "before": "def undo_pr87_smooth(path,data):\n data=undo_pr88(path,data)",
           "after": "# v86 crossing geometry is an independently reversible, exact source change.\nv86_crossing_review=json.loads((root/'scripts/reviewed-final-v86-crossing.json').read_text())['files']\nassert set(v86_crossing_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt'}\ndef undo_v86_crossing(path,data):\n if path not in v86_crossing_review:return data\n spec=v86_crossing_review[path]\n blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()\n assert blob(data)==spec['reviewed_blob_sha1'],path\n source=data.decode('utf-8')\n for patch in reversed(spec['patches']):\n  assert source.count(patch['after'])==1,path\n  source=source.replace(patch['after'],patch['before'],1)\n prior=source.encode('utf-8')\n assert blob(prior)==spec['previous_blob_sha1'],path\n return prior\nfor reviewed_path in v86_crossing_review:\n undo_v86_crossing(reviewed_path,(root/reviewed_path).read_bytes())\ndef undo_pr87_smooth(path,data):\n data=undo_pr88(path,undo_v86_crossing(path,data))"
+        },
+        {
+          "before": "_pr87=(k/'systemui/StageSnapshotMotion.kt').read_text()",
+          "after": "_pr86_motion_current=(k/'systemui/StageSnapshotMotion.kt').read_text()\nassert 'val chosen=PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias)' in _pr86_motion_current\nassert 'if(gain>bestGain){result=candidate;bestGain=gain}' in _pr86_motion_current\nassert 'fractions[it].first+.001f<baseline[it].first' in _pr86_motion_current\nassert 'fractions[it].second+.001f<baseline[it].second' in _pr86_motion_current\n_pr87=undo_v86_crossing(\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',\n _pr86_motion_current.encode('utf-8')\n).decode('utf-8')"
         }
       ]
     }
