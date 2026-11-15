@@ -41,9 +41,13 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
         var sampling = true
         var lastFrame = 0L
         val gaps = mutableListOf<Long>()
+        // Record actual owner callback arrival on the same monotonic clock as each move.
+        // This is a scheduling proxy, not rendered-frame or SurfaceFlinger FPS evidence.
+        val dispatchTimes = mutableListOf<Long>()
         val callback = object : Choreographer.FrameCallback {
             override fun doFrame(time: Long) {
                 if (!sampling) return
+                dispatchTimes.add(SystemClock.elapsedRealtimeNanos())
                 if (lastFrame != 0L) gaps.add((time-lastFrame)/1_000_000)
                 lastFrame=time
                 Choreographer.getInstance().postFrameCallback(this)
@@ -147,7 +151,8 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             val batchElapsed=mutableListOf<Double>()
             val batchOwner=mutableListOf<Double>()
             val batchCallback=mutableListOf<Double>()
-            fun matchedMove(id:Int,destination:Int,mode:String){
+            data class MoveWindow(val startNs:Long,val confirmedNs:Long)
+            fun matchedMove(id:Int,destination:Int,mode:String):MoveWindow{
                 val async=mode!="sync"
                 val selectedLane=if(mode=="async_barrier")barrierLane else lane
                 val finished=CountDownLatch(1)
@@ -159,6 +164,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 var callbackNs=0L
                 var firstOwnerNs=0L
                 var endedNs=0L
+                var moveReturnedNs=0L
                 var queries=0
                 var callbacks=0
                 var deadline=0L
@@ -229,6 +235,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                             queries++
                             onLane({
                                 ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
+                                moveReturnedNs=now()
                                 val expiry=SystemClock.uptimeMillis()+700L
                                 repository.readExchangeTasks() to expiry
                             }){(batch,expiry)->
@@ -236,7 +243,10 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                                 acceptBatch(batch)
                             }
                         }else if(async){
-                            onLane({ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()}){
+                            onLane({
+                                ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
+                                moveReturnedNs=now()
+                            }){
                                 deadline=SystemClock.uptimeMillis()+700
                                 observeAsync()
                             }
@@ -244,6 +254,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                             StageExchangeTelemetry.measure("exchange_move"){
                                 StageExchangeTelemetry.measure("probe_display_binder"){
                                     ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
+                                    moveReturnedNs=now()
                                 }
                                 StageExchangeTelemetry.measure("probe_display_observation"){
                                     deadline=SystemClock.uptimeMillis()+700
@@ -273,9 +284,31 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     "async_batch"->{batchElapsed.add(elapsed);batchOwner.add(busy);batchCallback.add(ms(callbackNs))}
                     else->error("Unknown probe mode")
                 }
-                lines.add("matched_move mode=$mode task=$id display=$destination elapsed_ms=$elapsed "+
+                check(moveReturnedNs in startTime..endedNs){"Move-return timestamp outside confirmation interval"}
+                val direction=if(destination==0)"to_main" else "to_side"
+                lines.add("matched_move mode=$mode task=$id display=$destination direction=$direction elapsed_ms=$elapsed "+
                     "owner_busy_ms=$busy worker_ms=${ms(workerNs)} dispatch_ms=${ms(dispatchNs)} "+
-                    "callback_wait_ms=${ms(callbackNs)} initial_owner_wait_ms=${ms(firstOwnerNs)} queries=$queries callbacks=$callbacks")
+                    "callback_wait_ms=${ms(callbackNs)} initial_owner_wait_ms=${ms(firstOwnerNs)} queries=$queries callbacks=$callbacks "+
+                    "move_return_elapsed_ms=${ms(moveReturnedNs-startTime)} post_move_confirmation_ms=${ms(endedNs-moveReturnedNs)}")
+                return MoveWindow(startTime,endedNs)
+            }
+            // Clip adjacent actual dispatch intervals to each individual move. A gap
+            // spanning both directions contributes only its overlap to each. Do not
+            // count padding, buffer-wait time, or the other direction as move time.
+            // Without bracketing callbacks, report coverage=false, never a zero-latency claim.
+            fun directionDispatchLine(round:Int,slot:Int,mode:String,direction:String,window:MoveWindow,times:List<Long>):String{
+                val covered=times.firstOrNull()?.let{it<=window.startNs}==true &&
+                    times.lastOrNull()?.let{it>=window.confirmedNs}==true
+                val overlaps=times.zipWithNext().mapNotNull{(a,b)->
+                    val overlap=minOf(b,window.confirmedNs)-maxOf(a,window.startNs)
+                    if(overlap>0)ms(overlap) else null
+                }
+                val maxOverlap=overlaps.maxOrNull()
+                val total=overlaps.sum()
+                return "direction_dispatch round=$round slot=$slot mode=$mode direction=$direction "+
+                    "coverage=$covered intervals=${overlaps.size} covered_ms=$total "+
+                    "max_clipped_gap_ms=${maxOverlap ?: "NA"} clipped_over33ms=${overlaps.count{it>33.0}} "+
+                    "scope=owner_callback_arrival_not_rendered_frames"
             }
             for(round in 0..1)for(slot in 0..3){
                 // Balanced alternating order over the same four live tasks.
@@ -291,20 +324,29 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 val order=orders[(round*4+slot)%orders.size]
                 for(mode in order){
                     i.runOnMainSync {
-                        gaps.clear();lastFrame=0L; sampling=true
+                        gaps.clear();dispatchTimes.clear();lastFrame=0L; sampling=true
                         Choreographer.getInstance().postFrameCallback(callback)
                     }
                     Thread.sleep(80)
+                    var mainWindow:MoveWindow?=null
+                    var sideWindow:MoveWindow?=null
                     try{
-                        matchedMove(ids[slot],0,mode)
+                        mainWindow=matchedMove(ids[slot],0,mode)
                         val before=frames[slot].get()
-                        matchedMove(ids[slot],displays[slot].display.displayId,mode)
+                        val side=matchedMove(ids[slot],displays[slot].display.displayId,mode)
+                        sideWindow=side
                         awaitFrame(slot,before)
+                        val observedNs=now()
+                        // Existing buffer-counter assertion is retained. It does not prove
+                        // that pixels belong to the migrated task or that the main target is fresh.
+                        lines.add("side_buffer_observation round=$round slot=$slot mode=$mode post_confirmation_ms=${ms(observedNs-side.confirmedNs)} scope=unattributed_buffer_counter")
                         lines.add("matched_round=$round slot=$slot mode=$mode task_identity_retained=true fresh_buffers=${frames[slot].get()-before}")
                         Thread.sleep(80)
                     }finally{
                         i.runOnMainSync {
                             sampling=false; Choreographer.getInstance().removeFrameCallback(callback)
+                            mainWindow?.let{lines.add(directionDispatchLine(round,slot,mode,"to_main",it,dispatchTimes))}
+                            sideWindow?.let{lines.add(directionDispatchLine(round,slot,mode,"to_side",it,dispatchTimes))}
                             when(mode){
                                 "sync"->syncGaps.addAll(gaps)
                                 "async"->laneGaps.addAll(gaps)
@@ -333,6 +375,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             lines.add("matched_summary mode=async n=16 elapsed_median_ms=${median(asyncElapsed)} owner_busy_median_ms=${median(asyncOwner)} callback_wait_median_ms=${median(ordinaryCallback)} "+frameMetrics(laneGaps))
             lines.add("matched_summary mode=async_barrier n=16 elapsed_median_ms=${median(barrierElapsed)} owner_busy_median_ms=${median(barrierOwner)} callback_wait_median_ms=${median(barrierCallback)} "+frameMetrics(barrierGaps))
             lines.add("matched_summary mode=async_batch n=16 elapsed_median_ms=${median(batchElapsed)} owner_busy_median_ms=${median(batchOwner)} callback_wait_median_ms=${median(batchCallback)} "+frameMetrics(batchGaps))
+            lines.add("direction_dispatch scope: clipped actual owner callback arrival intervals; coverage=false means incomplete bracketing; legacy frame metrics retained; no visual readiness or FPS claim. Observation deadline origins remain mode-specific in this probe.")
             lines.add("Scope: async_barrier and async_batch are test-only candidates; batch merges successful move and first read, never worker publication; no production scheduling modification and no assumed improvement.")
             // Guard test is outside measured intervals.
             val guardFinished=CountDownLatch(1)
