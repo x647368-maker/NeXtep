@@ -1437,6 +1437,7 @@ class NeXtepWindowController(
                 smartRail.setEnabled(!smartRail.enabled)
                 showStageMessage(if (smartRail.enabled) "智能侧栏已开启：侧栏静置后收起，保留任务和主窗比例；顶部布局不受影响" else "已恢复原有侧栏行为")
             },
+            "侧栏自动收起时间（${smartRail.idleSeconds}秒）" to { showSmartRailDelayMenu(anchor) },
             (if (smartRail.pinned) "取消固定侧栏" else "固定侧栏") to { smartRail.setPinned(!smartRail.pinned) },
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
@@ -1451,6 +1452,15 @@ class NeXtepWindowController(
             val g=geometry();add(Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom))
             slotWindows.forEach { slot -> val box=Rect();if(slot.view.getScreenVisibleRect(box))add(box) }
         })
+    }
+
+    private fun showSmartRailDelayMenu(anchor: View) {
+        val items: List<Pair<String, () -> Unit>> = listOf(3, 5, 10, 15, 30).map { seconds ->
+            (if (smartRail.idleSeconds == seconds) "✓ ${seconds}秒" else "${seconds}秒") to {
+                smartRail.setIdleSeconds(seconds)
+            }
+        } + listOf("始终显示（固定侧栏）" to { smartRail.setPinned(true) })
+        AtomicPopupMenu.show(context, anchor, items)
     }
 
     private fun setMainPriority(priority: Boolean) {
