@@ -19,6 +19,23 @@ internal object StageHomeLayout {
             Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
             Item("关于与使用帮助","about","about")))
     )
+    // On a wide screen the rail selects a section; the detail pane displays
+    // that section's real entries or the entry's settings. No duplicate route.
+    private val sectionPages = listOf("section_workbench", "section_diagnostics", "section_support")
+    fun sectionPage(index:Int):String = sectionPages[index]
+    fun sectionIndex(page:String):Int? = sectionPages.indexOf(page).takeIf { it >= 0 }
+    fun sectionForPage(page:String):Int = sectionIndex(page)
+        ?: sections.indexOfFirst { section -> section.items.any { it.page == page } }
+            .takeIf { it >= 0 } ?: when(page) {
+                "diagnostics" -> 1
+                "changelog", "help" -> 2
+                else -> 0
+            }
+    fun detailPage(target:String,wide:Boolean):String = when {
+        wide && target=="home" -> sectionPage(0)
+        !wide && sectionIndex(target)!=null -> "home"
+        else -> target
+    }
     // Actual available bounds, not manufacturer/model names. Portrait tablets
     // retain single-column navigation; wide inner foldables and landscape
     // tablets have room for a 208dp navigation rail plus a readable detail pane.

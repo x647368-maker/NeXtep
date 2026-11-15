@@ -30,6 +30,20 @@ class StageSettingsAdaptiveTest {
         assertEquals(520,StageHomeLayout.navigationWidth(1500,2.5f))
         assertEquals(900,StageHomeLayout.navigationWidth(4000,3f))
     }
+    @Test fun wideSectionRoutesAreStableAndAllElevenEntriesRemainReachable() {
+        assertEquals("section_workbench",StageHomeLayout.detailPage("home",true))
+        assertEquals("home",StageHomeLayout.detailPage("section_diagnostics",false))
+        assertEquals("update",StageHomeLayout.detailPage("update",false))
+        for((index,section) in StageHomeLayout.sections.withIndex()) {
+            val route=StageHomeLayout.sectionPage(index)
+            assertEquals(index,StageHomeLayout.sectionIndex(route))
+            assertEquals(route,StageHomeLayout.detailPage(route,true))
+            assertEquals("home",StageHomeLayout.detailPage(route,false))
+            for(item in section.items)assertEquals(index,StageHomeLayout.sectionForPage(item.page))
+        }
+        assertEquals(1,StageHomeLayout.sectionForPage("diagnostics"))
+        assertEquals(2,StageHomeLayout.sectionForPage("changelog"))
+    }
     @Test fun rowsAndHeadersRemainTouchableAndSupportIsOptIn() {
         assertTrue(StageHomeLayout.ROW_DP in 56..64)
         assertTrue(StageHomeLayout.HEADER_DP>=48)

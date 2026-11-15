@@ -118,13 +118,22 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             intArrayOf(blue, if (dark) Color.rgb(75, 77, 81) else Color.rgb(204, 206, 210)))
         setOnCheckedChangeListener { _, value -> if (!settingSwitch) action(value) }
     }
-    fun back(): Boolean { if (page == "home") return false; open("home"); return true }
+    fun back(): Boolean {
+        if (page=="home") return false
+        if (wideLayout) {
+            val section=StageHomeLayout.sectionIndex(page)
+            if (section==0) return false
+            open(if(section!=null) "home" else StageHomeLayout.sectionPage(StageHomeLayout.sectionForPage(page)))
+        } else open("home")
+        return true
+    }
     fun open(target: String) {
         navigationScroll?.let { navigationY = it.scrollY }
         navigationScroll = null
-        page = target; body = null; stateText = null; master = null
+        body = null; stateText = null; master = null
         wideLayout = isWide() && target != "update"
-        val detailTarget = if (wideLayout && target == "home") "windows" else target
+        val detailTarget=StageHomeLayout.detailPage(target,wideLayout)
+        page=detailTarget
         if (target == "update") {
             view.background = StageUpdateBackdrop()
             activity.window.statusBarColor = Color.rgb(15,13,35)
@@ -237,7 +246,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             addHomeHeader(rail)
             val navigation = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             rail.addView(navigation)
-            renderHome(navigation, detailTarget)
+            renderSectionNavigation(navigation,StageHomeLayout.sectionForPage(detailTarget))
             val navScroll = ScrollView(activity).apply {
                 isFillViewport = true; isVerticalScrollBarEnabled = false
                 addView(rail, ViewGroup.LayoutParams(-1,-2))
@@ -264,7 +273,10 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             scroll.translationY = dp(14).toFloat()
             scroll.animate().alpha(1f).translationY(0f).setDuration(240L).start()
         }
-        if (detailTarget == "home") {
+        val sectionIndex=StageHomeLayout.sectionIndex(detailTarget)
+        if (wideLayout && sectionIndex!=null) {
+            renderSectionDetail(column,sectionIndex)
+        } else if (detailTarget == "home") {
             addHomeHeader(column)
             val navigation = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             body = navigation
@@ -272,8 +284,8 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         } else {
             val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "故障测试与报告", "about" to "关于与使用帮助", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
-            if (!wideLayout) header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
-                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
+            header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
+                gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { back() }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
             header.addView(label(titles[detailTarget] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             if (target == "update") {
@@ -347,6 +359,62 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         header.addView(master, LinearLayout.LayoutParams(dp(52),dp(48)))
         parent.addView(header)
+    }
+    private fun sectionGlyph(index:Int)=listOf("groups","diagnostics","tile")[index]
+    private fun renderSectionNavigation(root:LinearLayout,selected:Int) {
+        for((index,section) in StageHomeLayout.sections.withIndex()) {
+            val color=if(index==selected) Color.WHITE else ink
+            val entry=LinearLayout(activity).apply {
+                orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+                minimumHeight=dp(52);setPadding(dp(12),dp(8),dp(12),dp(8))
+                isClickable=true;isFocusable=true;isSelected=index==selected
+                if(isSelected)background=GradientDrawable().apply{setColor(blue);cornerRadius=dp(12).toFloat()}
+                addView(StageSettingsIcon(activity,sectionGlyph(index),color),LinearLayout.LayoutParams(dp(24),dp(24)).apply{marginEnd=dp(12)})
+                addView(label(section.title,16f,color).apply{typeface=Typeface.DEFAULT_BOLD},LinearLayout.LayoutParams(0,-2,1f))
+                contentDescription=section.title
+                setOnClickListener{open(StageHomeLayout.sectionPage(index))}
+            }
+            root.addView(entry,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8)})
+        }
+    }
+    private fun renderSectionDetail(root:LinearLayout,index:Int) {
+        val section=StageHomeLayout.sections[index]
+        val title=LinearLayout(activity).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(12),dp(12),0,dp(8))}
+        title.addView(StageSettingsIcon(activity,sectionGlyph(index),blue),LinearLayout.LayoutParams(dp(28),dp(28)).apply{marginEnd=dp(12)})
+        title.addView(label(section.title,24f).apply{typeface=Typeface.DEFAULT_BOLD})
+        root.addView(title)
+        if(index==2 && UpdateCoordinator.available(activity)!=null)
+            row(group(root),"发现台前调度新版本",icon="info"){open("update")}
+        val card=group(root)
+        val descriptions=mapOf(
+            "windows" to "顶部 / 侧边布局、比例与样式",
+            "core" to "常用应用、快捷启动与切换",
+            "groups" to "保存布局、快速恢复工作状态",
+            "gestures" to "手势操作与触发方式",
+            "tile" to "控制中心开关、智能隐藏等",
+            "issue_all" to "记录有效诊断事件",
+            "issue_specialties" to "五大专项、历史报告与导出")
+        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,ink){
+            if(item.page=="issue_all")launchIssue("all") else{
+                open(item.page)
+                if(item.page in listOf("core","windows","groups"))refresh()
+            }
+        }
+        val footer=LinearLayout(activity).apply{
+            orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+            setPadding(dp(12),dp(24),dp(12),dp(8))
+        }
+        footer.addView(ImageView(activity).apply{setImageResource(R.drawable.ic_atomic_workbench)},
+            LinearLayout.LayoutParams(dp(36),dp(36)).apply{marginEnd=dp(12)})
+        val words=LinearLayout(activity).apply{orientation=LinearLayout.VERTICAL}
+        words.addView(label("台前调度 · Atomic Workbench",12f).apply{typeface=Typeface.DEFAULT_BOLD})
+        words.addView(label("二次开发：ZMW小武 × GPT",11f,secondary))
+        footer.addView(words,LinearLayout.LayoutParams(0,-2,1f))
+        footer.addView(label(versionName,11f,secondary).apply {
+            gravity=Gravity.CENTER;setPadding(dp(8),dp(6),dp(8),dp(6))
+            background=GradientDrawable().apply{setColor(cardColor);cornerRadius=dp(14).toFloat()}
+        },LinearLayout.LayoutParams(-2,-2))
+        root.addView(footer)
     }
     private fun renderHome(root: LinearLayout, selected: String? = null) {
         root.removeAllViews()
@@ -731,9 +799,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     topRail = reply.getBoolean("layout_top", topRail)
                     mainPriority = reply.getBoolean("main_priority", true)
                     reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
-                    if (page == "groups" || page == "diagnostics" || page == "windows" || page == "core" || (wideLayout && page == "home")) open(page)
+                    if (page == "groups" || page == "diagnostics" || page == "windows" || page == "core") open(page)
                     if (name == "add_window" || name == "replace_window" || name == "close_window") {
-                        for (delay in listOf(500L, 1800L, 4000L)) handler.postDelayed({ if (page == "windows" || (wideLayout && page == "home")) refresh() }, delay)
+                        for (delay in listOf(500L, 1800L, 4000L)) handler.postDelayed({ if (page == "windows") refresh() }, delay)
                     }
                 }
             }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())

@@ -46,6 +46,9 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private lateinit var pageSubtitle: TextView
     private lateinit var scopeHeading: TextView
     private lateinit var scope: LinearLayout
+    private var advancedExpanded = false
+    private lateinit var advancedControl: Button
+    private lateinit var advancedBody: LinearLayout
     private var historyRequested = false
     private lateinit var status: TextView
     private lateinit var instruction: TextView
@@ -96,6 +99,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         pendingExportId = savedInstanceState?.getString("diagnostic_export_id")
         historyRequested = savedInstanceState?.getBoolean("diagnostic_history_requested")
             ?: intent.getBooleanExtra(EXTRA_HISTORY,false)
+        advancedExpanded=savedInstanceState?.getBoolean("diagnostic_advanced_expanded") ?: false
         chosenDuration = savedInstanceState?.getInt("diagnostic_duration",1)?.coerceIn(durationValues.indices) ?: 1
         boundToken = savedInstanceState?.takeIf { it.containsKey("diagnostic_token") }?.getLong("diagnostic_token")
         boundWasActive = savedInstanceState?.getBoolean("diagnostic_was_active") ?: false
@@ -147,8 +151,17 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         scopeCard.addView(category,LinearLayout.LayoutParams(-1,dp(50)))
         scope=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
         scopeCard.addView(scope,LinearLayout.LayoutParams(-1,-2))
+        advancedControl=Button(this).apply{
+            isAllCaps=false;minHeight=dp(48);setOnClickListener{
+                advancedExpanded=!advancedExpanded;renderAdvanced()
+            }
+        }
+        scopeCard.addView(advancedControl,LinearLayout.LayoutParams(-1,-2))
+        advancedBody=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         instruction=line("")
-        scopeCard.addView(instruction)
+        advancedBody.addView(instruction)
+        scopeCard.addView(advancedBody,LinearLayout.LayoutParams(-1,-2))
+        renderAdvanced()
         category.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
                 if (::instruction.isInitialized) {
@@ -258,6 +271,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("diagnostic_export_id", pendingExportId)
         outState.putBoolean("diagnostic_history_requested",historyRequested)
+        outState.putBoolean("diagnostic_advanced_expanded",advancedExpanded)
         outState.putInt("diagnostic_duration",chosenDuration)
         if(::category.isInitialized) outState.putInt("diagnostic_category",category.selectedItemPosition)
         if(::note.isInitialized) outState.putString("diagnostic_note",note.text.toString())
@@ -413,6 +427,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         stopButton.visibility=if(active) View.VISIBLE else View.GONE
         startButton.alpha=if(startButton.isEnabled) 1f else .55f
         startButton.text=if(id=="all") "开始综合诊断" else "开始专项诊断"
+    }
+    private fun renderAdvanced(){
+        if(!::advancedBody.isInitialized)return
+        advancedControl.text=if(advancedExpanded) "收起高级诊断详情" else "展开高级诊断详情"
+        advancedBody.visibility=if(advancedExpanded) View.VISIBLE else View.GONE
     }
     private fun renderDuration(){
         val enabled=!session.active()&&!pending

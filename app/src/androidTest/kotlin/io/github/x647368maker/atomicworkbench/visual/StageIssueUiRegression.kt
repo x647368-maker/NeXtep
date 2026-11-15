@@ -88,12 +88,34 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                         child.getChildAt(2) is ScrollView
                     (if(wide) measuredWide else child is ScrollView) &&
                         settings.width>0 && settings.height>0 &&
-                        StageHomeLayout.sections.flatMap { it.items }.all { item ->
-                            descendants(settings).filterIsInstance<TextView>().any { it.text.toString()==item.name }
-                        }
+                        (if(wide) StageHomeLayout.sections.first().items else StageHomeLayout.sections.flatMap { it.items })
+                            .all { item -> descendants(settings).filterIsInstance<TextView>().any { it.text.toString()==item.name } }
                 }
             }
             screenshot(out,if(wide) "diagnostic-home-wide.png" else "diagnostic-home-phone.png")
+            if(wide) for((index,section) in StageHomeLayout.sections.withIndex()){
+                ui {
+                    val target=descendants(activity.window.decorView).firstOrNull {
+                        it.isClickable && it.contentDescription?.toString()==section.title
+                    }?:error("Missing actual section navigation ${section.title}")
+                    check(target.performClick())
+                }
+                await("wide section ${section.title}"){
+                    ui {
+                        val content=activity.findViewById<ViewGroup>(android.R.id.content)
+                        val split=(content.getChildAt(0) as ViewGroup).getChildAt(0) as? ViewGroup ?: return@ui false
+                        if(split.childCount!=3)return@ui false
+                        val rail=descendants(split.getChildAt(0))
+                        val detail=descendants(split.getChildAt(2)).filterIsInstance<TextView>()
+                        StageHomeLayout.sections.all{group->rail.any{it.contentDescription?.toString()==group.title}} &&
+                            rail.any{it.isSelected && it.contentDescription?.toString()==section.title} &&
+                            section.items.all { item->detail.any{it.text.toString()==item.name}} &&
+                            StageHomeLayout.sections.filterIndexed{i,_->i!=index}.flatMap{it.items}
+                                .none { item->detail.any{it.text.toString()==item.name}}
+                    }
+                }
+                screenshot(out,"diagnostic-home-wide-section-$index.png")
+            }
         } finally { ui { activity.finish() }; inst.waitForIdleSync() }
     }
     private fun node(root: AccessibilityNodeInfo?, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
@@ -159,6 +181,10 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             }
             val all = page("all").also { activities.add(it) }
             await("all scope") { hasText(all, "故障测试与报告") && hasText(all, "全面综合诊断") && hasText(all, "开始综合诊断") }
+            check(hasText(all,"展开高级诊断详情"))
+            click(all,"展开高级诊断详情")
+            check(hasText(all,"收起高级诊断详情"))
+            click(all,"收起高级诊断详情")
             screenshot(out,"diagnostic-scope-all.png")
             click(all, "5 分钟")
             click(all, "开始综合诊断")
