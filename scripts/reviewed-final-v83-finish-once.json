@@ -2,11 +2,15 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
       "previous_blob_sha1": "2e30e5d8d59151f8751fe76be3edb8163784fb0b",
-      "reviewed_blob_sha1": "daaff7b8bdd1fc9a4c7502b03e9c7ef49b8ee8bf",
+      "reviewed_blob_sha1": "707eb69b9fda80668e70fb1d382ea999599f8efa",
       "patches": [
         {
           "before": "        var animationFinished = false\n        fun finish() {\n            if (token != transitionGeneration) return\n            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null",
           "after": "        var animationFinished = false\n        fun finish() {\n            if (!StagePhasedFinishGate.canFinish(token==transitionGeneration,\n                    transitionInProgress,exchangeSession?.settled!=false,animationFinished)) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null"
+        },
+        {
+          "before": "        val promotedTask = promotedRecoveryTaskId?.let(taskRepository::findTask)?.takeIf {\n            it.userId == promotedRecoveryUserId && it.component.packageName == component.packageName && it.displayId == Display.DEFAULT_DISPLAY\n        }\n        if (promotedTask != null) {\n            if (taskRepository.foregroundTask()?.taskId != promotedTask.taskId) {",
+          "after": "        // Identity and foreground order come from one fresh task-list read.\n        // Presentation below still performs its original independent live lookup.\n        val recovery = StagePromotedRecoverySnapshot.select(\n            query = taskRepository::runningTasks,\n            expectedId = promotedRecoveryTaskId,\n            taskId = { it.taskId },\n            isExpected = { it.userId == promotedRecoveryUserId &&\n                it.component.packageName == component.packageName },\n            isMainDisplay = { it.displayId == Display.DEFAULT_DISPLAY },\n        )\n        val promotedTask = recovery.task\n        if (promotedTask != null) {\n            if (!recovery.isForeground) {"
         }
       ]
     },

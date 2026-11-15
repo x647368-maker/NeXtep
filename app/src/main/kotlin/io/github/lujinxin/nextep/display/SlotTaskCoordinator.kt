@@ -2356,11 +2356,19 @@ class SlotTaskCoordinator(
             return
         }
         if (suspended || transitionInProgress) return
-        val promotedTask = promotedRecoveryTaskId?.let(taskRepository::findTask)?.takeIf {
-            it.userId == promotedRecoveryUserId && it.component.packageName == component.packageName && it.displayId == Display.DEFAULT_DISPLAY
-        }
+        // Identity and foreground order come from one fresh task-list read.
+        // Presentation below still performs its original independent live lookup.
+        val recovery = StagePromotedRecoverySnapshot.select(
+            query = taskRepository::runningTasks,
+            expectedId = promotedRecoveryTaskId,
+            taskId = { it.taskId },
+            isExpected = { it.userId == promotedRecoveryUserId &&
+                it.component.packageName == component.packageName },
+            isMainDisplay = { it.displayId == Display.DEFAULT_DISPLAY },
+        )
+        val promotedTask = recovery.task
         if (promotedTask != null) {
-            if (taskRepository.foregroundTask()?.taskId != promotedTask.taskId) {
+            if (!recovery.isForeground) {
                 clearPromotedTaskRecovery()
                 return
             }
