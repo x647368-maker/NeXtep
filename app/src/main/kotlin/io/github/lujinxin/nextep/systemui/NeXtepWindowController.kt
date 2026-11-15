@@ -94,6 +94,7 @@ class NeXtepWindowController(
     }
     private var windowPickerGeneration = 0
     private var tabletLayoutMotionGeneration = 0
+    private var railLayoutMotionView: View? = null
     private var windowRefreshQueued = false
     private fun scheduleWindowRefresh() {
         if (windowRefreshQueued) return
@@ -179,6 +180,7 @@ class NeXtepWindowController(
             SystemUiPanelMonitor.refresh(context) == StagePanelMenuGate.State.CLOSED }, ::renderSmartRail)
     private fun renderSmartRail(hidden: Boolean) {
         if (!workspaceVisible || suspended) return
+        cancelRailLayoutMotion()
         // Hide existing live hosts before expanding the main task. Keep the
         // producer profile and rail bounds unchanged while invisible.
         if (hidden) records.firstOrNull { it.title == "NeXtepSidebar" }?.view?.let {
@@ -267,6 +269,7 @@ class NeXtepWindowController(
     }
 
     fun suspendForLock() {
+        cancelRailLayoutMotion()
         sparseRailMotion.cancel()
         railHandleTouching = false
         smartRail.stop(restorePresentation = false)
@@ -388,6 +391,7 @@ class NeXtepWindowController(
     }
 
     fun show(): WorkspaceGeometry {
+        cancelRailLayoutMotion()
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
         workspaceVisible = true
@@ -441,6 +445,7 @@ class NeXtepWindowController(
     }
 
     fun hide() {
+        cancelRailLayoutMotion()
         sparseRailMotion.cancel()
         previousRailGeometry = null
         railHandleTouching = false
@@ -605,6 +610,7 @@ class NeXtepWindowController(
     }
 
     fun reconfigure(rotationOnly: Boolean = false): Result<WorkspaceGeometry> = runCatching {
+        cancelRailLayoutMotion()
         clearHomePreview()
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
@@ -640,6 +646,8 @@ class NeXtepWindowController(
         clearHomePreview()
         initializeIfNeeded()
         check(records.size == EXPECTED_WINDOW_COUNT) { "SystemUI windows are unavailable" }
+        cancelRailLayoutMotion()
+        val previous = geometry()
         viewport.setSidebarSide(side)
         sidebarSide = side
         val geometry = geometry()
@@ -647,22 +655,7 @@ class NeXtepWindowController(
         topAppStrip?.setSidebarSide(side)
         sidebarView?.let { panel -> applySlotLayout(panel, geometry) }
         applySidebarBackdrop(geometry)
-        records.firstOrNull { it.title == "NeXtepSidebar" }?.view?.let { sidebar ->
-            sidebar.animate().cancel()
-            sidebar.translationY = 0f
-            sidebar.alpha = 0f
-            sidebar.translationX = if (side == SidebarSide.LEFT) {
-                -dp(SIDEBAR_ENTER_OFFSET_DP)
-            } else {
-                dp(SIDEBAR_ENTER_OFFSET_DP)
-            }
-            sidebar.animate()
-                .alpha(1f)
-                .translationX(0f)
-                .setDuration(SIDEBAR_SWITCH_DURATION_MS)
-                .setInterpolator(transitionInterpolator)
-                .start()
-        }
+        animateRailLayoutSelection(previous, geometry, SIDEBAR_ENTER_OFFSET_DP, SIDEBAR_SWITCH_DURATION_MS)
         NeXtepLog.info("sidebar_side", "Applied side=$side geometry=$geometry")
         geometry
     }
@@ -1494,8 +1487,10 @@ class NeXtepWindowController(
             onSidebarSideRequested(side)
             return
         }
+        cancelRailLayoutMotion()
         cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
         leaveCinema()
+        val previousGeometry = geometry()
         val previous = viewport.isTopRail()
         val previousSide=sidebarSide
         if(previous==top && previousSide==side) {
@@ -1507,10 +1502,9 @@ class NeXtepWindowController(
             viewport.setTopRail(top)
             if (workspaceVisible && !suspended) {
                 onViewportChanged()
-                // Animate only the live panel entering its *new* tablet layout.
-                // The task surface and click projection are still updated by
-                // the normal geometry owner; no frozen image or VD recreation.
-                animateTabletLayoutSelection()
+                // The same physical-axis entry is used on phones, folds and
+                // tablets. The normal geometry owner still lays out real tasks.
+                animateRailLayoutSelection(previousGeometry, geometry(), 10, 200L)
                 if (!sidebarCollapsed) smartRail.armWhenReady()
             }
         }.onFailure {
@@ -1524,25 +1518,69 @@ class NeXtepWindowController(
         }
     }
 
-    private fun animateTabletLayoutSelection() {
-        val g = geometry()
-        val entry = io.github.x647368maker.atomicworkbench.workspace.StageTabletLayoutMotionPolicy
-            .entry(g, context.resources.displayMetrics.density) ?: return
+    private fun cancelRailLayoutMotion() {
+        tabletLayoutMotionGeneration++
+        val panel = railLayoutMotionView ?: return
+        railLayoutMotionView = null
+        panel.animate().cancel()
+        panel.translationX = 0f
+        panel.translationY = 0f
+        if (workspaceVisible && !suspended && !sidebarCollapsed && !smartRail.hidden)
+            panel.alpha = 1f
+    }
+
+    private fun animateRailLayoutSelection(previous: WorkspaceGeometry, target: WorkspaceGeometry,
+        distanceDp: Int, durationMs: Long) {
+        cancelRailLayoutMotion()
+        fun allowed(): Boolean = workspaceVisible && !suspended && !sidebarCollapsed &&
+            !smartRail.hidden && !groupInputBlocked && !workgroups.isSwitching() &&
+            cinemaSlot == null && !isExchangePending() && !swapAnimator.isRunning &&
+            !previewCapturePending && !transientTapSwap.isRunning &&
+            liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&
+            slotWindows.none { sparseRailMotion.isAnimating(it.view) } &&
+            slotCoordinator?.slotStates()?.any { it is SlotState.Occupied } == true &&
+            StageWorkbenchEntryMotionPolicy.enabled(
+                android.animation.ValueAnimator.areAnimatorsEnabled(),
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true)
+        if (!allowed()) return
+        val axis = io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture
+        val entry = io.github.x647368maker.atomicworkbench.workspace.StageRailLayoutMotionPolicy.entry(
+            sameCanvas = previous.screenWidth == target.screenWidth &&
+                previous.screenHeight == target.screenHeight &&
+                previous.displayRotation == target.displayRotation &&
+                previous.navigationInsets == target.navigationInsets,
+            changedLayout = previous.railAtTop != target.railAtTop ||
+                previous.sidebarSide != target.sidebarSide,
+            horizontal = axis.horizontalRail(target),
+            positiveOutward = axis.positiveOutward(target),
+            distance = dp(distanceDp),
+            durationMs = durationMs,
+        ) ?: return
         val panel = records.firstOrNull { it.title == "NeXtepSidebar" }?.view ?: return
-        val generation = ++tabletLayoutMotionGeneration
-        panel.post {
-            if (generation != tabletLayoutMotionGeneration || !workspaceVisible || suspended)
-                return@post
+        val generation = tabletLayoutMotionGeneration
+        railLayoutMotionView = panel
+        panel.postOnAnimation {
+            if (generation != tabletLayoutMotionGeneration || railLayoutMotionView !== panel) return@postOnAnimation
             val actual = geometry()
-            if (actual.railAtTop != g.railAtTop || actual.sidebarSide != g.sidebarSide ||
-                !actual.isLandscape) return@post
+            if (!allowed() || !panel.isAttachedToWindow || panel.visibility != View.VISIBLE ||
+                actual != target || panel.width != target.sidebarPhysicalWidth ||
+                panel.height != target.sidebarPhysicalHeight) {
+                // The destination layout was superseded or has not been drawn;
+                // never move old geometry or wait/poll for another frame.
+                railLayoutMotionView = null
+                return@postOnAnimation
+            }
             panel.animate().cancel()
-            panel.alpha = 0.86f
+            panel.alpha = .86f
             panel.translationX = entry.dx
             panel.translationY = entry.dy
             panel.animate().alpha(1f).translationX(0f).translationY(0f)
                 .setDuration(entry.durationMs)
-                .setInterpolator(transitionInterpolator).start()
+                .setInterpolator(transitionInterpolator)
+                .withEndAction {
+                    if (generation == tabletLayoutMotionGeneration && railLayoutMotionView === panel)
+                        railLayoutMotionView = null
+                }.start()
         }
     }
 
@@ -1901,6 +1939,7 @@ class NeXtepWindowController(
 
     private fun setSidebarCollapsed(value: Boolean) {
         if (!workspaceVisible || suspended || groupInputBlocked || sidebarCollapsed == value) return
+        cancelRailLayoutMotion()
         smartRail.stop()
         cancelDragVisuals()
         sidebarCollapsed = value

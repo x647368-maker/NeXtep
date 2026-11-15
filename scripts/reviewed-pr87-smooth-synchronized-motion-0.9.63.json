@@ -236,6 +236,54 @@
         {
           "before": "            val distance = if (base.railAtTop || base.isLandscape) base.sidebarPhysicalHeight.toFloat() else base.sidebarPhysicalWidth.toFloat()\n            val outward = if (base.railAtTop) false else if (base.isLandscape) !base.isSidebarAtTop else base.sidebarSide == SidebarSide.RIGHT\n            val offset = if (value) distance * (if (outward) 1 else -1) else 0f\n            record.view.animate().alpha(if (value) 0f else 1f)\n                .translationX(if (base.railAtTop || base.isLandscape) 0f else offset)\n                .translationY(if (base.railAtTop || base.isLandscape) offset else 0f)",
           "after": "            val offset = if (value) io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture\n                .collapseOffset(base) else 0f to 0f\n            record.view.animate().alpha(if (value) 0f else 1f)\n                .translationX(offset.first)\n                .translationY(offset.second)"
+        },
+        {
+          "before": "    private var tabletLayoutMotionGeneration = 0",
+          "after": "    private var tabletLayoutMotionGeneration = 0\n    private var railLayoutMotionView: View? = null"
+        },
+        {
+          "before": "    private fun renderSmartRail(hidden: Boolean) {\n        if (!workspaceVisible || suspended) return",
+          "after": "    private fun renderSmartRail(hidden: Boolean) {\n        if (!workspaceVisible || suspended) return\n        cancelRailLayoutMotion()"
+        },
+        {
+          "before": "    fun suspendForLock() {\n        sparseRailMotion.cancel()",
+          "after": "    fun suspendForLock() {\n        cancelRailLayoutMotion()\n        sparseRailMotion.cancel()"
+        },
+        {
+          "before": "    fun show(): WorkspaceGeometry {\n        initializeIfNeeded()",
+          "after": "    fun show(): WorkspaceGeometry {\n        cancelRailLayoutMotion()\n        initializeIfNeeded()"
+        },
+        {
+          "before": "    fun hide() {\n        sparseRailMotion.cancel()",
+          "after": "    fun hide() {\n        cancelRailLayoutMotion()\n        sparseRailMotion.cancel()"
+        },
+        {
+          "before": "    fun reconfigure(rotationOnly: Boolean = false): Result<WorkspaceGeometry> = runCatching {\n        clearHomePreview()",
+          "after": "    fun reconfigure(rotationOnly: Boolean = false): Result<WorkspaceGeometry> = runCatching {\n        cancelRailLayoutMotion()\n        clearHomePreview()"
+        },
+        {
+          "before": "        check(records.size == EXPECTED_WINDOW_COUNT) { \"SystemUI windows are unavailable\" }\n        viewport.setSidebarSide(side)\n        sidebarSide = side",
+          "after": "        check(records.size == EXPECTED_WINDOW_COUNT) { \"SystemUI windows are unavailable\" }\n        cancelRailLayoutMotion()\n        val previous = geometry()\n        viewport.setSidebarSide(side)\n        sidebarSide = side"
+        },
+        {
+          "before": "        records.firstOrNull { it.title == \"NeXtepSidebar\" }?.view?.let { sidebar ->\n            sidebar.animate().cancel()\n            sidebar.translationY = 0f\n            sidebar.alpha = 0f\n            sidebar.translationX = if (side == SidebarSide.LEFT) {\n                -dp(SIDEBAR_ENTER_OFFSET_DP)\n            } else {\n                dp(SIDEBAR_ENTER_OFFSET_DP)\n            }\n            sidebar.animate()\n                .alpha(1f)\n                .translationX(0f)\n                .setDuration(SIDEBAR_SWITCH_DURATION_MS)\n                .setInterpolator(transitionInterpolator)\n                .start()\n        }\n",
+          "after": "        animateRailLayoutSelection(previous, geometry, SIDEBAR_ENTER_OFFSET_DP, SIDEBAR_SWITCH_DURATION_MS)\n"
+        },
+        {
+          "before": "        cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()\n        leaveCinema()\n        val previous = viewport.isTopRail()",
+          "after": "        cancelRailLayoutMotion()\n        cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()\n        leaveCinema()\n        val previousGeometry = geometry()\n        val previous = viewport.isTopRail()"
+        },
+        {
+          "before": "                // Animate only the live panel entering its *new* tablet layout.\n                // The task surface and click projection are still updated by\n                // the normal geometry owner; no frozen image or VD recreation.\n                animateTabletLayoutSelection()",
+          "after": "                // The same physical-axis entry is used on phones, folds and\n                // tablets. The normal geometry owner still lays out real tasks.\n                animateRailLayoutSelection(previousGeometry, geometry(), 10, 200L)"
+        },
+        {
+          "before": "    private fun animateTabletLayoutSelection() {\n        val g = geometry()\n        val entry = io.github.x647368maker.atomicworkbench.workspace.StageTabletLayoutMotionPolicy\n            .entry(g, context.resources.displayMetrics.density) ?: return\n        val panel = records.firstOrNull { it.title == \"NeXtepSidebar\" }?.view ?: return\n        val generation = ++tabletLayoutMotionGeneration\n        panel.post {\n            if (generation != tabletLayoutMotionGeneration || !workspaceVisible || suspended)\n                return@post\n            val actual = geometry()\n            if (actual.railAtTop != g.railAtTop || actual.sidebarSide != g.sidebarSide ||\n                !actual.isLandscape) return@post\n            panel.animate().cancel()\n            panel.alpha = 0.86f\n            panel.translationX = entry.dx\n            panel.translationY = entry.dy\n            panel.animate().alpha(1f).translationX(0f).translationY(0f)\n                .setDuration(entry.durationMs)\n                .setInterpolator(transitionInterpolator).start()\n        }\n    }\n\n",
+          "after": "    private fun cancelRailLayoutMotion() {\n        tabletLayoutMotionGeneration++\n        val panel = railLayoutMotionView ?: return\n        railLayoutMotionView = null\n        panel.animate().cancel()\n        panel.translationX = 0f\n        panel.translationY = 0f\n        if (workspaceVisible && !suspended && !sidebarCollapsed && !smartRail.hidden)\n            panel.alpha = 1f\n    }\n\n    private fun animateRailLayoutSelection(previous: WorkspaceGeometry, target: WorkspaceGeometry,\n        distanceDp: Int, durationMs: Long) {\n        cancelRailLayoutMotion()\n        fun allowed(): Boolean = workspaceVisible && !suspended && !sidebarCollapsed &&\n            !smartRail.hidden && !groupInputBlocked && !workgroups.isSwitching() &&\n            cinemaSlot == null && !isExchangePending() && !swapAnimator.isRunning &&\n            !previewCapturePending && !transientTapSwap.isRunning &&\n            liveSurfaceExchange?.isRunning != true && nativeSwapHost == null &&\n            slotWindows.none { sparseRailMotion.isAnimating(it.view) } &&\n            slotCoordinator?.slotStates()?.any { it is SlotState.Occupied } == true &&\n            StageWorkbenchEntryMotionPolicy.enabled(\n                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true)\n        if (!allowed()) return\n        val axis = io.github.x647368maker.atomicworkbench.workspace.StageRailHandleGesture\n        val entry = io.github.x647368maker.atomicworkbench.workspace.StageRailLayoutMotionPolicy.entry(\n            sameCanvas = previous.screenWidth == target.screenWidth &&\n                previous.screenHeight == target.screenHeight &&\n                previous.displayRotation == target.displayRotation &&\n                previous.navigationInsets == target.navigationInsets,\n            changedLayout = previous.railAtTop != target.railAtTop ||\n                previous.sidebarSide != target.sidebarSide,\n            horizontal = axis.horizontalRail(target),\n            positiveOutward = axis.positiveOutward(target),\n            distance = dp(distanceDp),\n            durationMs = durationMs,\n        ) ?: return\n        val panel = records.firstOrNull { it.title == \"NeXtepSidebar\" }?.view ?: return\n        val generation = tabletLayoutMotionGeneration\n        railLayoutMotionView = panel\n        panel.postOnAnimation {\n            if (generation != tabletLayoutMotionGeneration || railLayoutMotionView !== panel) return@postOnAnimation\n            val actual = geometry()\n            if (!allowed() || !panel.isAttachedToWindow || panel.visibility != View.VISIBLE ||\n                actual != target || panel.width != target.sidebarPhysicalWidth ||\n                panel.height != target.sidebarPhysicalHeight) {\n                // The destination layout was superseded or has not been drawn;\n                // never move old geometry or wait/poll for another frame.\n                railLayoutMotionView = null\n                return@postOnAnimation\n            }\n            panel.animate().cancel()\n            panel.alpha = .86f\n            panel.translationX = entry.dx\n            panel.translationY = entry.dy\n            panel.animate().alpha(1f).translationX(0f).translationY(0f)\n                .setDuration(entry.durationMs)\n                .setInterpolator(transitionInterpolator)\n                .withEndAction {\n                    if (generation == tabletLayoutMotionGeneration && railLayoutMotionView === panel)\n                        railLayoutMotionView = null\n                }.start()\n        }\n    }\n\n"
+        },
+        {
+          "before": "        smartRail.stop()\n        cancelDragVisuals()\n        sidebarCollapsed = value",
+          "after": "        cancelRailLayoutMotion()\n        smartRail.stop()\n        cancelDragVisuals()\n        sidebarCollapsed = value"
         }
       ]
     },
