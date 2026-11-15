@@ -82,7 +82,7 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         val oldSizes=cards.map { it.width to it.height }
         ui {
             smart=StageSmartRail(activity,Handler(Looper.getMainLooper()),{ allowed }) { hidden -> cards.forEach { it.alpha=if(hidden)0f else 1f } }
-            smart.setEnabled(false);smart.setPinned(false)
+            smart.setEnabled(false);smart.setPinned(false);smart.setIdleSeconds(3)
             check(!smart.hidden)
             smart.setEnabled(true);smart.touch(true)
         }
@@ -92,7 +92,7 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         ui { check(smart.hidden && cards.all { it.alpha==0f });smart.interact();check(!smart.hidden)
             smart.hideNow();check(smart.hidden);smart.setPinned(true);check(!smart.hidden)
             smart.hideNow();check(!smart.hidden);smart.setPinned(false);allowed=false
-            smart.hideNow();check(!smart.hidden);smart.setEnabled(false);smart.stop()
+            smart.hideNow();check(!smart.hidden);smart.setEnabled(false);smart.stop();smart.setIdleSeconds(5)
         }
         check(destroyed==0 && cards.map { it.width to it.height }==oldSizes && cards.mapNotNull{it.textureView.surfaceTexture}.toSet()==initial)
         record("PASS optional idle hide/restore/pin/blocked native state/disable retain all four attached TextureViews and exact dimensions; main expansion intentionally absent")
@@ -124,7 +124,10 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle()
                 if(category==0){
                     val b=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(b)
-                    check(b.width()<=209*m.density && b.height()<=minOf(301*m.density,m.heightPixels*.40f))
+                    check(b.width() > 0 && b.width() <= m.widthPixels && b.height() > 0 && b.height() <= m.heightPixels)
+                    for (group in StageMenuPolicy.groups) {
+                        check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText("$group  ›").any { it.isVisibleToUser }) { "Primary category is clipped: $group" }
+                    }
                     inst.uiAutomation.takeScreenshot()?.let{shot->File(out,"011-menu-$mode.png").outputStream().use{shot.compress(Bitmap.CompressFormat.PNG,100,it)};shot.recycle()}
                 }
                 click("${StageMenuPolicy.groups[category]}  ›")

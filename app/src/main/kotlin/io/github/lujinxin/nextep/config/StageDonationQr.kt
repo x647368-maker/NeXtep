@@ -53,7 +53,8 @@ internal object StageDonationQr {
                     yy * pixelsWide + left + pxPerModule, Color.BLACK)
             }
         }
-        val output=Bitmap.createBitmap(pixels, pixelsWide, pixelsWide, Bitmap.Config.ARGB_8888)
+        val output=Bitmap.createBitmap(pixelsWide, pixelsWide, Bitmap.Config.ARGB_8888)
+        output.setPixels(pixels, 0, pixelsWide, 0, 0, pixelsWide, pixelsWide)
         // Original dog/portrait from the user's own QR images, rather than
         // an impersonal stripped black-white QR. The source QR payload bits
         // remain exactly unchanged; pictures are small, offline, on demand.

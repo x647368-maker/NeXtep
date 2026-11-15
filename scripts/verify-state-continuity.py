@@ -1754,5 +1754,9 @@ assert 'setTouchableInsets' not in shade_input and 'params.flags =' not in shade
 menu=(k/'systemui/AtomicPopupMenu.kt').read_text()
 assert 'StagePanelMenuGate' in menu and 'setTouchModal(false)' in menu
 assert 'setBackgroundBlurRadius' not in menu and 'FLAG_BLUR_BEHIND' not in menu and 'RenderEffect' not in menu
-assert 'TRANSPARENT' in menu and '*.38f' in menu
+assert 'TRANSPARENT' in menu
+assert 'val maxWidth=safe.width().coerceAtLeast(1)' in menu
+assert 'val maxHeight=safe.height().coerceAtLeast(1)' in menu
+assert 'rows.measuredHeight.coerceIn(1,maxHeight)' in menu
+assert 'rows.measuredWidth).coerceAtMost(maxWidth)' in menu
 print('0.9.8 frozen hashes enforced after exact reviewed 0.9.12 and 0.9.11 fragment normalization; geometry/task/input writers remain original; native shade and bounded menu checked')

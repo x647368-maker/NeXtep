@@ -16,7 +16,7 @@
     },
     "scripts/verify-state-continuity.py": {
       "previous_blob_sha1": "601400c91d7713096faf503834473d42431f045f",
-      "reviewed_blob_sha1": "f9aa5ae5ea4ae8d1763ec6cfa58b12267ea5c0a0",
+      "reviewed_blob_sha1": "519a5db8408bb18eea77c3842bc0a494c6f4ac08",
       "patches": [
         {
           "before": "# PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.\npr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']\ndef undo_pr92(path,data):\n if path not in pr92_review:return data\n spec=pr92_review[path]",
@@ -29,6 +29,10 @@
         {
           "before": "_pr87=(k/'systemui/StageSnapshotMotion.kt').read_text()",
           "after": "_pr86_motion_current=(k/'systemui/StageSnapshotMotion.kt').read_text()\nassert 'val chosen=PairFlight(u.copy(arc=best.up.arc,sizeBias=best.up.sizeBias)' in _pr86_motion_current\nassert 'if(gain>bestGain){result=candidate;bestGain=gain}' in _pr86_motion_current\nassert 'fractions[it].first+.001f<baseline[it].first' in _pr86_motion_current\nassert 'fractions[it].second+.001f<baseline[it].second' in _pr86_motion_current\n_pr87=undo_v86_crossing(\n 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',\n _pr86_motion_current.encode('utf-8')\n).decode('utf-8')"
+        },
+        {
+          "before": "assert 'TRANSPARENT' in menu and '*.38f' in menu",
+          "after": "assert 'TRANSPARENT' in menu\nassert 'val maxWidth=safe.width().coerceAtLeast(1)' in menu\nassert 'val maxHeight=safe.height().coerceAtLeast(1)' in menu\nassert 'rows.measuredHeight.coerceIn(1,maxHeight)' in menu\nassert 'rows.measuredWidth).coerceAtMost(maxWidth)' in menu"
         }
       ]
     }

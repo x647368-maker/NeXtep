@@ -157,7 +157,19 @@ internal object StageDonationPage {
                     bitmap.recycle()
                 }
             } ?: error("无法保存二维码文件")
-            resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+            // Verify the actual provider bytes before making the image public.
+            resolver.openInputStream(uri)?.use { input ->
+                val saved = android.graphics.BitmapFactory.decodeStream(input)
+                    ?: error("相册图片无法读取")
+                try {
+                    check(saved.width == (code.size + 8) * 10 && saved.height == saved.width) {
+                        "相册图片尺寸不正确"
+                    }
+                } finally { saved.recycle() }
+            } ?: error("相册图片无法验证")
+            check(resolver.update(uri, ContentValues().apply {
+                put(MediaStore.Images.Media.IS_PENDING, 0)
+            }, null, null) == 1) { "相册图片未完成发布" }
             Toast.makeText(activity, "收款码已保存到相册", Toast.LENGTH_SHORT).show()
         } catch (_: Exception) {
             uri?.let { runCatching { resolver.delete(it, null, null) } }

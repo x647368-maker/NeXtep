@@ -133,6 +133,23 @@ class LivePreviewInstrumentation : Instrumentation() {
             checks.add(StagePreviewBitmapRetentionRegression(this).run(activity,root))
             checks.add(StageChangelogRegression(this).run(activity,root,out))
             checks.add(StageUpdateUiRegression(this).run(activity,root,out))
+            for (code in io.github.x647368maker.atomicworkbench.config.StageDonationQr.codes) {
+                val qr = io.github.x647368maker.atomicworkbench.config.StageDonationQr.bitmap(code)
+                try {
+                    check(qr.isMutable && qr.width == (code.size + 8) * 10)
+                    check(qr.getPixel(0,0) == android.graphics.Color.WHITE)
+                    var black = 0
+                    for (y in 0 until qr.height step 10) for (x in 0 until qr.width step 10) {
+                        if (qr.getPixel(x,y) == android.graphics.Color.BLACK) black++
+                    }
+                    check(black > 100) { "Receipt QR is blank" }
+                    File(out, code.filename).outputStream().use {
+                        check(qr.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+                    }
+                } finally { qr.recycle() }
+            }
+            checks.add("PASS both original offline receipt matrices render nonblank with mutable avatar canvas")
+
             checks.addAll(InteractionRegression(this).run(activity,root,out))
             checks.addAll(RefinementRegression(this).run(activity,root,out))
             checks.add(PhasedPreviewRegression(this).run(activity,root))
