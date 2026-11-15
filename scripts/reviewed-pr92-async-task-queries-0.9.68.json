@@ -135,6 +135,10 @@
         {
           "before": "                    val plannedAt=SystemClock.uptimeMillis()\n                    ui.post {",
           "after": "                    val plannedAt=SystemClock.uptimeMillis()\n                    if(!waitingCapture){a?.recycle();b?.recycle();return@execute}\n                    ui.post {"
+        },
+        {
+          "before": "        private fun direct(why:String){\n            if(!current() || moveStarted)return\n            trace(\"snapshot_fallback:\"+why)\n            removeVisual()\n            if(!stillValid()){finish(\"stale_fallback\");return}\n            fallback=true\n            flightDone=true\n            requestMove()\n        }\n        private fun requestMove(){\n            if(!current() || moveStarted)return\n            moveStarted=true\n",
+          "after": "        private fun direct(why:String){\n            if(!current() || moveStarted)return\n            trace(\"snapshot_fallback:\"+why)\n            removeVisual()\n            fallback=true\n            flightDone=true\n            requestMove()\n        }\n        private fun requestMove(){\n            // The first committed frame is not a reservation of the original\n            // task/viewport. Rotation, fold or producer changes can invalidate\n            // it before the motion callback or its deadline requests the move.\n            when(StageTransientTapPolicy.decideMoveRequest(current(),moveStarted,::stillValid)){\n                StageTransientTapPolicy.MoveRequest.IGNORE->return\n                StageTransientTapPolicy.MoveRequest.STALE->{\n                    finish(if(fallback)\"stale_fallback\" else \"stale_before_real_move\")\n                    return\n                }\n                StageTransientTapPolicy.MoveRequest.START->Unit\n            }\n            moveStarted=true\n"
         }
       ]
     },

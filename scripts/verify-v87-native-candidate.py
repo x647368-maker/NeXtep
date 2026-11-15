@@ -15,6 +15,7 @@ SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
 PINS = {
+    "scripts/reviewed-pr92-async-task-queries-0.9.68.json": ("09679aedd2a2f209ab2407a0e61d926c3a9bea66", "19304152755aa2e706be87558787db0d2958b9af"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "3f7663838fab637cd45e6ad6dc3f12634e93bef8"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "84f90a1c0d1730ac49ad54e79c28782f75594ddf"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
@@ -67,7 +68,7 @@ def main():
                  for commit in (BASE, ref)]
         if modes != [b"100644", b"100644"]:
             raise SystemExit("unexpected file mode: "+file)
-    print("PASS: committed candidate matches 11 exact file pairs; no extra paths except this auditor.")
+    print("PASS: committed candidate matches 12 exact file pairs; no extra paths except this auditor.")
     print("NOT RUN: historical freeze audit, Gradle, emulator, signing, OEM tests.")
 
 if __name__ == "__main__":
