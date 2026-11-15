@@ -682,11 +682,13 @@ internal class StageLiveSurfaceExchange private constructor(
                         ui.postAtTime(this,StageConcurrentNativeTrialPolicy.nextHandoffCheck(
                             SystemClock.uptimeMillis(),deadline))
                     StageConcurrentNativeTrialPolicy.HandoffAction.READY -> {
-                        handoffReady=true
-                        trace("handoff_ready@${now-startedAtMs}ms")
+                        trace("handoff_target_ready@${now-startedAtMs}ms")
                         if (endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {
                             revealReadyDestination(liveReady,canRelease)
-                        } else stop()
+                        } else {
+                            handoffReady=true
+                            stop()
+                        }
                     }
                     StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED -> {
                         handoffTimedOut=true
@@ -709,10 +711,14 @@ internal class StageLiveSurfaceExchange private constructor(
     // No new surfaces, screenshots, task resizes or work while idle.
     private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean) {
         if (!isRunning || revealAnimator != null) return
+        // Ready at the preceding main-loop check is not evidence that the
+        // reveal itself has completed. Do not mark an aborted fade as success.
         if (!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {
+            trace("endpoint_reveal_rejected")
             stop()
             return
         }
+        var finalAlphaSubmitted=false
         trace("endpoint_reveal_start gap=${endpointGap.toInt()}px")
         val reveal = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = READY_REVEAL_MS
@@ -726,12 +732,15 @@ internal class StageLiveSurfaceExchange private constructor(
                     tx.setAlpha(sourceMirror, alpha.mirror)
                     tx.setAlpha(mainMirror, alpha.mirror)
                     tx.apply()
+                    if(alpha.cover==0f && alpha.mirror==0f) finalAlphaSubmitted=true
                 }.onFailure { stop() }
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     if (!isRunning) return
-                    trace("endpoint_reveal_end")
+                    handoffReady=finalAlphaSubmitted &&
+                        runCatching { canRelease() && liveReady() }.getOrDefault(false)
+                    trace(if(handoffReady) "endpoint_reveal_end" else "endpoint_reveal_unconfirmed")
                     stop()
                 }
             })
