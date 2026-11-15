@@ -270,7 +270,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = navigation
             column.addView(navigation); renderHome(navigation)
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "专项测试与报告", "about" to "关于与使用帮助", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "故障测试与报告", "about" to "关于与使用帮助", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             if (!wideLayout) header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
@@ -471,18 +471,27 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         root.addView(hint("主窗把手：点击打开菜单，向左滑动关闭主窗。小窗沿侧栏外侧方向滑动关闭；顶部横排时向左滑动。\n\n退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
     }
-    private fun launchIssue(category: String? = null) {
+    private fun launchIssue(category: String? = null, history: Boolean = false) {
         val intent = Intent(activity, StageIssueDiagnosticActivity::class.java)
         if (category != null) intent.putExtra(StageIssueDiagnosticActivity.EXTRA_CATEGORY, category)
+        if (history) intent.putExtra(StageIssueDiagnosticActivity.EXTRA_HISTORY, true)
         activity.startActivity(intent)
     }
     private fun issueSpecialties(root: LinearLayout) {
-        val modules = group(root)
+        root.addView(hint("快速记录运行问题 · 生成本机报告 · 帮助定位"))
+        val hero = group(root)
+        row(hero, "一键综合诊断", "自动记录有效诊断事件，覆盖五大专项", "diagnostics") { launchIssue("all") }
+        hero.addView(Button(activity).apply {
+            text = "立即诊断"; isAllCaps = false; setTextColor(Color.WHITE)
+            background = GradientDrawable().apply { setColor(blue); cornerRadius = dp(26).toFloat() }
+            minimumHeight = dp(48); setOnClickListener { launchIssue("all") }
+        }, LinearLayout.LayoutParams(-1,dp(52)).apply { setMargins(dp(16),dp(4),dp(16),dp(14)) })
         for (item in StageIssueTestCatalog.modules) {
-            row(modules, item.name, icon = "diagnostics") { launchIssue(item.id) }
+            val visual = StageIssuePresentation.module(item.id)
+            row(group(root), item.name, visual.description, visual.icon, visual.tint) { launchIssue(item.id) }
         }
         val tools = group(root)
-        row(tools, "诊断报告与历史", "查看或导出本机报告", "diagnostics") { launchIssue() }
+        row(tools, "历史报告", "查看或导出本机报告", "issue_document") { launchIssue(history = true) }
         val health = StageHomeLayout.systemDiagnostics
         row(tools, health.name, "查看注入状态、刷新连接或退出旧工作区", health.icon) {
             open(health.page); refresh()
@@ -733,7 +742,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
 }
 
 /** Small colored setting glyphs, drawn natively and aligned like system list icons. */
-private class StageSettingsIcon(context: Context, private val kind: String, color: Int) : View(context) {
+internal class StageSettingsIcon(context: Context, private val kind: String, color: Int) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 2.1f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     override fun onDraw(canvas: Canvas) {
         val save = canvas.save(); val scale = minOf(width, height) / 24f
@@ -751,6 +760,17 @@ private class StageSettingsIcon(context: Context, private val kind: String, colo
             "update" -> { canvas.drawArc(4f,4f,20f,20f,205f,220f,false,paint); canvas.drawLine(17f,4f,20f,4f,paint); canvas.drawLine(20f,4f,20f,7f,paint); canvas.drawArc(4f,4f,20f,20f,25f,145f,false,paint); canvas.drawLine(4f,17f,4f,20f,paint); canvas.drawLine(4f,20f,7f,20f,paint) }
             "book" -> { rect(2f,4f,11f,20f);rect(13f,4f,22f,20f);canvas.drawLine(12f,6f,12f,20f,paint);canvas.drawLine(5f,9f,8f,9f,paint);canvas.drawLine(16f,9f,19f,9f,paint) }
             "about" -> { canvas.drawCircle(12f,12f,9f,paint);canvas.drawCircle(12f,9f,2.8f,paint);canvas.drawArc(7f,12f,17f,20f,185f,170f,false,paint) }
+            "issue_document" -> { rect(5f,2f,19f,22f); for(y in listOf(8f,12f,16f)) canvas.drawLine(8f,y,16f,y,paint) }
+            "issue_speed" -> { canvas.drawArc(3f,3f,21f,21f,145f,250f,false,paint);canvas.drawLine(12f,12f,17f,7f,paint);canvas.drawCircle(12f,12f,1.5f,paint) }
+            "issue_bolt" -> { canvas.drawPath(Path().apply { moveTo(13f,2f);lineTo(4f,14f);lineTo(11f,14f);lineTo(10f,22f);lineTo(20f,10f);lineTo(13f,10f);close() },paint) }
+            "issue_swap" -> { canvas.drawLine(3f,8f,21f,8f,paint);canvas.drawLine(21f,8f,16f,3f,paint);canvas.drawLine(21f,16f,3f,16f,paint);canvas.drawLine(3f,16f,8f,21f,paint) }
+            "issue_layers" -> { for(y in listOf(0f,5f,10f)) canvas.drawPath(Path().apply { moveTo(12f,2f+y);lineTo(22f,7f+y);lineTo(12f,12f+y);lineTo(2f,7f+y);close() },paint) }
+            "issue_media" -> { rect(3f,3f,21f,21f);canvas.drawPath(Path().apply {moveTo(9f,7f);lineTo(17f,12f);lineTo(9f,17f);close()},paint) }
+            "issue_battery" -> {rect(2f,6f,20f,18f);canvas.drawLine(22f,10f,22f,14f,paint);canvas.drawLine(13f,8f,10f,12f,paint);canvas.drawLine(10f,12f,14f,12f,paint);canvas.drawLine(14f,12f,11f,16f,paint)}
+            "issue_temperature" -> {canvas.drawCircle(12f,17f,4f,paint);canvas.drawLine(9f,14f,9f,4f,paint);canvas.drawLine(15f,14f,15f,4f,paint);canvas.drawArc(9f,1f,15f,7f,180f,180f,false,paint)}
+            "issue_lock" -> {rect(5f,10f,19f,22f);canvas.drawArc(8f,2f,16f,12f,180f,180f,false,paint);canvas.drawLine(8f,10f,8f,7f,paint);canvas.drawLine(16f,10f,16f,7f,paint)}
+            "issue_shield" -> {canvas.drawPath(Path().apply {moveTo(12f,2f);lineTo(21f,6f);lineTo(20f,14f);quadTo(18f,19f,12f,22f);quadTo(6f,19f,4f,14f);lineTo(3f,6f);close()},paint);canvas.drawLine(8f,12f,11f,15f,paint);canvas.drawLine(11f,15f,17f,9f,paint)}
+            "issue_cube" -> {canvas.drawPath(Path().apply {moveTo(12f,2f);lineTo(21f,7f);lineTo(21f,17f);lineTo(12f,22f);lineTo(3f,17f);lineTo(3f,7f);close()},paint);canvas.drawLine(3f,7f,12f,12f,paint);canvas.drawLine(21f,7f,12f,12f,paint);canvas.drawLine(12f,12f,12f,22f,paint)}
             "heart" -> { val p=Path().apply { moveTo(12f,21f); cubicTo(9f,18f,2f,14f,2f,9f); cubicTo(2f,3f,9f,1f,12f,7f); cubicTo(15f,1f,22f,3f,22f,9f); cubicTo(22f,14f,15f,18f,12f,21f); close() }; canvas.drawPath(p,paint) }
             else -> { canvas.drawCircle(12f, 12f, 9f, paint); canvas.drawLine(12f, 11f, 12f, 17f, paint); canvas.drawPoint(12f, 7f, paint) }
         }; canvas.restoreToCount(save)

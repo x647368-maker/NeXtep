@@ -36,13 +36,17 @@ import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
 class StageIssueDiagnosticActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_CATEGORY = "atomic_issue_category"
+        const val EXTRA_HISTORY = "atomic_issue_history"
     }
     private val session by lazy { StageIssueSession(this) }
     private val uiHandler = Handler(Looper.getMainLooper())
     private val uiDeadline = Runnable { if (session.active() && session.isDue()) finishTest("到期（测试页面）") else render() }
 
     private lateinit var pageTitle: TextView
+    private lateinit var pageSubtitle: TextView
+    private lateinit var scopeHeading: TextView
     private lateinit var scope: LinearLayout
+    private var historyRequested = false
     private lateinit var status: TextView
     private lateinit var instruction: TextView
     private lateinit var category: Spinner
@@ -90,6 +94,8 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingExportId = savedInstanceState?.getString("diagnostic_export_id")
+        historyRequested = savedInstanceState?.getBoolean("diagnostic_history_requested")
+            ?: intent.getBooleanExtra(EXTRA_HISTORY,false)
         chosenDuration = savedInstanceState?.getInt("diagnostic_duration",1)?.coerceIn(durationValues.indices) ?: 1
         boundToken = savedInstanceState?.takeIf { it.containsKey("diagnostic_token") }?.getLong("diagnostic_token")
         boundWasActive = savedInstanceState?.getBoolean("diagnostic_was_active") ?: false
@@ -124,9 +130,12 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         pageTitle=line("故障测试与报告",26f).apply{typeface=Typeface.DEFAULT_BOLD}
         top.addView(pageTitle,LinearLayout.LayoutParams(0,-2,1f))
         body.addView(top)
-        body.addView(line("正常使用 · 记录真实事件 · 生成本机报告"))
+        pageSubtitle=line("正常使用 · 记录真实事件 · 生成本机报告")
+        body.addView(pageSubtitle)
         val scopeCard=card()
-        scopeCard.addView(line("诊断范围（所选项目，不代表测试通过）",16f).apply {typeface=Typeface.DEFAULT_BOLD})
+        scopeHeading=line("诊断范围",18f).apply {typeface=Typeface.DEFAULT_BOLD}
+        scopeCard.addView(scopeHeading)
+        scopeCard.addView(line("蓝色勾表示纳入诊断范围，不代表测试通过",12f))
         category=Spinner(this)
         category.adapter=ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
             StageIssueTestCatalog.cases.map{it.name})
@@ -237,6 +246,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         if (session.active()) StageIssueEventObserver.enable(this)
         checkDueAndArmUi()
         render()
+        maybeOpenHistory()
     }
     override fun onPause(){
         uiHandler.removeCallbacks(uiDeadline)
@@ -247,6 +257,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("diagnostic_export_id", pendingExportId)
+        outState.putBoolean("diagnostic_history_requested",historyRequested)
         outState.putInt("diagnostic_duration",chosenDuration)
         if(::category.isInitialized) outState.putInt("diagnostic_category",category.selectedItemPosition)
         if(::note.isInitialized) outState.putString("diagnostic_note",note.text.toString())
@@ -263,6 +274,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             .onFailure { pendingExportId = null; render(); toast("无法打开保存位置") }
     }
 
+    private fun maybeOpenHistory() {
+        if (!historyRequested || pending || isFinishing || isDestroyed) return
+        historyRequested=false
+        showHistory()
+    }
     private fun showHistory() {
         if (pending) return
         val records = runCatching { session.reports() }
@@ -344,6 +360,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
                 if(result.isFailure) toast("报告保存失败，请重新尝试结束")
                 else if(result.getOrNull()!=null) toast("报告已经生成，可以补充说明后导出")
                 else if(!session.active()) toast("本次会话已经结束")
+                maybeOpenHistory()
             }
         }
         runCatching {
@@ -415,22 +432,45 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         val selected=StageIssueTestCatalog.find(id)
         if(renderedScopeId==selected.id)return
         renderedScopeId=selected.id
-        val rows=when(selected.id){
-            "all"->StageIssueTestCatalog.modules.map{it.name}
-            "performance"->listOf("卡顿","动画","闪烁","耗电","发热")
-            "layout"->listOf("四小窗","窗口交换","智能隐藏","空间利用")
-            "content"->listOf("视频","游戏","触控","后台状态","内容保留")
-            "compatibility"->listOf("折叠屏","平板","锁屏","系统手势","Root模块")
-            "services"->listOf("工作组","快捷栏","在线更新","收款码")
-            else->listOf(selected.name)
-        }
-        pageTitle.text=if(selected.id=="all") "综合诊断" else selected.name
+        val rows=StageIssuePresentation.rows(selected.id)
+        val dark=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        val ink=Color.parseColor(if(dark) "#F1F2F4" else "#121315")
+        val secondary=Color.parseColor(if(dark) "#B2B5C0" else "#626879")
+        fun dp(n:Int)=(resources.displayMetrics.density*n).toInt()
+        pageTitle.text=if(selected.id=="all") "故障测试与报告" else selected.name
+        pageSubtitle.text=StageIssuePresentation.module(selected.id).description
+        scopeHeading.text=if(selected.id=="all") "全面综合诊断" else "诊断范围"
         scope.removeAllViews()
-        for(label in rows) scope.addView(TextView(this).apply{
-            text=label+"   ·   纳入范围"
-            textSize=16f;minimumHeight=(resources.displayMetrics.density*48).toInt()
-            gravity=Gravity.CENTER_VERTICAL
-        },LinearLayout.LayoutParams(-1,-2))
+        for((index,item) in rows.withIndex()){
+            if(index>0)scope.addView(View(this).apply {
+                setBackgroundColor(if(dark) Color.rgb(48,49,54) else Color.rgb(232,234,241))
+            },LinearLayout.LayoutParams(-1,dp(1).coerceAtLeast(1)).apply {marginStart=dp(54)})
+            val row=LinearLayout(this).apply {
+                orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
+                minimumHeight=dp(62);setPadding(0,dp(9),0,dp(9))
+            }
+            val icon=FrameLayout(this).apply {
+                background=GradientDrawable().apply {
+                    setColor(if(dark) Color.rgb(46,49,62) else 0xFFEAF0FF.toInt())
+                    cornerRadius=dp(13).toFloat()
+                }
+                addView(StageSettingsIcon(this@StageIssueDiagnosticActivity,item.icon,item.tint),
+                    FrameLayout.LayoutParams(dp(26),dp(26),Gravity.CENTER))
+            }
+            row.addView(icon,LinearLayout.LayoutParams(dp(46),dp(46)).apply{marginEnd=dp(13)})
+            val words=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+            words.addView(TextView(this).apply{text=item.title;textSize=17f;setTextColor(ink);typeface=Typeface.DEFAULT_BOLD})
+            if(item.description.isNotBlank())words.addView(TextView(this).apply{
+                text=item.description;textSize=13f;setTextColor(secondary);setPadding(0,dp(3),0,0)
+            })
+            row.addView(words,LinearLayout.LayoutParams(0,-2,1f))
+            row.addView(TextView(this).apply {
+                text="✓";textSize=18f;gravity=Gravity.CENTER;setTextColor(Color.WHITE)
+                contentDescription="纳入诊断范围，未判定结果"
+                background=GradientDrawable().apply{setColor(Color.rgb(15,103,241));cornerRadius=dp(14).toFloat()}
+            },LinearLayout.LayoutParams(dp(28),dp(28)).apply{marginStart=dp(10)})
+            scope.addView(row,LinearLayout.LayoutParams(-1,-2))
+        }
         instruction.text=StageIssueTestCatalog.guide(id)
     }
     private fun toast(message:String)=Toast.makeText(this,message,Toast.LENGTH_SHORT).show()

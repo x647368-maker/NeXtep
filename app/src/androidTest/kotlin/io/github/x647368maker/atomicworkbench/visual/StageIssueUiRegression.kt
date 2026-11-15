@@ -158,7 +158,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                 activities.remove(screen)
             }
             val all = page("all").also { activities.add(it) }
-            await("all scope") { hasText(all, "综合诊断") && hasText(all, "开始综合诊断") }
+            await("all scope") { hasText(all, "故障测试与报告") && hasText(all, "全面综合诊断") && hasText(all, "开始综合诊断") }
             screenshot(out,"diagnostic-scope-all.png")
             click(all, "5 分钟")
             click(all, "开始综合诊断")
@@ -171,7 +171,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
 
             val layout = page("layout").also { activities.add(it) }
             await("active session preserved across specialty link") {
-                hasText(layout, "综合诊断") && ui { session.active() && session.currentToken() == firstToken }
+                hasText(layout, "故障测试与报告") && hasText(layout,"全面综合诊断") && ui { session.active() && session.currentToken() == firstToken }
             }
             click(layout, "提前结束并生成报告")
             await("first report persisted") { ui { !session.active() && session.latestRecord() != null } }
