@@ -4,6 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageTransientTapPolicyTest {
+    @Test fun nativeTrialAndSnapshotRoutesAreMutuallyExclusive() {
+        val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL
+        assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())
+        assertEquals(!requested,StageTransientTapPolicy.privateTrialEnabled())
+    }
     @Test fun onlyCommittedValidFirstFrameMayStartRealMove() {
         val p=StageTransientTapPolicy
         assertTrue(p.canStartMove(true,true,false))
