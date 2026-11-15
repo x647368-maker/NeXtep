@@ -85,6 +85,7 @@ class NeXtepWindowController(
     }
     private fun updateCinemaMonitoring() {
         if (workspaceVisible && !suspended && core.cinemaMode == StageCinemaPolicy.Mode.AUTO) {
+            if (pendingResumeContent != null) return
             mediaSignals.start()
             scheduleCinemaCheck()
         } else {
@@ -311,7 +312,8 @@ class NeXtepWindowController(
         cancelPendingResumeContent()
         workspaceVisible = true
         suspended = false
-        updateCinemaMonitoring(); refreshQuickBar()
+        // The existing frame-commit/fallback callback starts media monitoring.
+        refreshQuickBar()
         // Wake reuses attached windows and the recorded layout. Re-running show()
         // starts a fresh alpha=0 entry animation and repeats all display setup.
         val geometry = geometry()
@@ -356,6 +358,9 @@ class NeXtepWindowController(
             }
             runCatching { slotCoordinator?.setSuspended(false) }.onFailure {
                 NeXtepLog.warn("workspace_unlock", "Slot outputs resume pending", it)
+            }
+            runCatching { updateCinemaMonitoring() }.onFailure {
+                NeXtepLog.warn("workspace_unlock", "Media monitoring resume pending", it)
             }
         }
         pendingResumeContent = resumeContent
@@ -1370,13 +1375,13 @@ class NeXtepWindowController(
     }
 
     private fun scheduleCinemaCheck() {
-        if (!workspaceVisible || suspended || cinemaCheckQueued ||
+        if (!workspaceVisible || suspended || pendingResumeContent != null || cinemaCheckQueued ||
             core.cinemaMode != StageCinemaPolicy.Mode.AUTO || cinemaPolicy.isManual) return
         // Coalesce bursts without indefinitely postponing a stable playback signal.
         cinemaCheckQueued = backdropHandler.postDelayed(cinemaCheck, 180)
     }
     private fun evaluateCinema(confirm: Boolean = false) {
-        if (!workspaceVisible || suspended || cinemaApplying || groupInputBlocked || workgroups.isSwitching() ||
+        if (!workspaceVisible || suspended || pendingResumeContent != null || cinemaApplying || groupInputBlocked || workgroups.isSwitching() ||
             core.cinemaMode != StageCinemaPolicy.Mode.AUTO || cinemaPolicy.isManual) return
         if (slotCoordinator?.isGroupRestoreReady() != true) return
         // Automation must not override explicit hidden/collapsed layouts or

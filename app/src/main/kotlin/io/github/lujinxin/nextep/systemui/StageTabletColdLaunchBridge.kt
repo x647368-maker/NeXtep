@@ -63,12 +63,28 @@ internal object StageTabletColdLaunchBridge {
      * the same exact package/user/display/WM checks. No timer or polling.
      */
     fun onTaskObserved(info: ActivityManager.RunningTaskInfo) {
+        // Shell reports every task, even while the workbench is inactive.
+        // Read compatibility fields only for a live, relevant launch ticket.
+        val candidate = synchronized(this) {
+            val current = pending ?: return
+            if (!StageTabletColdLaunchPolicy.mayRetryPrefit(
+                    current.attempts, current.expiresAt, SystemClock.uptimeMillis())) {
+                pending = null
+                return
+            }
+            if (current.inFlight) return
+            current
+        }
+        val pkg = info.baseActivity?.packageName ?: info.topActivity?.packageName
+        if (pkg != candidate.packageName) return
         val state = TaskInfoCompat.readWindowState(info) ?: return
         val user = TaskInfoCompat.readUserId(info)
-        val pkg = info.baseActivity?.packageName ?: info.topActivity?.packageName
-        val now = SystemClock.uptimeMillis()
         val ticket = synchronized(this) {
             val current = pending ?: return
+            // A cancellation or replacement during the field reads must not
+            // let an earlier callback consume the newer launch ticket.
+            if (current !== candidate) return
+            val now = SystemClock.uptimeMillis()
             if (!StageTabletColdLaunchPolicy.mayRetryPrefit(
                     current.attempts, current.expiresAt, now)) {
                 pending = null
