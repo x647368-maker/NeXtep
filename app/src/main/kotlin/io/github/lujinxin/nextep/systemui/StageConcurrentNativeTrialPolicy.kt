@@ -151,6 +151,14 @@ internal object StageConcurrentNativeTrialPolicy {
     fun nextHandoffCheck(nowMs: Long, deadlineMs: Long): Long =
         minOf(nowMs + 16L, deadlineMs)
 
+    /** A failed vendor release must not strand the remaining compositor
+     * resources or prevent completion of the real exchange. Only on teardown. */
+    fun cleanupSteps(vararg steps:()->Unit, onFailure:(Throwable)->Unit) {
+        for(step in steps) {
+            runCatching(step).onFailure { error -> runCatching { onFailure(error) } }
+        }
+    }
+
     fun disableForSession(reason:String) {
         disabledReason=reason.take(100)
         disabled=true
