@@ -1,0 +1,38 @@
+PASS cold Empty -> four Ready real displays, zero painted placeholders, exit/reenter and suspend/resume
+PASS reproduced old square inner buffer
+PASS actual TextureView live buffer corner clipped
+PASS changing producer frames preserve clipping
+PASS four side live buffers, rounded corners and exact compact bounds
+PASS four top live buffers, rounded corners and exact compact bounds
+PASS real HWUI count reflow and five stable phone/fold/tablet/top/landscape geometries with unchanged live Surface identities and uniform scale
+PASS GPU preview retained identity, displayed in HWUI without software copy; software fallback safely cloned
+PASS real Android changelog page: installed 0.9.68-dev and historic 0.9.28 visible in descending order
+PASS update center: device hero, bottom glass card, no top version, safe manual check; HWUI screenshots
+TOUCH windowOrigin=[80, 180] oldRegion=Rect(-80, -106 - 1032, 60) newRegion=Rect(0, 74 - 1112, 240)
+PASS 20 actual InputDispatcher collapse/expand cycles in nonzero-offset window; cached icon order and persisted state retained
+PASS 20 real 48dp main-menu taps, single popup replacement and action dispatch
+SURFACE priority=false source=1272x2772 crop=Rect(0, 0 - 1272, 2772) content=713x1554@279,1084 scale=0.56060606
+SURFACE priority=true source=1272x2772 crop=Rect(0, 0 - 1272, 2772) content=883x1925@194,751 scale=0.6944444
+PASS production TaskSurfaceCompat writeFrame on actual SurfaceControl: all four coloured source edges + navigation marker preserved through 20 policy changes, injected touch inverse accurate
+PASS optional idle hide/restore/pin/blocked native state/disable retain all four attached TextureViews and exact dimensions; main expansion intentionally absent
+PASS real grouped native popup: top=13 callbacks, 4 back navigations, producer identities unchanged; left=13 callbacks, 4 back navigations, producer identities unchanged; right=13 callbacks, 4 back navigations, producer identities unchanged; bounded 208dp primary and 220dp secondary; all original actions reachable
+MEASURE screenshot scheduling fixture, same emulator/four live producers/right layout: baseline_ui_capture elapsed_ms=506 frames=30 max_gap_ms=66; candidate_worker_capture elapsed_ms=481 frames=36 max_gap_ms=16 deadline_fallbacks=0; no assertion that fixture timing equals ColorOS task performance
+PASS asynchronous capture never blocks UI workload; exactly-once result and cancelled generation never accepts stale capture; validation/accept exceptions recycle and cancel exactly once; stable handoff unit tests retain final geometry
+MEASURE HWUI FrameMetrics across top/left/right popup/producer fixtures: samples=5 p50_ms=57.426103 p95_ms=162.633468 over_16.67ms=5. No actual third-party task is launched or migrated in this fixture.
+PASS production async preview retains protection during pending/cancel and releases exactly once after rollback completion
+PASS HWUI source-only real card: bitmap grows beyond old slot, async move starts after first frame, no stale or leaked preview
+PASS production transient HWUI flight: both directions, endpoint colors, unaffected rail, independent main reveal, moving pixels under blocked simulated IPC
+PASS API35 SurfaceFlinger live dual-root mirror: both moved in one GPU transaction and updated producer pixels WITHOUT bitmap capture
+PASS four real AOSP tasks retained identities and new buffers across 48 matched display moves; three callback modes, no phone performance claim
+PASS matched production Binder lane and task repository; owner-only publication guard; separate elapsed and owner-busy timings
+PASS native shade adapter: 20 cycles preserve matrix, clip, native flags, location and MotionEvent exactly; no custom touch region
+PASS 20 real popup/native-window-fixture mutual exclusion cycles; panel open dismisses menu, collapse denial blocks overlay, closed state reopens
+PASS native panel detach/missing OEM root fails closed; non-SystemUI fixtures retain normal menu access
+PASS signature-permission protected loaded-code identity receiver fixture; reports compiled stamp, not installed package version
+OBSERVE 4-0-open focus=  mCurrentFocus=Window{996504e u0 NotificationShade} accessibility=com.android.systemui
+PASS 20 actual AOSP native-shade-content notifications accessibility-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=0; WindowManager confirms native shade input focus then activity input focus returned
+OBSERVE 5-0-open focus=  mCurrentFocus=Window{996504e u0 NotificationShade} accessibility=com.android.systemui
+PASS 20 actual AOSP native-shade-content quick settings accessibility-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=18; WindowManager confirms native shade input focus then activity input focus returned
+OBSERVE 0-0-open focus=  mCurrentFocus=Window{996504e u0 NotificationShade} accessibility=com.android.systemui
+PASS 20 actual AOSP native-shade-content raw pull-down notifications raw-swipe-open/raw-swipe-up-close cycles; at most two swipes, secondSwipe=0; WindowManager confirms native shade input focus then activity input focus returned
+HWUI_RENDER_PASS

@@ -1,0 +1,81 @@
+AOSP real display migration baseline; no ColorOS/Xposed/smoothness claim
+rejected candidate metadata comparison (production unchanged): 128 decodes/batch, 8 alternating UI-thread batches, same four real task snapshots; baseline_median_ms=17.295991 cached_median_ms=18.90729; state_fields_equal=true; not full exchange or ColorOS FPS
+matched_move mode=sync task=9 display=0 elapsed_ms=27.386347 owner_busy_ms=27.254797 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.100334 queries=1
+matched_move mode=sync task=9 display=10 elapsed_ms=167.757377 owner_busy_ms=19.350589 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=148.401291 queries=1
+matched_round=0 slot=0 mode=sync task_identity_retained=true fresh_buffers=1
+matched_move mode=async task=9 display=0 elapsed_ms=194.606356 owner_busy_ms=0.429817 worker_ms=11.142857 dispatch_ms=0.817362 callback_wait_ms=180.35487 initial_owner_wait_ms=1.960778 queries=1
+matched_move mode=async task=9 display=10 elapsed_ms=272.446423 owner_busy_ms=0.134639 worker_ms=51.801451 dispatch_ms=1.455659 callback_wait_ms=179.984955 initial_owner_wait_ms=39.119582 queries=1
+matched_round=0 slot=0 mode=async task_identity_retained=true fresh_buffers=3
+matched_move mode=async_barrier task=9 display=0 elapsed_ms=189.007337 owner_busy_ms=0.231443 worker_ms=40.456896 dispatch_ms=0.374185 callback_wait_ms=130.655502 initial_owner_wait_ms=17.419243 queries=1
+matched_move mode=async_barrier task=9 display=10 elapsed_ms=199.942109 owner_busy_ms=0.158535 worker_ms=17.512753 dispatch_ms=1.741848 callback_wait_ms=172.178499 initial_owner_wait_ms=8.403833 queries=1
+matched_round=0 slot=0 mode=async_barrier task_identity_retained=true fresh_buffers=2
+matched_move mode=async task=10 display=0 elapsed_ms=164.476411 owner_busy_ms=0.129653 worker_ms=18.515861 dispatch_ms=0.811282 callback_wait_ms=144.98141 initial_owner_wait_ms=0.082913 queries=1
+matched_move mode=async task=10 display=11 elapsed_ms=242.615718 owner_busy_ms=0.139517 worker_ms=60.168344 dispatch_ms=2.477615 callback_wait_ms=174.467519 initial_owner_wait_ms=5.399388 queries=1
+matched_round=0 slot=1 mode=async task_identity_retained=true fresh_buffers=3
+matched_move mode=async_barrier task=10 display=0 elapsed_ms=127.855389 owner_busy_ms=6.517024 worker_ms=16.552567 dispatch_ms=0.136392 callback_wait_ms=110.99835 initial_owner_wait_ms=0.095341 queries=1
+matched_move mode=async_barrier task=10 display=11 elapsed_ms=154.311856 owner_busy_ms=0.541593 worker_ms=11.561787 dispatch_ms=1.006993 callback_wait_ms=139.117522 initial_owner_wait_ms=2.529461 queries=1
+matched_round=0 slot=1 mode=async_barrier task_identity_retained=true fresh_buffers=1
+matched_move mode=sync task=10 display=0 elapsed_ms=9.842447 owner_busy_ms=9.609622 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.230933 queries=1
+matched_move mode=sync task=10 display=11 elapsed_ms=100.703562 owner_busy_ms=26.049724 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=74.652275 queries=1
+matched_round=0 slot=1 mode=sync task_identity_retained=true fresh_buffers=1
+matched_move mode=async_barrier task=11 display=0 elapsed_ms=107.870525 owner_busy_ms=0.110585 worker_ms=8.438484 dispatch_ms=5.004712 callback_wait_ms=94.032162 initial_owner_wait_ms=0.324041 queries=1
+matched_move mode=async_barrier task=11 display=12 elapsed_ms=301.607248 owner_busy_ms=0.089441 worker_ms=58.146947 dispatch_ms=0.494739 callback_wait_ms=175.913313 initial_owner_wait_ms=67.002766 queries=1
+matched_round=0 slot=2 mode=async_barrier task_identity_retained=true fresh_buffers=3
+matched_move mode=sync task=11 display=0 elapsed_ms=32.543785 owner_busy_ms=32.478268 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.064005 queries=1
+matched_move mode=sync task=11 display=12 elapsed_ms=91.407409 owner_busy_ms=10.991791 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=80.414295 queries=1
+matched_round=0 slot=2 mode=sync task_identity_retained=true fresh_buffers=1
+matched_move mode=async task=11 display=0 elapsed_ms=162.760296 owner_busy_ms=0.217052 worker_ms=23.842271 dispatch_ms=2.330647 callback_wait_ms=136.223829 initial_owner_wait_ms=0.308107 queries=1
+matched_move mode=async task=11 display=12 elapsed_ms=261.059241 owner_busy_ms=0.085577 worker_ms=71.721969 dispatch_ms=11.939132 callback_wait_ms=173.419535 initial_owner_wait_ms=3.924405 queries=1
+matched_round=0 slot=2 mode=async task_identity_retained=true fresh_buffers=2
+matched_move mode=async_barrier task=12 display=0 elapsed_ms=168.565837 owner_busy_ms=0.19617 worker_ms=23.687355 dispatch_ms=0.298012 callback_wait_ms=144.469033 initial_owner_wait_ms=0.0536 queries=1
+matched_move mode=async_barrier task=12 display=13 elapsed_ms=325.628837 owner_busy_ms=0.104535 worker_ms=85.985593 dispatch_ms=19.366953 callback_wait_ms=215.172051 initial_owner_wait_ms=5.038162 queries=1
+matched_round=0 slot=3 mode=async_barrier task_identity_retained=true fresh_buffers=3
+matched_move mode=async task=12 display=0 elapsed_ms=191.025425 owner_busy_ms=0.508295 worker_ms=44.98029 dispatch_ms=0.097104 callback_wait_ms=145.423162 initial_owner_wait_ms=0.052568 queries=1
+matched_move mode=async task=12 display=13 elapsed_ms=249.160795 owner_busy_ms=0.18308 worker_ms=35.518346 dispatch_ms=26.90992 callback_wait_ms=156.970829 initial_owner_wait_ms=29.621492 queries=1
+matched_round=0 slot=3 mode=async task_identity_retained=true fresh_buffers=3
+matched_move mode=sync task=12 display=0 elapsed_ms=34.349318 owner_busy_ms=12.479688 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=21.867586 queries=1
+matched_move mode=sync task=12 display=13 elapsed_ms=86.967976 owner_busy_ms=7.625389 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=79.341105 queries=1
+matched_round=0 slot=3 mode=sync task_identity_retained=true fresh_buffers=1
+matched_move mode=sync task=9 display=0 elapsed_ms=17.160896 owner_busy_ms=16.909448 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.249966 queries=1
+matched_move mode=sync task=9 display=10 elapsed_ms=78.342313 owner_busy_ms=16.226966 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=62.113805 queries=1
+matched_round=1 slot=0 mode=sync task_identity_retained=true fresh_buffers=2
+matched_move mode=async_barrier task=9 display=0 elapsed_ms=248.075029 owner_busy_ms=0.246166 worker_ms=41.88947 dispatch_ms=0.36376 callback_wait_ms=205.666128 initial_owner_wait_ms=0.085086 queries=1
+matched_move mode=async_barrier task=9 display=10 elapsed_ms=274.603353 owner_busy_ms=0.098717 worker_ms=72.951912 dispatch_ms=1.927309 callback_wait_ms=126.706851 initial_owner_wait_ms=72.965164 queries=1
+matched_round=1 slot=0 mode=async_barrier task_identity_retained=true fresh_buffers=3
+matched_move mode=async task=9 display=0 elapsed_ms=242.409958 owner_busy_ms=0.482496 worker_ms=55.862164 dispatch_ms=26.619473 callback_wait_ms=158.051342 initial_owner_wait_ms=1.795979 queries=1
+matched_move mode=async task=9 display=10 elapsed_ms=292.713356 owner_busy_ms=0.233497 worker_ms=49.641473 dispatch_ms=5.644521 callback_wait_ms=169.837611 initial_owner_wait_ms=67.464435 queries=1
+matched_round=1 slot=0 mode=async task_identity_retained=true fresh_buffers=3
+matched_move mode=async task=10 display=0 elapsed_ms=184.621107 owner_busy_ms=0.126448 worker_ms=14.172328 dispatch_ms=4.696205 callback_wait_ms=165.375735 initial_owner_wait_ms=0.307897 queries=1
+matched_move mode=async task=10 display=11 elapsed_ms=187.991837 owner_busy_ms=0.089693 worker_ms=40.543169 dispatch_ms=3.922072 callback_wait_ms=143.394361 initial_owner_wait_ms=0.075772 queries=1
+matched_round=1 slot=1 mode=async task_identity_retained=true fresh_buffers=2
+matched_move mode=sync task=10 display=0 elapsed_ms=15.122097 owner_busy_ms=14.995079 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.124815 queries=1
+matched_move mode=sync task=10 display=11 elapsed_ms=47.793311 owner_busy_ms=11.783114 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=36.008754 queries=1
+matched_round=1 slot=1 mode=sync task_identity_retained=true fresh_buffers=2
+matched_move mode=async_barrier task=10 display=0 elapsed_ms=154.701164 owner_busy_ms=0.279595 worker_ms=29.77598 dispatch_ms=0.49193 callback_wait_ms=121.145489 initial_owner_wait_ms=3.22958 queries=1
+matched_move mode=async_barrier task=10 display=11 elapsed_ms=222.202113 owner_busy_ms=0.607562 worker_ms=46.229686 dispatch_ms=19.885773 callback_wait_ms=151.542911 initial_owner_wait_ms=4.486659 queries=1
+matched_round=1 slot=1 mode=async_barrier task_identity_retained=true fresh_buffers=3
+matched_move mode=sync task=11 display=0 elapsed_ms=51.031954 owner_busy_ms=50.972687 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.057625 queries=1
+matched_move mode=sync task=11 display=12 elapsed_ms=91.510396 owner_busy_ms=7.359165 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=84.15004 queries=1
+matched_round=1 slot=2 mode=sync task_identity_retained=true fresh_buffers=1
+matched_move mode=async task=11 display=0 elapsed_ms=128.211658 owner_busy_ms=0.216741 worker_ms=18.319965 dispatch_ms=0.584122 callback_wait_ms=108.727556 initial_owner_wait_ms=0.524062 queries=1
+matched_move mode=async task=11 display=12 elapsed_ms=125.299343 owner_busy_ms=0.085808 worker_ms=22.889899 dispatch_ms=0.834227 callback_wait_ms=98.308332 initial_owner_wait_ms=3.212064 queries=1
+matched_round=1 slot=2 mode=async task_identity_retained=true fresh_buffers=1
+matched_move mode=async_barrier task=11 display=0 elapsed_ms=166.783118 owner_busy_ms=0.208378 worker_ms=30.578957 dispatch_ms=1.393552 callback_wait_ms=134.684877 initial_owner_wait_ms=0.073695 queries=1
+matched_move mode=async_barrier task=11 display=12 elapsed_ms=245.239319 owner_busy_ms=0.062963 worker_ms=28.327962 dispatch_ms=30.663536 callback_wait_ms=186.127372 initial_owner_wait_ms=0.076063 queries=1
+matched_round=1 slot=2 mode=async_barrier task_identity_retained=true fresh_buffers=2
+matched_move mode=async task=12 display=0 elapsed_ms=168.678233 owner_busy_ms=0.095842 worker_ms=45.768248 dispatch_ms=6.352547 callback_wait_ms=116.43092 initial_owner_wait_ms=0.073449 queries=1
+matched_move mode=async task=12 display=13 elapsed_ms=313.12239 owner_busy_ms=0.081272 worker_ms=71.956978 dispatch_ms=62.240642 callback_wait_ms=175.341005 initial_owner_wait_ms=3.531328 queries=1
+matched_round=1 slot=3 mode=async task_identity_retained=true fresh_buffers=3
+matched_move mode=async_barrier task=12 display=0 elapsed_ms=66.471842 owner_busy_ms=0.104505 worker_ms=52.062036 dispatch_ms=8.180372 callback_wait_ms=6.106282 initial_owner_wait_ms=0.060119 queries=1
+matched_move mode=async_barrier task=12 display=13 elapsed_ms=187.382534 owner_busy_ms=0.064987 worker_ms=5.968642 dispatch_ms=0.148796 callback_wait_ms=116.128253 initial_owner_wait_ms=65.094571 queries=1
+matched_round=1 slot=3 mode=async_barrier task_identity_retained=true fresh_buffers=2
+matched_move mode=sync task=12 display=0 elapsed_ms=11.542939 owner_busy_ms=11.477267 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=0.06402 queries=1
+matched_move mode=sync task=12 display=13 elapsed_ms=47.972977 owner_busy_ms=15.624973 worker_ms=0.0 dispatch_ms=0.0 callback_wait_ms=0.0 initial_owner_wait_ms=32.346352 queries=1
+matched_round=1 slot=3 mode=sync task_identity_retained=true fresh_buffers=1
+matched_summary mode=sync n=16 elapsed_median_ms=47.883144 owner_busy_median_ms=15.310026 max_frame_gap_ms=116 frame_gap_p95_ms=99 samples=106 over33ms=29
+matched_summary mode=async n=16 elapsed_median_ms=192.81589050000002 owner_busy_median_ms=0.137078 callback_wait_median_ms=157.5110855 max_frame_gap_ms=133 frame_gap_p95_ms=99 samples=120 over33ms=45
+matched_summary mode=async_barrier n=16 elapsed_median_ms=188.19493549999999 owner_busy_median_ms=0.17735250000000002 callback_wait_median_ms=136.90119950000002 max_frame_gap_ms=133 frame_gap_p95_ms=83 samples=122 over33ms=42
+Scope: async_barrier is a test-only Handler.createAsync completion route; no production scheduling modification and no assumed improvement.
+PASS matched alternating real-task moves: same production query and verification; owner-only publication guard
+main_frame_gap_max_ms=116 samples=106
+Scope: real framework moves only; production crop, input, overlay and vendor task engine are not emulated
