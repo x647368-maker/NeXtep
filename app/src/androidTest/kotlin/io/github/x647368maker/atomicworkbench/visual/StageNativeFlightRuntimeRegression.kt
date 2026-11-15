@@ -199,6 +199,10 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
                         }
                     }
+                    if(moving && label=="mid") inst.runOnMainSync {
+                        check(attempt.flight.isRunning) { "Moving pixels sampled, but flight ended before the mid-flight cancellation" }
+                        attempt.flight.stop();attempt.flight.stop()
+                    }
                     } finally {
                         last?.let { frame ->
                             try { save(frame,if(moving)"native-flight-moving-$label.png" else "native-flight-failed-moving-$label.png") }
@@ -209,7 +213,6 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     check(moving) {
                         "No two moving real GPU card pixel regions during $label; samples=$samples; inspect native-flight-runtime.txt and native-flight-trace.txt"
                     }
-                    if(label=="mid")inst.runOnMainSync { attempt.flight.stop();attempt.flight.stop() }
                     awaitReleased(attempt,label)
                     if(label=="stale") inst.runOnMainSync {
                         // Read-only test inspection: ensure the real animator

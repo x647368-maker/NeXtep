@@ -16,7 +16,7 @@ REVIEW_TARGET = "b4ef45a111702da7bee85029c981ccc31a9411e5"
 SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
-NEW = {"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "fd52ad7f0b22e47ace11300938ccaa3b5ee70fca"}
+NEW = {"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "5ca7fb96cc4606994080788f4f93386833de936e"}
 PINS = {
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "2ce8336fd6dbd34e2c9e352bf2871506c786e803"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
