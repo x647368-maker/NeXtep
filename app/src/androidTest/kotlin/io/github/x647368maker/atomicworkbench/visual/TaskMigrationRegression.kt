@@ -111,9 +111,14 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             val repository=TaskRepository(original)
             val owner=Handler(Looper.getMainLooper())
             lateinit var lane:StageExchangeBinderLane
+            lateinit var barrierLane:StageExchangeBinderLane
             lateinit var originalStates:Map<Int,TaskRepository.TaskSnapshot>
             i.runOnMainSync {
                 lane=StageExchangeBinderLane { action->owner.post(action) }
+                // Only the completion message changes: no front-of-queue
+                // priority, no new production code, same main Looper.
+                val barrierHandler=Handler.createAsync(Looper.getMainLooper())
+                barrierLane=StageExchangeBinderLane { action->barrierHandler.post(action) }
                 originalStates=repository.publishExchangeTasks(repository.readExchangeTasks())
                     .filter{it.taskId in ids}.associateBy{it.taskId}
             }
@@ -133,7 +138,14 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     "Real task identity changed during matched display move"
                 }
             }
-            fun matchedMove(id:Int,destination:Int,async:Boolean){
+            val barrierGaps=mutableListOf<Long>()
+            val barrierElapsed=mutableListOf<Double>()
+            val barrierOwner=mutableListOf<Double>()
+            val ordinaryCallback=mutableListOf<Double>()
+            val barrierCallback=mutableListOf<Double>()
+            fun matchedMove(id:Int,destination:Int,mode:String){
+                val async=mode!="sync"
+                val selectedLane=if(mode=="async_barrier")barrierLane else lane
                 val finished=CountDownLatch(1)
                 val startTime=now()
                 var outcome:Result<Unit>?=null
@@ -164,7 +176,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     val queued=now()
                     var workerEnd=0L
                     var value:Result<T>?=null
-                    check(lane.submit({
+                    check(selectedLane.submit({
                         val began=now()
                         dispatchNs+=began-queued
                         try{
@@ -231,32 +243,48 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 checkNotNull(outcome).getOrThrow()
                 val elapsed=ms(endedNs-startTime)
                 val busy=ms(ownerNs)
-                val mode=if(async)"async" else "sync"
-                (if(async)asyncElapsed else syncElapsed).add(elapsed)
-                (if(async)asyncOwner else syncOwner).add(busy)
+                when(mode){
+                    "sync"->{syncElapsed.add(elapsed);syncOwner.add(busy)}
+                    "async"->{asyncElapsed.add(elapsed);asyncOwner.add(busy);ordinaryCallback.add(ms(callbackNs))}
+                    "async_barrier"->{barrierElapsed.add(elapsed);barrierOwner.add(busy);barrierCallback.add(ms(callbackNs))}
+                    else->error("Unknown probe mode")
+                }
                 lines.add("matched_move mode=$mode task=$id display=$destination elapsed_ms=$elapsed "+
                     "owner_busy_ms=$busy worker_ms=${ms(workerNs)} dispatch_ms=${ms(dispatchNs)} "+
                     "callback_wait_ms=${ms(callbackNs)} initial_owner_wait_ms=${ms(firstOwnerNs)} queries=$queries")
             }
             for(round in 0..1)for(slot in 0..3){
-                val order=if((round+slot)%2==0)listOf(false,true) else listOf(true,false)
-                for(async in order){
+                // Balanced alternating order over the same four live tasks.
+                val orders=listOf(
+                    listOf("sync","async","async_barrier"),
+                    listOf("async","async_barrier","sync"),
+                    listOf("async_barrier","sync","async"),
+                    listOf("async_barrier","async","sync"),
+                    listOf("sync","async_barrier","async"),
+                    listOf("async","sync","async_barrier"))
+                val order=orders[(round*4+slot)%orders.size]
+                for(mode in order){
                     i.runOnMainSync {
                         gaps.clear();lastFrame=0L; sampling=true
                         Choreographer.getInstance().postFrameCallback(callback)
                     }
                     Thread.sleep(80)
                     try{
-                        matchedMove(ids[slot],0,async)
+                        matchedMove(ids[slot],0,mode)
                         val before=frames[slot].get()
-                        matchedMove(ids[slot],displays[slot].display.displayId,async)
+                        matchedMove(ids[slot],displays[slot].display.displayId,mode)
                         awaitFrame(slot,before)
-                        lines.add("matched_round=$round slot=$slot mode=${if(async)"async" else "sync"} task_identity_retained=true fresh_buffers=${frames[slot].get()-before}")
+                        lines.add("matched_round=$round slot=$slot mode=$mode task_identity_retained=true fresh_buffers=${frames[slot].get()-before}")
                         Thread.sleep(80)
                     }finally{
                         i.runOnMainSync {
                             sampling=false; Choreographer.getInstance().removeFrameCallback(callback)
-                            (if(async)laneGaps else syncGaps).addAll(gaps)
+                            when(mode){
+                                "sync"->syncGaps.addAll(gaps)
+                                "async"->laneGaps.addAll(gaps)
+                                "async_barrier"->barrierGaps.addAll(gaps)
+                                else->error("Unknown probe mode")
+                            }
                         }
                     }
                 }
@@ -268,8 +296,16 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             }
             val baselineGap=syncGaps.maxOrNull()
             val baselineSamples=syncGaps.size
-            lines.add("matched_summary mode=sync n=16 elapsed_median_ms=${median(syncElapsed)} owner_busy_median_ms=${median(syncOwner)} max_frame_gap_ms=$baselineGap samples=$baselineSamples")
-            lines.add("matched_summary mode=async n=16 elapsed_median_ms=${median(asyncElapsed)} owner_busy_median_ms=${median(asyncOwner)} max_frame_gap_ms=${laneGaps.maxOrNull()} samples=${laneGaps.size}")
+            fun frameMetrics(values:List<Long>):String{
+                if(values.isEmpty())return "frame_gap_samples=0"
+                val sorted=values.sorted()
+                val p95=sorted[((sorted.size-1)*.95).toInt()]
+                return "max_frame_gap_ms=${sorted.last()} frame_gap_p95_ms=$p95 samples=${sorted.size} over33ms=${sorted.count{it>33}}"
+            }
+            lines.add("matched_summary mode=sync n=16 elapsed_median_ms=${median(syncElapsed)} owner_busy_median_ms=${median(syncOwner)} "+frameMetrics(syncGaps))
+            lines.add("matched_summary mode=async n=16 elapsed_median_ms=${median(asyncElapsed)} owner_busy_median_ms=${median(asyncOwner)} callback_wait_median_ms=${median(ordinaryCallback)} "+frameMetrics(laneGaps))
+            lines.add("matched_summary mode=async_barrier n=16 elapsed_median_ms=${median(barrierElapsed)} owner_busy_median_ms=${median(barrierOwner)} callback_wait_median_ms=${median(barrierCallback)} "+frameMetrics(barrierGaps))
+            lines.add("Scope: async_barrier is a test-only Handler.createAsync completion route; no production scheduling modification and no assumed improvement.")
             // Guard test is outside measured intervals.
             val guardFinished=CountDownLatch(1)
             var rejected=false
@@ -290,7 +326,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             lines.add("main_frame_gap_max_ms=$baselineGap samples=$baselineSamples")
             lines.add("Scope: real framework moves only; production crop, input, overlay and vendor task engine are not emulated")
             File(out,"real-task-migration.txt").writeText(lines.joinToString("\n"))
-            return listOf("PASS four real AOSP tasks retained identities and new buffers across 32 alternating matched display moves; no phone performance claim",
+            return listOf("PASS four real AOSP tasks retained identities and new buffers across 48 matched display moves; three callback modes, no phone performance claim",
                 "PASS matched production Binder lane and task repository; owner-only publication guard; separate elapsed and owner-busy timings")
         } finally {
             i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
