@@ -17,6 +17,19 @@ import java.util.Locale
 internal class StageIssueSession(context: Context) {
     private val app = context.applicationContext
     private val preferences = app.getSharedPreferences("stage_issue_test_v1", Context.MODE_PRIVATE)
+    private val reportHistory = StageIssueHistoryStore(app)
+
+    fun latestRecord(): StageIssueHistoryPolicy.Record? {
+        val report = latestReport().takeIf { it.isNotBlank() } ?: return null
+        val started = preferences.getLong("start_wall", 0L)
+        val id = preferences.getString("session_id", null)
+            ?: "legacy:$started:${currentToken()}"
+        return StageIssueHistoryPolicy.Record(id, started, selectedCategory(), report)
+    }
+    fun reports(): List<StageIssueHistoryPolicy.Record> =
+        StageIssueHistoryPolicy.retain(listOfNotNull(latestRecord()) + reportHistory.records())
+    fun report(id: String): String? = latestRecord()?.takeIf { it.id == id }?.text
+        ?: reportHistory.records().firstOrNull { it.id == id }?.text
 
     fun active(): Boolean = preferences.getBoolean("active", false)
     fun currentToken(): Long = preferences.getLong("start_elapsed", -1L)
@@ -71,9 +84,14 @@ internal class StageIssueSession(context: Context) {
 
     fun begin(battery: BatterySample, categoryId: String, duration: Long,
               version: String, note: String, environment: String): Long {
+        check(!active()) { "已有诊断正在运行" }
+        // Archive first, before clearing anything. A storage failure must not
+        // overwrite the user's previous report.
+        latestRecord()?.let(reportHistory::archive)
         val now = SystemClock.elapsedRealtime()
         val chosen = StageIssueReportPolicy.selectedDuration(duration)
-        preferences.edit().clear()
+        val saved = preferences.edit().clear()
+            .putString("session_id", java.util.UUID.randomUUID().toString())
             .putBoolean("active", true)
             .putLong("start_elapsed", now)
             .putLong("start_wall", System.currentTimeMillis())
@@ -86,6 +104,10 @@ internal class StageIssueSession(context: Context) {
             .putString("start_battery", batteryLine(battery))
             .putString("start_runtime", "系统界面进程：等待读取")
             .commit()
+        if (!saved) {
+            preferences.edit().putBoolean("active", false).apply()
+            error("无法保存诊断会话，请检查存储空间")
+        }
         val ok = StageIssueAutoStop.schedule(app, now,chosen)
         preferences.edit().putBoolean("alarm_scheduled", ok).apply()
         return now
@@ -154,6 +176,32 @@ internal class StageIssueSession(context: Context) {
             appendLine("测试类型：${category.name}")
             appendLine("操作说明：${category.instructions}")
             appendLine("可检测范围限制：${category.boundary}")
+            appendLine("【五大专项证据覆盖｜不是自动验收结论】")
+            val requested = StageIssueTestCatalog.modulesFor(category.id)
+            val startPid = preferences.getInt("start_pid", -1)
+            val both = snapshot != null && startPid >= 0
+            val same = snapshot != null && startPid >= 0 && snapshot.processId == startPid
+            val beginSwap = preferences.getLong("start_swap_id", -1L)
+            val finalSwap = StageIssueReportPolicy.lastSwapId(snapshot?.exchangeDiagnostics)
+            val swaps = when {
+                !same || beginSwap < 0 || finalSwap == null || finalSwap < beginSwap -> "交换是否在会话期间触发：不可确认"
+                finalSwap == beginSwap -> "未观察到新的交换编号（未触发或未记录）"
+                else -> "观察到新的交换编号；不代表动画、内容和任务均通过"
+            }
+            val observedScreen = (0 until autoEventCount()).count {
+                preferences.getString("auto_event_$it",null)?.contains("系统通知：") == true
+            }
+            for (module in StageIssueTestCatalog.modules) {
+                val coverage = if (module.id !in requested) "未选择（未测试）" else when(module.id) {
+                    "performance" -> "有电池/温度起止快照（未知值以原始字段为准）；$swaps；精确帧率、闪烁与模块独占功耗未自动判定"
+                    "layout" -> "${if(both) "已读取起止工作台快照" else "工作台快照不完整"}；遮挡、智能隐藏与空间利用需手动验证"
+                    "content" -> "第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常"
+                    "compatibility" -> "设备及屏幕起止状态；系统屏幕通知${observedScreen}条（可能漏记）；手势、Root/注入兼容性未自动验收"
+                    "services" -> "工作组、快捷栏、更新签名与收款码尚无自动验证事件；未测试"
+                    else -> "不可观测"
+                }
+                appendLine("${module.name}：$coverage")
+            }
             appendLine("版本：${version.take(60)}")
             appendLine("设备：${Build.MANUFACTURER.take(40)} ${Build.MODEL.take(60)}")
             appendLine("Android：${Build.VERSION.RELEASE.take(30)}（API ${Build.VERSION.SDK_INT}）")

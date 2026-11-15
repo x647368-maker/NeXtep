@@ -4,7 +4,7 @@ package io.github.x647368maker.atomicworkbench.config
 internal object StageIssueTestCatalog {
     data class Case(val id: String, val name: String, val instructions: String, val boundary: String)
 
-    val cases = listOf(
+    private val legacyCases = listOf(
         Case("windows", "四小窗与交换",
             "1. 开始后打开四小窗；2. 切换主窗与小窗；3. 如果窗口消失或没响应，返回标记并写明窗口位置。",
             "记录小窗数量和操作前后状态；不能自动判断哪个像素遮挡或点击失败。"),
@@ -31,7 +31,34 @@ internal object StageIssueTestCatalog {
             "只记录手动快照和时间，不会自动寻找任何未知故障根因。")
     )
 
-    fun find(id: String?): Case = cases.firstOrNull { it.id == id } ?: cases.last()
+    val modules = listOf(
+        Case("performance","性能与流畅度","正常使用并多次交换窗口；出现卡顿、闪烁或发热时可选标记。",
+            "起止电池/温度、运行计数和近期交换诊断；不能自动判断画面像素、精确FPS或模块独占耗电。"),
+        Case("layout","窗口与布局体验","测试四小窗、顶部/左右排列、交换、智能隐藏、恢复和空间利用。",
+            "起止窗口及工作台状态、部分交换诊断；遮挡与触控效果需手动复现。"),
+        Case("content","应用与内容状态","测试视频暂停/播放、游戏触控、切换应用与返回内容。",
+            "不读取第三方私有内容或模拟播放控制；实际播放、内容刷新及触控需用户复现。"),
+        Case("compatibility","系统与兼容性","测试折叠/展开、横竖屏、锁屏解锁、通知栏和系统手势。",
+            "设备与屏幕状态快照、有限系统事件；不能自动验收所有Root/注入组合。"),
+        Case("services","功能与服务","测试工作组、快捷栏、在线更新、收款码及设置。",
+            "记录用户主动标记和说明；未触发或缺少可靠事件的功能不会判定通过。")
+    )
+    val cases = listOf(Case("all","一键综合诊断",
+        "正常使用台前调度，按需体验五大专项；遇到问题可标记，不必逐项强制操作。",
+        "五项共用现有会话与快照，不重复采集；未触发或不可观测项目明确标记。")) + modules
+    private val legacyMapping = mapOf("windows" to "layout", "foldable" to "compatibility",
+        "gaming" to "content", "unlock" to "compatibility", "power" to "performance",
+        "crash" to "performance", "status" to "compatibility")
+    fun modulesFor(id: String): Set<String> = when {
+        id == "all" -> modules.mapTo(mutableSetOf()) { it.id }
+        modules.any { it.id == id } -> setOf(id)
+        else -> setOfNotNull(legacyMapping[id])
+    }
+    fun selectionIndex(id: String?): Int = cases.indexOfFirst {
+        it.id == (legacyMapping[id] ?: id)
+    }.coerceAtLeast(0)
+    fun find(id: String?): Case = cases.firstOrNull { it.id == id }
+        ?: legacyCases.firstOrNull { it.id == id } ?: legacyCases.last()
     fun guide(id: String?): String = find(id).let {
         "操作步骤：\n${it.instructions}\n\n能记录：\n${it.boundary}"
     }

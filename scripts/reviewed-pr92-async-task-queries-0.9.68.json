@@ -183,6 +183,97 @@
           "after": "        val ongoing = active?.let { render(it) + \" [ongoing]\" }"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageIssueSession.kt": {
+      "previous_blob_sha1": "d119db67ffd3645e163fa2057fbe35f8e68208d3",
+      "patches": [
+        {
+          "before": "    private val preferences = app.getSharedPreferences(\"stage_issue_test_v1\", Context.MODE_PRIVATE)",
+          "after": "    private val preferences = app.getSharedPreferences(\"stage_issue_test_v1\", Context.MODE_PRIVATE)\n    private val reportHistory = StageIssueHistoryStore(app)\n\n    fun latestRecord(): StageIssueHistoryPolicy.Record? {\n        val report = latestReport().takeIf { it.isNotBlank() } ?: return null\n        val started = preferences.getLong(\"start_wall\", 0L)\n        val id = preferences.getString(\"session_id\", null)\n            ?: \"legacy:$started:${currentToken()}\"\n        return StageIssueHistoryPolicy.Record(id, started, selectedCategory(), report)\n    }\n    fun reports(): List<StageIssueHistoryPolicy.Record> =\n        StageIssueHistoryPolicy.retain(listOfNotNull(latestRecord()) + reportHistory.records())\n    fun report(id: String): String? = latestRecord()?.takeIf { it.id == id }?.text\n        ?: reportHistory.records().firstOrNull { it.id == id }?.text"
+        },
+        {
+          "before": "        val now = SystemClock.elapsedRealtime()\n        val chosen = StageIssueReportPolicy.selectedDuration(duration)\n        preferences.edit().clear()\n            .putBoolean(\"active\", true)",
+          "after": "        check(!active()) { \"已有诊断正在运行\" }\n        // Archive first, before clearing anything. A storage failure must not\n        // overwrite the user's previous report.\n        latestRecord()?.let(reportHistory::archive)\n        val now = SystemClock.elapsedRealtime()\n        val chosen = StageIssueReportPolicy.selectedDuration(duration)\n        val saved = preferences.edit().clear()\n            .putString(\"session_id\", java.util.UUID.randomUUID().toString())\n            .putBoolean(\"active\", true)"
+        },
+        {
+          "before": "            .commit()\n        val ok = StageIssueAutoStop.schedule(app, now,chosen)",
+          "after": "            .commit()\n        if (!saved) {\n            preferences.edit().putBoolean(\"active\", false).apply()\n            error(\"无法保存诊断会话，请检查存储空间\")\n        }\n        val ok = StageIssueAutoStop.schedule(app, now,chosen)"
+        },
+        {
+          "before": "            appendLine(\"可检测范围限制：${category.boundary}\")\n            appendLine(\"版本：${version.take(60)}\")",
+          "after": "            appendLine(\"可检测范围限制：${category.boundary}\")\n            appendLine(\"【五大专项证据覆盖｜不是自动验收结论】\")\n            val requested = StageIssueTestCatalog.modulesFor(category.id)\n            val startPid = preferences.getInt(\"start_pid\", -1)\n            val both = snapshot != null && startPid >= 0\n            val same = snapshot != null && startPid >= 0 && snapshot.processId == startPid\n            val beginSwap = preferences.getLong(\"start_swap_id\", -1L)\n            val finalSwap = StageIssueReportPolicy.lastSwapId(snapshot?.exchangeDiagnostics)\n            val swaps = when {\n                !same || beginSwap < 0 || finalSwap == null || finalSwap < beginSwap -> \"交换是否在会话期间触发：不可确认\"\n                finalSwap == beginSwap -> \"未观察到新的交换编号（未触发或未记录）\"\n                else -> \"观察到新的交换编号；不代表动画、内容和任务均通过\"\n            }\n            val observedScreen = (0 until autoEventCount()).count {\n                preferences.getString(\"auto_event_$it\",null)?.contains(\"系统通知：\") == true\n            }\n            for (module in StageIssueTestCatalog.modules) {\n                val coverage = if (module.id !in requested) \"未选择（未测试）\" else when(module.id) {\n                    \"performance\" -> \"有电池/温度起止快照（未知值以原始字段为准）；$swaps；精确帧率、闪烁与模块独占功耗未自动判定\"\n                    \"layout\" -> \"${if(both) \"已读取起止工作台快照\" else \"工作台快照不完整\"}；遮挡、智能隐藏与空间利用需手动验证\"\n                    \"content\" -> \"第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常\"\n                    \"compatibility\" -> \"设备及屏幕起止状态；系统屏幕通知${observedScreen}条（可能漏记）；手势、Root/注入兼容性未自动验收\"\n                    \"services\" -> \"工作组、快捷栏、更新签名与收款码尚无自动验证事件；未测试\"\n                    else -> \"不可观测\"\n                }\n                appendLine(\"${module.name}：$coverage\")\n            }\n            appendLine(\"版本：${version.take(60)}\")"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageIssueDiagnosticActivity.kt": {
+      "previous_blob_sha1": "997deadd7e3b6568bd453997c51316c455d7562d",
+      "patches": [
+        {
+          "before": "    private var pending = false\n    private val durationValues",
+          "after": "    private var pending = false\n    private var pendingExportId: String? = null\n    private val durationValues"
+        },
+        {
+          "before": "        val report = session.latestReport()\n        if (report.isBlank()) { toast(\"还没有报告，请先结束测试\"); return@registerForActivityResult }",
+          "after": "        val id = pendingExportId\n        pendingExportId = null\n        val report = id?.let { runCatching { session.report(it) }.getOrNull() }\n        if (report.isNullOrBlank()) { toast(\"所选报告已不可用，请重新选择\"); return@registerForActivityResult }"
+        },
+        {
+          "before": "        if (uri == null) return@registerForActivityResult\n        val id = pendingExportId",
+          "after": "        if (uri == null) { pendingExportId = null; return@registerForActivityResult }\n        val id = pendingExportId"
+        },
+        {
+          "before": "        super.onCreate(savedInstanceState)\n        supportActionBar?.hide()",
+          "after": "        super.onCreate(savedInstanceState)\n        pendingExportId = savedInstanceState?.getString(\"diagnostic_export_id\")\n        supportActionBar?.hide()"
+        },
+        {
+          "before": "        body.addView(line(\"选择问题类别和操作说明\",16f))",
+          "after": "        body.addView(line(\"一键综合诊断 / 五大专项（共用一个会话）\",16f))"
+        },
+        {
+          "before": "        startButton=Button(this).apply{text=\"开始自动测试\";setOnClickListener{start()}}",
+          "after": "        startButton=Button(this).apply{text=\"开始诊断\";setOnClickListener{start()}}"
+        },
+        {
+          "before": "        exportButton=Button(this).apply{text=\"导出TXT报告\";setOnClickListener{\n            if(session.latestReport().isNotBlank())\n                saveDocument.launch(\"台前调度-故障报告.txt\")\n        }}\n        body.addView(exportButton,LinearLayout.LayoutParams(-1,-2))",
+          "after": "        exportButton=Button(this).apply{text=\"导出最新TXT报告\";setOnClickListener{\n            session.latestRecord()?.let(::exportRecord)\n        }}\n        body.addView(exportButton,LinearLayout.LayoutParams(-1,-2))\n        body.addView(Button(this).apply{text=\"查看历史报告（最近10份）\";setOnClickListener{showHistory()}},\n            LinearLayout.LayoutParams(-1,-2))"
+        },
+        {
+          "before": "        body.addView(line(\"报告含机型、系统、测试前后电量温度、小窗数量、运行计数及结束时最近五次动画交换诊断，以及你选择的类别／说明。不含完整崩溃堆栈，不能单独证明软件耗电多少。报告不会自动上传。\"))",
+          "after": "        body.addView(line(\"报告包含五大专项的证据覆盖说明、起止快照及近期交换记录。未触发、不可观测或未测试的项目不会标记为通过。最近10份报告仅在本机保留，详情与导出按需打开，不会自动上传。\"))"
+        },
+        {
+          "before": "            category.setSelection(StageIssueTestCatalog.cases.indexOfFirst{\n                it.id==session.selectedCategory()\n            }.coerceAtLeast(0))",
+          "after": "            category.setSelection(StageIssueTestCatalog.selectionIndex(session.selectedCategory()))"
+        },
+        {
+          "before": "    private fun start(){\n        if(pending || session.active())return\n        if(session.latestReport().isNotBlank()){\n            MaterialAlertDialogBuilder(this).setTitle(\"开启新测试？\")\n                .setMessage(\"上次的报告还存在本机。开始新测试会覆盖旧报告，请先导出需要保留的内容。\")\n                .setNegativeButton(\"取消\",null)\n                .setPositiveButton(\"覆盖并开始\"){_,_->begin()}\n                .show()\n        } else begin()\n    }",
+          "after": "    override fun onSaveInstanceState(outState: Bundle) {\n        outState.putString(\"diagnostic_export_id\", pendingExportId)\n        super.onSaveInstanceState(outState)\n    }\n\n    private fun exportRecord(record: StageIssueHistoryPolicy.Record) {\n        pendingExportId = record.id\n        runCatching { saveDocument.launch(\"台前调度-故障报告-${record.startedAt}.txt\") }\n            .onFailure { pendingExportId = null; toast(\"无法打开保存位置\") }\n    }\n\n    private fun showHistory() {\n        if (pending) return\n        val records = runCatching { session.reports() }\n            .getOrElse { toast(\"历史报告读取失败，最新报告仍可单独导出\"); return }\n        if (records.isEmpty()) { toast(\"暂无历史报告\"); return }\n        val format = java.text.SimpleDateFormat(\"yyyy-MM-dd HH:mm\",java.util.Locale.getDefault())\n        val titles = records.map {\n            format.format(java.util.Date(it.startedAt)) + \" · \" + StageIssueTestCatalog.find(it.category).name\n        }.toTypedArray()\n        MaterialAlertDialogBuilder(this).setTitle(\"诊断历史（最近10份）\")\n            .setItems(titles) { _, which ->\n                val record = records[which]\n                MaterialAlertDialogBuilder(this).setTitle(titles[which])\n                    .setMessage(record.text)\n                    .setNegativeButton(\"关闭\",null)\n                    .setPositiveButton(\"导出TXT\"){_,_->exportRecord(record)}\n                    .show()\n            }.setNegativeButton(\"关闭\",null).show()\n    }\n\n    private fun start(){\n        if(pending || session.active())return\n        begin()\n    }"
+        },
+        {
+          "before": "        val chosen=StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id ?: \"other\"",
+          "after": "        val chosen=StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id ?: \"all\""
+        },
+        {
+          "before": "        val token=session.begin(BatterySample.read(this),chosen,minutes,version,\n            note.text.toString(),StageIssueSceneSnapshot.read(this))",
+          "after": "        val token=runCatching { session.begin(BatterySample.read(this),chosen,minutes,version,\n            note.text.toString(),StageIssueSceneSnapshot.read(this)) }\n            .getOrElse { toast(\"无法开启诊断：${it.message ?: \"存储不可用\"}\"); render(); return }"
+        },
+        {
+          "before": "        toast(\"已开始，${minutes/60_000}分钟后自动结束\")",
+          "after": "        toast(\"已开始，${minutes/60_000}分钟到期（系统休眠可能延期生成报告）\")"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageIssueReportPolicy.kt": {
+      "previous_blob_sha1": "6d0273580d525e3a360d4b2139e59db8be39b90d",
+      "patches": [
+        {
+          "before": "    const val MAX_DURATION_MS = 30 * 60 * 1000L",
+          "after": "    const val MAX_DURATION_MS = 60 * 60 * 1000L"
+        },
+        {
+          "before": "    val DURATION_OPTIONS_MS = listOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L)",
+          "after": "    val DURATION_OPTIONS_MS = listOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L)"
+        }
+      ]
     }
   }
 }

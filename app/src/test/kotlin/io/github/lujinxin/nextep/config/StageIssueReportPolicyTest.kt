@@ -5,10 +5,13 @@ import org.junit.Test
 
 class StageIssueReportPolicyTest {
     @Test fun onlySupportedDurationsAndDefault() {
-        assertEquals(listOf(300000L,900000L,1800000L),StageIssueReportPolicy.DURATION_OPTIONS_MS)
+        assertEquals(listOf(300000L,900000L,1800000L,3600000L),StageIssueReportPolicy.DURATION_OPTIONS_MS)
         assertEquals(900000L,StageIssueReportPolicy.selectedDuration(1L))
         assertEquals(300000L,StageIssueReportPolicy.selectedDuration(300000L))
         assertEquals(1800000L,StageIssueReportPolicy.selectedDuration(1800000L))
+        assertEquals(3600000L,StageIssueReportPolicy.selectedDuration(3600000L))
+        assertFalse(StageIssueReportPolicy.isDue(0L,3599999L,3600000L))
+        assertTrue(StageIssueReportPolicy.isDue(0L,3600000L,3600000L))
     }
     @Test fun expiryUsesMonotonicClockAndHandlesRebootLikeReset() {
         val start=123456L

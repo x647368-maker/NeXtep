@@ -44,12 +44,15 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private lateinit var saveNoteButton: Button
     private lateinit var exportButton: Button
     private var pending = false
+    private var pendingExportId: String? = null
     private val durationValues = StageIssueReportPolicy.DURATION_OPTIONS_MS
 
     private val saveDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        if (uri == null) return@registerForActivityResult
-        val report = session.latestReport()
-        if (report.isBlank()) { toast("还没有报告，请先结束测试"); return@registerForActivityResult }
+        if (uri == null) { pendingExportId = null; return@registerForActivityResult }
+        val id = pendingExportId
+        pendingExportId = null
+        val report = id?.let { runCatching { session.report(it) }.getOrNull() }
+        if (report.isNullOrBlank()) { toast("所选报告已不可用，请重新选择"); return@registerForActivityResult }
         runCatching {
             checkNotNull(contentResolver.openOutputStream(uri)) { "保存位置无法打开" }.use {
                 it.write(report.toByteArray(Charsets.UTF_8))
@@ -60,6 +63,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingExportId = savedInstanceState?.getString("diagnostic_export_id")
         supportActionBar?.hide()
         WindowCompat.setDecorFitsSystemWindows(window,false)
         val density=resources.displayMetrics.density
@@ -76,7 +80,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
 
         body.addView(line("故障测试与报告",24f).apply{typeface=Typeface.DEFAULT_BOLD})
         body.addView(line("一键开始 → 正常使用 → 到期自动结束 → 回来导出。期间不持续录屏、扫描或唤醒手机。深度休眠时到期报告可能延后生成。"))
-        body.addView(line("选择问题类别和操作说明",16f))
+        body.addView(line("一键综合诊断 / 五大专项（共用一个会话）",16f))
         category=Spinner(this)
         category.adapter=ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
             StageIssueTestCatalog.cases.map{it.name})
@@ -105,7 +109,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
 
         status=line("")
         body.addView(status)
-        startButton=Button(this).apply{text="开始自动测试";setOnClickListener{start()}}
+        startButton=Button(this).apply{text="开始诊断";setOnClickListener{start()}}
         markButton=Button(this).apply{text="标记问题（可选）";setOnClickListener{mark()}}
         stopButton=Button(this).apply{text="提前结束并生成报告";setOnClickListener{finishTest("用户提前结束")}}
         for (b in listOf(startButton,markButton,stopButton))
@@ -126,12 +130,13 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             toast("说明已保存到本机报告")
         }}
         body.addView(saveNoteButton,LinearLayout.LayoutParams(-1,-2))
-        exportButton=Button(this).apply{text="导出TXT报告";setOnClickListener{
-            if(session.latestReport().isNotBlank())
-                saveDocument.launch("台前调度-故障报告.txt")
+        exportButton=Button(this).apply{text="导出最新TXT报告";setOnClickListener{
+            session.latestRecord()?.let(::exportRecord)
         }}
         body.addView(exportButton,LinearLayout.LayoutParams(-1,-2))
-        body.addView(line("报告含机型、系统、测试前后电量温度、小窗数量、运行计数及结束时最近五次动画交换诊断，以及你选择的类别／说明。不含完整崩溃堆栈，不能单独证明软件耗电多少。报告不会自动上传。"))
+        body.addView(Button(this).apply{text="查看历史报告（最近10份）";setOnClickListener{showHistory()}},
+            LinearLayout.LayoutParams(-1,-2))
+        body.addView(line("报告包含五大专项的证据覆盖说明、起止快照及近期交换记录。未触发、不可观测或未测试的项目不会标记为通过。最近10份报告仅在本机保留，详情与导出按需打开，不会自动上传。"))
         body.addView(Button(this).apply{text="返回台前调度";setOnClickListener{finish()}})
         val scroll=ScrollView(this).apply{isFillViewport=true;addView(body)}
         ViewCompat.setOnApplyWindowInsetsListener(scroll){ view,insets ->
@@ -149,9 +154,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         super.onResume()
         if(!::status.isInitialized)return
         if(session.active()){
-            category.setSelection(StageIssueTestCatalog.cases.indexOfFirst{
-                it.id==session.selectedCategory()
-            }.coerceAtLeast(0))
+            category.setSelection(StageIssueTestCatalog.selectionIndex(session.selectedCategory()))
             duration.setSelection(durationValues.indexOf(session.durationMs()).coerceAtLeast(0))
             if(note.text.isNullOrBlank() && session.storedNote().isNotBlank())
                 note.setText(session.storedNote())
@@ -167,23 +170,49 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     }
     override fun onDestroy(){uiHandler.removeCallbacks(uiDeadline);super.onDestroy()}
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("diagnostic_export_id", pendingExportId)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun exportRecord(record: StageIssueHistoryPolicy.Record) {
+        pendingExportId = record.id
+        runCatching { saveDocument.launch("台前调度-故障报告-${record.startedAt}.txt") }
+            .onFailure { pendingExportId = null; toast("无法打开保存位置") }
+    }
+
+    private fun showHistory() {
+        if (pending) return
+        val records = runCatching { session.reports() }
+            .getOrElse { toast("历史报告读取失败，最新报告仍可单独导出"); return }
+        if (records.isEmpty()) { toast("暂无历史报告"); return }
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm",java.util.Locale.getDefault())
+        val titles = records.map {
+            format.format(java.util.Date(it.startedAt)) + " · " + StageIssueTestCatalog.find(it.category).name
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(this).setTitle("诊断历史（最近10份）")
+            .setItems(titles) { _, which ->
+                val record = records[which]
+                MaterialAlertDialogBuilder(this).setTitle(titles[which])
+                    .setMessage(record.text)
+                    .setNegativeButton("关闭",null)
+                    .setPositiveButton("导出TXT"){_,_->exportRecord(record)}
+                    .show()
+            }.setNegativeButton("关闭",null).show()
+    }
+
     private fun start(){
         if(pending || session.active())return
-        if(session.latestReport().isNotBlank()){
-            MaterialAlertDialogBuilder(this).setTitle("开启新测试？")
-                .setMessage("上次的报告还存在本机。开始新测试会覆盖旧报告，请先导出需要保留的内容。")
-                .setNegativeButton("取消",null)
-                .setPositiveButton("覆盖并开始"){_,_->begin()}
-                .show()
-        } else begin()
+        begin()
     }
     private fun begin(){
         if(pending || session.active())return
-        val chosen=StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id ?: "other"
+        val chosen=StageIssueTestCatalog.cases.getOrNull(category.selectedItemPosition)?.id ?: "all"
         val minutes=durationValues.getOrElse(duration.selectedItemPosition){StageIssueReportPolicy.DEFAULT_DURATION_MS}
         val version=runCatching{UpdateCoordinator.installed(this).versionName}.getOrNull()?:"未知"
-        val token=session.begin(BatterySample.read(this),chosen,minutes,version,
-            note.text.toString(),StageIssueSceneSnapshot.read(this))
+        val token=runCatching { session.begin(BatterySample.read(this),chosen,minutes,version,
+            note.text.toString(),StageIssueSceneSnapshot.read(this)) }
+            .getOrElse { toast("无法开启诊断：${it.message ?: "存储不可用"}"); render(); return }
         StageIssueEventObserver.enable(this)
         WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true){ snapshot ->
             session.setStartRuntime(token,snapshot)
@@ -191,7 +220,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         }
         checkDueAndArmUi()
         render()
-        toast("已开始，${minutes/60_000}分钟后自动结束")
+        toast("已开始，${minutes/60_000}分钟到期（系统休眠可能延期生成报告）")
     }
     private fun mark(){
         if(pending || !session.mayMark()){toast("标记已超时或达到次数上限");return}
