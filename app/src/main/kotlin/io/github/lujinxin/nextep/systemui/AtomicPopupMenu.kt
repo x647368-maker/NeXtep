@@ -65,10 +65,9 @@ internal object AtomicPopupMenu {
             val height=minOf(dp(48)*count+dp(12),(safe.height()*.38f).toInt(),dp(300)).coerceAtLeast(1)
             val xy=IntArray(2);anchor.getLocationOnScreen(xy)
             fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
-            val pos=StageMenuPlacement.compact(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),
-                width,height,dp(160),dp(60),avoid.map{it.box()},dp(8))
-            if(initialized)popup.update(pos.l,pos.t,pos.w,pos.h) else {
-                popup.width=pos.w;popup.height=pos.h
+            val pos=StageMenuPlacement.place(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),width,height,avoid.map{it.box()},dp(8))
+            if(initialized)popup.update(pos.l,pos.t,width,height) else {
+                popup.width=width;popup.height=height
                 popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,pos.l,pos.t);initialized=true
             }
         }
