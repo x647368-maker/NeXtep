@@ -356,6 +356,26 @@
         {
           "before": "    private fun syncCoreViewport() {\n        core.layoutScope = viewport.prepareLayoutScope()\n        sidebarSide = viewport.selectedSidebarSide()\n        viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0\n        viewport.adaptive = core.adaptive\n        viewport.mainPriority = core.mainPriority\n        viewport.mainInputRegionReady = sidebarTouchRegionReady\n        viewport.quickExpanded = core.enabled && core.expanded\n        cinemaSlot?.let { index ->\n            if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {\n                cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()\n            }\n        }\n        viewport.cinema = cinemaSlot != null && !sidebarCollapsed\n        viewport.cinemaPortrait = cinemaPortrait\n    }\n\n",
           "after": "    private fun syncCoreViewport(preparedScope: String? = null) {\n        core.layoutScope = preparedScope ?: viewport.prepareLayoutScope()\n        sidebarSide = viewport.selectedSidebarSide()\n        val states = slotCoordinator?.slotStates().orEmpty()\n        viewport.activeCount = states.count { it is SlotState.Occupied }\n        viewport.adaptive = core.adaptive\n        viewport.mainPriority = core.mainPriority\n        viewport.mainInputRegionReady = sidebarTouchRegionReady\n        viewport.quickExpanded = core.enabled && core.expanded\n        cinemaSlot?.let { index ->\n            if ((states.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {\n                cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()\n            }\n        }\n        viewport.cinema = cinemaSlot != null && !sidebarCollapsed\n        viewport.cinemaPortrait = cinemaPortrait\n    }\n\n"
+        },
+        {
+          "before": "            mediaSignals.start()\n            scheduleCinemaCheck()",
+          "after": "            if (pendingResumeContent != null) return\n            mediaSignals.start()\n            scheduleCinemaCheck()"
+        },
+        {
+          "before": "        updateCinemaMonitoring(); refreshQuickBar()\n        // Wake reuses",
+          "after": "        // The existing frame-commit/fallback callback starts media monitoring.\n        refreshQuickBar()\n        // Wake reuses"
+        },
+        {
+          "before": "                NeXtepLog.warn(\"workspace_unlock\", \"Slot outputs resume pending\", it)\n            }\n        }",
+          "after": "                NeXtepLog.warn(\"workspace_unlock\", \"Slot outputs resume pending\", it)\n            }\n            runCatching { updateCinemaMonitoring() }.onFailure {\n                NeXtepLog.warn(\"workspace_unlock\", \"Media monitoring resume pending\", it)\n            }\n        }"
+        },
+        {
+          "before": "if (!workspaceVisible || suspended || cinemaCheckQueued ||",
+          "after": "if (!workspaceVisible || suspended || pendingResumeContent != null || cinemaCheckQueued ||"
+        },
+        {
+          "before": "if (!workspaceVisible || suspended || cinemaApplying || groupInputBlocked || workgroups.isSwitching() ||",
+          "after": "if (!workspaceVisible || suspended || pendingResumeContent != null || cinemaApplying || groupInputBlocked || workgroups.isSwitching() ||"
         }
       ]
     },
