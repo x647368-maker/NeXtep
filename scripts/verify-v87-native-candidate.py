@@ -16,7 +16,7 @@ REVIEW_TARGET = "b4ef45a111702da7bee85029c981ccc31a9411e5"
 SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
-NEW = {"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "5ca7fb96cc4606994080788f4f93386833de936e"}
+NEW = {"app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": "dc9e1769f44047613a545a76d6b2f7687aad87d8", "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": "5ca7fb96cc4606994080788f4f93386833de936e"}
 PINS = {
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": ("f332c2708447ccbd11a4aff1eb434274b5a28980", "2ce8336fd6dbd34e2c9e352bf2871506c786e803"),
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageLiveMirrorPrimitiveRegression.kt": ("e0761b9400cd9528bdab6780b7c968f213ba0f60", "df5c0c4d2551274245db55b7e89acb690c2786cb"),
@@ -140,7 +140,7 @@ def main():
         old = git(root, "ls-tree", BASE, "--", file)
         if actual != pin or mode != b"100644" or old:
             raise SystemExit("unexpected new test object: "+file)
-    print("PASS: committed candidate matches 14 exact file pairs and 1 new pinned test; no extra paths except this auditor.")
+    print("PASS: committed candidate matches 14 exact file pairs and 2 new pinned files; no extra paths except this auditor.")
     check_candidate_contracts(root, ref)
     if args.historical:
         historical_on_normalized_copy(root, ref)
