@@ -29,6 +29,9 @@ import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyContract
  * and one OS non-wakeup alarm are the only time-based operations.
  */
 class StageIssueDiagnosticActivity : AppCompatActivity() {
+    companion object {
+        const val EXTRA_CATEGORY = "atomic_issue_category"
+    }
     private val session by lazy { StageIssueSession(this) }
     private val uiHandler = Handler(Looper.getMainLooper())
     private val uiDeadline = Runnable { if (session.active() && session.isDue()) finishTest("到期（测试页面）") else render() }
@@ -84,6 +87,9 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         category=Spinner(this)
         category.adapter=ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
             StageIssueTestCatalog.cases.map{it.name})
+        if (savedInstanceState == null && !session.active()) {
+            category.setSelection(StageIssueTestCatalog.selectionIndex(intent.getStringExtra(EXTRA_CATEGORY)))
+        }
         body.addView(category,LinearLayout.LayoutParams(-1,dp(50)))
         instruction=line("")
         body.addView(instruction)

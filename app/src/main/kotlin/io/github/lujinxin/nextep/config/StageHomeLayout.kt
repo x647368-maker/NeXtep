@@ -11,11 +11,13 @@ internal object StageHomeLayout {
     data class Section(val title:String,val items:List<Item>)
     val sections=listOf(
         Section("工作台",listOf(Item("窗口布局","windows","windows"),Item("影音与快捷栏","core","apps"),
-            Item("工作组","groups","groups"),Item("启动手势","gestures","gesture"))),
-        Section("系统",listOf(Item("快捷开关","tile","tile"),Item("运行诊断","diagnostics","diagnostics"),
-            Item("软件更新","update","update"),Item("使用帮助与退出","help","book"))),
-        Section("支持",listOf(Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
-            Item("关于","about","about")))
+            Item("工作组","groups","groups"),Item("启动手势","gestures","gesture"),
+            Item("快捷开关","tile","tile"))),
+        Section("故障诊断",listOf(Item("一键综合诊断","issue_all","diagnostics"),
+            Item("专项测试与报告","issue_specialties","diagnostics"))),
+        Section("支持与服务",listOf(Item("软件更新","update","update"),
+            Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
+            Item("关于","about","about"),Item("使用帮助与退出","help","book")))
     )
     fun contentWidth(availablePixels:Int,density:Float):Int {
         require(availablePixels>0 && density>0)

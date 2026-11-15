@@ -228,7 +228,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             column.addView(body); renderHome()
         } else {
-            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
+            val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "专项测试与报告", "about" to "关于", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
             header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
@@ -275,6 +275,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 "tile" -> tile(column)
                 "help" -> help(column)
                 "diagnostics" -> diagnostics(column)
+                "issue_specialties" -> issueSpecialties(column)
                 "about" -> about(column)
                 "feedback" -> feedback(column)
                 "changelog" -> column.addView(StageChangelogPage.create(activity), LinearLayout.LayoutParams(-1, -2))
@@ -293,17 +294,16 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val root = body ?: return; root.removeAllViews()
         if (UpdateCoordinator.available(activity) != null)
             row(group(root), "发现台前调度新版本", icon = "info") { open("update") }
-        row(group(root), "故障测试与报告", "手动开启 · 标记问题 · 自行导出，平时不监控", "diagnostics") {
-            activity.startActivity(Intent(activity, StageIssueDiagnosticActivity::class.java))
-        }
-        for (section in StageHomeLayout.sections) {
+         for (section in StageHomeLayout.sections) {
             root.addView(label(section.title, 12f, secondary).apply {
                 setPadding(dp(16), dp(StageHomeLayout.SECTION_TOP_DP), dp(16), 0)
             })
             val card = group(root)
             for (item in section.items) row(card, item.name, icon = item.icon, color = blue) {
-                open(item.page)
-                if (item.page in listOf("core", "windows", "groups")) refresh()
+                if (item.page == "issue_all") launchIssue("all") else {
+                    open(item.page)
+                    if (item.page in listOf("core", "windows", "groups")) refresh()
+                }
             }
         }
         root.addView(label("ZMW小武 × GPT\n基于 NeXtep 二次开发", 11f, secondary).apply {
@@ -392,6 +392,23 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 .setPositiveButton("知道了", null).show()
         }
         root.addView(hint("主窗把手：点击打开菜单，向左滑动关闭主窗。小窗沿侧栏外侧方向滑动关闭；顶部横排时向左滑动。\n\n退出：关闭控制中心“台前调度”开关，或点击上方退出。\n\n返回键、Home 键以及收起侧栏都不等于退出。\n\n退出会恢复普通任务显示，已保存工作组记录继续保留。"))
+    }
+    private fun launchIssue(category: String? = null) {
+        val intent = Intent(activity, StageIssueDiagnosticActivity::class.java)
+        if (category != null) intent.putExtra(StageIssueDiagnosticActivity.EXTRA_CATEGORY, category)
+        activity.startActivity(intent)
+    }
+    private fun issueSpecialties(root: LinearLayout) {
+        val modules = group(root)
+        for (item in StageIssueTestCatalog.modules) {
+            row(modules, item.name, icon = "diagnostics") { launchIssue(item.id) }
+        }
+        val tools = group(root)
+        row(tools, "诊断报告与历史", "查看或导出本机报告", "diagnostics") { launchIssue() }
+        row(tools, "系统组件与连接状态", "查看注入状态、刷新连接或退出旧工作区", "diagnostics") {
+            open("diagnostics"); refresh()
+        }
+        root.addView(hint("五大专项与综合诊断共用一个会话；已有测试运行时继续该会话，不重复启动。"))
     }
     private var slotDiagnostics = "尚未取得槽位状态"
     private fun diagnostics(root: LinearLayout) {
