@@ -511,6 +511,7 @@ class NeXtepWindowController(
 
     private var lastN5ParallelScene: StageNativeParallelDiagnostics.Scene? = null
     private var lastN5ParallelObservedMs: Long = 0L
+    private var lastN5ParallelAttemptMs: Long? = null
 
     /** Called while the native app is still foreground, before opening diagnostics. */
     private fun observeN5ParallelForeground() {
@@ -523,7 +524,11 @@ class NeXtepWindowController(
         if (shortSide <= 1 || dpi <= 0 ||
             shortSide * 160f / dpi < 600f ||
             maxOf(g.screenWidth, g.screenHeight).toFloat() / shortSide > 1.35f) return
-        if (SystemClock.uptimeMillis() - lastN5ParallelObservedMs < 800L) return
+        val now = SystemClock.uptimeMillis()
+        if (lastN5ParallelAttemptMs?.let { now - it < 800L } == true) return
+        // Throttle attempts, including failed queries and transient SystemUI foregrounds.
+        // Keep the successful observation timestamp separate for diagnostic age.
+        lastN5ParallelAttemptMs = now
         val scene = runCatching { nativeParallelScene() }.getOrNull() ?: return
         val foreground = scene.tasks.firstOrNull { it.display == 0 } ?: return
         if (foreground.app == "com.android.systemui" ||
