@@ -97,6 +97,7 @@ internal class StageLiveSurfaceExchange private constructor(
     }
     private var animator: ValueAnimator? = null
     private var revealAnimator: ValueAnimator? = null
+    private var revealCommitDeadline: Runnable? = null
     private var handoffCheckStarted = false
     private var handoffCheck: Runnable? = null
     private var flightDeadline: Runnable? = null
@@ -840,6 +841,20 @@ internal class StageLiveSurfaceExchange private constructor(
             return
         }
         var finalAlphaSubmitted=false
+        var finalAlphaCommitted=false
+        var revealEnded=false
+        // Only the independently gated paired route changes its handoff.
+        // Submission and compositor acknowledgment are different evidence.
+        val requireCommit=pairedRailPlan!=null && Build.VERSION.SDK_INT>=33
+        fun finishReveal() {
+            if(!isRunning)return
+            handoffReady=finalAlphaSubmitted &&
+                (!requireCommit || finalAlphaCommitted) &&
+                !hostDetached && host.isAttachedToWindow &&
+                runCatching { canRelease() && liveReady() }.getOrDefault(false)
+            trace(if(handoffReady) "endpoint_reveal_end" else "endpoint_reveal_unconfirmed")
+            stop()
+        }
         trace("endpoint_reveal_start gap=${endpointGap.toInt()}px")
         val reveal = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = READY_REVEAL_MS
@@ -847,23 +862,47 @@ internal class StageLiveSurfaceExchange private constructor(
             addUpdateListener {
                 if (!isRunning) return@addUpdateListener
                 if(hostDetached || !host.isAttachedToWindow){stop();return@addUpdateListener}
+                if(requireCommit && finalAlphaSubmitted)return@addUpdateListener
                 val alpha = StageLiveSurfaceFlightGeometry.handoffReveal(it.animatedValue as Float)
                 runCatching {
                     val tx = frameTransaction ?: error("Handoff transaction unavailable")
                     occlusion.setRevealAlpha(tx, alpha.cover)
                     tx.setAlpha(sourceMirror, alpha.mirror)
                     tx.setAlpha(mainMirror, alpha.mirror)
+                    val terminal=alpha.cover==0f && alpha.mirror==0f
+                    if(requireCommit && terminal) {
+                        runCatching {
+                            tx.addTransactionCommittedListener(host.context.mainExecutor) {
+                                if(!isRunning || hostDetached)return@addTransactionCommittedListener
+                                finalAlphaCommitted=true
+                                trace("endpoint_reveal_commit")
+                                if(revealEnded)finishReveal()
+                            }
+                        }.onFailure { runCatching { trace("endpoint_reveal_commit_listener_unavailable") } }
+                    }
                     tx.apply()
-                    if(alpha.cover==0f && alpha.mirror==0f) finalAlphaSubmitted=true
+                    if(terminal) finalAlphaSubmitted=true
                 }.onFailure { stop() }
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     if (!isRunning) return
-                    handoffReady=finalAlphaSubmitted &&
-                        runCatching { canRelease() && liveReady() }.getOrDefault(false)
-                    trace(if(handoffReady) "endpoint_reveal_end" else "endpoint_reveal_unconfirmed")
-                    stop()
+                    revealEnded=true
+                    if(requireCommit && finalAlphaSubmitted && !finalAlphaCommitted &&
+                        !hostDetached && host.isAttachedToWindow) {
+                        // One bounded wait, no polling and no new Surface. If
+                        // the compositor never confirms, release the visual
+                        // resources, but never report a confirmed handoff.
+                        val timeout=Runnable {
+                            revealCommitDeadline=null
+                            if(isRunning) {
+                                trace("endpoint_reveal_commit_timeout")
+                                finishReveal()
+                            }
+                        }
+                        revealCommitDeadline=timeout
+                        if(!ui.postDelayed(timeout,StageConcurrentNativeTrialPolicy.TERMINAL_COMMIT_BUDGET_MS))finishReveal()
+                    } else finishReveal()
                 }
             })
         }
@@ -887,6 +926,8 @@ internal class StageLiveSurfaceExchange private constructor(
         flightDeadline=null
         deferredMove?.let { ui.removeCallbacks(it) }
         deferredMove=null
+        revealCommitDeadline?.let { ui.removeCallbacks(it) }
+        revealCommitDeadline=null
         lastOutcome=if(!unmaskedMove && firstTransactionCommitted && nativeFrameCount>1 &&
             moveComplete && handoffReady)
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
