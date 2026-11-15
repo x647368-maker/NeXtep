@@ -1373,7 +1373,8 @@ class NeXtepWindowController(
         // repeatedly propose an unsupported landscape cinema presentation.
         if (sidebarCollapsed || smartRail.hidden || viewport.geometry(sidebarSide).isLandscape) {
             directionDebounce.reset()
-            val retained = cinemaPolicy.task?.let { setOf(it) }.orEmpty()
+            val retained = slotCoordinator?.slotStates().orEmpty()
+                .filterIsInstance<SlotState.Occupied>().mapTo(mutableSetOf()) { it.taskId }
             cinemaPolicy.update(null, retained, emptySet(), android.os.SystemClock.uptimeMillis(), retained)
             return
         }

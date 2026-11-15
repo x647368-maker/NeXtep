@@ -35,7 +35,8 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         }.getOrNull()
     }
     fun start() {
-        if (listening || manager == null) return
+        if (listening) return
+        val service = manager ?: return
         val token = ++epoch
         val cb = object : MediaController.Callback() {
             override fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -43,7 +44,7 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
             }
             override fun onSessionDestroyed() {
                 if (!current(token)) return
-                val next = runCatching { manager.getActiveSessions(null) }.getOrNull() ?: return
+                val next = runCatching { service.getActiveSessions(null) }.getOrNull() ?: return
                 bind(token, next)
             }
         }
@@ -54,8 +55,8 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         listener = activeListener
         listening = true
         runCatching {
-            manager.addOnActiveSessionsChangedListener(activeListener, null, handler)
-            bind(token, manager.getActiveSessions(null).orEmpty())
+            service.addOnActiveSessionsChangedListener(activeListener, null, handler)
+            bind(token, service.getActiveSessions(null).orEmpty())
         }.onFailure { stop() }
     }
     private fun bind(token: Int, next: List<MediaController>) {

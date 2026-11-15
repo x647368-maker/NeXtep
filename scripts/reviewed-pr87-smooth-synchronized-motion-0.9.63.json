@@ -204,6 +204,10 @@
         {
           "before": "            cinemaPolicy.update(null, emptySet(), emptySet(), android.os.SystemClock.uptimeMillis())\n            return\n        }\n        val states",
           "after": "            val retained = cinemaPolicy.task?.let { setOf(it) }.orEmpty()\n            cinemaPolicy.update(null, retained, emptySet(), android.os.SystemClock.uptimeMillis(), retained)\n            return\n        }\n        val states"
+        },
+        {
+          "before": "            val retained = cinemaPolicy.task?.let { setOf(it) }.orEmpty()\n            cinemaPolicy.update(null, retained, emptySet(), android.os.SystemClock.uptimeMillis(), retained)",
+          "after": "            val retained = slotCoordinator?.slotStates().orEmpty()\n                .filterIsInstance<SlotState.Occupied>().mapTo(mutableSetOf()) { it.taskId }\n            cinemaPolicy.update(null, retained, emptySet(), android.os.SystemClock.uptimeMillis(), retained)"
         }
       ]
     },
@@ -258,6 +262,18 @@
         {
           "before": "    fun start() {\n        if (listening) return\n        runCatching {\n            manager?.addOnActiveSessionsChangedListener(listener, null, handler)\n            listening = true\n            bind(manager?.getActiveSessions(null).orEmpty())\n        }.onFailure { stop() }\n    }\n    private fun bind(next: List<MediaController>) {\n        sessions.forEach { runCatching { it.unregisterCallback(callback) } }\n        sessions = next\n        sessions.forEach { runCatching { it.registerCallback(callback, handler) } }\n        changed()\n    }\n    fun stop() {\n        if (listening) runCatching { manager?.removeOnActiveSessionsChangedListener(listener) }\n        listening = false\n        sessions.forEach { runCatching { it.unregisterCallback(callback) } }; sessions = emptyList()\n    }",
           "after": "    fun start() {\n        if (listening || manager == null) return\n        val token = ++epoch\n        val cb = object : MediaController.Callback() {\n            override fun onPlaybackStateChanged(state: PlaybackState?) {\n                if (current(token)) changed()\n            }\n            override fun onSessionDestroyed() {\n                if (!current(token)) return\n                val next = runCatching { manager.getActiveSessions(null) }.getOrNull() ?: return\n                bind(token, next)\n            }\n        }\n        val activeListener = MediaSessionManager.OnActiveSessionsChangedListener {\n            if (current(token)) bind(token, it.orEmpty())\n        }\n        callback = cb\n        listener = activeListener\n        listening = true\n        runCatching {\n            manager.addOnActiveSessionsChangedListener(activeListener, null, handler)\n            bind(token, manager.getActiveSessions(null).orEmpty())\n        }.onFailure { stop() }\n    }\n    private fun bind(token: Int, next: List<MediaController>) {\n        if (!current(token)) return\n        val cb = callback ?: return\n        val unique = next.distinctBy { it.sessionToken }\n        // Unchanged sessions keep their existing callback registration.\n        val oldByToken = sessions.associateBy { it.sessionToken }\n        val nextTokens = unique.map { it.sessionToken }.toSet()\n        sessions.filter { it.sessionToken !in nextTokens }.forEach {\n            runCatching { it.unregisterCallback(cb) }\n        }\n        sessions = unique.map { controller ->\n            oldByToken[controller.sessionToken] ?: controller.also {\n                runCatching { it.registerCallback(cb, handler) }\n            }\n        }\n        changed()\n    }\n    fun stop() {\n        // Invalidate first, including callbacks delivered during unregister.\n        epoch++\n        listening = false\n        val oldListener = listener\n        val oldCallback = callback\n        val oldSessions = sessions\n        listener = null; callback = null; sessions = emptyList()\n        oldListener?.let { runCatching { manager?.removeOnActiveSessionsChangedListener(it) } }\n        oldCallback?.let { cb ->\n            oldSessions.forEach { runCatching { it.unregisterCallback(cb) } }\n        }\n    }"
+        },
+        {
+          "before": "        if (listening || manager == null) return\n",
+          "after": "        if (listening) return\n        val service = manager ?: return\n"
+        },
+        {
+          "before": "val next = runCatching { manager.getActiveSessions(null) }.getOrNull() ?: return",
+          "after": "val next = runCatching { service.getActiveSessions(null) }.getOrNull() ?: return"
+        },
+        {
+          "before": "            manager.addOnActiveSessionsChangedListener(activeListener, null, handler)\n            bind(token, manager.getActiveSessions(null).orEmpty())",
+          "after": "            service.addOnActiveSessionsChangedListener(activeListener, null, handler)\n            bind(token, service.getActiveSessions(null).orEmpty())"
         }
       ]
     }
