@@ -693,6 +693,10 @@
         {
           "before": "        footer.addView(label(\"台前调度 · Atomic Workbench\\nZMW小武 × GPT\\n基于 NeXtep 二次开发 · $versionName\", 11f, secondary).apply {\n            setLineSpacing(dp(3).toFloat(),1f)\n        },LinearLayout.LayoutParams(-2,-2,0f))",
           "after": "        val identity=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL}\n        identity.addView(label(\"台前调度 · Atomic Workbench\",12f).apply{typeface=Typeface.DEFAULT_BOLD})\n        identity.addView(label(\"二次开发：ZMW小武 × GPT\",11f,secondary))\n        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))\n        footer.addView(label(versionName,11f,secondary).apply{\n            gravity=Gravity.CENTER;setPadding(dp(8),dp(5),dp(8),dp(5))\n            background=GradientDrawable().apply{setColor(cardColor);cornerRadius=dp(14).toFloat()}\n        },LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(6)})"
+        },
+        {
+          "before": "        identity.addView(label(\"二次开发：ZMW小武 × GPT\",11f,secondary))\n        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))",
+          "after": "        identity.addView(label(\"二次开发：ZMW小武 × GPT\",11f,secondary))\n        identity.addView(label(\"基于 NeXtep 二次开发\",10f,secondary))\n        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))"
         }
       ]
     }

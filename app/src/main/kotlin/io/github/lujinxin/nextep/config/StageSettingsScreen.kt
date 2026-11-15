@@ -457,6 +457,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val identity=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL}
         identity.addView(label("台前调度 · Atomic Workbench",12f).apply{typeface=Typeface.DEFAULT_BOLD})
         identity.addView(label("二次开发：ZMW小武 × GPT",11f,secondary))
+        identity.addView(label("基于 NeXtep 二次开发",10f,secondary))
         footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
         footer.addView(label(versionName,11f,secondary).apply{
             gravity=Gravity.CENTER;setPadding(dp(8),dp(5),dp(8),dp(5))
