@@ -83,8 +83,10 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var firstObserver:android.view.ViewTreeObserver?=null
         private var firstRetry:Runnable?=null
         private var motionCommit:Runnable?=null
+        private var motionObserver:android.view.ViewTreeObserver?=null
         private var motionDeadline:Runnable?=null
         private var terminalCommit:Runnable?=null
+        private var terminalObserver:android.view.ViewTreeObserver?=null
         private var terminalTimeout:Runnable?=null
         private var terminalRetry:Runnable?=null
         private val terminalRecovery=StageTerminalCommitRecovery()
@@ -101,6 +103,14 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(current() && waitingCommit){waitingCommit=false; direct("first_commit_timeout")}
         }
         private val lifetime=Runnable {if(current())finish("lifetime_timeout")}
+        private val attachmentListener=object:View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v:View) = Unit
+            override fun onViewDetachedFromWindow(v:View) {
+                // Do not remove children while the framework is dispatching
+                // detach. Even a quick reattach changes the old frame owner.
+                ui.post { if(current())finish("host_detached") }
+            }
+        }
         private val checkHandoff=object:Runnable{
             override fun run(){
                 if(!current())return
@@ -127,6 +137,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         fun begin(){
             val deadline=SystemClock.uptimeMillis()+StageTransientTapPolicy.CAPTURE_BUDGET_MS
+            host.addOnAttachStateChangeListener(attachmentListener)
             trace("snapshot_capture_begin")
             ui.postDelayed(captureTimeout,StageTransientTapPolicy.CAPTURE_BUDGET_MS)
             ui.postDelayed(lifetime,StageTransientTapPolicy.MAX_ATTEMPT_MS)
@@ -301,16 +312,19 @@ internal class StageTransientTapSwap(private val context:Context) {
             }
             motionCommit=callback;motionDeadline=deadline
             ui.postDelayed(deadline,48L)
-            runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}
-                .onFailure{trace("snapshot_motion_callback_unavailable")}
+            runCatching{
+                val observer=host.viewTreeObserver
+                motionObserver=observer
+                observer.registerFrameCommitCallback(callback)
+            }.onFailure{trace("snapshot_motion_callback_unavailable")}
             v.invalidate()
         }
         private fun clearMotionCallbacks(){
             motionCommit?.let{cb->
-                runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
+                runCatching{motionObserver?.let{if(it.isAlive)it.unregisterFrameCommitCallback(cb)}}
             }
             motionDeadline?.let{ui.removeCallbacks(it)}
-            motionCommit=null;motionDeadline=null
+            motionCommit=null;motionObserver=null;motionDeadline=null
         }
         private fun awaitTerminalFrame(v:FlightView){
             if(!current() || terminalCommit!=null || flightDone)return
@@ -335,14 +349,18 @@ internal class StageTransientTapSwap(private val context:Context) {
             fun registerAndRender(){
                 // Register BEFORE dirtying the endpoint. An animator's end
                 // callback alone is not proof of an HWUI terminal frame.
-                runCatching{host.viewTreeObserver.registerFrameCommitCallback(callback)}
-                    .onFailure{trace("snapshot_terminal_callback_unavailable")}
+                runCatching{
+                    val observer=host.viewTreeObserver
+                    terminalObserver=observer
+                    observer.registerFrameCommitCallback(callback)
+                }.onFailure{trace("snapshot_terminal_callback_unavailable")}
                 v.invalidate()
                 host.invalidate()
             }
             val retry=Runnable{
                 if(current() && !flightDone && terminalRecovery.retry()){
-                    runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(callback)}
+                    runCatching{terminalObserver?.let{if(it.isAlive)it.unregisterFrameCommitCallback(callback)}}
+                    terminalObserver=null
                     trace("snapshot_terminal_commit_retry")
                     registerAndRender()
                 }
@@ -355,12 +373,12 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         private fun clearTerminalCallbacks(){
             terminalCommit?.let{cb->
-                runCatching{host.viewTreeObserver.unregisterFrameCommitCallback(cb)}
+                runCatching{terminalObserver?.let{if(it.isAlive)it.unregisterFrameCommitCallback(cb)}}
             }
             terminalTimeout?.let{ui.removeCallbacks(it)}
             terminalRetry?.let{ui.removeCallbacks(it)}
             terminalRecovery.close()
-            terminalCommit=null;terminalTimeout=null;terminalRetry=null
+            terminalCommit=null;terminalObserver=null;terminalTimeout=null;terminalRetry=null
         }
         private fun direct(why:String){
             if(!current() || moveStarted)return
@@ -392,7 +410,10 @@ internal class StageTransientTapSwap(private val context:Context) {
                     if(Looper.myLooper()==ui.looper) acknowledgeMove(ok)
                     else ui.post { acknowledgeMove(ok) }
                 }
-            }.onFailure{finish("move_exception")}
+            }.onFailure{
+                if(!moveAck)finish("move_exception")
+                else runCatching{trace("snapshot_move_exception_after_ack")}
+            }
         }
         private fun acknowledgeMove(ok:Boolean){
             if(!current() || !moveStarted || moveAck)return
@@ -435,6 +456,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(!current())return
             active=null
             waitingCapture=false;waitingCommit=false
+            host.removeOnAttachStateChangeListener(attachmentListener)
             ui.removeCallbacks(captureTimeout);ui.removeCallbacks(commitTimeout);ui.removeCallbacks(lifetime)
             host.removeCallbacks(checkHandoff)
             // One failed visual teardown/diagnostic step cannot leave the

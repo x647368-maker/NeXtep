@@ -28,7 +28,7 @@ PINS = {
     MAIN+"StageLiveSurfaceFlightGeometry.kt": ("8849f80b22e3ce76c8ce78db6294c421023f954c", "18d3356bac56d6ce1d1c5d58cf0f369a7db06aac"),
     MAIN+"StagePrivateDualTaskFlightGate.kt": ("de055e62992e593235914bf339fb3127762449ae", "65d5ad2064c711ae3fba16e8762dce3c97fa94d8"),
     MAIN+"StageTransientTapPolicy.kt": ("a5312b523a810cfdb8e82e77618005335d9b9c17", "5041ec241992b3bb3a88f1661855d05704e3add1"),
-    MAIN+"StageTransientTapSwap.kt": ("9fa8cdbb60fb2c2b6ec2740b595c39c537127a12", "d058bd7ec9bc0918c460d524000748bbe279f914"),
+    MAIN+"StageTransientTapSwap.kt": ("9fa8cdbb60fb2c2b6ec2740b595c39c537127a12", "7e9489d8aedeedea5beea0f653ce5a68f5006908"),
     TEST+"StageConcurrentNativeTrialPolicyTest.kt": ("0343597c1e9f0ed2a88caa4d8cef1eaa07193e6e", "266d315240fc1423f61b43af5d625348113c4baa"),
     TEST+"StageLiveSurfaceFlightGeometryTest.kt": ("b1d1fbf4032c2df0cae3886c761bb3bf0e675544", "e1795f15dd46ee5d9097a6efd0aaa520a5f812ef"),
     TEST+"StageTransientTapPolicyTest.kt": ("42b89180ab4c4407ff68c9d97ec4c3d260618b3a", "df51ba28dd1d32b13066eaf05af523df643d20b9"),
