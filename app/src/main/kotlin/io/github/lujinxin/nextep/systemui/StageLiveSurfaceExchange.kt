@@ -49,8 +49,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private val backdrop: Drawable?,
     private val occlusion: StageGpuMirrorOcclusion,
     private val coveredFlight: Boolean,
-    private val incomingStamp: TaskSurfaceCompat.MirrorSourceStamp?,
-    private val outgoingStamp: TaskSurfaceCompat.MirrorSourceStamp?,
+    private val incomingStamp: TaskSurfaceCompat.MirrorSourceStamp,
+    private val outgoingStamp: TaskSurfaceCompat.MirrorSourceStamp,
     private val detachedRoot: Boolean,
 ) {
     private val incomingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(
@@ -88,8 +88,8 @@ internal class StageLiveSurfaceExchange private constructor(
     // card using the exact owned frame written in the native transaction.
     // No visibility/alpha changes, no screenshot, no original-task mutation.
     private fun armHeldEndpointWriter() {
-        val inStamp=incomingStamp ?: return
-        val outStamp=outgoingStamp ?: return
+        val inStamp=incomingStamp
+        val outStamp=outgoingStamp
         if (heldWriter!=null || !isRunning) return
         val density=host.resources.displayMetrics.density
         val radiusSetter=cornerMethod
@@ -296,6 +296,20 @@ internal class StageLiveSurfaceExchange private constructor(
                 incoming.release()
                 return markUnavailable("invalid_native_handles")
             }
+            // Both mirrors must still refer to the observed task/leash pair.
+            // Never animate a replacement task, or mistake a changing producer
+            // for permanent OEM denial. Release before attaching any layer.
+            val stableIncoming=incomingBefore?.takeIf {
+                it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId))
+            }
+            val stableOutgoing=outgoingBefore?.takeIf {
+                it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0))
+            }
+            if (stableIncoming==null || stableOutgoing==null) {
+                outgoing.release()
+                incoming.release()
+                return markUnavailable("mirror_source_changed")
+            }
             val masks = StageGpuMirrorOcclusion.create() ?: run {
                 outgoing.release()
                 incoming.release()
@@ -306,8 +320,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 host, incoming, outgoing, localCrop,
                 outgoingCrop.toAndroidRect(),
                 from,to,backdrop,masks,coveredFlight,
-                incomingBefore?.takeIf { it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)) },
-                outgoingBefore?.takeIf { it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)) },
+                stableIncoming,stableOutgoing,
                 detached==true,
             )
         }
@@ -423,6 +436,20 @@ internal class StageLiveSurfaceExchange private constructor(
 
         fun commitMove() {
             if (!isRunning || sentMove) return
+            // Recheck once immediately before the real migration. Observed
+            // task stamps use local cached state, not a synchronous task query.
+            // A rejected preflight leaves task rollback/reconciliation to the
+            // existing exchange coordinator and runs normal visual cleanup.
+            if (!StageConcurrentNativeTrialPolicy.sourceIdentityReady(
+                    host.isAttachedToWindow,sourceMirror.isValid && mainMirror.isValid,
+                    { incomingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
+                        incomingStamp.taskId,incomingStamp.displayId)) },
+                    { outgoingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
+                        outgoingStamp.taskId,outgoingStamp.displayId)) })) {
+                trace("native_move_rejected:source_changed_or_detached")
+                stop()
+                return
+            }
             sentMove = true
             if (concurrentHandoff && frameComplete) armHeldEndpointWriter()
             trace(
