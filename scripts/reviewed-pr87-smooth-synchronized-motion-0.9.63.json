@@ -328,6 +328,26 @@
         {
           "before": "        if (SystemClock.uptimeMillis() - lastN5ParallelObservedMs < 800L) return",
           "after": "        val now = SystemClock.uptimeMillis()\n        if (lastN5ParallelAttemptMs?.let { now - it < 800L } == true) return\n        // Throttle attempts, including failed queries and transient SystemUI foregrounds.\n        // Keep the successful observation timestamp separate for diagnostic age.\n        lastN5ParallelAttemptMs = now"
+        },
+        {
+          "before": "        // Skip Binder task queries on phone and native landscape tablet profiles.\n        // Only the near-square expanded physical canvas needs this diagnostic.\n        val g = currentGeometry()\n        val shortSide = minOf(g.screenWidth, g.screenHeight)\n        val dpi = context.resources.displayMetrics.densityDpi\n        if (shortSide <= 1 || dpi <= 0 ||\n            shortSide * 160f / dpi < 600f ||\n            maxOf(g.screenWidth, g.screenHeight).toFloat() / shortSide > 1.35f) return\n        val now = SystemClock.uptimeMillis()\n        if (lastN5ParallelAttemptMs?.let { now - it < 800L } == true) return\n        // Throttle attempts, including failed queries and transient SystemUI foregrounds.\n        // Keep the successful observation timestamp separate for diagnostic age.\n        lastN5ParallelAttemptMs = now\n        val scene = runCatching { nativeParallelScene() }.getOrNull() ?: return\n",
+          "after": "        val now = SystemClock.uptimeMillis()\n        if (lastN5ParallelAttemptMs?.let { now - it < 800L } == true) return\n        // Rate-limit the entire diagnostic probe, including viewport reads on compact screens.\n        // Keep the successful observation timestamp separate for diagnostic age.\n        lastN5ParallelAttemptMs = now\n        // Skip Binder task queries on phone and native landscape tablet profiles.\n        // Only the near-square expanded physical canvas needs this diagnostic.\n        val g = currentGeometry()\n        val shortSide = minOf(g.screenWidth, g.screenHeight)\n        val dpi = context.resources.displayMetrics.densityDpi\n        if (shortSide <= 1 || dpi <= 0 ||\n            shortSide * 160f / dpi < 600f ||\n            maxOf(g.screenWidth, g.screenHeight).toFloat() / shortSide > 1.35f) return\n        val scene = runCatching { nativeParallelScene(g, dpi) }.getOrNull() ?: return\n"
+        },
+        {
+          "before": "    private fun nativeParallelScene(): StageNativeParallelDiagnostics.Scene {\n        val g = currentGeometry()\n        val tasks = runCatching { taskRepository.runningTasks() }.getOrDefault(emptyList())",
+          "after": "    private fun nativeParallelScene(\n        g: WorkspaceGeometry = currentGeometry(),\n        dpi: Int = context.resources.displayMetrics.densityDpi,\n    ): StageNativeParallelDiagnostics.Scene {\n        val tasks = runCatching { taskRepository.runningTasks() }.getOrDefault(emptyList())"
+        },
+        {
+          "before": "            screenHeight = g.screenHeight,\n            densityDpi = context.resources.displayMetrics.densityDpi,\n            railAtTop = g.railAtTop,",
+          "after": "            screenHeight = g.screenHeight,\n            densityDpi = dpi,\n            railAtTop = g.railAtTop,"
+        },
+        {
+          "before": "            stageFocusBadge?.apply {\n                text = label\n                val g = geometry()\n                visibility = View.GONE\n            }",
+          "after": "            stageFocusBadge?.apply {\n                text = label\n                visibility = View.GONE\n            }"
+        },
+        {
+          "before": "                homePreviewCapturePending = false\n                val snapshot = result.getOrNull()\n                val current = currentGeometry()",
+          "after": "                homePreviewCapturePending = false\n                val snapshot = result.getOrNull()\n                // A late result while hidden or locked must not refresh the viewport.\n                if (suspended || !workspaceVisible) {\n                    snapshot?.recycle()\n                    return@post\n                }\n                val current = currentGeometry()"
         }
       ]
     },
@@ -432,6 +452,15 @@
         {
           "before": "        return short >= 1300 && long.toFloat() / short >= 1.45f",
           "after": "        // High-resolution elongated phone panels must not enter the tablet-only path.\n        return short >= 1300 && long.toFloat() / short >= 1.45f && long.toLong() < 2L * short"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceController.kt": {
+      "previous_blob_sha1": "7e38268b542264d1990a902f52843727a935c046",
+      "patches": [
+        {
+          "before": "            val geometry = windowController.currentGeometry()\n            SystemUiRootTransformController.setGeometry(geometry)\n            windowController.resumeAfterLock()\n            SystemServerWorkspaceBridge.publish(applicationContext, true, geometry)",
+          "after": "            val requested = windowController.currentGeometry()\n            SystemUiRootTransformController.setGeometry(requested)\n            // A fold/rotation can settle during window restoration. Publish the\n            // geometry actually applied to the retained windows, not the earlier request.\n            val geometry = windowController.resumeAfterLock()\n            if (geometry != requested) SystemUiRootTransformController.setGeometry(geometry)\n            SystemServerWorkspaceBridge.publish(applicationContext, true, geometry)"
         }
       ]
     }
