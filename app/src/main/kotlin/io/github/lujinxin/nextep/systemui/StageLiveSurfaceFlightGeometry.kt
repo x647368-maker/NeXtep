@@ -132,10 +132,50 @@ internal object StageLiveSurfaceFlightGeometry {
         return w*h
     }
 
-    /** Strict, real-content no-collision gate. Never trade another slot's pixels
-     * or touch mapping for a prettier flight. Unknown geometry falls back to
-     * the existing single real task swap without this GPU flight.
-     */
+    /** Within one rail phase every box edge is affine in the same smoothstep
+     * parameter. Intersection area is piecewise quadratic. Split at edge
+     * crossings, then check extrema, not just a fixed set of animation frames. */
+    fun peakSweptOverlap(a:Box,b:Box,obstacle:Box):Double {
+        if(!a.valid() || !b.valid() || !obstacle.valid()) return Double.POSITIVE_INFINITY
+        if(maxOf(a.right,b.right)<=obstacle.left || minOf(a.left,b.left)>=obstacle.right ||
+            maxOf(a.bottom,b.bottom)<=obstacle.top || minOf(a.top,b.top)>=obstacle.bottom) return 0.0
+        val cuts=mutableListOf(0.0,1.0)
+        fun crossing(start:Float,end:Float,edge:Float) {
+            val delta=end.toDouble()-start
+            if(delta==0.0)return
+            val t=(edge.toDouble()-start)/delta
+            if(t>0.0 && t<1.0)cuts.add(t)
+        }
+        for(edge in listOf(obstacle.left,obstacle.right)) {
+            crossing(a.left,b.left,edge);crossing(a.right,b.right,edge)
+        }
+        for(edge in listOf(obstacle.top,obstacle.bottom)) {
+            crossing(a.top,b.top,edge);crossing(a.bottom,b.bottom,edge)
+        }
+        cuts.sort()
+        fun at(start:Float,end:Float,t:Double)=start.toDouble()+(end.toDouble()-start)*t
+        fun width(t:Double)=(minOf(at(a.right,b.right,t),obstacle.right.toDouble())-
+            maxOf(at(a.left,b.left,t),obstacle.left.toDouble())).coerceAtLeast(0.0)
+        fun height(t:Double)=(minOf(at(a.bottom,b.bottom,t),obstacle.bottom.toDouble())-
+            maxOf(at(a.top,b.top,t),obstacle.top.toDouble())).coerceAtLeast(0.0)
+        var peak=0.0
+        for(i in 0 until cuts.lastIndex) {
+            val l=cuts[i];val r=cuts[i+1]
+            val w=width(l);val h=height(l)
+            val endW=width(r);val endH=height(r)
+            peak=maxOf(peak,w*h,endW*endH)
+            val dw=endW-w;val dh=endH-h
+            val quadratic=dw*dh
+            if(quadratic<0.0) {
+                val u=-(dw*h+dh*w)/(2.0*quadratic)
+                if(u>0.0 && u<1.0)peak=maxOf(peak,(w+dw*u)*(h+dh*u))
+            }
+        }
+        return peak
+    }
+
+    /** Strict continuous no-collision gate. The sampleCount argument remains
+     * for existing callers/tests, but safety is no longer sample-dependent. */
     fun corridorAvoidsOtherSlots(
         small:Box, main:Box,
         smallCropWidth:Int,smallCropHeight:Int,
@@ -146,29 +186,21 @@ internal object StageLiveSurfaceFlightGeometry {
     ):Boolean {
         if(!small.valid() || !main.valid() || sampleCount<4 || sampleCount>240 ||
             otherSlots.any { !it.valid() }) return false
-        val initialUp=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,0f)
-            ?: return false
-        val initialDown=railCorridorFlight(main,small,mainCropWidth,mainCropHeight,0f)
-            ?: return false
-        // ColorOS can place the main ViewRoot slightly UNDER the rail by
-        // design. That pre-existing 1-20px edge intersection is not new
-        // animation occlusion. Reject ONLY the added covered area per mirror;
-        // otherwise even frame 0 triggers fallback and the flight disappears.
-        val baseline=otherSlots.map {
-            intersectionArea(initialUp.box,it) to intersectionArea(initialDown.box,it)
+        fun safe(from:Box,to:Box,w:Int,h:Int):Boolean {
+            val split=if(from.width*from.height<to.width*to.height) .34f else .66f
+            val start=railCorridorFlight(from,to,w,h,0f)?.box ?: return false
+            val middle=railCorridorFlight(from,to,w,h,split)?.box ?: return false
+            val end=railCorridorFlight(from,to,w,h,1f)?.box ?: return false
+            return otherSlots.all { obstacle ->
+                // Preserve the original card's existing overlap allowance;
+                // neither independent phase may add new covered area.
+                val limit=peakSweptOverlap(start,start,obstacle)+1.0
+                peakSweptOverlap(start,middle,obstacle)<=limit &&
+                    peakSweptOverlap(middle,end,obstacle)<=limit
+            }
         }
-        for(i in 0..sampleCount) {
-            val progress=i.toFloat()/sampleCount
-            val up=railCorridorFlight(small,main,smallCropWidth,smallCropHeight,progress)
-                ?: return false
-            val down=railCorridorFlight(main,small,mainCropWidth,mainCropHeight,progress)
-                ?: return false
-            if(otherSlots.indices.any { index ->
-                intersectionArea(up.box,otherSlots[index]) > baseline[index].first + 1f ||
-                    intersectionArea(down.box,otherSlots[index]) > baseline[index].second + 1f
-            }) return false
-        }
-        return true
+        return safe(small,main,smallCropWidth,smallCropHeight) &&
+            safe(main,small,mainCropWidth,mainCropHeight)
     }
 
     // A source buffer cannot exactly fit a differently shaped destination
