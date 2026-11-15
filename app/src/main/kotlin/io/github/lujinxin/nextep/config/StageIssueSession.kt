@@ -206,13 +206,20 @@ internal class StageIssueSession(context: Context) {
             val observedConfiguration = (0 until autoEventCount()).count {
                 preferences.getString("auto_event_$it",null)?.contains("设备配置变化：") == true
             }
+            fun observedReplies(prefix: String): Int = (0 until autoEventCount()).count {
+                preferences.getString("auto_event_$it", null)?.contains("控制请求响应：$prefix") == true
+            }
+            val layoutReplies = observedReplies("布局/")
+            val mediaReplies = observedReplies("应用操作/")
+            val groupReplies = observedReplies("功能服务/工作组/")
+            val quickReplies = observedReplies("功能服务/快捷栏/")
             for (module in StageIssueTestCatalog.modules) {
                 val coverage = if (module.id !in requested) "未选择（未测试）" else when(module.id) {
                     "performance" -> "有电池/温度起止快照（未知值以原始字段为准）；$swaps；精确帧率、闪烁与模块独占功耗未自动判定"
-                    "layout" -> "${if(both) "已读取起止工作台快照" else "工作台快照不完整"}；遮挡、智能隐藏与空间利用需手动验证"
-                    "content" -> "第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常"
+                    "layout" -> "${if(both) "已读取起止工作台快照" else "工作台快照不完整"}；记录布局控制响应${layoutReplies}条（可能漏记）；遮挡、智能隐藏与空间利用需手动验证"
+                    "content" -> "记录影音/应用控制响应${mediaReplies}条（可能漏记）；第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常"
                     "compatibility" -> "设备及屏幕起止状态；系统屏幕通知${observedScreen}条、应用配置变化${observedConfiguration}条（均可能漏记）；配置变化不等于物理铰链状态或适配通过；手势、Root/注入兼容性未自动验收"
-                    "services" -> "工作组、快捷栏、更新签名与收款码尚无自动验证事件；未测试"
+                    "services" -> "工作组控制响应${groupReplies}条、快捷栏控制响应${quickReplies}条（可能漏记）；仅系统协议响应，不证明实际恢复或显示正确；更新签名、收款码尚未自动验证"
                     else -> "不可观测"
                 }
                 appendLine("${module.name}：$coverage")
@@ -239,13 +246,13 @@ internal class StageIssueSession(context: Context) {
             appendLine("结束设备状态：${StageIssueSceneSnapshot.read(app)}")
             appendLine("开始工作台：${preferences.getString("start_runtime","无法读取")}")
             appendLine("结束工作台：${runtimeLine(snapshot)}")
-            appendLine("自动屏幕、应用配置及测试App前后台事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
+            appendLine("自动屏幕、应用配置、测试App前后台及控制响应事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
             for (event in 0 until autoEventCount()) {
                 appendLine("状态事件#${event+1}：${preferences.getString("auto_event_$event","不可用")}")
             }
             if (preferences.getBoolean("auto_events_truncated",false))
                 appendLine("注意：状态事件超出上限，后续事件未写入。")
-            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台。")
+            appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台或功能操作。控制响应仅来自测试App现有设置操作，不覆盖系统菜单的全部调用。")
             appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
             if (bootIdentity == false) appendLine("设备已重启：以下交换记录仅为结束快照，不与起始编号或进程号比较。")
