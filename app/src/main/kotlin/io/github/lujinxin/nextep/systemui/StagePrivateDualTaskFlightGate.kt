@@ -1,12 +1,12 @@
 package io.github.x647368maker.atomicworkbench.systemui
 
+import io.github.x647368maker.atomicworkbench.BuildConfig
+
 /**
- * Strictly temporary PR62 branch opt-in for REAL on-device validation.
- * PR60's public safety gate stays OFF and main/Release are untouched.
- * Do not cherry-pick this file or turn on ordinary user builds until
- * ColorOS/Find N5/Y700 complete visual, power and touch regression checks.
+ * Private, explicit debug build A/B. Ordinary builds keep the existing
+ * transient preview path; release variants cannot enable this experiment.
+ * The legacy full-screen native gate remains independently disabled.
  */
 internal object StagePrivateDualTaskFlightGate {
-    private const val PRIVATE_TRIAL_ONLY = true
-    fun enabled(): Boolean = PRIVATE_TRIAL_ONLY
+    fun enabled(): Boolean = BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL
 }
