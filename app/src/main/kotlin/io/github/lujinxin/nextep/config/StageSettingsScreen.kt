@@ -46,9 +46,28 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var stateText: TextView? = null
     private var master: Switch? = null
     private var settingSwitch = false
+    private var wideLayout = false
+    private var navigationScroll: ScrollView? = null
+    private var navigationY = 0
     var page = "home"
         private set
     val view = FrameLayout(activity).apply { setBackgroundColor(backgroundColor); isFocusableInTouchMode = true }
+    init {
+        view.addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
+            if (page == "update" || r <= l || b <= t) return@addOnLayoutChangeListener
+            val next = StageHomeLayout.useTwoPane(r-l, b-t, activity.resources.displayMetrics.density)
+            if (next != wideLayout) view.post {
+                if (!activity.isDestroyed && page != "update" && isWide() != wideLayout) open(page)
+            }
+        }
+    }
+    private fun isWide(): Boolean {
+        val metrics = activity.resources.displayMetrics
+        val config = activity.resources.configuration
+        val w = view.width.takeIf { it > 0 } ?: (config.screenWidthDp * metrics.density).toInt()
+        val h = view.height.takeIf { it > 0 } ?: (config.screenHeightDp * metrics.density).toInt()
+        return StageHomeLayout.useTwoPane(w,h,metrics.density)
+    }
     private val originalStatusBarColor=activity.window.statusBarColor
     private val originalNavigationBarColor=activity.window.navigationBarColor
     private val originalSystemUiFlags=activity.window.decorView.systemUiVisibility
@@ -101,7 +120,11 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     fun back(): Boolean { if (page == "home") return false; open("home"); return true }
     fun open(target: String) {
+        navigationScroll?.let { navigationY = it.scrollY }
+        navigationScroll = null
         page = target; body = null; stateText = null; master = null
+        wideLayout = isWide() && target != "update"
+        val detailTarget = if (wideLayout && target == "home") "windows" else target
         if (target == "update") {
             view.background = StageUpdateBackdrop()
             activity.window.statusBarColor = Color.rgb(15,13,35)
@@ -204,36 +227,55 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
             addView(columnHost, ViewGroup.LayoutParams(-1, -2))
         }
-        view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        if (wideLayout) {
+            val split = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+            val rail = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10),dp(10),dp(10),dp(14))
+                setBackgroundColor(if (dark) Color.rgb(25,27,32) else Color.rgb(237,239,247))
+            }
+            addHomeHeader(rail)
+            val navigation = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            rail.addView(navigation)
+            renderHome(navigation, detailTarget)
+            val navScroll = ScrollView(activity).apply {
+                isFillViewport = true; isVerticalScrollBarEnabled = false
+                addView(rail, ViewGroup.LayoutParams(-1,-2))
+            }
+            navigationScroll = navScroll
+            val available = view.width.takeIf { it > 0 } ?: dp(activity.resources.configuration.screenWidthDp)
+            split.addView(navScroll, LinearLayout.LayoutParams(
+                StageHomeLayout.navigationWidth(available,activity.resources.displayMetrics.density), -1))
+            split.addView(View(activity).apply { setBackgroundColor(dividerColor) },
+                LinearLayout.LayoutParams(dp(1).coerceAtLeast(1),-1))
+            split.addView(scroll, LinearLayout.LayoutParams(0,-1,1f))
+            split.addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->
+                if (r > l) {
+                    val width = StageHomeLayout.navigationWidth(r-l,activity.resources.displayMetrics.density)
+                    if (navScroll.layoutParams.width != width)
+                        navScroll.layoutParams = (navScroll.layoutParams as LinearLayout.LayoutParams).apply { this.width = width }
+                }
+            }
+            view.addView(split, FrameLayout.LayoutParams(-1,-1))
+            navScroll.post { if (navigationScroll === navScroll) navScroll.scrollTo(0,navigationY) }
+        } else view.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (target == "update" && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             scroll.alpha = 0f
             scroll.translationY = dp(14).toFloat()
             scroll.animate().alpha(1f).translationY(0f).setDuration(240L).start()
         }
-        if (target == "home") {
-            val header = LinearLayout(activity).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), 0, dp(10), 0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
-            }
-            val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-            words.addView(label("台前调度", 24f).apply { typeface = Typeface.DEFAULT_BOLD })
-            stateText = label(homeState(), 13f, secondary).apply { setPadding(0, dp(6), 0, 0) }
-            words.addView(stateText)
-            header.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
-            master = toggle(active) { setStage(it) }.apply {
-                minimumHeight = dp(48); contentDescription = "台前调度开关"
-            }
-            header.addView(master, LinearLayout.LayoutParams(dp(52), dp(48)))
-            column.addView(header)
-            body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-            column.addView(body); renderHome()
+        if (detailTarget == "home") {
+            addHomeHeader(column)
+            val navigation = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+            body = navigation
+            column.addView(navigation); renderHome(navigation)
         } else {
             val titles = mapOf("core" to "影音与快捷栏", "windows" to "窗口布局", "groups" to "工作组", "gestures" to "启动手势", "tile" to "快捷开关", "help" to "使用帮助与退出", "diagnostics" to "运行诊断", "issue_specialties" to "专项测试与报告", "about" to "关于与使用帮助", "feedback" to "建议与反馈", "changelog" to "更新日志", "update" to "软件更新", "donate" to "打赏作者")
             val header = LinearLayout(activity).apply { gravity = Gravity.CENTER_VERTICAL }
-            header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
+            if (!wideLayout) header.addView(label("‹", 34f, if (target == "update") Color.WHITE else ink).apply {
                 gravity = Gravity.CENTER; contentDescription = "返回"; setOnClickListener { open("home") }
             }, LinearLayout.LayoutParams(dp(40), dp(52)))
-            header.addView(label(titles[target] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
+            header.addView(label(titles[detailTarget] ?: "设置", 24f, if (target == "update") Color.WHITE else ink).apply { typeface = Typeface.DEFAULT_BOLD }, LinearLayout.LayoutParams(0, -2, 1f))
             if (target == "update") {
                 val more = label("⋮", 28f, Color.WHITE).apply {
                     gravity = Gravity.CENTER
@@ -267,7 +309,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                 header.addView(more, LinearLayout.LayoutParams(dp(48), dp(48)))
             }
             column.addView(header)
-            when (target) {
+            when (detailTarget) {
                 "core" -> corePage(column)
                 "windows" -> windows(column)
                 "groups" -> groupPage(column)
@@ -290,25 +332,61 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
     }
     private fun homeState(): String = "${if (connected) { if (active) "已开启" else "已关闭" } else "待连接"} · $versionName"
-    private fun renderHome() {
-        val root = body ?: return; root.removeAllViews()
+    private fun addHomeHeader(parent: LinearLayout) {
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10),0,dp(10),0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
+        }
+        val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+        words.addView(label("台前调度", if (wideLayout) 21f else 30f).apply { typeface = Typeface.DEFAULT_BOLD })
+        stateText = label(homeState(), 12f, secondary).apply { setPadding(0,dp(6),0,0) }
+        words.addView(stateText)
+        header.addView(words, LinearLayout.LayoutParams(0,-2,1f))
+        master = toggle(active) { setStage(it) }.apply {
+            minimumHeight = dp(48); contentDescription = "台前调度开关"
+        }
+        header.addView(master, LinearLayout.LayoutParams(dp(52),dp(48)))
+        parent.addView(header)
+    }
+    private fun renderHome(root: LinearLayout, selected: String? = null) {
+        root.removeAllViews()
         if (UpdateCoordinator.available(activity) != null)
             row(group(root), "发现台前调度新版本", icon = "info") { open("update") }
          for (section in StageHomeLayout.sections) {
-            root.addView(label(section.title, 12f, secondary).apply {
-                setPadding(dp(16), dp(StageHomeLayout.SECTION_TOP_DP), dp(16), 0)
-            })
+            val heading = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16),dp(StageHomeLayout.SECTION_TOP_DP),dp(16),0)
+            }
+            val glyph = when (section.title) { "工作台" -> "groups"; "故障诊断" -> "diagnostics"; else -> "tile" }
+            val accent = when (section.title) { "工作台" -> blue; "故障诊断" -> Color.rgb(142,88,224); else -> secondary }
+            heading.addView(StageSettingsIcon(activity,glyph,accent),
+                LinearLayout.LayoutParams(dp(22),dp(22)).apply { marginEnd=dp(8) })
+            heading.addView(label(section.title, if (wideLayout) 15f else 18f).apply { typeface = Typeface.DEFAULT_BOLD })
+            root.addView(heading)
             val card = group(root)
-            for (item in section.items) row(card, item.name, icon = item.icon, color = blue) {
+            for (item in section.items) {
+                val entry = row(card, item.name, icon = item.icon, color = if (wideLayout) blue else ink) {
                 if (item.page == "issue_all") launchIssue("all") else {
                     open(item.page)
                     if (item.page in listOf("core", "windows", "groups")) refresh()
                 }
+                }
+                if (item.page == selected) {
+                    entry.isSelected = true
+                    entry.setBackgroundColor(if (dark) Color.rgb(34,57,87) else Color.rgb(219,234,255))
+                }
             }
         }
-        root.addView(label("ZMW小武 × GPT\n基于 NeXtep 二次开发", 11f, secondary).apply {
-            gravity=Gravity.CENTER; setLineSpacing(dp(3).toFloat(),1f); setPadding(0,dp(14),0,dp(6))
-        })
+        val footer = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            setPadding(dp(4),dp(22),dp(4),dp(8))
+        }
+        footer.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) },
+            LinearLayout.LayoutParams(dp(32),dp(32)).apply { marginEnd=dp(10) })
+        footer.addView(label("台前调度 · Atomic Workbench\nZMW小武 × GPT\n基于 NeXtep 二次开发 · $versionName", 11f, secondary).apply {
+            setLineSpacing(dp(3).toFloat(),1f)
+        },LinearLayout.LayoutParams(-2,-2,0f))
+        root.addView(footer)
     }
     private fun windows(root: LinearLayout) {
         val manage = group(root)
@@ -643,9 +721,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
                     topRail = reply.getBoolean("layout_top", topRail)
                     mainPriority = reply.getBoolean("main_priority", true)
                     reply.getString("windows")?.let { raw -> runCatching { windows = JSONArray(raw) } }
-                    if (page == "groups" || page == "diagnostics" || page == "windows" || page == "core") open(page)
+                    if (page == "groups" || page == "diagnostics" || page == "windows" || page == "core" || (wideLayout && page == "home")) open(page)
                     if (name == "add_window" || name == "replace_window" || name == "close_window") {
-                        for (delay in listOf(500L, 1800L, 4000L)) handler.postDelayed({ if (page == "windows") refresh() }, delay)
+                        for (delay in listOf(500L, 1800L, 4000L)) handler.postDelayed({ if (page == "windows" || (wideLayout && page == "home")) refresh() }, delay)
                     }
                 }
             }, handler, TriggerBroadcastContract.RESULT_NOT_READY, null, Bundle())

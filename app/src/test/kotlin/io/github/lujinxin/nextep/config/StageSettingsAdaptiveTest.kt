@@ -19,6 +19,17 @@ class StageSettingsAdaptiveTest {
         assertEquals((680*2.625f).toInt(),StageHomeLayout.contentWidth(2248,2.625f))
         assertTrue(StageHomeLayout.contentWidth(2480,2.625f)<2480)
     }
+    @Test fun twoPaneUsesMeasuredWidthAndShapeNotModel() {
+        assertFalse(StageHomeLayout.useTwoPane(1264,2780,3.2f))
+        assertFalse(StageHomeLayout.useTwoPane(1140,2520,3f))
+        assertTrue(StageHomeLayout.useTwoPane(2248,2268,2.625f))
+        assertTrue(StageHomeLayout.useTwoPane(2480,2268,3f))
+        assertFalse(StageHomeLayout.useTwoPane(1600,2560,2.5f))
+        assertTrue(StageHomeLayout.useTwoPane(2560,1600,2.5f))
+        assertFalse(StageHomeLayout.useTwoPane(1500,1500,3f))
+        assertEquals(520,StageHomeLayout.navigationWidth(1500,2.5f))
+        assertEquals(900,StageHomeLayout.navigationWidth(4000,3f))
+    }
     @Test fun rowsAndHeadersRemainTouchableAndSupportIsOptIn() {
         assertTrue(StageHomeLayout.ROW_DP in 56..64)
         assertTrue(StageHomeLayout.HEADER_DP>=48)

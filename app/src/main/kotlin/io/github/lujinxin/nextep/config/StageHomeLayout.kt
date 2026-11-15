@@ -19,6 +19,18 @@ internal object StageHomeLayout {
             Item("建议与反馈","feedback","feedback"),Item("打赏作者","donate","heart"),
             Item("关于与使用帮助","about","about")))
     )
+    // Actual available bounds, not manufacturer/model names. Portrait tablets
+    // retain single-column navigation; wide inner foldables and landscape
+    // tablets have room for a 208dp navigation rail plus a readable detail pane.
+    fun useTwoPane(width: Int, height: Int, density: Float): Boolean =
+        width > 0 && height > 0 && density > 0 &&
+            width / density >= 600f && width.toDouble() / height >= .82
+
+    fun navigationWidth(width: Int, density: Float): Int {
+        require(width > 0 && density > 0)
+        return (width * .32f).toInt().coerceIn((208 * density).toInt(), (300 * density).toInt())
+    }
+
     fun contentWidth(availablePixels:Int,density:Float):Int {
         require(availablePixels>0 && density>0)
         return minOf(availablePixels,(MAX_COLUMN_DP*density).toInt().coerceAtLeast(1))
