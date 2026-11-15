@@ -385,10 +385,10 @@ internal class StageLiveSurfaceExchange private constructor(
         trace(
             "mirror_start crop=${sourceCrop.width()}x${sourceCrop.height()}" +
             " main=${mainStart.width.toInt()}x${mainStart.height.toInt()}")
-        val root = host.rootSurfaceControl ?: return cleanupWithoutCallback().let { false }
-        frameTransaction = SurfaceControl.Transaction()
         finishCallback = onFinished
         try {
+            val root = host.rootSurfaceControl ?: error("Host surface detached before native flight")
+            frameTransaction = SurfaceControl.Transaction()
             val tx = root.buildReparentTransaction(sourceMirror)
                 ?: error("No host transaction for incoming live rail")
             try {
@@ -722,33 +722,40 @@ internal class StageLiveSurfaceExchange private constructor(
         NeXtepLog.info("native_swap",
             "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
             "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")
-        animator?.removeAllListeners()
-        animator?.removeAllUpdateListeners()
-        animator?.cancel()
+        val flight=animator
+        val reveal=revealAnimator
         animator=null
-        revealAnimator?.removeAllListeners()
-        revealAnimator?.removeAllUpdateListeners()
-        revealAnimator?.cancel()
         revealAnimator=null
-        cleanupWithoutCallback()
-        callback?.invoke()
+        StageConcurrentNativeTrialPolicy.cleanupSteps(
+            { flight?.removeAllListeners(); flight?.removeAllUpdateListeners() },
+            { flight?.cancel() },
+            { reveal?.removeAllListeners(); reveal?.removeAllUpdateListeners() },
+            { reveal?.cancel() },
+            { cleanupWithoutCallback() },
+            { callback?.invoke() },
+            onFailure={ NeXtepLog.warn("native_swap","Native animation teardown step failed",it) },
+        )
     }
 
     private fun cleanupWithoutCallback() {
-        disarmHeldEndpointWriter()
-        runCatching {
-            SurfaceControl.Transaction().use { tx ->
-                if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
-                if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
-                occlusion.hide(tx)
-                tx.apply()
-            }
-        }
-        sourceMirror.release()
-        frameTransaction?.let { runCatching { it.close() } }
+        val ownedTransaction=frameTransaction
         frameTransaction=null
-        mainMirror.release()
-        occlusion.release()
-        runCatching { (background.parent as? FrameLayout)?.removeView(background) }
+        StageConcurrentNativeTrialPolicy.cleanupSteps(
+            { disarmHeldEndpointWriter() },
+            {
+                SurfaceControl.Transaction().use { tx ->
+                    if (sourceMirror.isValid) tx.setVisibility(sourceMirror,false)
+                    if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
+                    occlusion.hide(tx)
+                    tx.apply()
+                }
+            },
+            { sourceMirror.release() },
+            { mainMirror.release() },
+            { ownedTransaction?.close() },
+            { occlusion.release() },
+            { (background.parent as? FrameLayout)?.removeView(background) },
+            onFailure={ NeXtepLog.warn("native_swap","Native resource cleanup step failed",it) },
+        )
     }
 }
