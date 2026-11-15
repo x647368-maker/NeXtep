@@ -348,6 +348,14 @@
         {
           "before": "                homePreviewCapturePending = false\n                val snapshot = result.getOrNull()\n                val current = currentGeometry()",
           "after": "                homePreviewCapturePending = false\n                val snapshot = result.getOrNull()\n                // A late result while hidden or locked must not refresh the viewport.\n                if (suspended || !workspaceVisible) {\n                    snapshot?.recycle()\n                    return@post\n                }\n                val current = currentGeometry()"
+        },
+        {
+          "before": "    fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry {\n        syncCoreViewport()\n        return viewport.geometry(sidebarSide, refreshViewport).let {\n            if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)\n            else {\n                val base = if (viewport.activeCount == 0)\n                    it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt()))\n                else it\n                if (smartRail.hidden)\n                    io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry\n                        .reclaim(base, context.resources.displayMetrics.density)\n                else base\n            }\n        }\n    }\n\n",
+          "after": "    fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry {\n        // Select the layout scope and geometry from the same physical measurement.\n        // An explicit refresh must not re-read the display after selecting its side.\n        val preparedScope = if (refreshViewport) viewport.prepareLayoutScope() else null\n        syncCoreViewport(preparedScope)\n        return viewport.geometry(sidebarSide).let {\n            if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)\n            else {\n                val base = if (viewport.activeCount == 0)\n                    it.copy(sidebarWidth = minOf(it.sidebarWidth, dp(if (it.railAtTop) 56 else 52).toInt()))\n                else it\n                if (smartRail.hidden)\n                    io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry\n                        .reclaim(base, context.resources.displayMetrics.density)\n                else base\n            }\n        }\n    }\n\n"
+        },
+        {
+          "before": "    private fun syncCoreViewport() {\n        core.layoutScope = viewport.prepareLayoutScope()\n        sidebarSide = viewport.selectedSidebarSide()\n        viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0\n        viewport.adaptive = core.adaptive\n        viewport.mainPriority = core.mainPriority\n        viewport.mainInputRegionReady = sidebarTouchRegionReady\n        viewport.quickExpanded = core.enabled && core.expanded\n        cinemaSlot?.let { index ->\n            if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {\n                cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()\n            }\n        }\n        viewport.cinema = cinemaSlot != null && !sidebarCollapsed\n        viewport.cinemaPortrait = cinemaPortrait\n    }\n\n",
+          "after": "    private fun syncCoreViewport(preparedScope: String? = null) {\n        core.layoutScope = preparedScope ?: viewport.prepareLayoutScope()\n        sidebarSide = viewport.selectedSidebarSide()\n        val states = slotCoordinator?.slotStates().orEmpty()\n        viewport.activeCount = states.count { it is SlotState.Occupied }\n        viewport.adaptive = core.adaptive\n        viewport.mainPriority = core.mainPriority\n        viewport.mainInputRegionReady = sidebarTouchRegionReady\n        viewport.quickExpanded = core.enabled && core.expanded\n        cinemaSlot?.let { index ->\n            if ((states.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {\n                cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()\n            }\n        }\n        viewport.cinema = cinemaSlot != null && !sidebarCollapsed\n        viewport.cinemaPortrait = cinemaPortrait\n    }\n\n"
         }
       ]
     },
@@ -450,6 +458,18 @@
         {
           "before": "        registered.clear()\n        val oldListener",
           "after": "        registered.clear()\n        sessionKeys.clear()\n        val oldListener"
+        },
+        {
+          "before": "val directUid = runCatching { token.javaClass.getMethod(\"getUid\").invoke(token) as? Int }.getOrNull()",
+          "after": "val directUid = runCatching { token.javaClass.getMethod(\"getUid\").invoke(token) as? Int }.getOrNull()\n                    ?.takeIf { it >= 0 }"
+        },
+        {
+          "before": "?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid\n                    ?: return@runCatching null",
+          "after": "?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid\n                        ?.takeIf { it >= 0 }\n                    ?: return@runCatching null"
+        },
+        {
+          "before": "if (directUid != null && directUid >= 0) sessionKeys[controller] = it",
+          "after": "if (directUid != null) sessionKeys[controller] = it"
         }
       ]
     },

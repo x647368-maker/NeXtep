@@ -557,8 +557,11 @@ class NeXtepWindowController(
         ?: Result.failure(IllegalStateException("Slot coordinator unavailable"))
 
     fun currentGeometry(refreshViewport: Boolean = false): WorkspaceGeometry {
-        syncCoreViewport()
-        return viewport.geometry(sidebarSide, refreshViewport).let {
+        // Select the layout scope and geometry from the same physical measurement.
+        // An explicit refresh must not re-read the display after selecting its side.
+        val preparedScope = if (refreshViewport) viewport.prepareLayoutScope() else null
+        syncCoreViewport(preparedScope)
+        return viewport.geometry(sidebarSide).let {
             if (sidebarCollapsed) io.github.x647368maker.atomicworkbench.workspace.StageCollapsedRailPolicy.geometry(it, context.resources.displayMetrics.density)
             else {
                 val base = if (viewport.activeCount == 0)
@@ -1201,16 +1204,17 @@ class NeXtepWindowController(
 
     private fun showStageMessage(value: String) = android.widget.Toast.makeText(context, value, android.widget.Toast.LENGTH_LONG).show()
 
-    private fun syncCoreViewport() {
-        core.layoutScope = viewport.prepareLayoutScope()
+    private fun syncCoreViewport(preparedScope: String? = null) {
+        core.layoutScope = preparedScope ?: viewport.prepareLayoutScope()
         sidebarSide = viewport.selectedSidebarSide()
-        viewport.activeCount = slotCoordinator?.slotStates()?.count { it is SlotState.Occupied } ?: 0
+        val states = slotCoordinator?.slotStates().orEmpty()
+        viewport.activeCount = states.count { it is SlotState.Occupied }
         viewport.adaptive = core.adaptive
         viewport.mainPriority = core.mainPriority
         viewport.mainInputRegionReady = sidebarTouchRegionReady
         viewport.quickExpanded = core.enabled && core.expanded
         cinemaSlot?.let { index ->
-            if ((slotCoordinator?.slotStates()?.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
+            if ((states.getOrNull(index) as? SlotState.Occupied)?.taskId != cinemaPolicy.task) {
                 cinemaSlot = null; cinemaPolicy.leave(); directionDebounce.reset()
             }
         }

@@ -27,13 +27,15 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
             val key = sessionKeys[controller] ?: run {
                 val token = controller.sessionToken
                 val directUid = runCatching { token.javaClass.getMethod("getUid").invoke(token) as? Int }.getOrNull()
+                    ?.takeIf { it >= 0 }
                 val uid = directUid
                     ?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid
+                        ?.takeIf { it >= 0 }
                     ?: return@runCatching null
                 // Only the session owner's immutable token UID is safe to cache.
                 // The fallback activity may change or become unavailable at any time.
                 StageMediaKey(controller.packageName, uid / 100000, token).also {
-                    if (directUid != null && directUid >= 0) sessionKeys[controller] = it
+                    if (directUid != null) sessionKeys[controller] = it
                 }
             }
             val state = when (controller.playbackState?.state) {
