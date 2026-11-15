@@ -8,11 +8,15 @@ internal data class StageObservedTask(val id: Int, val packageName: String, val 
 /** Public session data has no universal Task ID. Ambiguous packages/profiles are never merged. */
 internal object StageMediaBinding {
     fun bind(tasks: List<StageObservedTask>, sessions: List<StagePlaybackObservation>): Map<Int, StagePlaybackObservation> {
+        val taskCounts = tasks.groupingBy { it.packageName to it.userId }.eachCount()
+        val sessionsByOwner = sessions.distinctBy { it.key }.groupBy { it.key.packageName to it.key.userId }
         val result = mutableMapOf<Int, StagePlaybackObservation>()
         for (task in tasks) {
-            if (task.userId == null || tasks.count { it.packageName == task.packageName && it.userId == task.userId } != 1) continue
-            val matches = sessions.distinctBy { it.key }.filter { it.key.packageName == task.packageName && it.key.userId == task.userId }
-            if (matches.size == 1) result[task.id] = matches.single()
+            val userId = task.userId ?: continue
+            val owner = task.packageName to userId
+            if (taskCounts[owner] != 1) continue
+            val match = sessionsByOwner[owner]?.singleOrNull() ?: continue
+            result[task.id] = match
         }
         return result
     }

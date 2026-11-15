@@ -14,6 +14,7 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
     private var listening = false
     private var sessions = emptyList<MediaController>()
     private val registered = mutableSetOf<MediaController>()
+    private val sessionKeys = mutableMapOf<MediaController, StageMediaKey>()
     private var destroyRefresh: Runnable? = null
     // A framework callback already queued before unregister can arrive after
     // stop() or even after a new start(). Scope registrations to their epoch.
@@ -23,9 +24,18 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
     private fun current(token: Int) = listening && token == epoch
     fun observations(): List<StagePlaybackObservation> = sessions.mapNotNull { controller ->
         runCatching {
-            val uid = (runCatching { controller.sessionToken.javaClass.getMethod("getUid").invoke(controller.sessionToken) as? Int }.getOrNull()
-                ?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid)
-                ?: return@runCatching null
+            val key = sessionKeys[controller] ?: run {
+                val token = controller.sessionToken
+                val directUid = runCatching { token.javaClass.getMethod("getUid").invoke(token) as? Int }.getOrNull()
+                val uid = directUid
+                    ?: controller.sessionActivity?.takeIf { it.creatorPackage == controller.packageName }?.creatorUid
+                    ?: return@runCatching null
+                // Only the session owner's immutable token UID is safe to cache.
+                // The fallback activity may change or become unavailable at any time.
+                StageMediaKey(controller.packageName, uid / 100000, token).also {
+                    if (directUid != null && directUid >= 0) sessionKeys[controller] = it
+                }
+            }
             val state = when (controller.playbackState?.state) {
                 PlaybackState.STATE_PLAYING -> StagePlayback.PLAYING
                 PlaybackState.STATE_PAUSED -> StagePlayback.PAUSED
@@ -33,7 +43,7 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
                 PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE -> StagePlayback.STOPPED
                 else -> StagePlayback.UNKNOWN
             }
-            StagePlaybackObservation(StageMediaKey(controller.packageName, uid / 100000, controller.sessionToken), state)
+            StagePlaybackObservation(key, state)
         }.getOrNull()
     }
     fun start() {
@@ -77,6 +87,7 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         val nextTokens = unique.map { it.sessionToken }.toSet()
         sessions.filter { it.sessionToken !in nextTokens }.forEach {
             registered.remove(it)
+            sessionKeys.remove(it)
             runCatching { it.unregisterCallback(cb) }
         }
         sessions = unique.map { controller -> oldByToken[controller.sessionToken] ?: controller }
@@ -94,6 +105,7 @@ internal class StageMediaSignals(context: Context, private val changed: () -> Un
         destroyRefresh?.let { handler.removeCallbacks(it) }
         destroyRefresh = null
         registered.clear()
+        sessionKeys.clear()
         val oldListener = listener
         val oldCallback = callback
         val oldSessions = sessions
