@@ -45,8 +45,8 @@ internal object AtomicPopupMenu {
         val dark=context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES
         val ink=if(dark)Color.rgb(245,248,255) else Color.rgb(26,37,54)
         val glass=GradientDrawable(GradientDrawable.Orientation.TL_BR,if(dark)
-            intArrayOf(Color.argb(216,62,76,96),Color.argb(206,39,52,73)) else
-            intArrayOf(Color.argb(229,250,253,255),Color.argb(215,221,232,245))).apply {
+            intArrayOf(Color.argb(238,62,76,96),Color.argb(232,39,52,73)) else
+            intArrayOf(Color.argb(246,250,253,255),Color.argb(240,221,232,245))).apply {
             cornerRadius=dp(20).toFloat();setStroke(dp(1),if(dark)Color.argb(85,232,245,255) else Color.argb(205,255,255,255))
         }
         val rows=LinearLayout(context).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(6),dp(6),dp(6),dp(6));setBackgroundColor(Color.TRANSPARENT)}
@@ -60,9 +60,16 @@ internal object AtomicPopupMenu {
         popup.setOnDismissListener{content.animate().cancel();if(active===popup)active=null}
         val grouped=StageMenuPolicy.isMain(items.map{it.first})
         var initialized=false
-        fun fit(count:Int,secondary:Boolean) {
-            val width=minOf(dp(if(secondary)220 else 208),safe.width().coerceAtLeast(1))
-            val height=minOf(dp(48)*count+dp(12),(safe.height()*.38f).toInt(),dp(300)).coerceAtLeast(1)
+        fun fit(secondary:Boolean) {
+            val maxWidth=safe.width().coerceAtLeast(1)
+            val maxHeight=safe.height().coerceAtLeast(1)
+            // Measure real labels, including system font scaling, before placing.
+            rows.measure(View.MeasureSpec.makeMeasureSpec(maxWidth,View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+            val width=maxOf(dp(if(secondary)220 else 208),rows.measuredWidth).coerceAtMost(maxWidth)
+            rows.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+            val height=rows.measuredHeight.coerceIn(1,maxHeight)
             val xy=IntArray(2);anchor.getLocationOnScreen(xy)
             fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
             val pos=StageMenuPlacement.place(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),width,height,avoid.map{it.box()},dp(8))
@@ -107,7 +114,7 @@ internal object AtomicPopupMenu {
                     if(grouped && category!=null)row("‹  ${StageMenuPolicy.groups[category]}"){page(null)}
                     items.filter{!grouped || StageMenuPolicy.group(it.first)==category}.forEach{action(it.first,it.second)}
                 }
-                fit(rows.childCount,category!=null)
+                fit(category!=null)
                 content.alpha=.35f;content.animate().alpha(1f).setDuration(100).start()
             } else dismissActive()
         }
