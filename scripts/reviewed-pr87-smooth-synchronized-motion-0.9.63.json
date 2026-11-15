@@ -152,8 +152,40 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmartRail.kt": {
-      "previous_blob_sha1": "ef075cd9bd31c56321b33c2dbbf07628ebe3135c",
+      "previous_blob_sha1": "7b2fdaffb9776edf164c1ff7bf04589856abeaab",
       "patches": [
+        {
+          "before": "    var pinned = prefs.getBoolean(\"pinned\", false); private set\n",
+          "after": "    var pinned = prefs.getBoolean(\"pinned\", false); private set\n    var idleSeconds = prefs.getInt(\"idle_seconds\", 5).takeIf { it in listOf(3, 5, 10, 15, 30) } ?: 5; private set\n"
+        },
+        {
+          "before": "    private var pending = false\n",
+          "after": "    private var pending = false\n    private var touching = false\n"
+        },
+        {
+          "before": "        if (enabled && !pinned && !hidden) {\n            pending = true\n            handler.postDelayed(idle, 3500)",
+          "after": "        if (enabled && !pinned && !hidden && !touching) {\n            pending = true\n            handler.postDelayed(idle, idleSeconds * 1000L)"
+        },
+        {
+          "before": "        if (!enabled || pinned || hidden || pending) return",
+          "after": "        if (!enabled || pinned || hidden || pending || touching) return"
+        },
+        {
+          "before": "    fun setPinned(value: Boolean) {",
+          "after": "    fun setIdleSeconds(value: Int) {\n        require(value in listOf(3, 5, 10, 15, 30))\n        idleSeconds = value\n        prefs.edit().putInt(\"idle_seconds\", value).apply()\n        interact()\n    }\n    fun setPinned(value: Boolean) {"
+        },
+        {
+          "before": "        // A long press/drag must never disappear underneath the user's finger.\n        if (!active)",
+          "after": "        // A long press/drag must never disappear underneath the user's finger.\n        touching = active\n        if (!active)"
+        },
+        {
+          "before": "        if (!enabled || pinned || hidden) return",
+          "after": "        if (!enabled || pinned || hidden || touching) return"
+        },
+        {
+          "before": "    fun stop() {\n        handler.removeCallbacks(idle)",
+          "after": "    fun stop() {\n        touching = false\n        handler.removeCallbacks(idle)"
+        },
         {
           "before": "    fun stop() {\n        touching = false\n        handler.removeCallbacks(idle)\n        pending = false\n        retries = 0\n        if (hidden) { hidden = false; render(false) }\n    }",
           "after": "    fun stop(restorePresentation: Boolean = true) {\n        touching = false\n        handler.removeCallbacks(idle)\n        pending = false\n        retries = 0\n        if (hidden) {\n            hidden = false\n            // Lock and workspace exit already remove the presentation. Do not\n            // submit a redundant main-Surface refit while tearing it down.\n            if (restorePresentation) render(false)\n        }\n    }"
