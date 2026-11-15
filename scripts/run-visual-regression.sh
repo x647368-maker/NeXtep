@@ -34,3 +34,21 @@ adb shell dumpsys statusbar > visual-results/final-statusbar.txt
 adb logcat -d > visual-results/logcat.txt
 
 grep -F 'HWUI_RENDER_PASS' visual-instrumentation.txt
+
+# Separate test-only resolution experiment; original full regression above is unchanged.
+# Same emulator/renderer; no claim that emulated 2248x2480 reproduces ColorOS.
+for spec in 1272x2772 2248x2480; do
+  adb shell wm size "$spec"
+  adb shell am force-stop io.github.x647368maker.atomicworkbench
+  adb shell input keyevent 82
+  rm -f "visual-results/first-commit-$spec.txt"
+  adb shell run-as io.github.x647368maker.atomicworkbench rm -f files/visual-regression/first-commit-resolution.txt
+  set +e
+  timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -w -e firstCommitProbeOnly true io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation > "visual-results/first-commit-$spec-instrumentation.txt"
+  set -e
+  adb exec-out run-as io.github.x647368maker.atomicworkbench cat files/visual-regression/first-commit-resolution.txt > "visual-results/first-commit-$spec.txt" || true
+  grep -F FIRST_COMMIT_PROBE_COMPLETE "visual-results/first-commit-$spec-instrumentation.txt"
+  grep -F "profile display=$spec" "visual-results/first-commit-$spec.txt"
+  grep -F "summary failures=" "visual-results/first-commit-$spec.txt"
+done
+adb shell wm size 1272x2772

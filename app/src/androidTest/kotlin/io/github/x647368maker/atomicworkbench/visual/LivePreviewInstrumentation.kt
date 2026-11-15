@@ -26,9 +26,11 @@ import java.util.concurrent.TimeUnit
 /** Real Android HWUI + live Surface producer. No root, third-party apps or task mocks. */
 class LivePreviewInstrumentation : Instrumentation() {
     private var nativeMirrorOnly = false
+    private var firstCommitProbeOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
+        firstCommitProbeOnly = arguments?.getString("firstCommitProbeOnly") == "true"
         start()
     }
     override fun onStart() {
@@ -41,6 +43,13 @@ class LivePreviewInstrumentation : Instrumentation() {
             waitForIdleSync()
             val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
             val checks=mutableListOf<String>()
+            if (firstCommitProbeOnly) {
+                val status=StageFirstCommitResolutionProbe(this).run(activity,root,out)
+                result.putString("stream",status+"\nFIRST_COMMIT_PROBE_COMPLETE\n")
+                runOnMainSync { activity.finish() }
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             if (nativeMirrorOnly) {
                 // The API37 job tests the actual compositor primitive, NOT
                 // the full legacy API35 suite. SKIP is a failure in this mode.
