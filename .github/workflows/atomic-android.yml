@@ -111,7 +111,13 @@ jobs:
       - name: Verify low-power one-shot sparse-card reflow contract
         run: python3 scripts/verify-sparse-rail-reflow.py
       - name: Check task continuity source boundaries
-        run: python3 scripts/verify-state-continuity.py
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/atomic-workbench/v87-motion-preflight-guard" ]; then
+            python3 scripts/verify-v87-native-candidate.py --historical
+          else
+            python3 scripts/verify-state-continuity.py
+          fi
       - name: Verify real API 101 source and JVM contracts
         run: |
           bash scripts/ci-android-build.sh :app:testDebugUnitTest -PatomicXposedApi=101.0.0

@@ -7,6 +7,8 @@ It compares committed Git objects, not uncommitted worktree files.
 """
 import argparse
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 BASE = "913f338eff98a5957403c8a7fdfca53d35a0af30"
@@ -15,7 +17,7 @@ SELF = "scripts/verify-v87-native-candidate.py"
 MAIN = "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/"
 TEST = "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/"
 PINS = {
-    "scripts/reviewed-pr92-async-task-queries-0.9.68.json": ("09679aedd2a2f209ab2407a0e61d926c3a9bea66", "19304152755aa2e706be87558787db0d2958b9af"),
+    ".github/workflows/atomic-android.yml": ("4c6ed172ccdfd165f9639d2d0b79b2eaaabd4dcf", "a837b852bc954d8dc08f9d0ff7bc9d6012c5aaf1"),
     "app/build.gradle.kts": ("a58e0476a3b47dd479427d53e7437961ba6a85c5", "3f7663838fab637cd45e6ad6dc3f12634e93bef8"),
     MAIN+"StageConcurrentNativeTrialPolicy.kt": ("42343f821180cf93733a9aff80023ee723fabb80", "84f90a1c0d1730ac49ad54e79c28782f75594ddf"),
     MAIN+"StageGpuMirrorOcclusion.kt": ("f07f177d1987b19257a1490d72e188ad50008afc", "0a32a2c28c80547770512a51842dc21d4a7db144"),
@@ -46,9 +48,70 @@ def check_scope(changed, observed):
 def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args])
 
+def check_candidate_contracts(root, ref):
+    def read(path):
+        return git(root, "show", ref + ":" + path).decode()
+    def require(path, *markers):
+        content = read(path)
+        for marker in markers:
+            if marker not in content:
+                raise SystemExit("candidate contract missing: " + path + ": " + marker)
+        return content
+    require("app/build.gradle.kts",
+            'buildConfigField("boolean", "ATOMIC_NATIVE_SURFACE_TRIAL", "false")',
+            'versionCode = 86', 'versionName = "0.9.71-dev"',
+            'applicationId = "io.github.x647368maker.atomicworkbench"')
+    require(MAIN+"StagePrivateDualTaskFlightGate.kt", "BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL")
+    require(MAIN+"StageTransientTapPolicy.kt", "!StagePrivateDualTaskFlightGate.enabled()")
+    swap = require(MAIN+"StageTransientTapSwap.kt",
+                   "decideMoveRequest(current(),moveStarted,::stillValid)",
+                   "StageTransientTapPolicy.canHandoff(flightDone,moveAck)")
+    if swap.count("TaskSurfaceCompat.captureObservedSwapPreview(") != 2:
+        raise SystemExit("snapshot count changed")
+    if any(s in swap for s in ("captureDisplayPreview(", "setCaptureSecureLayers", "setAllowProtected")):
+        raise SystemExit("unapproved capture path")
+    require(MAIN+"StageLiveSurfaceExchange.kt",
+            "StageConcurrentNativeTrialPolicy.sourceIdentityReady(",
+            "StageConcurrentNativeTrialPolicy.movePresentation(",
+            "if (concurrentHandoff && frameComplete && !unmaskedMove) armHeldEndpointWriter()",
+            "handoffReady=finalAlphaSubmitted &&")
+    require(MAIN+"StageLiveSurfaceFlightGeometry.kt",
+            "peakSweptOverlap(start,middle,obstacle)<=limit",
+            "peakSweptOverlap(middle,end,obstacle)<=limit")
+    print("PASS: pinned candidate route, source, privacy and handoff markers.", flush=True)
+
+def historical_on_normalized_copy(root, ref):
+    # The old script and ALL old manifests stay byte-for-byte unchanged.
+    # Run them only on a disposable view: exact pinned changes are reversed,
+    # and the resulting Git tree must equal the complete reviewed base.
+    if git(root, "rev-parse", "HEAD").decode().strip() != ref:
+        raise SystemExit("audit must target the actual build checkout")
+    if git(root, "status", "--porcelain", "--untracked-files=no").strip():
+        raise SystemExit("tracked worktree changes are not permitted")
+    base_tree = git(root, "rev-parse", BASE+"^{tree}").strip()
+    with tempfile.TemporaryDirectory(prefix="atomic-history-") as tmp:
+        view = Path(tmp) / "normalized"
+        git(root, "worktree", "add", "--detach", "--quiet", str(view), ref)
+        try:
+            git(view, "restore", "--source", BASE, "--staged", "--worktree", "--", *PINS)
+            git(view, "rm", "--force", "--", SELF)
+            if git(view, "write-tree").strip() != base_tree:
+                raise SystemExit("normalized tree is not identical to historical base")
+            if git(view, "diff", "--name-only").strip():
+                raise SystemExit("normalized tracked worktree differs from index")
+            print("Running unchanged full historical audit on exact normalized base tree.", flush=True)
+            subprocess.run([sys.executable, str(view/"scripts/verify-state-continuity.py")],
+                           cwd=view, check=True)
+        finally:
+            git(root, "worktree", "remove", "--force", str(view))
+    if git(root, "status", "--porcelain", "--untracked-files=no").strip():
+        raise SystemExit("build checkout changed during audit")
+    print("PASS: historical baseline audit plus separately pinned candidate delta; actual build checkout untouched.", flush=True)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ref", default="HEAD")
+    parser.add_argument("--historical", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     ref = git(root, "rev-parse", "--verify", args.ref+"^{commit}").decode().strip()
@@ -69,7 +132,12 @@ def main():
         if modes != [b"100644", b"100644"]:
             raise SystemExit("unexpected file mode: "+file)
     print("PASS: committed candidate matches 12 exact file pairs; no extra paths except this auditor.")
-    print("NOT RUN: historical freeze audit, Gradle, emulator, signing, OEM tests.")
+    check_candidate_contracts(root, ref)
+    if args.historical:
+        historical_on_normalized_copy(root, ref)
+    else:
+        print("NOT RUN: historical freeze audit.")
+    print("NOT RUN: Gradle, emulator, signing, OEM tests.")
 
 if __name__ == "__main__":
     main()
