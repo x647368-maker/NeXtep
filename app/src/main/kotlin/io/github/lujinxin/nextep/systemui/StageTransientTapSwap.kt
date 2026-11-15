@@ -346,13 +346,22 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(!current() || moveStarted)return
             trace("snapshot_fallback:"+why)
             removeVisual()
-            if(!stillValid()){finish("stale_fallback");return}
             fallback=true
             flightDone=true
             requestMove()
         }
         private fun requestMove(){
-            if(!current() || moveStarted)return
+            // The first committed frame is not a reservation of the original
+            // task/viewport. Rotation, fold or producer changes can invalidate
+            // it before the motion callback or its deadline requests the move.
+            when(StageTransientTapPolicy.decideMoveRequest(current(),moveStarted,::stillValid)){
+                StageTransientTapPolicy.MoveRequest.IGNORE->return
+                StageTransientTapPolicy.MoveRequest.STALE->{
+                    finish(if(fallback)"stale_fallback" else "stale_before_real_move")
+                    return
+                }
+                StageTransientTapPolicy.MoveRequest.START->Unit
+            }
             moveStarted=true
             trace("snapshot_real_move_requested")
             runCatching {
