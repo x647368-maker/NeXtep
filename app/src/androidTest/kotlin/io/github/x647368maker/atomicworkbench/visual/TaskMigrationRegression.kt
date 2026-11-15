@@ -1,6 +1,13 @@
 package io.github.x647368maker.atomicworkbench.visual
 
 import android.app.Activity
+import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import java.util.concurrent.atomic.AtomicLong
 import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.app.Instrumentation
@@ -58,8 +65,23 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             while(frames[slot].get()<=previous && SystemClock.uptimeMillis()<end) Thread.sleep(20)
             check(frames[slot].get()>previous) { "Real task did not produce a fresh display buffer slot=$slot" }
         }
+        // Track replacement Activity instances across display/configuration changes.
+        // This branch is for visual proof, not comparable frame-performance numbers.
+        val live = mutableMapOf<Int,Activity>()
+        val lifecycle = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(a:Activity,b:Bundle?) { live[a.taskId]=a }
+            override fun onActivityStarted(a:Activity) { live[a.taskId]=a }
+            override fun onActivityResumed(a:Activity) { live[a.taskId]=a }
+            override fun onActivityPaused(a:Activity) {}
+            override fun onActivityStopped(a:Activity) {}
+            override fun onActivitySaveInstanceState(a:Activity,b:Bundle) {}
+            override fun onActivityDestroyed(a:Activity) {
+                if(live[a.taskId]===a)live.remove(a.taskId)
+            }
+        }
         i.uiAutomation.adoptShellPermissionIdentity()
         try {
+            i.runOnMainSync { original.application.registerActivityLifecycleCallbacks(lifecycle) }
             for(slot in 0..3) {
                 val reader=ImageReader.newInstance(720,1120,PixelFormat.RGBA_8888,3)
                 readers.add(reader)
@@ -348,6 +370,104 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             }
             check(guardFinished.await(8,TimeUnit.SECONDS) && rejected){"Worker must never publish task/Surface observations"}
             lines.add("PASS matched alternating real-task moves: same production query and verification; owner-only publication guard")
+            // Separate visual assertion; never include screenshot polling in the
+            // four-mode timing experiment or label it first-frame latency.
+            val visualId=ids[0]
+            val returnedDisplay=displays[0].display.displayId
+            fun moveAndConfirm(target:Int){
+                val started=now()
+                i.runOnMainSync {
+                    ActivityTaskManagerCompat.moveTaskToDisplay(visualId,target).getOrThrow()
+                }
+                val end=SystemClock.uptimeMillis()+5000
+                while(taskDisplay(visualId)!=target && SystemClock.uptimeMillis()<end)Thread.sleep(20)
+                check(taskDisplay(visualId)==target){"Visual task not on requested display"}
+                i.runOnMainSync {
+                    val current=repository.publishExchangeTasks(repository.readExchangeTasks())
+                        .firstOrNull{it.taskId==visualId}
+                    verify(visualId,current)
+                    check(current?.displayId==target)
+                }
+                lines.add("visual_confirmation task=$visualId target=$target ms=${ms(now()-started)}")
+            }
+            fun paintMarker(target:Int,color:Int){
+                var painted=false
+                val end=SystemClock.uptimeMillis()+5000
+                while(!painted && SystemClock.uptimeMillis()<end){
+                    i.runOnMainSync {
+                        val a=live[visualId]
+                        if(a!=null && !a.isDestroyed && !a.isFinishing &&
+                            a.window.decorView.display?.displayId==target){
+                            val marker=View(a).apply{
+                                setBackgroundColor(color)
+                                elevation=1000f
+                            }
+                            a.addContentView(marker,ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT))
+                            painted=true
+                        }
+                    }
+                    if(!painted)Thread.sleep(20)
+                }
+                check(painted){"No current Activity instance on target display"}
+            }
+            fun similar(r:Int,g:Int,b:Int,color:Int)=
+                kotlin.math.abs(r-Color.red(color))<=12 &&
+                kotlin.math.abs(g-Color.green(color))<=12 &&
+                kotlin.math.abs(b-Color.blue(color))<=12
+            fun bitmapMatches(bitmap:Bitmap,color:Int):Boolean {
+                return listOf(4,5,6).all{x->listOf(4,5,6).all{y->
+                    val p=bitmap.getPixel(bitmap.width*x/10,bitmap.height*y/10)
+                    similar(Color.red(p),Color.green(p),Color.blue(p),color)
+                }}
+            }
+            val mainColor=Color.rgb(231,33,167)
+            val sideColor=Color.rgb(29,205,106)
+            moveAndConfirm(0)
+            paintMarker(0,mainColor)
+            val mainMarkedAt=now()
+            var mainSeen=false
+            val untilMain=SystemClock.uptimeMillis()+5000
+            while(!mainSeen && SystemClock.uptimeMillis()<untilMain){
+                i.uiAutomation.takeScreenshot()?.let{shot->
+                    val readable=if(shot.config==Bitmap.Config.HARDWARE)
+                        shot.copy(Bitmap.Config.ARGB_8888,false) else shot
+                    try{if(readable!=null)mainSeen=bitmapMatches(readable,mainColor)}
+                    finally{if(readable!==shot)readable?.recycle();shot.recycle()}
+                }
+                if(!mainSeen)Thread.sleep(50)
+            }
+            check(mainSeen){"Main display did not show the migrated task's fresh marker"}
+            lines.add("visual_marker target=main task=$visualId observed_after_marker_ms=${ms(now()-mainMarkedAt)}")
+            // This second color is never painted on the main display. An old
+            // virtual-display buffer or the previous marker cannot satisfy it.
+            val sideSeen=AtomicLong(0)
+            readers[0].setOnImageAvailableListener({reader->
+                reader.acquireLatestImage()?.use{image->
+                    val plane=image.planes.firstOrNull()
+                    if(plane!=null && plane.pixelStride>=4){
+                        val buf=plane.buffer
+                        val base=buf.position()
+                        val matches=listOf(4,5,6).all{x->listOf(4,5,6).all{y->
+                            val offset=base+(image.height*y/10)*plane.rowStride+
+                                (image.width*x/10)*plane.pixelStride
+                            offset>=0 && offset+2<buf.limit() &&
+                                similar(buf.get(offset).toInt() and 255,
+                                    buf.get(offset+1).toInt() and 255,
+                                    buf.get(offset+2).toInt() and 255,sideColor)
+                        }}
+                        if(matches)sideSeen.compareAndSet(0,now())
+                    }
+                }
+            },Handler(consumer.looper))
+            moveAndConfirm(returnedDisplay)
+            val sideMarkedAt=now()
+            paintMarker(returnedDisplay,sideColor)
+            val untilSide=SystemClock.uptimeMillis()+5000
+            while(sideSeen.get()==0L && SystemClock.uptimeMillis()<untilSide)Thread.sleep(20)
+            check(sideSeen.get()>=sideMarkedAt){"Side display did not show the new task marker"}
+            lines.add("visual_marker target=side task=$visualId observed_after_marker_request_ms=${ms(sideSeen.get()-sideMarkedAt)}")
+            lines.add("PASS visual marker round trip; post-confirmation test drawing only, not first real frame, app content continuity or cross-process proof")
             val report=StageExchangeTelemetry.describe()
             check(report.contains(io.github.x647368maker.atomicworkbench.systemui.StageRuntimeIdentity.BUILD) && report.contains("probe_display_binder") && report.contains("main=true"))
             File(out,"exchange-profile-probe.txt").writeText(report)
@@ -355,9 +475,14 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             lines.add("Scope: real framework moves only; production crop, input, overlay and vendor task engine are not emulated")
             File(out,"real-task-migration.txt").writeText(lines.joinToString("\n"))
             return listOf("PASS four real AOSP tasks retained identities and new buffers across 64 matched display moves; four modes, no phone performance claim",
-                "PASS matched production Binder lane and task repository; owner-only publication guard; separate elapsed and owner-busy timings")
+                "PASS matched production Binder lane and task repository; owner-only publication guard; separate elapsed and owner-busy timings",
+                "PASS task-specific fresh test marker visible on both destinations; separate same-process post-confirmation pixel proof")
         } finally {
-            i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
+            i.runOnMainSync {
+                original.application.unregisterActivityLifecycleCallbacks(lifecycle)
+                live.clear()
+                sampling=false;Choreographer.getInstance().removeFrameCallback(callback)
+            }
             i.runOnMainSync { taskIds.forEach{TaskSurfaceCompat.forgetTaskSurface(it)} }
             taskIds.forEach { id -> runCatching { ActivityTaskManagerCompat.removeTask(id).getOrThrow() } }
             displays.forEach { it.release() };readers.forEach { it.close() }
