@@ -23,10 +23,32 @@ pr90_review=json.loads((root/'scripts/reviewed-pr90-layout-binder-0.9.66.json').
 pr91_review=json.loads((root/'scripts/reviewed-pr91-cancel-observation-0.9.67.json').read_text())['files']
 # PR92 moves only active phased-exchange task queries onto the existing single-flight Binder lane.
 pr92_review=json.loads((root/'scripts/reviewed-pr92-async-task-queries-0.9.68.json').read_text())['files']
+# Promotion owner-turn candidate: retain the actual yield and all old freeze boundaries.
+promotion_turn_review=json.loads((root/'scripts/reviewed-p0-promotion-owner-turn-v84.json').read_text())['files']
+assert set(promotion_turn_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/ExchangeSession.kt','scripts/verify-state-continuity.py'}
+def undo_promotion_turn(path,data):
+ if path not in promotion_turn_review:return data
+ spec=promotion_turn_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
+ source=data.decode('utf-8')
+ for patch in reversed(spec['patches']):
+  assert source.count(patch['after'])==1,path
+  source=source.replace(patch['after'],patch['before'],1)
+ prior=source.encode('utf-8')
+ assert blob(prior)==spec['previous_blob_sha1'],path
+ return prior
+for reviewed_path in promotion_turn_review:
+ undo_promotion_turn(reviewed_path,(root/reviewed_path).read_bytes())
+_promotion_turn=(k/'display/ExchangeSession.kt').read_text().split('driver.promoteAsync { error ->',1)[1].split('driver.promote()',1)[0]
+assert 'if (Thread.currentThread() === owner) acceptPromotion()' in _promotion_turn
+assert 'else postTurn(acceptPromotion)' in _promotion_turn
+assert 'schedule(phase)' in _promotion_turn and 'cancelled || now() >= deadline' in _promotion_turn
 # Phased finish-once guard: normalize only the exact scoped changes first.
 finish_once_review=json.loads((root/'scripts/reviewed-phased-finish-once-v83.json').read_text())['files']
 assert set(finish_once_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt','scripts/verify-state-continuity.py'}
 def undo_finish_once(path,data):
+ data=undo_promotion_turn(path,data)
  if path not in finish_once_review:return data
  spec=finish_once_review[path]
  blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()

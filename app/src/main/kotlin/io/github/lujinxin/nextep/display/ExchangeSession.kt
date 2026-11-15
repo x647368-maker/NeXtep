@@ -90,14 +90,21 @@ internal class ExchangeSession<L>(
                             // Never sleep on the SystemUI animation Looper while
                             // waiting for the OEM to observe the new display.
                             driver.promoteAsync { error ->
-                                postTurn {
+                                val acceptPromotion: () -> Unit = accept@{
                                     checkThread()
-                                    if (phase != Phase.PROMOTING || notified) return@postTurn
+                                    if (phase != Phase.PROMOTING || notified) return@accept
                                     if (error != null) failure = error
                                     phase = if (error != null || cancelled || now() >= deadline)
                                         Phase.ROLLBACK_PENDING else Phase.DEMOTE_PENDING
+                                    // Still yield before any next system mutation. The queued
+                                    // schedule rechecks cancellation and expiry at execution.
                                     schedule(phase)
                                 }
+                                // The production Binder lane delivers on the owner Looper.
+                                // Avoid a redundant relay turn, not the mutation boundary.
+                                // Preserve the old dispatch for an off-owner driver callback.
+                                if (Thread.currentThread() === owner) acceptPromotion()
+                                else postTurn(acceptPromotion)
                             }
                         } else {
                             driver.promote()
