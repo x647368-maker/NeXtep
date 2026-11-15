@@ -2,7 +2,8 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 /** Per-tap only. No background capture, refresh or repeating idle timer. */
 internal object StageTransientTapPolicy {
-    fun privateTrialEnabled():Boolean=true
+    // Mutually exclusive backends: ordinary builds retain snapshots.
+    fun privateTrialEnabled():Boolean=!StagePrivateDualTaskFlightGate.enabled()
     const val CAPTURE_BUDGET_MS=160L
     const val FIRST_COMMIT_BUDGET_MS=110L
     const val FLIGHT_MS=300L
