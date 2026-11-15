@@ -18,8 +18,31 @@ internal class RefinementRegression(private val inst:Instrumentation) {
     private fun ui(f:()->Unit)=inst.runOnMainSync(f)
     private fun settle(){inst.waitForIdleSync();Thread.sleep(180)}
     private fun click(label:String) {
-        val node=inst.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(label)?.firstOrNull{it.text?.toString()==label} ?: error("Missing command $label")
-        val b=Rect();node.getBoundsInScreen(b)
+        // Compact menus can expose only part of a row. Scroll the actual
+        // popup until the touch coordinates lie inside its visible viewport.
+        fun scrollContainer(node: android.view.accessibility.AccessibilityNodeInfo): android.view.accessibility.AccessibilityNodeInfo? {
+            if (node.isScrollable) return node
+            return (0 until node.childCount).firstNotNullOfOrNull { index ->
+                node.getChild(index)?.let(::scrollContainer)
+            }
+        }
+        val b = Rect()
+        for (attempt in 0..20) {
+            val root = checkNotNull(inst.uiAutomation.rootInActiveWindow)
+            val node = root.findAccessibilityNodeInfosByText(label)
+                .firstOrNull { it.text?.toString() == label && it.isVisibleToUser }
+            val scroll = scrollContainer(root)
+            val viewport = Rect()
+            (scroll ?: root).getBoundsInScreen(viewport)
+            if (node != null) {
+                node.getBoundsInScreen(b)
+                if (b.intersect(viewport) && b.height() >= 8 && b.width() >= 8) break
+            }
+            check(attempt < 20 && scroll?.performAction(
+                android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            ) == true) { "Cannot reach command $label by scrolling the popup" }
+            settle()
+        }
         val t=SystemClock.uptimeMillis()
         for(a in listOf(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP)){
             val e=MotionEvent.obtain(t,SystemClock.uptimeMillis(),a,b.exactCenterX(),b.exactCenterY(),0);e.source=InputDevice.SOURCE_TOUCHSCREEN
@@ -78,8 +101,8 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         val listener=Window.OnFrameMetricsAvailableListener{_,m,_->synchronized(metrics){metrics.add(m.getMetric(FrameMetrics.TOTAL_DURATION))}}
         ui{activity.window.addOnFrameMetricsAvailableListener(listener,Handler(metricThread.looper))}
         val commands=listOf("切换全屏（保留工作区）","顶部横排","左侧排列","右侧排列","收起常用应用快捷栏","完整显示布局","✓ 主窗口优先布局","添加小窗","影音布局与自动模式","开启智能侧栏（静置收起）","固定侧栏","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）","退出台前调度")
-        var fired=-1
-        val actions=commands.mapIndexed{i,label->label to {fired=i}}
+        val fired=java.util.concurrent.atomic.AtomicInteger(-1)
+        val actions=commands.mapIndexed{i,label->label to {fired.set(i)}}
         val expected=(0..3).map{category->commands.indices.filter{StageMenuPolicy.group(commands[it])==category}}
         val m=activity.resources.displayMetrics
         val counts=mutableListOf<String>()
@@ -108,29 +131,26 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 click("‹  ${StageMenuPolicy.groups[category]}")
                 ui{AtomicPopupMenu.dismissAll()};settle()
                 for(index in expected[category]){
-                    fired=-1;ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click("${StageMenuPolicy.groups[category]}  ›");click(commands[index])
+                    fired.set(-1);ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click("${StageMenuPolicy.groups[category]}  ›");click(commands[index])
                     // Menu actions dismiss with a 70ms compositor fade and then post
                     // their callback on the anchor. An HWUI-saturated emulator can
                     // dispatch this after the general 180ms idle settle. Retain
                     // the exact callback assertion, but await the real delivery.
                     val callbackDeadline = SystemClock.uptimeMillis() + 2000L
-                    while (fired != index && SystemClock.uptimeMillis() < callbackDeadline) {
+                    while (fired.get() != index && SystemClock.uptimeMillis() < callbackDeadline) {
                         Thread.sleep(25)
                     }
-                    check(fired==index){"Wrong callback $mode $index -> $fired"};check(!AtomicPopupMenu.isShowing())
+                    check(fired.get()==index){"Wrong callback $mode $index -> $fired"};ui{check(!AtomicPopupMenu.isShowing())}
                 }
             }
-            var scrolled=-1
-            ui{AtomicPopupMenu.show(activity,anchor,(0..19).map{i->"SCROLL_ACTION_$i" to {scrolled=i}},avoid)};settle()
-            fun scrollNode(n:android.view.accessibility.AccessibilityNodeInfo?):android.view.accessibility.AccessibilityNodeInfo? {
-                if(n==null)return null
-                if(n.isScrollable)return n
-                for(i in 0 until n.childCount){val found=scrollNode(n.getChild(i));if(found!=null)return found}
-                return null
+            val scrolled=java.util.concurrent.atomic.AtomicInteger(-1)
+            ui{AtomicPopupMenu.show(activity,anchor,(0..19).map{i->"SCROLL_ACTION_$i" to {scrolled.set(i)}},avoid)};settle()
+            click("SCROLL_ACTION_19")
+            val scrollCallbackDeadline = SystemClock.uptimeMillis() + 2000L
+            while (scrolled.get() == -1 && SystemClock.uptimeMillis() < scrollCallbackDeadline) {
+                Thread.sleep(25)
             }
-            val scroll=checkNotNull(scrollNode(inst.uiAutomation.rootInActiveWindow)){"Bounded menu cannot scroll"}
-            repeat(4){scroll.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);settle()}
-            click("SCROLL_ACTION_19");check(scrolled==19){"Last scrolled command was not dispatched"}
+            check(scrolled.get()==19){"Last scrolled command was not dispatched"}
             check(textures.toSet()==initial && destroyed==0){"Presentation rebuilt TextureView producers"}
             counts.add("$mode=13 callbacks, 4 back navigations, producer identities unchanged")
         }
