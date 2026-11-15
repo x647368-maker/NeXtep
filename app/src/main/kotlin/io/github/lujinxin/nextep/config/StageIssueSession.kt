@@ -67,7 +67,8 @@ internal class StageIssueSession(context: Context) {
         if (!active() || currentToken() != token || isDue()) return
         val count = autoEventCount()
         if (count >= maxAutoEvents) {
-            preferences.edit().putBoolean("auto_events_truncated", true).apply()
+            if (!preferences.getBoolean("auto_events_truncated", false))
+                preferences.edit().putBoolean("auto_events_truncated", true).apply()
             return
         }
         val elapsed = StageIssueReportPolicy.elapsedMs(token, SystemClock.elapsedRealtime())
@@ -182,7 +183,7 @@ internal class StageIssueSession(context: Context) {
         val finalNote = note.takeIf { it.isNotBlank() } ?: storedNote()
         val report = buildString {
             appendLine("台前调度｜用户自愿开启的故障测试报告")
-            appendLine("只记录开始/结束快照、手动标记和系统主动通知的少量状态变化；不轮询、不截图、不抓取崩溃堆栈。")
+            appendLine("只记录开始/结束快照、手动标记和系统主动通知的少量状态变化（含应用配置变化）；不轮询、不截图、不抓取崩溃堆栈。")
             appendLine("屏幕变化通知和测试App前后台事件仅在测试已开启且App进程存活时可能记录；若进程被杀或ROM限制广播，中途会有空白。")
             appendLine("测试类型：${category.name}")
             appendLine("操作说明：${category.instructions}")
@@ -202,12 +203,15 @@ internal class StageIssueSession(context: Context) {
             val observedScreen = (0 until autoEventCount()).count {
                 preferences.getString("auto_event_$it",null)?.contains("系统通知：") == true
             }
+            val observedConfiguration = (0 until autoEventCount()).count {
+                preferences.getString("auto_event_$it",null)?.contains("设备配置变化：") == true
+            }
             for (module in StageIssueTestCatalog.modules) {
                 val coverage = if (module.id !in requested) "未选择（未测试）" else when(module.id) {
                     "performance" -> "有电池/温度起止快照（未知值以原始字段为准）；$swaps；精确帧率、闪烁与模块独占功耗未自动判定"
                     "layout" -> "${if(both) "已读取起止工作台快照" else "工作台快照不完整"}；遮挡、智能隐藏与空间利用需手动验证"
                     "content" -> "第三方应用的生命周期、游戏触控、播放及内容保留不可自动观测；未测试项不能判为正常"
-                    "compatibility" -> "设备及屏幕起止状态；系统屏幕通知${observedScreen}条（可能漏记）；手势、Root/注入兼容性未自动验收"
+                    "compatibility" -> "设备及屏幕起止状态；系统屏幕通知${observedScreen}条、应用配置变化${observedConfiguration}条（均可能漏记）；配置变化不等于物理铰链状态或适配通过；手势、Root/注入兼容性未自动验收"
                     "services" -> "工作组、快捷栏、更新签名与收款码尚无自动验证事件；未测试"
                     else -> "不可观测"
                 }
@@ -235,7 +239,7 @@ internal class StageIssueSession(context: Context) {
             appendLine("结束设备状态：${StageIssueSceneSnapshot.read(app)}")
             appendLine("开始工作台：${preferences.getString("start_runtime","无法读取")}")
             appendLine("结束工作台：${runtimeLine(snapshot)}")
-            appendLine("自动屏幕及测试App前后台事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
+            appendLine("自动屏幕、应用配置及测试App前后台事件：${autoEventCount()}条（最多${maxAutoEvents}条）")
             for (event in 0 until autoEventCount()) {
                 appendLine("状态事件#${event+1}：${preferences.getString("auto_event_$event","不可用")}")
             }
@@ -244,9 +248,10 @@ internal class StageIssueSession(context: Context) {
             appendLine("事件记录覆盖范围：无法保证系统杀掉本App后的间隔；没有事件不代表没有锁屏/切后台。")
             appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
+            if (bootIdentity == false) appendLine("设备已重启：以下交换记录仅为结束快照，不与起始编号或进程号比较。")
             appendLine(StageIssueReportPolicy.exchangeSection(
-                preferences.getInt("start_pid", -1),
-                preferences.getLong("start_swap_id", -1L).takeIf { it >= 0L },
+                if (bootIdentity == false) -1 else preferences.getInt("start_pid", -1),
+                if (bootIdentity == false) null else preferences.getLong("start_swap_id", -1L).takeIf { it >= 0L },
                 snapshot?.processId, snapshot?.exchangeDiagnostics))
             appendLine("手动标记：${labels.size}次（不要求使用）")
             for (index in labels.indices) {
