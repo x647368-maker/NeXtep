@@ -119,6 +119,9 @@ object SystemUiRuntime {
             val screenReady = isScreenReady()
             val keyguardLocked = isKeyguardLocked(applicationContext)
             if (!screenReady || keyguardLocked) {
+                // The lock observer is already responsible for the locked fallback.
+                // Cancel a stale unlock retry instead of running a second poll chain.
+                if (keyguardLocked) lifecycleHandler.removeCallbacks(resumeAfterUnlock)
                 if (!workspaceController.isSuspended()) {
                     workspaceController.suspendForLock()
                     publishWorkspaceSurfaceState(false)
@@ -157,9 +160,12 @@ object SystemUiRuntime {
             val screenReady = isScreenReady()
             windowController.updateSuspendedOutputs(
                 StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))
-            if (locked || !screenReady) {
+            // While keyguard is locked, display/keyguard callbacks and the existing
+            // lock observer handle wake/unlock. Do not start a competing poll chain.
+            if (locked) return
+            if (!screenReady) {
                 // USER_PRESENT can precede the physical display becoming ready.
-                // Keep this attempt alive instead of waiting for another broadcast.
+                // Retain the existing wake retry only while unlocked.
                 lifecycleHandler.postDelayed(this,
                     StageLockPowerPolicy.resumeRetryMs(screenReady, locked))
                 return
