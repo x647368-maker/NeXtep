@@ -108,6 +108,17 @@ internal object StageConcurrentNativeTrialPolicy {
             elapsedMs >= durationMs - FINAL_FRAME_TOLERANCE_MS
     }
 
+    // The experimental concurrent flight must acknowledge the final
+    // compositor transaction before holding the two animated endpoint layers.
+    // A missing acknowledgement is not pixel proof: hide the layers and move
+    // the real tasks once, without claiming an animated handoff.
+    const val TERMINAL_COMMIT_BUDGET_MS=64L
+    enum class MovePresentation { ANIMATED, UNMASKED }
+    fun movePresentation(firstCommitted:Boolean,terminalRequired:Boolean,
+                         terminalCommitted:Boolean):MovePresentation =
+        if(firstCommitted && (!terminalRequired || terminalCommitted))
+            MovePresentation.ANIMATED else MovePresentation.UNMASKED
+
     // A terminal geometry submission is explicit; never rely solely on
     // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI.
     fun terminalFrameDue(playTimeMs: Long, durationMs: Long, fraction: Float,
