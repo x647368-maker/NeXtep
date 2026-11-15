@@ -141,6 +141,8 @@ internal class StageLiveSurfaceExchange private constructor(
     private var lastProgress = 0f
     private var nativeFrameCount = 0
     private var firstTransactionCommitted = false
+    private var terminalTransactionCommitted = false
+    private var unmaskedMove = false
     private var previousFrameAtMs = 0L
     private var biggestFrameGapMs = 0L
     private var gapsOver24Ms = 0
@@ -450,21 +452,40 @@ internal class StageLiveSurfaceExchange private constructor(
                 stop()
                 return
             }
+            // A missing compositor acknowledgement is not permission to
+            // hold an unproven animated endpoint over the real task. Remove
+            // both mirrors and covers in one existing transaction, then
+            // proceed once with the ordinary task exchange. If hiding itself
+            // fails, stop before any real task mutation.
+            val presentation=StageConcurrentNativeTrialPolicy.movePresentation(
+                firstTransactionCommitted,concurrentHandoff,terminalTransactionCommitted)
+            if(presentation==StageConcurrentNativeTrialPolicy.MovePresentation.UNMASKED) {
+                val hidden=runCatching {
+                    val tx=frameTransaction ?: error("No native transaction")
+                    tx.setVisibility(sourceMirror,false)
+                    tx.setVisibility(mainMirror,false)
+                    occlusion.hide(tx)
+                    tx.apply()
+                }.onFailure { NeXtepLog.warn("native_swap","Unconfirmed flight could not be hidden",it) }.isSuccess
+                if(!hidden){stop();return}
+                unmaskedMove=true
+                trace("native_unmasked_fallback:first=$firstTransactionCommitted terminal=$terminalTransactionCommitted")
+            }
             sentMove = true
-            if (concurrentHandoff && frameComplete) armHeldEndpointWriter()
+            if (concurrentHandoff && frameComplete && !unmaskedMove) armHeldEndpointWriter()
             trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
             if (moveAsync != null) {
                 runCatching {
                     moveAsync { ok ->
                         ui.post {
-                            if (!isRunning) return@post
+                            if (!isRunning || moveComplete) return@post
                             if (!ok) { stop(); return@post }
                             moveComplete = true
                             moveCompletedAt = SystemClock.uptimeMillis()
                             trace(
                                 "real_move_ack@${moveCompletedAt-startedAtMs}ms")
-                            finishIfReady(liveReady,canRelease)
+                            if(unmaskedMove)stop() else finishIfReady(liveReady,canRelease)
                         }
                     }
                 }.onFailure {
@@ -478,7 +499,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 moveCompletedAt=SystemClock.uptimeMillis()
                 trace(
                     "sync_move_ack@${moveCompletedAt-startedAtMs}ms")
-                finishIfReady(liveReady,canRelease)
+                if(unmaskedMove)stop() else finishIfReady(liveReady,canRelease)
             }
         }
         // One-shot cleanup if a device sleeps/locks between frame callback
@@ -486,11 +507,27 @@ internal class StageLiveSurfaceExchange private constructor(
         ui.postDelayed(lifetimeWatchdog,MAX_LIFETIME_MS)
         val flightDuration=if (immediateMove) durationMs.toLong().coerceIn(320L,380L)
             else durationMs.toLong().coerceIn(MIN_DURATION_MS,MAX_DURATION_MS)
-        fun submitFlightFrame(fraction: Float): Boolean {
+        fun submitFlightFrame(fraction: Float,terminal:Boolean=false): Boolean {
             if (!isRunning) return false
             return runCatching {
                 val frame=frameTransaction ?: error("Flight transaction is unavailable")
                 applyFrame(frame,fraction)
+                // Register before submitting the exact terminal geometry.
+                // The callback is one-shot and runs on the host main executor;
+                // the same bounded deferred move is shared with the deadline.
+                if(terminal && concurrentHandoff && Build.VERSION.SDK_INT>=33) {
+                    runCatching {
+                        frame.addTransactionCommittedListener(host.context.mainExecutor) {
+                            if(!isRunning || sentMove)return@addTransactionCommittedListener
+                            terminalTransactionCommitted=true
+                            trace("native_terminal_transaction_committed")
+                            deferredMove?.let { pending ->
+                                ui.removeCallbacks(pending)
+                                ui.post(pending)
+                            }
+                        }
+                    }.onFailure { trace("native_terminal_commit_callback_unavailable") }
+                }
                 frame.apply()
                 lastProgress=fraction
                 val now=SystemClock.uptimeMillis()
@@ -513,7 +550,7 @@ internal class StageLiveSurfaceExchange private constructor(
             // Force the exact final geometry in one existing dual-mirror
             // transaction BEFORE mutating either live task producer.
             // Transaction.apply is submission, not proof of visible pixels.
-            if (!submitFlightFrame(1f)) return
+            if (!submitFlightFrame(1f,terminal=true)) return
             frameComplete=true
             trace("flight_complete:$reason@${SystemClock.uptimeMillis()-startedAtMs}ms")
             flightDeadline?.let { ui.removeCallbacks(it) }
@@ -526,7 +563,9 @@ internal class StageLiveSurfaceExchange private constructor(
                     if (isRunning) commitMove()
                 }
                 deferredMove=movePost
-                ui.post(movePost)
+                if(concurrentHandoff && Build.VERSION.SDK_INT>=33 && !terminalTransactionCommitted)
+                    ui.postDelayed(movePost,StageConcurrentNativeTrialPolicy.TERMINAL_COMMIT_BUDGET_MS)
+                else ui.post(movePost)
             } else finishIfReady(liveReady,canRelease)
         }
         // Independent one-shot fallback for missing terminal update/listener.
@@ -709,10 +748,11 @@ internal class StageLiveSurfaceExchange private constructor(
         flightDeadline=null
         deferredMove?.let { ui.removeCallbacks(it) }
         deferredMove=null
-        lastOutcome=if(firstTransactionCommitted && nativeFrameCount>1 &&
+        lastOutcome=if(!unmaskedMove && firstTransactionCommitted && nativeFrameCount>1 &&
             moveComplete && handoffReady)
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
+            "terminal=$terminalTransactionCommitted unmasked=$unmaskedMove " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
         trace(
             "gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
