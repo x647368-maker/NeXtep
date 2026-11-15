@@ -26,3 +26,16 @@ internal object StageLockPowerPolicy {
         else -> 100L
     }
 }
+
+/** A real wake signal authorizes a bounded fast retry; observation remains event driven. */
+internal class StageWakeRetryBudget {
+    private var remaining = 0
+
+    fun begin() { remaining = 5 }
+    fun cancel() { remaining = 0 }
+    fun take(): Boolean {
+        if (remaining <= 0) return false
+        remaining--
+        return true
+    }
+}

@@ -443,6 +443,34 @@
         {
           "before": "            if (locked || !screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Keep this attempt alive instead of waiting for another broadcast.",
           "after": "            // While keyguard is locked, display/keyguard callbacks and the existing\n            // lock observer handle wake/unlock. Do not start a competing poll chain.\n            if (locked) return\n            if (!screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Retain the existing wake retry only while unlocked."
+        },
+        {
+          "before": "    private val taskRefreshQueued = AtomicBoolean(false)",
+          "after": "    private val taskRefreshQueued = AtomicBoolean(false)\n    private val wakeRetryBudget = StageWakeRetryBudget()"
+        },
+        {
+          "before": "        if (taskRefreshQueued.compareAndSet(false, true)) lifecycleHandler.post(taskRefresh)",
+          "after": "        if (taskRefreshQueued.compareAndSet(false, true) && !lifecycleHandler.post(taskRefresh)) {\n            taskRefreshQueued.set(false)\n        }"
+        },
+        {
+          "before": "                if (keyguardLocked) lifecycleHandler.removeCallbacks(resumeAfterUnlock)",
+          "after": "                if (keyguardLocked) {\n                    lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n                    wakeRetryBudget.cancel()\n                }"
+        },
+        {
+          "before": "        } else {\n            lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n        }\n    }\n    private val resumeAfterUnlock",
+          "after": "        } else {\n            lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n            wakeRetryBudget.cancel()\n        }\n    }\n    private val resumeAfterUnlock"
+        },
+        {
+          "before": "    private val resumeAfterUnlock = object : Runnable {\n        override fun run() {\n            lifecycleHandler.removeCallbacks(this)\n            if (!::workspaceController.isInitialized || !workspaceController.isSuspended()) return\n            val locked = isKeyguardLocked(applicationContext)\n            val screenReady = isScreenReady()\n            windowController.updateSuspendedOutputs(\n                StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))\n            // While keyguard is locked, display/keyguard callbacks and the existing\n            // lock observer handle wake/unlock. Do not start a competing poll chain.\n            if (locked) return\n            if (!screenReady) {\n                // USER_PRESENT can precede the physical display becoming ready.\n                // Retain the existing wake retry only while unlocked.\n                lifecycleHandler.postDelayed(this,\n                    StageLockPowerPolicy.resumeRetryMs(screenReady, locked))\n                return\n            }\n            val resumed = workspaceController.resumeAfterLock()\n            publishWorkspaceSurfaceState(resumed)\n            if (!resumed) WorkspaceStateBridge.requestInactiveFromSystemUi(applicationContext)\n        }\n    }\n",
+          "after": "    private val resumeAfterUnlock = object : Runnable {\n        override fun run() {\n            lifecycleHandler.removeCallbacks(this)\n            if (!::workspaceController.isInitialized || !workspaceController.isSuspended()) {\n                wakeRetryBudget.cancel()\n                return\n            }\n            val locked = isKeyguardLocked(applicationContext)\n            val screenReady = isScreenReady()\n            windowController.updateSuspendedOutputs(\n                StageLockPowerPolicy.allowSuspendedOutput(screenReady, locked))\n            // The existing lock observer and physical-display/keyguard events remain authoritative.\n            if (locked) {\n                wakeRetryBudget.cancel()\n                return\n            }\n            if (!screenReady) {\n                // Only a real wake signal grants a bounded fast retry window.\n                if (wakeRetryBudget.take() && !lifecycleHandler.postDelayed(this,\n                        StageLockPowerPolicy.resumeRetryMs(screenReady, locked))) {\n                    wakeRetryBudget.cancel()\n                }\n                return\n            }\n            wakeRetryBudget.cancel()\n            val resumed = workspaceController.resumeAfterLock()\n            publishWorkspaceSurfaceState(resumed)\n            if (!resumed) WorkspaceStateBridge.requestInactiveFromSystemUi(applicationContext)\n        }\n    }\n"
+        },
+        {
+          "before": "                Intent.ACTION_SCREEN_OFF -> {\n                    lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n                    workspaceController.suspendForLock()",
+          "after": "                Intent.ACTION_SCREEN_OFF -> {\n                    lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n                    wakeRetryBudget.cancel()\n                    workspaceController.suspendForLock()"
+        },
+        {
+          "before": "                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {\n                    lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n                    lifecycleHandler.post(resumeAfterUnlock)\n                    return",
+          "after": "                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {\n                    lifecycleHandler.removeCallbacks(resumeAfterUnlock)\n                    wakeRetryBudget.begin()\n                    if (!lifecycleHandler.post(resumeAfterUnlock)) wakeRetryBudget.cancel()\n                    return"
         }
       ]
     },
@@ -461,6 +489,15 @@
         {
           "before": "            val geometry = windowController.currentGeometry()\n            SystemUiRootTransformController.setGeometry(geometry)\n            windowController.resumeAfterLock()\n            SystemServerWorkspaceBridge.publish(applicationContext, true, geometry)",
           "after": "            val requested = windowController.currentGeometry()\n            SystemUiRootTransformController.setGeometry(requested)\n            // A fold/rotation can settle during window restoration. Publish the\n            // geometry actually applied to the retained windows, not the earlier request.\n            val geometry = windowController.resumeAfterLock()\n            if (geometry != requested) SystemUiRootTransformController.setGeometry(geometry)\n            SystemServerWorkspaceBridge.publish(applicationContext, true, geometry)"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLockPowerPolicy.kt": {
+      "previous_blob_sha1": "0332c7437e42570afa1bbaf7fb5356800df903fa",
+      "patches": [
+        {
+          "before": "    fun resumeRetryMs(physicalScreenReady: Boolean, keyguardLocked: Boolean): Long = when {\n        keyguardLocked -> LOCKED_FALLBACK_MS\n        !physicalScreenReady -> SCREEN_WAKING_RETRY_MS\n        else -> 100L\n    }\n}\n",
+          "after": "    fun resumeRetryMs(physicalScreenReady: Boolean, keyguardLocked: Boolean): Long = when {\n        keyguardLocked -> LOCKED_FALLBACK_MS\n        !physicalScreenReady -> SCREEN_WAKING_RETRY_MS\n        else -> 100L\n    }\n}\n\n/** A real wake signal authorizes a bounded fast retry; observation remains event driven. */\ninternal class StageWakeRetryBudget {\n    private var remaining = 0\n\n    fun begin() { remaining = 5 }\n    fun cancel() { remaining = 0 }\n    fun take(): Boolean {\n        if (remaining <= 0) return false\n        remaining--\n        return true\n    }\n}\n"
         }
       ]
     }

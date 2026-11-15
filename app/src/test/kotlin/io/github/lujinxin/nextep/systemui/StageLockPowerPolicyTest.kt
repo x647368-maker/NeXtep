@@ -14,6 +14,28 @@ class StageLockPowerPolicyTest {
         assertTrue(StageLockPowerPolicy.allowSuspendedOutput(true, false))
     }
 
+    @Test fun wakeFastRetryRequiresANewSignalAndHasABoundedBudget() {
+        val budget = StageWakeRetryBudget()
+        assertFalse(budget.take())
+        repeat(20) {
+            budget.begin()
+            repeat(5) { assertTrue(budget.take()) }
+            repeat(25) { assertFalse(budget.take()) }
+        }
+    }
+
+    @Test fun cancellingAWakeBudgetPreventsLateRetriesUntilNextSignal() {
+        val budget = StageWakeRetryBudget()
+        for (used in 0..5) {
+            budget.begin()
+            repeat(used) { assertTrue(budget.take()) }
+            budget.cancel()
+            repeat(10) { assertFalse(budget.take()) }
+        }
+        budget.begin()
+        assertTrue(budget.take())
+    }
+
     @Test fun screenOffAndLockedStatesThrottleFallback() {
         assertEquals(15_000L, StageLockPowerPolicy.observationIntervalMs(false, false))
         assertEquals(15_000L, StageLockPowerPolicy.observationIntervalMs(false, true))
