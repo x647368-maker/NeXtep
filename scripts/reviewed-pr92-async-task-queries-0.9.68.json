@@ -99,6 +99,44 @@
           "after": "    fun runningTasks(): List<TaskSnapshot> = try {\n        readTasks(TaskSurfaceCompat::observeTaskState)\n    } catch (error: Throwable) {\n        NeXtepLog.error(\"task_repository\", \"Running task query failed\", error)\n        emptyList()\n    }\n\n    // Worker path decodes only. An invalid exchange reply must not mutate\n    // observed Surface ownership or discard an existing slot fit.\n    internal data class ExchangeTaskBatch(\n        val snapshots: List<TaskSnapshot>,\n        val observations: List<Pair<Int, TaskInfoCompat.WindowState>>,\n    )\n\n    internal fun readExchangeTasks(): ExchangeTaskBatch {\n        val states=ArrayList<Pair<Int, TaskInfoCompat.WindowState>>()\n        val snapshots=readTasks { id,state -> states.add(id to state) }\n        return ExchangeTaskBatch(snapshots,states)\n    }\n\n    internal fun publishExchangeTasks(batch: ExchangeTaskBatch): List<TaskSnapshot> {\n        check(android.os.Looper.myLooper()==android.os.Looper.getMainLooper())\n        batch.observations.forEach { (id,state) -> TaskSurfaceCompat.observeTaskState(id,state) }\n        return batch.snapshots\n    }\n\n    @Suppress(\"DEPRECATION\")\n    private fun readTasks(observe: (Int, TaskInfoCompat.WindowState)->Unit): List<TaskSnapshot> {\n        WorkspaceEnergyDiagnostics.taskQueries.incrementAndGet()\n        val raw=io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase(\"query_binder\") {\n            activityManager?.getRunningTasks(MAX_TASK_QUERY).orEmpty()\n        }\n        return io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase(\"query_decode\") {\n            raw.mapNotNull { snapshot(it,observe) }\n        }\n    }\n\n    private fun snapshot(info: ActivityManager.RunningTaskInfo,\n                         observe: (Int,TaskInfoCompat.WindowState)->Unit): TaskSnapshot? {\n        val component = info.topActivity ?: info.baseActivity ?: return null\n        val windowState = TaskInfoCompat.readWindowState(info) ?: return null\n        observe(info.taskId, windowState)"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageAsyncPreviewCapture.kt": {
+      "previous_blob_sha1": "5f14e935dc52d708f5949075fc6f916f4cf55caf",
+      "patches": [
+        {
+          "before": "    private var generation=0",
+          "after": "    @Volatile private var generation=0"
+        },
+        {
+          "before": "        worker.execute {\n            val bitmap=runCatching(load).getOrNull()\n            ui.post {",
+          "after": "        worker.execute {\n            // A superseded queued request must not acquire another task snapshot.\n            if(token!=generation)return@execute\n            val bitmap=runCatching(load).getOrNull()\n            if(token!=generation){bitmap?.recycle();return@execute}\n            ui.post {"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt": {
+      "previous_blob_sha1": "167f88e1282ea09941430441ca67224fd6e8dbef",
+      "patches": [
+        {
+          "before": "        private var waitingCapture=true",
+          "after": "        @Volatile private var waitingCapture=true"
+        },
+        {
+          "before": "                worker.execute {\n                    var incomingFailure",
+          "after": "                worker.execute {\n                    if(!waitingCapture)return@execute\n                    var incomingFailure"
+        },
+        {
+          "before": "val b=if(a!=null && StageTransientTapPolicy.canCaptureSecond",
+          "after": "val b=if(a!=null && waitingCapture && StageTransientTapPolicy.canCaptureSecond"
+        },
+        {
+          "before": "                    val bothCaptured=SystemClock.uptimeMillis()\n                    // Plan once",
+          "after": "                    val bothCaptured=SystemClock.uptimeMillis()\n                    // Cancellation/timeout owns the UI finish; release worker-local snapshots.\n                    if(!waitingCapture){a?.recycle();b?.recycle();return@execute}\n                    // Plan once"
+        },
+        {
+          "before": "                    val plannedAt=SystemClock.uptimeMillis()\n                    ui.post {",
+          "after": "                    val plannedAt=SystemClock.uptimeMillis()\n                    if(!waitingCapture){a?.recycle();b?.recycle();return@execute}\n                    ui.post {"
+        }
+      ]
     }
   }
 }

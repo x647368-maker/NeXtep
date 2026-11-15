@@ -69,7 +69,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val mainBackdrop:Drawable?,
     ) {
         private val viewport=Rect(0,0,host.width,host.height)
-        private var waitingCapture=true
+        @Volatile private var waitingCapture=true
         private var waitingCommit=false
         private var moveStarted=false
         private var moveAck=false
@@ -132,22 +132,26 @@ internal class StageTransientTapSwap(private val context:Context) {
             ui.postDelayed(lifetime,StageTransientTapPolicy.MAX_ATTEMPT_MS)
             runCatching {
                 worker.execute {
+                    if(!waitingCapture)return@execute
                     var incomingFailure="none"
                     var outgoingFailure="not_attempted"
                     val captureStarted=SystemClock.uptimeMillis()
                     val a=TaskSurfaceCompat.captureObservedSwapPreview(incoming,slotCrop){incomingFailure=it}
                     val firstCaptured=SystemClock.uptimeMillis()
-                    val b=if(a!=null && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
+                    val b=if(a!=null && waitingCapture && StageTransientTapPolicy.canCaptureSecond(SystemClock.uptimeMillis(),deadline)){
                         outgoingFailure="none"
                         TaskSurfaceCompat.captureObservedSwapPreview(outgoing,mainCrop){outgoingFailure=it}
                     } else null
                     val bothCaptured=SystemClock.uptimeMillis()
+                    // Cancellation/timeout owns the UI finish; release worker-local snapshots.
+                    if(!waitingCapture){a?.recycle();b?.recycle();return@execute}
                     // Plan once on the already active snapshot worker, using
                     // immutable copies of the viewport and protected slot geometry.
                     val plan=if(a!=null && b!=null && SystemClock.uptimeMillis()<deadline)
                         runCatching{planFlight(a,b,slot,main,others,viewport)}.getOrNull()
                     else null
                     val plannedAt=SystemClock.uptimeMillis()
+                    if(!waitingCapture){a?.recycle();b?.recycle();return@execute}
                     ui.post {
                         // One bounded timing record, no per-frame trace or new worker.
                         // Split actual capture/planning from main-loop callback delay.

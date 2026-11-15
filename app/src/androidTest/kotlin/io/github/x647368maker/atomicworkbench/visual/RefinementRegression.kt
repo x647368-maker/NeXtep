@@ -184,6 +184,20 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         val cancelDone=CountDownLatch(1);val release=CountDownLatch(1);var staleAccepted=false
         ui{helper.request(load={release.await(2,TimeUnit.SECONDS);null},valid={true},accept={staleAccepted=true},onCancel={cancelDone.countDown()});helper.cancel()}
         release.countDown();check(cancelDone.await(2,TimeUnit.SECONDS));Thread.sleep(250);check(!staleAccepted)
+        // Hold an actual worker call while cancelling a second queued request.
+        val running=CountDownLatch(1);val unblock=CountDownLatch(1)
+        val skippedLoads=java.util.concurrent.atomic.AtomicInteger(0)
+        val skippedCancels=java.util.concurrent.atomic.AtomicInteger(0)
+        val skippedAccepts=java.util.concurrent.atomic.AtomicInteger(0)
+        val queuedHelper=StageAsyncPreviewCapture()
+        ui{queuedHelper.request(load={running.countDown();unblock.await(3,TimeUnit.SECONDS);null},valid={true},accept={skippedAccepts.incrementAndGet()},onCancel={skippedCancels.incrementAndGet()})}
+        try {
+            check(running.await(2,TimeUnit.SECONDS))
+            ui{queuedHelper.request(load={skippedLoads.incrementAndGet();null},valid={true},accept={skippedAccepts.incrementAndGet()},onCancel={skippedCancels.incrementAndGet()});queuedHelper.cancel()}
+        } finally {unblock.countDown()}
+        Thread.sleep(350)
+        check(skippedLoads.get()==0 && skippedAccepts.get()==0 && skippedCancels.get()==2){"Cancelled queued capture executed or delivered stale result"}
+        record("PASS cancelled queued capture skips acquisition; both generations cancelled once")
         for(failValid in listOf(true,false)) {
             val done=CountDownLatch(1);var bitmap:Bitmap?=null;var cancels=0
             ui {helper.request(load={Bitmap.createBitmap(4,4,Bitmap.Config.ARGB_8888).also{bitmap=it}},

@@ -13,7 +13,7 @@ internal class StageAsyncPreviewCapture {
     private val ui=Handler(Looper.getMainLooper())
     private val worker=ThreadPoolExecutor(1,1,0L,TimeUnit.MILLISECONDS,ArrayBlockingQueue<Runnable>(1),
         {task -> Thread(task,"StagePreviewCapture").apply{isDaemon=true}},ThreadPoolExecutor.DiscardOldestPolicy())
-    private var generation=0
+    @Volatile private var generation=0
     private var cancelled:(()->Unit)?=null
     private fun failed(error:Throwable) {
         io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("swap_capture","Preview preparation cancelled safely",error)
@@ -37,7 +37,10 @@ internal class StageAsyncPreviewCapture {
         // A slow capture cannot hold a user's exchange or retain a stale screenshot.
         ui.postDelayed({if(token==generation)finish(null)},180)
         worker.execute {
+            // A superseded queued request must not acquire another task snapshot.
+            if(token!=generation)return@execute
             val bitmap=runCatching(load).getOrNull()
+            if(token!=generation){bitmap?.recycle();return@execute}
             ui.post {
                 io.github.x647368maker.atomicworkbench.logging.NeXtepLog.info("swap_capture","worker_ms=${SystemClock.uptimeMillis()-began} stale=${token!=generation}")
                 finish(bitmap)
