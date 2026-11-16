@@ -14,6 +14,18 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(p.firstReceiptWithinBudget(100,149,48))
         assertFalse(p.firstReceiptWithinBudget(100,100,-1))
     }
+    @Test fun firstGpuCommitFailureCanFallbackOnlyBeforeAnyFrameOrTaskMove() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(current in listOf(false,true))
+            for(attached in listOf(false,true))
+                for(source in listOf(false,true))
+                    for(moved in listOf(false,true))
+                        for(frames in listOf(-1,0,1)) {
+                            val expected=current && attached && source && !moved && frames==0
+                            assertEquals(expected,p.canFallbackBeforeFirstGpuFrame(
+                                current,attached,source,moved,frames))
+                        }
+    }
     @Test fun maskedHandoffRequiresCompositorAcknowledgement() {
         val p=StageConcurrentNativeTrialPolicy
         for(first in listOf(false,true)) for(required in listOf(false,true))
