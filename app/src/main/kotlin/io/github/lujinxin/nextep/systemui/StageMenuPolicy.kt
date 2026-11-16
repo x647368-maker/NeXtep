@@ -5,7 +5,8 @@ internal object StageMenuPolicy {
     fun group(label:String):Int {
         val s=label.removePrefix("✓ ")
         return when {
-            s in listOf("顶部横排","左侧排列","右侧排列","完整显示布局","主窗口优先布局","切换全屏（保留工作区）")->0
+            s in listOf("顶部横排","左侧排列","右侧排列","完整显示布局","主窗口优先布局")->0
+            s in listOf("切换全屏（保留工作区）","添加常用应用到快捷栏","恢复被隐藏的常用应用","退出台前调度")->3
             s in listOf("添加小窗","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）")->1
             s.contains("侧栏") || s.contains("常用应用") || s=="影音布局与自动模式"->2
             else->3
@@ -18,6 +19,15 @@ internal object StageMenuPlacement {
     data class Box(val l:Int,val t:Int,val r:Int,val b:Int) {
         val w get()=r-l;val h get()=b-t
         fun overlap(o:Box):Long=(minOf(r,o.r)-maxOf(l,o.l)).coerceAtLeast(0).toLong()*(minOf(b,o.b)-maxOf(t,o.t)).coerceAtLeast(0)
+    }
+    // Narrow portrait uses the same persistent two-pane design whenever
+    // both columns and four 48dp primary rows actually fit. Never displace
+    // a real app window to manufacture space; retain accessible fallback.
+    fun dualGlass(safe:Box,anchor:Box,w:Int,h:Int,minW:Int,minH:Int,avoid:List<Box>,gap:Int):Box? {
+        if(minW<=0 || minH<=0 || w<minW || h<minH || safe.w<minW || safe.h<minH)return null
+        return compact(safe,anchor,w,h,minW,minH,avoid,gap).takeIf {
+            it.w>=minW && it.h>=minH && avoid.none { a->it.overlap(a)>0L }
+        }
     }
     fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {
         val homeX=anchor.l;val homeY=anchor.b+gap

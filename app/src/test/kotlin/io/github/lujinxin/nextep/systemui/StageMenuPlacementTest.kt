@@ -13,6 +13,19 @@ class StageMenuPlacementTest {
         assertTrue(actual.l>=bounds.l && actual.t>=bounds.t && actual.r<=bounds.r && actual.b<=bounds.b)
         assertTrue(actual.w>=160 && actual.h>=60)
     }
+    @Test fun portraitGlassAllowsNarrowerTwoPaneWithoutOverlappingTasks(){
+        val phone=b(8,32,355,780)
+        val p=StageMenuPlacement.dualGlass(phone,anchor,304,252,282,204,
+            listOf(b(0,300,363,780)),8)!!
+        assertTrue(p.w in 282..304 && p.h>=204)
+        assertEquals(0L,p.overlap(b(0,300,363,780)))
+        assertNull(StageMenuPlacement.dualGlass(phone,anchor,304,252,282,204,
+            listOf(b(0,180,363,780)),8))
+        assertEquals(3,StageMenuPolicy.group("切换全屏（保留工作区）"))
+        assertEquals(3,StageMenuPolicy.group("添加常用应用到快捷栏"))
+        assertEquals(3,StageMenuPolicy.group("恢复被隐藏的常用应用"))
+        assertEquals(0,StageMenuPolicy.group("✓ 主窗口优先布局"))
+    }
     @Test fun fullSizeWithoutObstacles(){
         val p=choose(emptyList())
         assertEquals(208,p.w);assertEquals(252,p.h);inside(safe,p)

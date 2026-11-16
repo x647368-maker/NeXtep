@@ -130,19 +130,29 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             };settle()
             for(category in 0..3){
                 ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle()
+                val dual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())
+                    .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }
                 if(category==0){
                     val b=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(b)
                     check(b.width() > 0 && b.width() <= m.widthPixels && b.height() > 0 && b.height() <= m.heightPixels)
                     for (group in StageMenuPolicy.groups) {
-                        check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText("$group  ›").any { it.isVisibleToUser }) { "Primary category is clipped: $group" }
+                        val label=if(dual)group else "$group  ›"
+                        check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(label).any { it.text?.toString()==label && it.isVisibleToUser }) { "Primary category is clipped: $group" }
                     }
                     inst.uiAutomation.takeScreenshot()?.let{shot->File(out,"011-menu-$mode.png").outputStream().use{shot.compress(Bitmap.CompressFormat.PNG,100,it)};shot.recycle()}
                 }
-                click("${StageMenuPolicy.groups[category]}  ›")
-                click("‹  ${StageMenuPolicy.groups[category]}")
+                click(if(dual)StageMenuPolicy.groups[category] else "${StageMenuPolicy.groups[category]}  ›")
+                if(dual) {
+                    check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups[category])
+                        .any { it.text?.toString()==StageMenuPolicy.groups[category] && it.isSelected && it.isVisibleToUser })
+                } else click("‹  ${StageMenuPolicy.groups[category]}")
                 ui{AtomicPopupMenu.dismissAll()};settle()
                 for(index in expected[category]){
-                    fired.set(-1);ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click("${StageMenuPolicy.groups[category]}  ›");click(commands[index])
+                    fired.set(-1);ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle()
+                    val nowDual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())
+                        .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }
+                    click(if(nowDual)StageMenuPolicy.groups[category] else "${StageMenuPolicy.groups[category]}  ›")
+                    click(commands[index])
                     // Menu actions dismiss with a 70ms compositor fade and then post
                     // their callback on the anchor. An HWUI-saturated emulator can
                     // dispatch this after the general 180ms idle settle. Retain
@@ -173,9 +183,9 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             }
             check(scrolled.get()==19){"Last scrolled command was not dispatched"}
             check(textures.toSet()==initial && destroyed==0){"Presentation rebuilt TextureView producers"}
-            counts.add("$mode=13 callbacks, 4 back navigations, producer identities unchanged")
+            counts.add("$mode=${commands.size} callbacks, all four categories, producer identities unchanged")
         }
-        record("PASS real grouped native popup: ${counts.joinToString("; ")}; bounded 208dp primary and 220dp secondary; all original actions reachable")
+        record("PASS real grouped native popup: ${counts.joinToString("; ")}; bounded dual glass or compact fallback; all original actions reachable")
         // Use an isolated density-qualified context to exercise the wide
         // popup on the same display without changing device configuration.
         val wideConfig=android.content.res.Configuration(activity.resources.configuration).apply {

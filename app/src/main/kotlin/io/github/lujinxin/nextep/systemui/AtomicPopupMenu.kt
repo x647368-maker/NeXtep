@@ -90,29 +90,35 @@ internal object AtomicPopupMenu {
         val anchorBox=StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height)
         val blocked=avoid.map{it.box()}
         val compactWidth=safe.width()<dp(600)
-        val categoryWidth=dp(if(compactWidth)104 else 120)
-        val fullWidth=dp(if(compactWidth)320 else 340)
-        val dualHeight=minOf(dp(280),(safe.height()*.38f).toInt())
-        val dualBounds=if(grouped && safe.width()>=fullWidth && dualHeight>=dp(140)) {
-            StageMenuPlacement.compact(safe.box(),anchorBox,fullWidth,dualHeight,fullWidth,dp(140),blocked,dp(8))
-                .takeIf { candidate -> candidate.w==fullWidth && blocked.none { candidate.overlap(it)>0 } }
-        } else null
+        val categoryWidth=dp(if(compactWidth)120 else 128)
+        val fullWidth=dp(if(compactWidth)304 else 340)
+        val minDualWidth=dp(if(compactWidth)282 else 304)
+        val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())
+        val dualBounds=if(grouped) StageMenuPlacement.dualGlass(
+            safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,
+            dp(204),blocked,dp(8)) else null
         val categories=LinearLayout(context).apply{
             orientation=LinearLayout.VERTICAL
             setPadding(dp(6),dp(6),dp(6),dp(6))
         }
         if (dualBounds!=null) {
-            // Static translucent glass in the dual pane only. Retain the tested
-            // compact palette and never capture/blur the task underneath.
-            glass.colors=if(dark)
-                intArrayOf(Color.argb(230,62,76,96),Color.argb(222,39,52,73)) else
-                intArrayOf(Color.argb(236,250,253,255),Color.argb(226,221,232,245))
-            content.addView(ScrollView(context).apply { addView(categories) },
-                LinearLayout.LayoutParams(categoryWidth,-1))
-            content.addView(View(context).apply {
-                setBackgroundColor(Color.argb(42,120,137,154))
-                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(dp(1),-1))
+            // Two independently rounded, translucent panes with a visible
+            // glass rim. No screenshot, global blur, or task-window change.
+            fun pane()=GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.argb(154,104,125,143),Color.argb(167,34,49,67),
+                    Color.argb(147,77,98,117))).apply {
+                cornerRadius=dp(16).toFloat()
+                setStroke(dp(1),Color.argb(145,235,248,255))
+            }
+            content.background=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            content.clipToOutline=false
+            categories.setPadding(dp(4),dp(6),dp(4),dp(6))
+            rows.setPadding(dp(5),dp(6),dp(5),dp(6))
+            content.addView(ScrollView(context).apply {
+                background=pane();clipToOutline=true;isVerticalScrollBarEnabled=false
+                addView(categories)
+            },LinearLayout.LayoutParams(categoryWidth,-1).apply {rightMargin=dp(3)})
+            scroll.background=pane();scroll.clipToOutline=true
             content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
         } else content.addView(scroll,LinearLayout.LayoutParams(-1,-1))
         val popup=PopupWindow(content,1,1,true).apply {
@@ -161,15 +167,28 @@ internal object AtomicPopupMenu {
                 text=label;contentDescription=label;textSize=15f;minHeight=dp(48)
                 setTextColor(ink);gravity=Gravity.CENTER_VERTICAL or Gravity.START
                 setPadding(dp(12),dp(6),dp(12),dp(6));isClickable=true;isFocusable=true
+                if(dualBounds!=null) {
+                    val categoryRow=parent===categories
+                    textSize=13f
+                    setTextColor(Color.WHITE)
+                    setShadowLayer(dp(1).toFloat(),0f,dp(1).toFloat(),Color.argb(205,0,0,0))
+                    setPadding(dp(5),dp(4),dp(5),dp(4))
+                    val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)
+                        else StageMenuPolicy.group(label)
+                    val size=dp(14)
+                    val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}
+                    val arrow=if(categoryRow)StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)} else null
+                    setCompoundDrawables(glyph,null,arrow,null)
+                    compoundDrawablePadding=dp(4)
+                }
                 val selectedGlass=if(dualBounds!=null && parent===categories)
                     android.graphics.drawable.StateListDrawable().apply {
                         addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(
                             GradientDrawable.Orientation.TL_BR,
-                            if(dark) intArrayOf(Color.argb(76,124,187,255),Color.argb(44,64,133,232)) else
-                                intArrayOf(Color.argb(78,105,174,255),Color.argb(48,66,128,230))
+                            intArrayOf(Color.argb(224,37,151,239),Color.argb(205,17,99,201))
                         ).apply {
                             cornerRadius=dp(12).toFloat()
-                            setStroke(dp(1),if(dark)Color.argb(166,184,222,255) else Color.argb(210,247,252,255))
+                            setStroke(dp(1),Color.argb(172,159,222,255))
                         })
                         addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
                     } else null
@@ -230,7 +249,7 @@ internal object AtomicPopupMenu {
                         val selected=index==category
                         button.isSelected=selected
                         button.setTypeface(null,if(selected)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-                        button.setTextColor(if(selected) (if(dark) Color.rgb(173,214,255) else Color.rgb(25,89,153)) else ink)
+                        button.setTextColor(Color.WHITE)
                     }
                     items.filter { StageMenuPolicy.group(it.first)==category }.forEach { action(it.first,it.second) }
                 } else if(grouped && category==null) {

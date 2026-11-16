@@ -702,7 +702,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "3652a7172b675f6b1327a40c80abbfbbc0302f2c",
+      "reviewed_blob_sha1": "fe92a3de7b516cdf0c80a54e72a48b01e7849510",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -711,6 +711,30 @@
         {
           "before": "                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),null,\n                    GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})",
           "after": "                val selectedGlass=if(dualBounds!=null && parent===categories)\n                    android.graphics.drawable.StateListDrawable().apply {\n                        addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(\n                            GradientDrawable.Orientation.TL_BR,\n                            if(dark) intArrayOf(Color.argb(76,124,187,255),Color.argb(44,64,133,232)) else\n                                intArrayOf(Color.argb(78,105,174,255),Color.argb(48,66,128,230))\n                        ).apply {\n                            cornerRadius=dp(12).toFloat()\n                            setStroke(dp(1),if(dark)Color.argb(166,184,222,255) else Color.argb(210,247,252,255))\n                        })\n                        addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))\n                    } else null\n                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),selectedGlass,\n                    GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})"
+        },
+        {
+          "before": "        val categoryWidth=dp(if(compactWidth)104 else 120)\n        val fullWidth=dp(if(compactWidth)320 else 340)\n        val dualHeight=minOf(dp(280),(safe.height()*.38f).toInt())\n        val dualBounds=if(grouped && safe.width()>=fullWidth && dualHeight>=dp(140)) {\n            StageMenuPlacement.compact(safe.box(),anchorBox,fullWidth,dualHeight,fullWidth,dp(140),blocked,dp(8))\n                .takeIf { candidate -> candidate.w==fullWidth && blocked.none { candidate.overlap(it)>0 } }\n        } else null",
+          "after": "        val categoryWidth=dp(if(compactWidth)120 else 128)\n        val fullWidth=dp(if(compactWidth)304 else 340)\n        val minDualWidth=dp(if(compactWidth)282 else 304)\n        val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())\n        val dualBounds=if(grouped) StageMenuPlacement.dualGlass(\n            safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,\n            dp(204),blocked,dp(8)) else null"
+        },
+        {
+          "before": "        if (dualBounds!=null) {\n            // Static translucent glass in the dual pane only. Retain the tested\n            // compact palette and never capture/blur the task underneath.\n            glass.colors=if(dark)\n                intArrayOf(Color.argb(230,62,76,96),Color.argb(222,39,52,73)) else\n                intArrayOf(Color.argb(236,250,253,255),Color.argb(226,221,232,245))\n            content.addView(ScrollView(context).apply { addView(categories) },\n                LinearLayout.LayoutParams(categoryWidth,-1))\n            content.addView(View(context).apply {\n                setBackgroundColor(Color.argb(42,120,137,154))\n                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO\n            }, LinearLayout.LayoutParams(dp(1),-1))\n            content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))\n        } else content.addView(scroll,LinearLayout.LayoutParams(-1,-1))",
+          "after": "        if (dualBounds!=null) {\n            // Two independently rounded, translucent panes with a visible\n            // glass rim. No screenshot, global blur, or task-window change.\n            fun pane()=GradientDrawable(GradientDrawable.Orientation.TL_BR,\n                intArrayOf(Color.argb(154,104,125,143),Color.argb(167,34,49,67),\n                    Color.argb(147,77,98,117))).apply {\n                cornerRadius=dp(16).toFloat()\n                setStroke(dp(1),Color.argb(145,235,248,255))\n            }\n            content.background=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)\n            content.clipToOutline=false\n            categories.setPadding(dp(4),dp(6),dp(4),dp(6))\n            rows.setPadding(dp(5),dp(6),dp(5),dp(6))\n            content.addView(ScrollView(context).apply {\n                background=pane();clipToOutline=true;isVerticalScrollBarEnabled=false\n                addView(categories)\n            },LinearLayout.LayoutParams(categoryWidth,-1).apply {rightMargin=dp(3)})\n            scroll.background=pane();scroll.clipToOutline=true\n            content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))\n        } else content.addView(scroll,LinearLayout.LayoutParams(-1,-1))"
+        },
+        {
+          "before": "                setPadding(dp(12),dp(6),dp(12),dp(6));isClickable=true;isFocusable=true\n                val selectedGlass",
+          "after": "                setPadding(dp(12),dp(6),dp(12),dp(6));isClickable=true;isFocusable=true\n                if(dualBounds!=null) {\n                    val categoryRow=parent===categories\n                    textSize=13f\n                    setTextColor(Color.WHITE)\n                    setShadowLayer(dp(1).toFloat(),0f,dp(1).toFloat(),Color.argb(205,0,0,0))\n                    setPadding(dp(5),dp(4),dp(5),dp(4))\n                    val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)\n                        else StageMenuPolicy.group(label)\n                    val size=dp(14)\n                    val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}\n                    val arrow=if(categoryRow)StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)} else null\n                    setCompoundDrawables(glyph,null,arrow,null)\n                    compoundDrawablePadding=dp(4)\n                }\n                val selectedGlass"
+        },
+        {
+          "before": "                            if(dark) intArrayOf(Color.argb(76,124,187,255),Color.argb(44,64,133,232)) else\n                                intArrayOf(Color.argb(78,105,174,255),Color.argb(48,66,128,230))",
+          "after": "                            intArrayOf(Color.argb(224,37,151,239),Color.argb(205,17,99,201))"
+        },
+        {
+          "before": "                            setStroke(dp(1),if(dark)Color.argb(166,184,222,255) else Color.argb(210,247,252,255))",
+          "after": "                            setStroke(dp(1),Color.argb(172,159,222,255))"
+        },
+        {
+          "before": "                        button.setTextColor(if(selected) (if(dark) Color.rgb(173,214,255) else Color.rgb(25,89,153)) else ink)",
+          "after": "                        button.setTextColor(Color.WHITE)"
         }
       ]
     },
@@ -1169,6 +1193,60 @@
         {
           "before": "            if(!success)runCatching { buffer?.close() }\n        }",
           "after": "            if(!success)runCatching { buffer?.close() }\n            emit(stage)\n        }"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPolicy.kt": {
+      "reviewed_blob_sha1": "69dd5393d78beb1f636351a230e20271b7196983",
+      "previous_blob_sha1": "653014e7ccb46168e118fe2f3d6b6e15413229d5",
+      "patches": [
+        {
+          "before": "            s in listOf(\"顶部横排\",\"左侧排列\",\"右侧排列\",\"完整显示布局\",\"主窗口优先布局\",\"切换全屏（保留工作区）\")->0",
+          "after": "            s in listOf(\"顶部横排\",\"左侧排列\",\"右侧排列\",\"完整显示布局\",\"主窗口优先布局\")->0\n            s in listOf(\"切换全屏（保留工作区）\",\"添加常用应用到快捷栏\",\"恢复被隐藏的常用应用\",\"退出台前调度\")->3"
+        },
+        {
+          "before": "    fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {",
+          "after": "    // Narrow portrait uses the same persistent two-pane design whenever\n    // both columns and four 48dp primary rows actually fit. Never displace\n    // a real app window to manufacture space; retain accessible fallback.\n    fun dualGlass(safe:Box,anchor:Box,w:Int,h:Int,minW:Int,minH:Int,avoid:List<Box>,gap:Int):Box? {\n        if(minW<=0 || minH<=0 || w<minW || h<minH || safe.w<minW || safe.h<minH)return null\n        return compact(safe,anchor,w,h,minW,minH,avoid,gap).takeIf {\n            it.w>=minW && it.h>=minH && avoid.none { a->it.overlap(a)>0L }\n        }\n    }\n    fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {"
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPlacementTest.kt": {
+      "reviewed_blob_sha1": "0aee199e0cf61cce7a0c804d22e896d523a5cb06",
+      "previous_blob_sha1": "3be52da72eb09119eb9b8ae5898d8baf6c7c4cb9",
+      "patches": [
+        {
+          "before": "    @Test fun fullSizeWithoutObstacles(){",
+          "after": "    @Test fun portraitGlassAllowsNarrowerTwoPaneWithoutOverlappingTasks(){\n        val phone=b(8,32,355,780)\n        val p=StageMenuPlacement.dualGlass(phone,anchor,304,252,282,204,\n            listOf(b(0,300,363,780)),8)!!\n        assertTrue(p.w in 282..304 && p.h>=204)\n        assertEquals(0L,p.overlap(b(0,300,363,780)))\n        assertNull(StageMenuPlacement.dualGlass(phone,anchor,304,252,282,204,\n            listOf(b(0,180,363,780)),8))\n        assertEquals(3,StageMenuPolicy.group(\"切换全屏（保留工作区）\"))\n        assertEquals(3,StageMenuPolicy.group(\"添加常用应用到快捷栏\"))\n        assertEquals(3,StageMenuPolicy.group(\"恢复被隐藏的常用应用\"))\n        assertEquals(0,StageMenuPolicy.group(\"✓ 主窗口优先布局\"))\n    }\n    @Test fun fullSizeWithoutObstacles(){"
+        }
+      ]
+    },
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
+      "reviewed_blob_sha1": "69a7bcaa1f965293a5f5c8adc829523bec23965c",
+      "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
+      "patches": [
+        {
+          "before": "                if(category==0){\n                    val b=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(b)",
+          "after": "                val dual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())\n                    .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }\n                if(category==0){\n                    val b=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(b)"
+        },
+        {
+          "before": "                        check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(\"$group  ›\").any { it.isVisibleToUser }) { \"Primary category is clipped: $group\" }",
+          "after": "                        val label=if(dual)group else \"$group  ›\"\n                        check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(label).any { it.text?.toString()==label && it.isVisibleToUser }) { \"Primary category is clipped: $group\" }"
+        },
+        {
+          "before": "                click(\"${StageMenuPolicy.groups[category]}  ›\")\n                click(\"‹  ${StageMenuPolicy.groups[category]}\")",
+          "after": "                click(if(dual)StageMenuPolicy.groups[category] else \"${StageMenuPolicy.groups[category]}  ›\")\n                if(dual) {\n                    check(inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups[category])\n                        .any { it.text?.toString()==StageMenuPolicy.groups[category] && it.isSelected && it.isVisibleToUser })\n                } else click(\"‹  ${StageMenuPolicy.groups[category]}\")"
+        },
+        {
+          "before": "                    fired.set(-1);ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle();click(\"${StageMenuPolicy.groups[category]}  ›\");click(commands[index])",
+          "after": "                    fired.set(-1);ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle()\n                    val nowDual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())\n                        .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }\n                    click(if(nowDual)StageMenuPolicy.groups[category] else \"${StageMenuPolicy.groups[category]}  ›\")\n                    click(commands[index])"
+        },
+        {
+          "before": "            counts.add(\"$mode=13 callbacks, 4 back navigations, producer identities unchanged\")",
+          "after": "            counts.add(\"$mode=${commands.size} callbacks, all four categories, producer identities unchanged\")"
+        },
+        {
+          "before": "        record(\"PASS real grouped native popup: ${counts.joinToString(\"; \")}; bounded 208dp primary and 220dp secondary; all original actions reachable\")",
+          "after": "        record(\"PASS real grouped native popup: ${counts.joinToString(\"; \")}; bounded dual glass or compact fallback; all original actions reachable\")"
         }
       ]
     }
