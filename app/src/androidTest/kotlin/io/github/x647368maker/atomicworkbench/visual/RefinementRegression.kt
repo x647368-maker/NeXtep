@@ -182,30 +182,33 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             densityDpi=160
         }
         val wideContext=activity.createConfigurationContext(wideConfig)
-        val protected=Rect(m.widthPixels/2,0,m.widthPixels,m.heightPixels)
-        fired.set(-1)
-        ui { AtomicPopupMenu.show(wideContext,anchor,actions,listOf(protected)) }
-        settle()
-        fun visibleWideRow(label:String):Rect {
-            val active=checkNotNull(inst.uiAutomation.rootInActiveWindow)
-            val row=active.findAccessibilityNodeInfosByText(label)
-                .firstOrNull{it.text?.toString()==label && it.isVisibleToUser}
-            return Rect().also(checkNotNull(row)::getBoundsInScreen)
-        }
-        StageMenuPolicy.groups.forEach { visibleWideRow(it) }
-        click("窗口管理")
-        StageMenuPolicy.groups.forEach { visibleWideRow(it) }
-        val category=visibleWideRow("窗口管理")
-        val action=visibleWideRow("添加小窗")
-        check(category.right<=action.left) { "Categories and actions are not side by side" }
-        val popupBounds=Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen)
-        check(!Rect.intersects(popupBounds,protected)) { "Wide grouped menu covers protected content" }
-        click("添加小窗")
-        val wideDeadline=SystemClock.uptimeMillis()+2000L
-        while(fired.get()!=commands.indexOf("添加小窗") && SystemClock.uptimeMillis()<wideDeadline) Thread.sleep(25)
-        check(fired.get()==commands.indexOf("添加小窗") && !AtomicPopupMenu.isShowing())
-        record("PASS wide grouped menu: persistent categories physically beside actions and clear of protected content")
+        fun verifyDualMenu(menuContext:Context,protected:Rect,viewport:String) {
+            fired.set(-1)
+            ui { AtomicPopupMenu.show(menuContext,anchor,actions,listOf(protected)) }
+            settle()
+            fun visibleWideRow(label:String):Rect {
+                val active=checkNotNull(inst.uiAutomation.rootInActiveWindow)
+                val row=active.findAccessibilityNodeInfosByText(label)
+                    .firstOrNull{it.text?.toString()==label && it.isVisibleToUser}
+                return Rect().also(checkNotNull(row)::getBoundsInScreen)
+            }
+            StageMenuPolicy.groups.forEach { visibleWideRow(it) }
+            click("窗口管理")
+            StageMenuPolicy.groups.forEach { visibleWideRow(it) }
+            val category=visibleWideRow("窗口管理")
+            val action=visibleWideRow("添加小窗")
+            check(category.right<=action.left) { "Categories and actions are not side by side" }
+            val popupBounds=Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen)
+            check(!Rect.intersects(popupBounds,protected)) { "Grouped menu covers protected content" }
+            click("添加小窗")
+            val deadline=SystemClock.uptimeMillis()+2000L
+            while(fired.get()!=commands.indexOf("添加小窗") && SystemClock.uptimeMillis()<deadline) Thread.sleep(25)
+            check(fired.get()==commands.indexOf("添加小窗") && !AtomicPopupMenu.isShowing())
+            record("PASS $viewport grouped menu: persistent categories physically beside actions and clear of protected content")
 
+        }
+        verifyDualMenu(wideContext,Rect(m.widthPixels/2,0,m.widthPixels,m.heightPixels),"wide")
+        verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),"phone portrait")
         // Same emulator, same four live producers. Real screenshot API is the blocking
         // workload; this measures scheduling only, NOT native task migration or PMS110 FPS.
         val beatTimes=mutableListOf<Long>();var tracing=true

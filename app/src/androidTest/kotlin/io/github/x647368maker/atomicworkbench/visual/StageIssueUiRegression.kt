@@ -471,21 +471,30 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             screenshot(out,"ui-home-phone-bottom.png",activity)
             phase("PASS phone home bottom includes final support row, credits and original-project attribution")
             val pages=listOf(
-                "windows" to "窗口布局",
-                "core" to "影音与快捷栏",
-                "groups" to "工作组",
-                "gestures" to "启动手势",
-                "tile" to "快捷开关",
-                "feedback" to "建议与反馈",
-                "about" to "关于与使用帮助"
+                Triple("windows","窗口布局","主窗口显示策略"),
+                Triple("core","影音与快捷栏","影音布局"),
+                Triple("groups","工作组","保存当前工作组"),
+                Triple("gestures","启动手势","四指手势"),
+                Triple("tile","快捷开关","添加快捷开关"),
+                Triple("update","软件更新","台前调度"),
+                Triple("feedback","建议与反馈","台前调度 · 建议与反馈"),
+                Triple("donate","打赏作者","台前调度承诺永久免费"),
+                Triple("about","关于与使用帮助","原项目"),
             )
-            for((route,title) in pages){
-                ui{homeScroll().fullScroll(if(route=="feedback" || route=="about") View.FOCUS_DOWN else View.FOCUS_UP)}
+            for((route,title,body) in pages){
+                ui {
+                    val scroller=homeScroll()
+                    val target=descendants(scroller).filterIsInstance<TextView>()
+                        .first{it.text.toString()==title}
+                    target.requestRectangleOnScreen(Rect(0,0,target.width,target.height),true)
+                }
                 await("home navigation target visible $title"){visibleText(title)}
                 clickLabel(activity,title)
-                await("real secondary page $route"){hasText(activity,title)}
+                await("visible secondary page body $route"){
+                    hasText(activity,title) && visibleText(body)
+                }
                 screenshot(out,"ui-secondary-$route.png",activity)
-                phase("PASS stable secondary page $route")
+                phase("PASS stable secondary page $route including visible body $body")
                 returnHome()
             }
             ui{homeScroll().fullScroll(View.FOCUS_UP)}
@@ -527,7 +536,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             verifyHome(out,true,"2560x1600","400","polish-tablet-landscape")
             verifyHome(out,false,"1600x2560","400","polish-tablet-portrait")
             verifyHome(out,false,"1140x2520","480","polish-fold-outer")
-            val result="PASS actual Android UI visual evidence: phone home top/bottom, 7 native secondary pages, diagnostic center landing and comprehensive screen, 5 additional adaptive viewports"
+            val result="PASS actual Android UI visual evidence: phone home top/bottom, 9 native secondary pages with visible body, diagnostic center landing and comprehensive screen, 5 additional adaptive viewports"
             File(out,"ui-visual-evidence-results.txt").writeText(result+"\n")
             phase(result)
             return result

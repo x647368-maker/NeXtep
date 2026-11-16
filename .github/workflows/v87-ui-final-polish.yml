@@ -2,7 +2,7 @@ name: v87 final UI polish evidence
 
 on:
   push:
-    branches: ['review/v87-ui-final-polish', 'atomic-workbench/v87-final-integration-candidate', 'atomic-workbench/final-v87-correction']
+    branches: ['review/v87-ui-final-polish', 'atomic-workbench/v87-final-integration-candidate', 'atomic-workbench/final-v87-correction', 'atomic-workbench/v88-animation-first']
 
 permissions:
   contents: read
