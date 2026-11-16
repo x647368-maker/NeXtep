@@ -175,6 +175,9 @@ internal class StageLiveSurfaceExchange private constructor(
     private var previousFrameAtMs = 0L
     private var biggestFrameGapMs = 0L
     private var gapsOver24Ms = 0
+    private var maxSubmitNanos = 0L
+    private var submitOver120HzBudget = 0
+    private var submitOver60HzBudget = 0
     private var startedAtMs = 0L
     // Optional SystemUI-only API, resolved ONCE rather than per animation frame.
     private var cornersSupported = true
@@ -661,6 +664,7 @@ internal class StageLiveSurfaceExchange private constructor(
             if (!isRunning) return false
             if(hostDetached || !host.isAttachedToWindow){stop();return false}
             return runCatching {
+                val submitStarted=SystemClock.elapsedRealtimeNanos()
                 val frame=frameTransaction ?: error("Flight transaction is unavailable")
                 applyFrame(frame,fraction)
                 // Register before submitting the exact terminal geometry.
@@ -680,6 +684,10 @@ internal class StageLiveSurfaceExchange private constructor(
                     }.onFailure { trace("native_terminal_commit_callback_unavailable") }
                 }
                 frame.apply()
+                val submitNanos=SystemClock.elapsedRealtimeNanos()-submitStarted
+                if(submitNanos>maxSubmitNanos)maxSubmitNanos=submitNanos
+                if(submitNanos>8_333_333L)submitOver120HzBudget++
+                if(submitNanos>16_666_667L)submitOver60HzBudget++
                 lastProgress=fraction
                 val now=SystemClock.uptimeMillis()
                 if(previousFrameAtMs>0L) {
@@ -1038,6 +1046,9 @@ internal class StageLiveSurfaceExchange private constructor(
             {
                 trace("gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
                     " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
+                if(nativeFrameCount>0) trace(
+                    "gpu_submit frames=$nativeFrameCount max_us=${maxSubmitNanos / 1000}"+
+                        " over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
                 NeXtepLog.info("native_swap",

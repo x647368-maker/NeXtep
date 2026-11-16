@@ -276,9 +276,25 @@
         {
           "before": "gaps_over24ms=$gapsOver24ms",
           "after": "gaps_over24ms=$gapsOver24Ms"
+        },
+        {
+          "before": "    private var gapsOver24Ms = 0",
+          "after": "    private var gapsOver24Ms = 0\n    private var maxSubmitNanos = 0L\n    private var submitOver120HzBudget = 0\n    private var submitOver60HzBudget = 0"
+        },
+        {
+          "before": "                val frame=frameTransaction ?: error(\"Flight transaction is unavailable\")\n                applyFrame(frame,fraction)",
+          "after": "                val submitStarted=SystemClock.elapsedRealtimeNanos()\n                val frame=frameTransaction ?: error(\"Flight transaction is unavailable\")\n                applyFrame(frame,fraction)"
+        },
+        {
+          "before": "                frame.apply()\n                lastProgress=fraction",
+          "after": "                frame.apply()\n                val submitNanos=SystemClock.elapsedRealtimeNanos()-submitStarted\n                if(submitNanos>maxSubmitNanos)maxSubmitNanos=submitNanos\n                if(submitNanos>8_333_333L)submitOver120HzBudget++\n                if(submitNanos>16_666_667L)submitOver60HzBudget++\n                lastProgress=fraction"
+        },
+        {
+          "before": "                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+",
+          "after": "                if(nativeFrameCount>0) trace(\n                    \"gpu_submit frames=$nativeFrameCount max_us=${maxSubmitNanos / 1000}\"+\n                        \" over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+"
         }
       ],
-      "reviewed_blob_sha1": "11a28f4148c79b9c36ff59cf445fea18ef5ace17"
+      "reviewed_blob_sha1": "ef12cab82604db20aa6d9e41b470979ca7748acb"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",

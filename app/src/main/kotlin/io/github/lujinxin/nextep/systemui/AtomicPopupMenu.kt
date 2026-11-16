@@ -89,10 +89,11 @@ internal object AtomicPopupMenu {
         fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
         val anchorBox=StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height)
         val blocked=avoid.map{it.box()}
-        val categoryWidth=dp(120)
-        val fullWidth=dp(340)
+        val compactWidth=safe.width()<dp(600)
+        val categoryWidth=dp(if(compactWidth)104 else 120)
+        val fullWidth=dp(if(compactWidth)320 else 340)
         val dualHeight=minOf(dp(280),(safe.height()*.38f).toInt())
-        val dualBounds=if(grouped && safe.width()>=dp(600) && dualHeight>=dp(140)) {
+        val dualBounds=if(grouped && safe.width()>=fullWidth && dualHeight>=dp(140)) {
             StageMenuPlacement.compact(safe.box(),anchorBox,fullWidth,dualHeight,fullWidth,dp(140),blocked,dp(8))
                 .takeIf { candidate -> candidate.w==fullWidth && blocked.none { candidate.overlap(it)>0 } }
         } else null
