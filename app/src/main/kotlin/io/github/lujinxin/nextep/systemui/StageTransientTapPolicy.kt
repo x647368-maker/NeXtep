@@ -14,6 +14,19 @@ internal object StageTransientTapPolicy {
     const val FLIGHT_MS=300L
     const val HANDOFF_BUDGET_MS=480L
     const val MAX_ATTEMPT_MS=1800L
+    // Keep the hard attempt limit, including the terminal receipt and
+    // post-move output gate. System animations above 3x cannot consume
+    // the entire fallback lifetime. Do not change ordinary animation speed.
+    private const val MAX_SCALED_FLIGHT_MS=900L
+    private const val HANDOFF_HEADROOM_MS=64L
+    fun nominalFlightMs(scale:Float,remainingMs:Long):Long? {
+        if(!scale.isFinite() || scale<=0f)return null
+        val allowance=minOf(MAX_SCALED_FLIGHT_MS,
+            remainingMs-FIRST_COMMIT_BUDGET_MS-HANDOFF_BUDGET_MS-HANDOFF_HEADROOM_MS)
+        if(allowance<=0L)return null
+        val duration=(allowance.toDouble()/scale.toDouble()).toLong().coerceAtMost(FLIGHT_MS)
+        return duration.takeIf{it>0L}
+    }
     fun canCaptureSecond(now:Long,deadline:Long):Boolean=now<deadline
     fun canStartMove(valid:Boolean,committed:Boolean,started:Boolean):Boolean=
         valid && committed && !started

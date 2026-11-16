@@ -66,6 +66,24 @@ class StageTransientTapPolicyTest {
             assertFalse(p.canHandoff(false,ack))
         }
     }
+    @Test fun slowSystemAnimationRetainsHardLifetimeAndHandoffReserve() {
+        val p=StageTransientTapPolicy
+        val remaining=p.MAX_ATTEMPT_MS-p.CAPTURE_BUDGET_MS-p.FIRST_COMMIT_BUDGET_MS
+        assertNull(p.nominalFlightMs(0f,remaining))
+        assertNull(p.nominalFlightMs(Float.NaN,remaining))
+        assertNull(p.nominalFlightMs(Float.POSITIVE_INFINITY,remaining))
+        assertNull(p.nominalFlightMs(1f,654))
+        for(scale in listOf(.5f,1f,2f,3f,5f,10f)){
+            val nominal=checkNotNull(p.nominalFlightMs(scale,remaining))
+            assertTrue(nominal>0L && nominal<=p.FLIGHT_MS)
+            assertTrue(nominal*scale<=900f)
+            assertTrue(nominal*scale+p.FIRST_COMMIT_BUDGET_MS+
+                p.HANDOFF_BUDGET_MS+64<=remaining)
+            if(scale<=2f)assertEquals(p.FLIGHT_MS,nominal)
+        }
+        assertEquals(90L,p.nominalFlightMs(10f,p.MAX_ATTEMPT_MS))
+        assertEquals(46L,p.nominalFlightMs(10f,1120))
+    }
     @Test fun doNotStartSecondCaptureAfterOneShotBudget() {
         assertTrue(StageTransientTapPolicy.canCaptureSecond(159,160))
         assertFalse(StageTransientTapPolicy.canCaptureSecond(160,160))

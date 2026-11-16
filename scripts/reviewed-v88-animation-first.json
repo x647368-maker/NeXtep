@@ -353,7 +353,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt": {
-      "reviewed_blob_sha1": "89bd3683b172f934dd2ea25c1ed5fc6079730879",
+      "reviewed_blob_sha1": "eaa857b947ea814e7e288abe283c0675599c2dd8",
       "previous_blob_sha1": "5041ec241992b3bb3a88f1661855d05704e3add1",
       "patches": [
         {
@@ -367,6 +367,10 @@
         {
           "before": "    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged",
           "after": "    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged\n\n    // Recovery is not terminal-commit success. Only a move already submitted\n    // and acknowledged may enter the existing bounded stable-output check.\n    fun canRecoverUnconfirmedTerminal(moveStarted:Boolean,moveAcknowledged:Boolean,terminalReceiptMissing:Boolean):Boolean =\n        moveStarted && moveAcknowledged && terminalReceiptMissing"
+        },
+        {
+          "before": "    const val MAX_ATTEMPT_MS=1800L\n    fun canCaptureSecond",
+          "after": "    const val MAX_ATTEMPT_MS=1800L\n    // Keep the hard attempt limit, including the terminal receipt and\n    // post-move output gate. System animations above 3x cannot consume\n    // the entire fallback lifetime. Do not change ordinary animation speed.\n    private const val MAX_SCALED_FLIGHT_MS=900L\n    private const val HANDOFF_HEADROOM_MS=64L\n    fun nominalFlightMs(scale:Float,remainingMs:Long):Long? {\n        if(!scale.isFinite() || scale<=0f)return null\n        val allowance=minOf(MAX_SCALED_FLIGHT_MS,\n            remainingMs-FIRST_COMMIT_BUDGET_MS-HANDOFF_BUDGET_MS-HANDOFF_HEADROOM_MS)\n        if(allowance<=0L)return null\n        val duration=(allowance.toDouble()/scale.toDouble()).toLong().coerceAtMost(FLIGHT_MS)\n        return duration.takeIf{it>0L}\n    }\n    fun canCaptureSecond"
         }
       ]
     },
@@ -385,7 +389,7 @@
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicyTest.kt": {
-      "reviewed_blob_sha1": "3cd7d412e135b3ac44390cfe3d62f2095f2dedb4",
+      "reviewed_blob_sha1": "d8bea26958b08fac62849058b01faac0a82b0c6d",
       "previous_blob_sha1": "df51ba28dd1d32b13066eaf05af523df643d20b9",
       "patches": [
         {
@@ -399,6 +403,10 @@
         {
           "before": "    @Test fun doNotStartSecondCaptureAfterOneShotBudget() {",
           "after": "    @Test fun missingTerminalReceiptMayOnlyRecoverAfterRealMoveAck() {\n        val p=StageTransientTapPolicy\n        for(started in listOf(false,true)) for(ack in listOf(false,true)) for(missing in listOf(false,true)){\n            assertEquals(started && ack && missing,p.canRecoverUnconfirmedTerminal(started,ack,missing))\n            // A recovery permission never changes the real terminal gate.\n            assertFalse(p.canHandoff(false,ack))\n        }\n    }\n    @Test fun doNotStartSecondCaptureAfterOneShotBudget() {"
+        },
+        {
+          "before": "    @Test fun doNotStartSecondCaptureAfterOneShotBudget() {",
+          "after": "    @Test fun slowSystemAnimationRetainsHardLifetimeAndHandoffReserve() {\n        val p=StageTransientTapPolicy\n        val remaining=p.MAX_ATTEMPT_MS-p.CAPTURE_BUDGET_MS-p.FIRST_COMMIT_BUDGET_MS\n        assertNull(p.nominalFlightMs(0f,remaining))\n        assertNull(p.nominalFlightMs(Float.NaN,remaining))\n        assertNull(p.nominalFlightMs(Float.POSITIVE_INFINITY,remaining))\n        assertNull(p.nominalFlightMs(1f,654))\n        for(scale in listOf(.5f,1f,2f,3f,5f,10f)){\n            val nominal=checkNotNull(p.nominalFlightMs(scale,remaining))\n            assertTrue(nominal>0L && nominal<=p.FLIGHT_MS)\n            assertTrue(nominal*scale<=900f)\n            assertTrue(nominal*scale+p.FIRST_COMMIT_BUDGET_MS+\n                p.HANDOFF_BUDGET_MS+64<=remaining)\n            if(scale<=2f)assertEquals(p.FLIGHT_MS,nominal)\n        }\n        assertEquals(90L,p.nominalFlightMs(10f,p.MAX_ATTEMPT_MS))\n        assertEquals(46L,p.nominalFlightMs(10f,1120))\n    }\n    @Test fun doNotStartSecondCaptureAfterOneShotBudget() {"
         }
       ]
     },
@@ -522,9 +530,25 @@
         {
           "before": "        private class CardView(context:Context,private val bitmap:Bitmap,main:Rect):View(context){\n            private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)\n            private val image=RectF(0f,0f,bitmap.width.toFloat(),bitmap.height.toFloat())\n            init{\n                pivotX=bitmap.width*.5f;pivotY=bitmap.height*.5f\n                // Use the physical main endpoint's roundness, converted to\n                // source coordinates. Interpolation scales naturally with\n                // each card. The actual live corners are never modified.\n                val scale=minOf(main.width().toFloat()/bitmap.width,\n                    main.height().toFloat()/bitmap.height).coerceAtLeast(.001f)\n                val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n                    main.width().toFloat(),main.height().toFloat(),resources.displayMetrics.density)/scale\n                outlineProvider=object:ViewOutlineProvider(){\n                    override fun getOutline(view:View,outline:Outline){\n                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,radius)\n                    }\n                }\n                clipToOutline=true\n            }\n            fun place(p:StageSnapshotMotion.Pose){",
           "after": "        private class CardView(context:Context,private val bitmap:Bitmap):View(context){\n            private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)\n            private val image=RectF(0f,0f,bitmap.width.toFloat(),bitmap.height.toFloat())\n            private var sourceRadius=0f\n            init{\n                pivotX=bitmap.width*.5f;pivotY=bitmap.height*.5f\n                outlineProvider=object:ViewOutlineProvider(){\n                    override fun getOutline(view:View,outline:Outline){\n                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,sourceRadius)\n                    }\n                }\n                clipToOutline=true\n            }\n            fun round(value:Float){\n                if(sourceRadius==value)return\n                sourceRadius=value\n                invalidateOutline()\n            }\n            fun place(p:StageSnapshotMotion.Pose){"
+        },
+        {
+          "before": "        private val viewport=Rect(0,0,host.width,host.height)\n        @Volatile",
+          "after": "        private val viewport=Rect(0,0,host.width,host.height)\n        private var attemptStartedAt=0L\n        @Volatile"
+        },
+        {
+          "before": "        fun begin(){\n            val deadline=SystemClock.uptimeMillis()+StageTransientTapPolicy.CAPTURE_BUDGET_MS",
+          "after": "        fun begin(){\n            attemptStartedAt=SystemClock.uptimeMillis()\n            val deadline=attemptStartedAt+StageTransientTapPolicy.CAPTURE_BUDGET_MS"
+        },
+        {
+          "before": "            trace(\"snapshot_first_frame_committed\")\n            // Prevent the slot's independent entrance/exit animation from",
+          "after": "            trace(\"snapshot_first_frame_committed\")\n            val scale=ValueAnimator.getDurationScale()\n            val duration=StageTransientTapPolicy.nominalFlightMs(scale,\n                StageTransientTapPolicy.MAX_ATTEMPT_MS-(SystemClock.uptimeMillis()-attemptStartedAt))\n            if(duration==null){\n                direct(\"motion_duration_budget_unavailable\")\n                return\n            }\n            if(duration!=StageTransientTapPolicy.FLIGHT_MS)\n                trace(\"snapshot_slow_motion_bounded:scale=$scale nominal_ms=$duration\")\n            // Prevent the slot's independent entrance/exit animation from"
+        },
+        {
+          "before": "                v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {",
+          "after": "                v.startMotion(duration,trace) {"
         }
       ],
-      "reviewed_blob_sha1": "a73096a13f121c66d2889fe1e3e109df37bfdfa8"
+      "reviewed_blob_sha1": "0326b6b7931cadafc9309f4596bdbfcbfe3c487f"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
       "previous_blob_sha1": "35cf704cfcece47001b45911dad3ea209e3e3155",

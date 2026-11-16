@@ -70,6 +70,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val mainBackdrop:Drawable?,val onVisualUnavailable:((String)->Boolean)?,
     ) {
         private val viewport=Rect(0,0,host.width,host.height)
+        private var attemptStartedAt=0L
         @Volatile private var waitingCapture=true
         private var waitingCommit=false
         private var moveStarted=false
@@ -144,7 +145,8 @@ internal class StageTransientTapSwap(private val context:Context) {
             }
         }
         fun begin(){
-            val deadline=SystemClock.uptimeMillis()+StageTransientTapPolicy.CAPTURE_BUDGET_MS
+            attemptStartedAt=SystemClock.uptimeMillis()
+            val deadline=attemptStartedAt+StageTransientTapPolicy.CAPTURE_BUDGET_MS
             host.addOnAttachStateChangeListener(attachmentListener)
             trace("snapshot_capture_begin")
             ui.postDelayed(captureTimeout,StageTransientTapPolicy.CAPTURE_BUDGET_MS)
@@ -275,6 +277,15 @@ internal class StageTransientTapSwap(private val context:Context) {
                 finish("stale_at_commit");return
             }
             trace("snapshot_first_frame_committed")
+            val scale=ValueAnimator.getDurationScale()
+            val duration=StageTransientTapPolicy.nominalFlightMs(scale,
+                StageTransientTapPolicy.MAX_ATTEMPT_MS-(SystemClock.uptimeMillis()-attemptStartedAt))
+            if(duration==null){
+                direct("motion_duration_budget_unavailable")
+                return
+            }
+            if(duration!=StageTransientTapPolicy.FLIGHT_MS)
+                trace("snapshot_slow_motion_bounded:scale=$scale nominal_ms=$duration")
             // Prevent the slot's independent entrance/exit animation from
             // running underneath the two-card flight and exposing a second scale.
             visualOwned=true
@@ -282,7 +293,7 @@ internal class StageTransientTapSwap(private val context:Context) {
                 finish("visual_start_failed");return
             }
             val backend=runCatching {
-                v.startMotion(StageTransientTapPolicy.FLIGHT_MS,trace) {
+                v.startMotion(duration,trace) {
                     if(current()){
                         trace("snapshot_motion_animators_end")
                         awaitTerminalFrame(v)
