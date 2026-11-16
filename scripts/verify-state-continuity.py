@@ -31,14 +31,17 @@ v88_review=json.loads((root/'scripts/reviewed-v88-animation-first.json').read_te
 def undo_v88(path,data):
  if path not in v88_review:return data
  spec=v88_review[path]
+ blob=lambda b: hashlib.sha1(b'blob '+str(len(b)).encode()+bytes([0])+b).hexdigest()
+ assert blob(data)==spec['reviewed_blob_sha1'],path
  source=data.decode('utf-8')
  for patch in reversed(spec['patches']):
   assert source.count(patch['after'])==1,(path,patch['after'][:100])
   source=source.replace(patch['after'],patch['before'],1)
  prior=source.encode('utf-8')
- blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()
- assert blob==spec['previous_blob_sha1'],path
+ assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
+for reviewed_path in v88_review:
+ undo_v88(reviewed_path,(root/reviewed_path).read_bytes())
 assert set(final_finish_review)=={'app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt','scripts/verify-state-continuity.py'}
 def undo_final_finish(path,data):
  data=undo_v88(path,data)
@@ -495,10 +498,17 @@ def undo_pr79(path,data):
 for reviewed_path in pr79_review:
  undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))
 _pr79_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
-assert 'if (StagePrivateDualTaskFlightGate.enabled() &&' in _pr79_controller
-assert 'if (StageTransientTapPolicy.snapshotFallbackEnabled() &&' in _pr79_controller
-assert 'tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return' in _pr79_controller
-assert 'tap_animation_fallback:workspace_preview' in _pr79_controller
+_v88_tap=_pr79_controller.split('private fun animateSwap(',1)[1].split('val effectiveOnFinished=',1)[0]
+_v88_gpu_gate=_v88_tap.index('if (StagePrivateDualTaskFlightGate.enabled() &&')
+_v88_snapshot_gate=_v88_tap.index('if (StageTransientTapPolicy.snapshotFallbackEnabled() &&')
+_v88_workspace=_v88_tap.index('tap_animation_fallback:workspace_preview')
+assert _v88_gpu_gate<_v88_snapshot_gate<_v88_workspace
+assert 'onVisualUnavailable=renderThreadFallback)) return' in _v88_tap[_v88_gpu_gate:_v88_snapshot_gate]
+assert 'onFinished,workspacePreviewFallback)) return' in _v88_tap[_v88_snapshot_gate:_v88_workspace]
+_v88_runtime_fallback=_v88_tap[:_v88_gpu_gate].split('val renderThreadFallback:',1)[1]
+assert re.search(r'tryTransientTapSwap\s*\(sourceIndex,phasedMove,canRelease,\s*onFinished,workspacePreviewFallback\)',_v88_runtime_fallback)
+assert 'workspacePreviewFallback(reason)' in _v88_runtime_fallback
+assert 'tapFallbackFinish ?: onFinished,null,asyncMove,canRelease' in _v88_tap
 assert 'transientTapSwap.cancel()' in _pr79_controller
 _pr79_owned=(k/'framework/TaskSurfaceCompat.kt').read_text().split('internal fun captureObservedSwapPreview(',1)[1].split('/** Ownership of the result',1)[0]
 assert 'mirrorSourceStamp(stamp.taskId,stamp.displayId)' in _pr79_owned
@@ -1398,76 +1408,7 @@ assert set(tablet_review)=={
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/WorkspaceGeometry.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageDisplayPolicy.kt',
  'app/src/main/kotlin/io/github/lujinxin/nextep/workspace/StageLiveCardLayout.kt',
- 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt',
-}
-reviewed_chain=[json.loads((root/'scripts/reviewed-integration-0.9.18.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fast-tap-0.9.17.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-fixed-swap-0.9.16.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-hardening.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-session-integration.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-output-retention.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-exchange-0.9.14.json').read_text())['files']]+[json.loads((root/'scripts/reviewed-injection-0.9.13.json').read_text())['files']]+[json.loads((root/f'scripts/reviewed-refinements-{v}.json').read_text())['files'] for v in ['0.9.12','0.9.11']]
-# The exact rollback fix is an isolated one-line Kotlin receiver correction.
-# The full updated and pre-change Git blobs are pinned before older v0.9.8
-# frozen source verification. This is NOT a relaxation of the freeze hashes.
-rollback_review=json.loads((root/'scripts/reviewed-swap-rollback-release.json').read_text())['files']
-rollback_path='app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt'
-assert set(rollback_review)=={rollback_path}
-def undo_swap_rollback_fix(path,data):
- if path!=rollback_path:return data
- spec=rollback_review[path]
- blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
- assert blob==spec['reviewed_blob_sha1'],path
- text=data.decode('utf-8')
- for patch in spec['patches']:
-  assert text.count(patch['after'])==1,path
-  text=text.replace(patch['after'],patch['before'],1)
- previous=text.encode('utf-8')
- old=hashlib.sha1(b'blob '+str(len(previous)).encode()+bytes([0])+previous).hexdigest()
- assert old==spec['previous_blob_sha1'],path
- return previous
-
-# App-list resilience is a scoped 0.9.29 exception for two catalog sources.
-# Pin the complete new blobs, recover their complete old source bytes, then
-# leave every original 0.9.8 freeze hash and reviewer chain untouched.
-catalog_review=json.loads((root/'scripts/reviewed-app-catalog-files-0.9.29.json').read_text())['files']
-assert set(catalog_review)=={
- 'app/src/main/kotlin/io/github/lujinxin/nextep/apps/LauncherAppRepository.kt',
- 'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageAppCatalog.kt',
-}
-def undo_catalog_files(path,data):
- if path not in catalog_review:return data
- spec=catalog_review[path]
- current=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
- assert current==spec['reviewed_blob_sha1'],path
- original=spec['previous_content'].encode('utf-8')
- previous=hashlib.sha1(b'blob '+str(len(original)).encode()+bytes([0])+original).hexdigest()
- assert previous==spec['previous_blob_sha1'],path
- return original
-
-# 0.9.31 home-only UI: exact full-blob audit, reverse before all pre-existing
-# 0.9.8 protected byte hashes. Unknown settings or engine edits still fail.
-home_ui_review=json.loads((root/'scripts/reviewed-opt-in-donation-home-0.9.31.json').read_text())['files']
-assert set(home_ui_review)=={
- 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageHomeLayout.kt',
- 'app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt',
-}
-def undo_home_ui(path,data):
- if path not in home_ui_review:return data
- spec=home_ui_review[path]
- blob=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
- assert blob==spec['reviewed_blob_sha1'],path
- previous=spec['previous_content'].encode('utf-8')
- oldblob=hashlib.sha1(b'blob '+str(len(previous)).encode()+bytes([0])+previous).hexdigest()
- assert oldblob==spec['previous_blob_sha1'],path
- return previous
-
-# v0.9.32 exact UI/navigation review, before all historical freeze checks.
-# This is no blanket exemption: every byte of these three files is pinned.
-update_ui_files=json.loads((root/'scripts/reviewed-update-ui-0.9.32.json').read_text())['files']
-assert set(update_ui_files)=={
- 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateSection.kt',
- 'app/src/main/kotlin/io/github/lujinxin/nextep/config/UpdateCoordinator.kt',
- 'app/src/main/kotlin/io/github/lujinxin/nextep/config/MainActivity.kt',
-}
-def undo_update_ui(path,data):
- if path not in update_ui_files:return data
- spec=update_ui_files[path]
- actual=hashlib.sha1(b'blob '+str(len(data)).encode()+bytes([0])+data).hexdigest()
+ 'app/src/main/kotlin/io/github/lujinxin/nextep/sy…1114 tokens truncated…()+bytes([0])+data).hexdigest()
  assert actual==spec['reviewed_blob_sha1'],path
  old=spec['previous_content'].encode('utf-8')
  original=hashlib.sha1(b'blob '+str(len(old)).encode()+bytes([0])+old).hexdigest()
