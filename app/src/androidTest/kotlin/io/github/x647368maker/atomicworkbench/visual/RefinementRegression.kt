@@ -31,7 +31,9 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             val root = checkNotNull(inst.uiAutomation.rootInActiveWindow)
             val node = root.findAccessibilityNodeInfosByText(label)
                 .firstOrNull { it.text?.toString() == label && it.isVisibleToUser }
-            val scroll = scrollContainer(root)
+            val scroll = if (node != null) {
+                generateSequence(node.parent) { it.parent }.firstOrNull { it.isScrollable }
+            } else scrollContainer(root)
             val viewport = Rect()
             (scroll ?: root).getBoundsInScreen(viewport)
             if (node != null) {
