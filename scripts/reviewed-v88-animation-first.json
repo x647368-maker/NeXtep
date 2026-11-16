@@ -337,7 +337,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt": {
-      "reviewed_blob_sha1": "396b1fdba1db10b5dc99df58145d7a118fc224b1",
+      "reviewed_blob_sha1": "89bd3683b172f934dd2ea25c1ed5fc6079730879",
       "previous_blob_sha1": "5041ec241992b3bb3a88f1661855d05704e3add1",
       "patches": [
         {
@@ -347,6 +347,10 @@
         {
           "before": "    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged",
           "after": "    /** A failed preview may hand back to the established workspace animator only\n     * while this attempt still owns the tap and before any real task move starts. */\n    fun canFallbackToWorkspacePreview(current:Boolean,moveStarted:Boolean,valid:Boolean):Boolean =\n        current && !moveStarted && valid\n\n    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged"
+        },
+        {
+          "before": "    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged",
+          "after": "    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged\n\n    // Recovery is not terminal-commit success. Only a move already submitted\n    // and acknowledged may enter the existing bounded stable-output check.\n    fun canRecoverUnconfirmedTerminal(moveStarted:Boolean,moveAcknowledged:Boolean,terminalReceiptMissing:Boolean):Boolean =\n        moveStarted && moveAcknowledged && terminalReceiptMissing"
         }
       ]
     },
@@ -365,7 +369,7 @@
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicyTest.kt": {
-      "reviewed_blob_sha1": "1e79c704777cade1558fc0a2573efaf4590244c2",
+      "reviewed_blob_sha1": "3cd7d412e135b3ac44390cfe3d62f2095f2dedb4",
       "previous_blob_sha1": "df51ba28dd1d32b13066eaf05af523df643d20b9",
       "patches": [
         {
@@ -375,6 +379,10 @@
         {
           "before": "    @Test fun flightAndActualOwnershipAckMustBothComplete() {",
           "after": "    @Test fun workspacePreviewFallbackIsAllowedOnlyBeforeMoveWithCurrentIdentity() {\n        val p=StageTransientTapPolicy\n        for(current in listOf(false,true)) for(started in listOf(false,true))\n            for(valid in listOf(false,true)) {\n                assertEquals(current && !started && valid,\n                    p.canFallbackToWorkspacePreview(current,started,valid))\n            }\n    }\n    @Test fun flightAndActualOwnershipAckMustBothComplete() {"
+        },
+        {
+          "before": "    @Test fun doNotStartSecondCaptureAfterOneShotBudget() {",
+          "after": "    @Test fun missingTerminalReceiptMayOnlyRecoverAfterRealMoveAck() {\n        val p=StageTransientTapPolicy\n        for(started in listOf(false,true)) for(ack in listOf(false,true)) for(missing in listOf(false,true)){\n            assertEquals(started && ack && missing,p.canRecoverUnconfirmedTerminal(started,ack,missing))\n            // A recovery permission never changes the real terminal gate.\n            assertFalse(p.canHandoff(false,ack))\n        }\n    }\n    @Test fun doNotStartSecondCaptureAfterOneShotBudget() {"
         }
       ]
     },
@@ -462,9 +470,29 @@
         {
           "before": "            val easing=PathInterpolator(.32f,.08f,.36f,1f)",
           "after": "            val easing:TimeInterpolator=if(pair?.usesSharedClock==true) TimeInterpolator{it}\n                else PathInterpolator(.32f,.08f,.36f,1f)\n            if(pair?.usesSharedClock==true)trace(\"snapshot_shared_certified_route\")"
+        },
+        {
+          "before": "        private var flightDone=false\n        private var fallback=false",
+          "after": "        private var flightDone=false\n        // Missing HWUI receipt is not a confirmed endpoint. Once the real\n        // move is in flight, retain the attempt's cover until the existing\n        // output gate or absolute lifetime releases it.\n        private var terminalReceiptMissing=false\n        private var fallback=false"
+        },
+        {
+          "before": "                    StageStableHandoff.Decision.READY->finish(\"ready\")\n                    StageStableHandoff.Decision.TIMEOUT->finish(\"handoff_timeout\")",
+          "after": "                    StageStableHandoff.Decision.READY->\n                        finish(if(terminalReceiptMissing)\"terminal_unconfirmed_output_ready\" else \"ready\")\n                    StageStableHandoff.Decision.TIMEOUT->\n                        finish(if(terminalReceiptMissing)\"terminal_unconfirmed_handoff_timeout\" else \"handoff_timeout\")"
+        },
+        {
+          "before": "                        if(!mainRevealed && mainHandoff.observe(runCatching(mainReady).getOrDefault(false))){",
+          "after": "                        if(!terminalReceiptMissing && !mainRevealed &&\n                            mainHandoff.observe(runCatching(mainReady).getOrDefault(false))){"
+        },
+        {
+          "before": "                    trace(\"snapshot_terminal_commit_timeout\")\n                    finish(\"terminal_commit_timeout\")",
+          "after": "                    trace(\"snapshot_terminal_commit_timeout\")\n                    if(!moveStarted){\n                        finish(\"terminal_commit_timeout\")\n                    } else {\n                        // The migration may already own the tasks. Do not\n                        // remove both previews merely because HWUI missed its\n                        // callback. The normal ACK + output gate remains\n                        // mandatory, and MAX_ATTEMPT_MS remains absolute.\n                        terminalReceiptMissing=true\n                        clearTerminalCallbacks()\n                        trace(\"snapshot_terminal_unconfirmed_hold\")\n                        maybeHandoff()\n                    }"
+        },
+        {
+          "before": "                !StageTransientTapPolicy.canHandoff(flightDone,moveAck))return",
+          "after": "                !(StageTransientTapPolicy.canHandoff(flightDone,moveAck) ||\n                    StageTransientTapPolicy.canRecoverUnconfirmedTerminal(moveStarted,moveAck,terminalReceiptMissing)))return"
         }
       ],
-      "reviewed_blob_sha1": "c2fa93d16e19a4eb0993c8ef33feb2c266a6a8da"
+      "reviewed_blob_sha1": "463b15d9ef5b628f7d79477300bfc0a6ff2e2571"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
       "previous_blob_sha1": "35cf704cfcece47001b45911dad3ea209e3e3155",

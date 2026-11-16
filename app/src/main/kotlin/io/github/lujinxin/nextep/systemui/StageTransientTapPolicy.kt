@@ -33,4 +33,9 @@ internal object StageTransientTapPolicy {
         current && !moveStarted && valid
 
     fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged
+
+    // Recovery is not terminal-commit success. Only a move already submitted
+    // and acknowledged may enter the existing bounded stable-output check.
+    fun canRecoverUnconfirmedTerminal(moveStarted:Boolean,moveAcknowledged:Boolean,terminalReceiptMissing:Boolean):Boolean =
+        moveStarted && moveAcknowledged && terminalReceiptMissing
 }

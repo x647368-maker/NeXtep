@@ -75,6 +75,10 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var moveStarted=false
         private var moveAck=false
         private var flightDone=false
+        // Missing HWUI receipt is not a confirmed endpoint. Once the real
+        // move is in flight, retain the attempt's cover until the existing
+        // output gate or absolute lifetime releases it.
+        private var terminalReceiptMissing=false
         private var fallback=false
         private var handoffStarted=false
         private var visualOwned=false
@@ -119,14 +123,17 @@ internal class StageTransientTapSwap(private val context:Context) {
                 val elapsed=SystemClock.uptimeMillis()-handoffBegan
                 val ready=runCatching(liveReady).getOrDefault(false)
                 when(handoff.decide(ready,elapsed>=StageTransientTapPolicy.HANDOFF_BUDGET_MS)){
-                    StageStableHandoff.Decision.READY->finish("ready")
-                    StageStableHandoff.Decision.TIMEOUT->finish("handoff_timeout")
+                    StageStableHandoff.Decision.READY->
+                        finish(if(terminalReceiptMissing)"terminal_unconfirmed_output_ready" else "ready")
+                    StageStableHandoff.Decision.TIMEOUT->
+                        finish(if(terminalReceiptMissing)"terminal_unconfirmed_handoff_timeout" else "handoff_timeout")
                     StageStableHandoff.Decision.WAIT->{
                         // Handoff begins only after successful task ACK AND terminal
                         // animation commit. A settled main must not be held hostage
                         // by the other producer's late output. Keep the slot's own
                         // cover and strict freshness gate intact.
-                        if(!mainRevealed && mainHandoff.observe(runCatching(mainReady).getOrDefault(false))){
+                        if(!terminalReceiptMissing && !mainRevealed &&
+                            mainHandoff.observe(runCatching(mainReady).getOrDefault(false))){
                             view?.revealMain()
                             mainRevealed=true
                             trace("snapshot_main_revealed")
@@ -344,7 +351,18 @@ internal class StageTransientTapSwap(private val context:Context) {
             val timeout=Runnable{
                 if(current() && !flightDone){
                     trace("snapshot_terminal_commit_timeout")
-                    finish("terminal_commit_timeout")
+                    if(!moveStarted){
+                        finish("terminal_commit_timeout")
+                    } else {
+                        // The migration may already own the tasks. Do not
+                        // remove both previews merely because HWUI missed its
+                        // callback. The normal ACK + output gate remains
+                        // mandatory, and MAX_ATTEMPT_MS remains absolute.
+                        terminalReceiptMissing=true
+                        clearTerminalCallbacks()
+                        trace("snapshot_terminal_unconfirmed_hold")
+                        maybeHandoff()
+                    }
                 }
             }
             fun registerAndRender(){
@@ -446,7 +464,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         private fun maybeHandoff(){
             if(!current() || handoffStarted ||
-                !StageTransientTapPolicy.canHandoff(flightDone,moveAck))return
+                !(StageTransientTapPolicy.canHandoff(flightDone,moveAck) ||
+                    StageTransientTapPolicy.canRecoverUnconfirmedTerminal(moveStarted,moveAck,terminalReceiptMissing)))return
             handoffStarted=true
             handoffBegan=SystemClock.uptimeMillis()
             checkHandoff.run()

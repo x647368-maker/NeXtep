@@ -58,6 +58,14 @@ class StageTransientTapPolicyTest {
         assertFalse(p.canHandoff(false,true))
         assertTrue(p.canHandoff(true,true))
     }
+    @Test fun missingTerminalReceiptMayOnlyRecoverAfterRealMoveAck() {
+        val p=StageTransientTapPolicy
+        for(started in listOf(false,true)) for(ack in listOf(false,true)) for(missing in listOf(false,true)){
+            assertEquals(started && ack && missing,p.canRecoverUnconfirmedTerminal(started,ack,missing))
+            // A recovery permission never changes the real terminal gate.
+            assertFalse(p.canHandoff(false,ack))
+        }
+    }
     @Test fun doNotStartSecondCaptureAfterOneShotBudget() {
         assertTrue(StageTransientTapPolicy.canCaptureSecond(159,160))
         assertFalse(StageTransientTapPolicy.canCaptureSecond(160,160))
