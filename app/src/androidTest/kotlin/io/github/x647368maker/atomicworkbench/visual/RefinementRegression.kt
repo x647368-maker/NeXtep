@@ -115,7 +115,7 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         val metricThread=HandlerThread("StageFrameMetrics").apply{start()}
         val listener=Window.OnFrameMetricsAvailableListener{_,m,_->synchronized(metrics){metrics.add(m.getMetric(FrameMetrics.TOTAL_DURATION))}}
         ui{activity.window.addOnFrameMetricsAvailableListener(listener,Handler(metricThread.looper))}
-        val commands=listOf("切换全屏（保留工作区）","顶部横排","左侧排列","右侧排列","收起常用应用快捷栏","完整显示布局","✓ 主窗口优先布局","主窗口与小窗交换","窗口顺序调整","隐藏/显示侧边栏","添加小窗","影音布局与自动模式","开启智能侧栏（静置收起）","固定侧栏","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）","退出台前调度")
+        val commands=listOf("切换全屏（保留工作区）","顶部横排","左侧排列","右侧排列","收起常用应用快捷栏","常用应用管理","快捷栏样式","显示与动画","完整显示布局","✓ 主窗口优先布局","主窗口与小窗交换","窗口顺序调整","隐藏/显示侧边栏","添加小窗","影音布局与自动模式","开启智能侧栏（静置收起）","固定侧栏","将当前微信任务移入小窗","替换主应用","关闭主窗（移回后台）","退出台前调度")
         val fired=java.util.concurrent.atomic.AtomicInteger(-1)
         val actions=commands.mapIndexed{i,label->label to {fired.set(i)}}
         val expected=(0..3).map{category->commands.indices.filter{StageMenuPolicy.group(commands[it])==category}}

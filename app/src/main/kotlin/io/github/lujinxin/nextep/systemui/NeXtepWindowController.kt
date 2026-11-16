@@ -1667,6 +1667,9 @@ class NeXtepWindowController(
             },
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
+            "常用应用管理" to { showQuickManagementMenu(anchor) },
+            "快捷栏样式" to { showQuickStyleMenu(anchor) },
+            "显示与动画" to { showDisplayOptionsMenu(anchor) },
             "主窗口与小窗交换" to { showMainSlotExchangeMenu(anchor) },
             "窗口顺序调整" to { showSlotOrderMenu(anchor) },
             "隐藏/显示侧边栏" to { toggleRailFromMenu() },
@@ -1691,6 +1694,70 @@ class NeXtepWindowController(
             if(viewport.isTopRail()) "顶部横排" else if(sidebarSide==SidebarSide.LEFT) "左侧排列" else "右侧排列",
             if(core.mainPriority) "主窗口优先布局" else "完整显示布局",
         ))
+    }
+
+    // Menu actions must recheck the real workspace owner after dismissal.
+    private fun menuQuickOrDisplayReady():Boolean {
+        if(menuWindowEngine()!=null &&
+            SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED)return true
+        showStageMessage("窗口正在切换，请稍后重试")
+        return false
+    }
+
+    private fun showQuickManagementMenu(anchor:View) {
+        if(!menuQuickOrDisplayReady())return
+        AtomicPopupMenu.show(context,anchor,listOf(
+            "添加常用应用" to {
+                if(menuQuickOrDisplayReady())chooseWindowApp(anchor,null,quickPin=true)
+            },
+            "恢复隐藏应用" to {
+                if(menuQuickOrDisplayReady()){core.hiddenApps=emptySet();refreshQuickBar()}
+            },
+            "管理已显示的常用应用" to {
+                if(menuQuickOrDisplayReady()) {
+                    if(core.enabled) {
+                        setQuickExpanded(true)
+                        showStageMessage("长按快捷栏应用图标，可固定、移除或调整排序")
+                    } else showStageMessage("请先在快捷栏样式中启用常用应用栏")
+                }
+            },
+        ),avoidBounds=menuAvoidBounds())
+    }
+
+    private fun showQuickStyleMenu(anchor:View) {
+        if(!menuQuickOrDisplayReady())return
+        val items=mutableListOf<Pair<String,()->Unit>>()
+        items += (if(core.enabled) "关闭常用应用栏" else "启用常用应用栏") to {
+            if(menuQuickOrDisplayReady()) {
+                core.enabled=!core.enabled
+                setQuickExpanded(false)
+            }
+        }
+        if(core.enabled)items += (if(core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to {
+            if(menuQuickOrDisplayReady() && core.enabled)setQuickExpanded(!core.expanded)
+        }
+        items += (if(!core.fixed) "✓ 自动推荐" else "自动推荐") to {
+            if(menuQuickOrDisplayReady()){core.fixed=false;refreshQuickBar()}
+        }
+        items += (if(core.fixed) "✓ 固定应用" else "固定应用") to {
+            if(menuQuickOrDisplayReady()){core.fixed=true;refreshQuickBar()}
+        }
+        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds())
+    }
+
+    private fun showDisplayOptionsMenu(anchor:View) {
+        if(!menuQuickOrDisplayReady())return
+        AtomicPopupMenu.show(context,anchor,listOf(
+            (if(core.adaptive) "关闭小窗智能自适应" else "开启小窗智能自适应") to {
+                if(menuQuickOrDisplayReady()) {
+                    core.adaptive=!core.adaptive
+                    syncCoreViewport()
+                    onViewportChanged()
+                }
+            },
+            "影音布局与自动模式" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },
+            "打开完整设置" to { if(menuQuickOrDisplayReady())onSettingsRequested() },
+        ),avoidBounds=menuAvoidBounds())
     }
 
     // These entries reuse the existing task exchange, visual reorder and

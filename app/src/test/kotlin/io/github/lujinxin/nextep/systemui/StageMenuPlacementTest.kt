@@ -40,6 +40,7 @@ class StageMenuPlacementTest {
         val management=listOf("主窗口与小窗交换","窗口顺序调整","隐藏/显示侧边栏")
         assertTrue(management.all { StageMenuPolicy.group(it)==1 })
         assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)
+        assertTrue(listOf("常用应用管理","快捷栏样式","显示与动画").all { StageMenuPolicy.group(it)==2 })
     }
     @Test fun fullSizeWithoutObstacles(){
         val p=choose(emptyList())

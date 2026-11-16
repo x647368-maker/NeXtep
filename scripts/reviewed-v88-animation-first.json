@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "6d520ccb5e1be71b08365afac28fd0abdfb25920",
+      "reviewed_blob_sha1": "ecc9a19d58d763e22f397fded92cb02880b2be19",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -241,6 +241,14 @@
         {
           "before": "    /** All workspace popups use the same visible task regions. A hidden rail",
           "after": "    // These entries reuse the existing task exchange, visual reorder and\n    // rail owners. Never create a replacement task or write window geometry.\n    private fun menuWindowEngine(): SlotTaskCoordinator? {\n        if(!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching() ||\n            isExchangePending() || swapAnimator.isRunning || previewCapturePending ||\n            transientTapSwap.isRunning || liveSurfaceExchange?.isRunning==true || nativeSwapHost!=null)return null\n        return slotCoordinator?.takeIf { it.isGroupRestoreReady() }\n    }\n\n    private fun menuSlotStillOwned(engine:SlotTaskCoordinator,index:Int,expected:SlotState.Occupied):Boolean {\n        val current=engine.slotStates().getOrNull(index) as? SlotState.Occupied\n        return current!=null && current.taskId==expected.taskId && current.displayId==expected.displayId &&\n            current.component==expected.component\n    }\n\n    private fun menuOccupiedSlots(engine:SlotTaskCoordinator):List<Pair<Int,SlotState.Occupied>> =\n        stageOrder.mapNotNull { index->\n            (engine.slotStates().getOrNull(index) as? SlotState.Occupied)?.let { index to it }\n        }\n\n    private fun showMainSlotExchangeMenu(anchor:View) {\n        val engine=menuWindowEngine() ?: run { showStageMessage(\"窗口正在切换，请稍后重试\");return }\n        val entries=menuOccupiedSlots(engine)\n        if(entries.isEmpty()){showStageMessage(\"暂无可交换的小窗\");return}\n        AtomicPopupMenu.show(context,anchor,entries.mapIndexed { position,(index,state)->\n            \"小窗 ${position+1}：${state.component.packageName}\" to {\n                if(menuWindowEngine()!==engine || !menuSlotStillOwned(engine,index,state)) {\n                    showStageMessage(\"小窗已变化，请重新选择\")\n                } else {\n                    if(sidebarCollapsed)setSidebarCollapsed(false)\n                    if(smartRail.hidden)smartRail.interact()\n                    if(menuWindowEngine()===engine && menuSlotStillOwned(engine,index,state))\n                        engine.onSlotClicked(index)\n                    else showStageMessage(\"窗口正在切换，请重新选择\")\n                }\n            }\n        },avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showSlotOrderMenu(anchor:View) {\n        val engine=menuWindowEngine() ?: run { showStageMessage(\"窗口正在切换，请稍后重试\");return }\n        val entries=menuOccupiedSlots(engine)\n        if(entries.size<2){showStageMessage(\"至少需要两个小窗才能调整顺序\");return}\n        AtomicPopupMenu.show(context,anchor,entries.mapIndexed { position,(source,state)->\n            \"选择小窗 ${position+1}：${state.component.packageName}\" to {\n                if(menuWindowEngine()!==engine || !menuSlotStillOwned(engine,source,state))\n                    showStageMessage(\"小窗已变化，请重新选择\")\n                else {\n                    val targets=menuOccupiedSlots(engine).mapIndexedNotNull { targetPosition,(target,other)->\n                        if(source==target)null else\n                            \"与小窗 ${targetPosition+1} 交换：${other.component.packageName}\" to {\n                                if(menuWindowEngine()===engine &&\n                                    menuSlotStillOwned(engine,source,state) &&\n                                    menuSlotStillOwned(engine,target,other)) {\n                                    // Same visual-only operation as drag reorder:\n                                    // no display migration or producer replacement.\n                                    stageOrder=StageVisualOrder.swap(stageOrder,source,target)\n                                    applyStageStack(geometry())\n                                    NeXtepLog.info(\"task_continuity\",\"menu_visual_reorder tasks=${state.taskId},${other.taskId} display_migrations=0 launch_requests=0\")\n                                } else showStageMessage(\"小窗已变化，请重新选择\")\n                            }\n                    }\n                    if(targets.isEmpty())showStageMessage(\"暂无可调整的小窗\")\n                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())\n                }\n            }\n        },avoidBounds=menuAvoidBounds())\n    }\n\n    private fun toggleRailFromMenu() {\n        if(menuWindowEngine()==null){showStageMessage(\"窗口正在切换，请稍后重试\");return}\n        if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return\n        if(smartRail.hidden)smartRail.interact()\n        else if(smartRail.enabled && !sidebarCollapsed)smartRail.hideNow()\n        else setSidebarCollapsed(!sidebarCollapsed)\n    }\n\n    /** All workspace popups use the same visible task regions. A hidden rail"
+        },
+        {
+          "before": "            \"主窗口与小窗交换\" to { showMainSlotExchangeMenu(anchor) },",
+          "after": "            \"常用应用管理\" to { showQuickManagementMenu(anchor) },\n            \"快捷栏样式\" to { showQuickStyleMenu(anchor) },\n            \"显示与动画\" to { showDisplayOptionsMenu(anchor) },\n            \"主窗口与小窗交换\" to { showMainSlotExchangeMenu(anchor) },"
+        },
+        {
+          "before": "    // These entries reuse the existing task exchange, visual reorder and",
+          "after": "    // Menu actions must recheck the real workspace owner after dismissal.\n    private fun menuQuickOrDisplayReady():Boolean {\n        if(menuWindowEngine()!=null &&\n            SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED)return true\n        showStageMessage(\"窗口正在切换，请稍后重试\")\n        return false\n    }\n\n    private fun showQuickManagementMenu(anchor:View) {\n        if(!menuQuickOrDisplayReady())return\n        AtomicPopupMenu.show(context,anchor,listOf(\n            \"添加常用应用\" to {\n                if(menuQuickOrDisplayReady())chooseWindowApp(anchor,null,quickPin=true)\n            },\n            \"恢复隐藏应用\" to {\n                if(menuQuickOrDisplayReady()){core.hiddenApps=emptySet();refreshQuickBar()}\n            },\n            \"管理已显示的常用应用\" to {\n                if(menuQuickOrDisplayReady()) {\n                    if(core.enabled) {\n                        setQuickExpanded(true)\n                        showStageMessage(\"长按快捷栏应用图标，可固定、移除或调整排序\")\n                    } else showStageMessage(\"请先在快捷栏样式中启用常用应用栏\")\n                }\n            },\n        ),avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showQuickStyleMenu(anchor:View) {\n        if(!menuQuickOrDisplayReady())return\n        val items=mutableListOf<Pair<String,()->Unit>>()\n        items += (if(core.enabled) \"关闭常用应用栏\" else \"启用常用应用栏\") to {\n            if(menuQuickOrDisplayReady()) {\n                core.enabled=!core.enabled\n                setQuickExpanded(false)\n            }\n        }\n        if(core.enabled)items += (if(core.expanded) \"收起常用应用快捷栏\" else \"展开常用应用快捷栏\") to {\n            if(menuQuickOrDisplayReady() && core.enabled)setQuickExpanded(!core.expanded)\n        }\n        items += (if(!core.fixed) \"✓ 自动推荐\" else \"自动推荐\") to {\n            if(menuQuickOrDisplayReady()){core.fixed=false;refreshQuickBar()}\n        }\n        items += (if(core.fixed) \"✓ 固定应用\" else \"固定应用\") to {\n            if(menuQuickOrDisplayReady()){core.fixed=true;refreshQuickBar()}\n        }\n        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showDisplayOptionsMenu(anchor:View) {\n        if(!menuQuickOrDisplayReady())return\n        AtomicPopupMenu.show(context,anchor,listOf(\n            (if(core.adaptive) \"关闭小窗智能自适应\" else \"开启小窗智能自适应\") to {\n                if(menuQuickOrDisplayReady()) {\n                    core.adaptive=!core.adaptive\n                    syncCoreViewport()\n                    onViewportChanged()\n                }\n            },\n            \"影音布局与自动模式\" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },\n            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },\n        ),avoidBounds=menuAvoidBounds())\n    }\n\n    // These entries reuse the existing task exchange, visual reorder and"
         }
       ]
     },
@@ -1225,7 +1233,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPolicy.kt": {
-      "reviewed_blob_sha1": "6560d733ad9f29a42d40295dbe340ab4ca5647d3",
+      "reviewed_blob_sha1": "89f7970e1123da8f932fa88871cf9af6d274f9b4",
       "previous_blob_sha1": "653014e7ccb46168e118fe2f3d6b6e15413229d5",
       "patches": [
         {
@@ -1247,11 +1255,15 @@
         {
           "before": "            s==\"影音布局与自动模式\"->24\n            else->group(s)",
           "after": "            s==\"影音布局与自动模式\"->24\n            s==\"主窗口与小窗交换\"->17\n            s==\"窗口顺序调整\"->25\n            s==\"隐藏/显示侧边栏\"->26\n            else->group(s)"
+        },
+        {
+          "before": "            s.contains(\"侧栏\") || s.contains(\"常用应用\") || s==\"影音布局与自动模式\"->2",
+          "after": "            s in listOf(\"常用应用管理\",\"快捷栏样式\",\"显示与动画\")->2\n            s.contains(\"侧栏\") || s.contains(\"常用应用\") || s==\"影音布局与自动模式\"->2"
         }
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPlacementTest.kt": {
-      "reviewed_blob_sha1": "767b53cbe71c0fba345ee34dc2d2adeef51f3ae1",
+      "reviewed_blob_sha1": "06bf882d4af1727fdbbc09a131f62252c30ba7a2",
       "previous_blob_sha1": "3be52da72eb09119eb9b8ae5898d8baf6c7c4cb9",
       "patches": [
         {
@@ -1265,11 +1277,15 @@
         {
           "before": "        assertEquals(StageMenuPolicy.actionGlyph(\"✓ 主窗口优先布局\"),StageMenuPolicy.actionGlyph(\"主窗口优先布局\"))",
           "after": "        assertEquals(StageMenuPolicy.actionGlyph(\"✓ 主窗口优先布局\"),StageMenuPolicy.actionGlyph(\"主窗口优先布局\"))\n        val management=listOf(\"主窗口与小窗交换\",\"窗口顺序调整\",\"隐藏/显示侧边栏\")\n        assertTrue(management.all { StageMenuPolicy.group(it)==1 })\n        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)"
+        },
+        {
+          "before": "        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)",
+          "after": "        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)\n        assertTrue(listOf(\"常用应用管理\",\"快捷栏样式\",\"显示与动画\").all { StageMenuPolicy.group(it)==2 })"
         }
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "4a72ebba791e938c8119fb2adf9f870eb5289f48",
+      "reviewed_blob_sha1": "96b7d49fcd628822e26d33ae7682b9aa777ae925",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1319,6 +1335,10 @@
         {
           "before": "\"✓ 主窗口优先布局\",\"添加小窗\",\"影音布局与自动模式\"",
           "after": "\"✓ 主窗口优先布局\",\"主窗口与小窗交换\",\"窗口顺序调整\",\"隐藏/显示侧边栏\",\"添加小窗\",\"影音布局与自动模式\""
+        },
+        {
+          "before": "\"收起常用应用快捷栏\",\"完整显示布局\"",
+          "after": "\"收起常用应用快捷栏\",\"常用应用管理\",\"快捷栏样式\",\"显示与动画\",\"完整显示布局\""
         }
       ]
     },
