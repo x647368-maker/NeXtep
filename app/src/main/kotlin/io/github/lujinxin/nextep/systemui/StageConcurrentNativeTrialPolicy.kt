@@ -120,6 +120,8 @@ internal object StageConcurrentNativeTrialPolicy {
     // A missing acknowledgement is not pixel proof: hide the layers and move
     // the real tasks once, without claiming an animated handoff.
     const val TERMINAL_COMMIT_BUDGET_MS=64L
+    fun terminalReceiptWithinBudget(submittedMs:Long,receivedMs:Long):Boolean =
+        firstReceiptWithinBudget(submittedMs,receivedMs,TERMINAL_COMMIT_BUDGET_MS)
     enum class MovePresentation { ANIMATED, UNMASKED }
     /** Only a pristine, still-owned GPU attempt may hand off before its first submitted frame. */
     fun canFallbackBeforeFirstGpuFrame(current:Boolean,hostAttached:Boolean,

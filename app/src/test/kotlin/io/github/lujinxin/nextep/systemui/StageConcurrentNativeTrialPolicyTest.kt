@@ -196,6 +196,16 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(p.terminalFrameDue(0,0,1f,true,45))
     }
 
+    @Test fun terminalReceiptUsesActualArrivalNotUiDispatch() {
+        val p=StageConcurrentNativeTrialPolicy
+        assertFalse(p.terminalReceiptWithinBudget(-1,100))
+        assertFalse(p.terminalReceiptWithinBudget(100,-1))
+        assertFalse(p.terminalReceiptWithinBudget(100,99))
+        assertTrue(p.terminalReceiptWithinBudget(100,100))
+        assertTrue(p.terminalReceiptWithinBudget(100,164))
+        assertFalse(p.terminalReceiptWithinBudget(100,165))
+        assertFalse(p.terminalReceiptWithinBudget(100,250))
+    }
     @Test fun terminalDeadlineIsOneShotAndBoundedAcrossAnimatorScales() {
         val p=StageConcurrentNativeTrialPolicy
         assertEquals(424L,p.terminalDeadlineDelay(360,1f))

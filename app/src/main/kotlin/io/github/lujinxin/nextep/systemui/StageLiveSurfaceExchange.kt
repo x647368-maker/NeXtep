@@ -654,8 +654,25 @@ internal class StageLiveSurfaceExchange private constructor(
             return true
         }
 
+        // Terminal compositor receipt is recorded on arrival, independently
+        // of a congested UI queue. Only the UI lane applies the result.
+        val terminalReceiptAt=AtomicLong(-1L)
+        var terminalSubmitAt=-1L
+        fun confirmTerminalReceipt():Boolean {
+            if(!concurrentHandoff || !frameComplete || !isRunning || sentMove || hostDetached)return false
+            if(!StageConcurrentNativeTrialPolicy.terminalReceiptWithinBudget(
+                    terminalSubmitAt,terminalReceiptAt.get()))return false
+            if(!terminalTransactionCommitted) {
+                terminalTransactionCommitted=true
+                trace("native_terminal_transaction_committed")
+                trace("terminal_receipt_ms="+(terminalReceiptAt.get()-terminalSubmitAt)+
+                    " ui_dispatch_ms="+(SystemClock.uptimeMillis()-terminalReceiptAt.get()))
+            }
+            return true
+        }
         fun commitMove() {
             if (!isRunning || sentMove) return
+            confirmTerminalReceipt()
             if(hostDetached || !host.isAttachedToWindow){stop();return}
             // Recheck once immediately before the real migration. Observed
             // task stamps use local cached state, not a synchronous task query.
@@ -744,17 +761,19 @@ internal class StageLiveSurfaceExchange private constructor(
                 val frame=frameTransaction ?: error("Flight transaction is unavailable")
                 applyFrame(frame,fraction)
                 // Register before submitting the exact terminal geometry.
-                // The callback is one-shot and runs on the host main executor;
-                // the same bounded deferred move is shared with the deadline.
+                // Capture the one-shot receipt before dispatch to the UI.
+                // A late UI callback must neither discard a timely receipt
+                // nor turn an actually late one into an animated handoff.
                 if(terminal && concurrentHandoff && Build.VERSION.SDK_INT>=33) {
                     runCatching {
-                        frame.addTransactionCommittedListener(host.context.mainExecutor) {
-                            if(!isRunning || sentMove || hostDetached)return@addTransactionCommittedListener
-                            terminalTransactionCommitted=true
-                            trace("native_terminal_transaction_committed")
-                            deferredMove?.let { pending ->
-                                ui.removeCallbacks(pending)
-                                ui.post(pending)
+                        frame.addTransactionCommittedListener(receiptExecutor) {
+                            if(terminalReceiptAt.compareAndSet(-1L,SystemClock.uptimeMillis())) {
+                                ui.post {
+                                    if(confirmTerminalReceipt())deferredMove?.let { pending ->
+                                        ui.removeCallbacks(pending)
+                                        ui.post(pending)
+                                    }
+                                }
                             }
                         }
                     }.onFailure { trace("native_terminal_commit_callback_unavailable") }
@@ -762,6 +781,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 // Separate geometry/transaction setters (and terminal listener setup)
                 // from apply() itself. Neither duration implies that pixels were presented.
                 val applyStarted=SystemClock.elapsedRealtimeNanos()
+                if(terminal && concurrentHandoff)terminalSubmitAt=SystemClock.uptimeMillis()
                 frame.apply()
                 val submittedAt=SystemClock.elapsedRealtimeNanos()
                 val submitNanos=submittedAt-submitStarted
@@ -799,6 +819,7 @@ internal class StageLiveSurfaceExchange private constructor(
             // Transaction.apply is submission, not proof of visible pixels.
             if (!submitFlightFrame(1f,terminal=true)) return
             frameComplete=true
+            confirmTerminalReceipt()
             trace("flight_complete:$reason@${SystemClock.uptimeMillis()-startedAtMs}ms")
             flightDeadline?.let { ui.removeCallbacks(it) }
             flightDeadline=null
@@ -811,7 +832,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 }
                 deferredMove=movePost
                 if(concurrentHandoff && Build.VERSION.SDK_INT>=33 && !terminalTransactionCommitted)
-                    ui.postDelayed(movePost,StageConcurrentNativeTrialPolicy.TERMINAL_COMMIT_BUDGET_MS)
+                    ui.postAtTime(movePost,terminalSubmitAt+
+                        StageConcurrentNativeTrialPolicy.TERMINAL_COMMIT_BUDGET_MS)
                 else ui.post(movePost)
             } else finishIfReady(liveReady,canRelease)
         }
