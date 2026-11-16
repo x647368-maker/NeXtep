@@ -437,7 +437,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             val view=descendants(activity.window.decorView).filterIsInstance<TextView>()
                 .firstOrNull{it.text?.toString()==value}?:return@ui false
             val rect=Rect()
-            view.isShown && view.getGlobalVisibleRect(rect) && rect.height()>=minOf(view.height,dp(8))
+            view.isShown && view.getGlobalVisibleRect(rect) && rect.height()>=minOf(view.height,(view.height*0.8f).toInt().coerceAtLeast(1))
         }
         fun returnHome(){
             val back=ui {
