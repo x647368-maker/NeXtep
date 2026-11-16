@@ -41,7 +41,12 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             check(attempt < 20 && scroll?.performAction(
                 android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
             ) == true) { "Cannot reach command $label by scrolling the popup" }
-            settle()
+            // The actual ScrollView animates an accessibility scroll for up to
+            // 250 ms. A tap during that motion is consumed to stop the scroll.
+            // Wait one scroll interval with compositor headroom before
+            // recomputing the visible row and sending one physical tap.
+            Thread.sleep(320)
+            inst.waitForIdleSync()
         }
         android.util.Log.i("StageMenuRegression","physical tap label=$label bounds=$b")
         val t=SystemClock.uptimeMillis()

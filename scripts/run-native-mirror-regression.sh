@@ -95,7 +95,7 @@ adb exec-out run-as io.github.x647368maker.atomicworkbench \
   tar -C files/visual-regression -cf - . > /tmp/atomic-native/all-flight-results.tar
 mkdir -p visual-results
 tar -xf /tmp/atomic-native/all-flight-results.tar -C visual-results
-test -s visual-results/native-flight-first-moving-mid.png
+test -s visual-results/native-flight-moving-mid.png
 test -s visual-results/native-flight-clean-mid.png
 test -s visual-results/paired-flight/native-flight-first-moving-mid.png
 test -s visual-results/paired-flight/native-flight-clean-host-detach.png
