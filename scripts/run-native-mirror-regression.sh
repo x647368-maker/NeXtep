@@ -91,6 +91,19 @@ if [ "$status" -ne 0 ]; then
 fi
 grep -F 'PAIRED_FLIGHT_PASS' paired-flight-instrumentation.txt
 
+# Mixed-aspect covered regression is independent of the old contain fixture.
+set +e
+timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e pairedFlightOnly true -e adaptiveCoveredFlight true -w \
+  io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \
+  | tee adaptive-flight-instrumentation.txt
+status=${PIPESTATUS[0]}
+set -e
+if [ "$status" -ne 0 ]; then
+  echo "::error::API37 adaptive covered flight instrumentation failed (exit=$status)"
+  exit "$status"
+fi
+grep -F 'ADAPTIVE_COVERED_FLIGHT_PASS' adaptive-flight-instrumentation.txt
+
 adb logcat -d > native-flight-logcat.txt
 adb exec-out run-as io.github.x647368maker.atomicworkbench \
   tar -C files/visual-regression -cf - . > /tmp/atomic-native/all-flight-results.tar
@@ -100,12 +113,16 @@ test -s visual-results/native-flight-moving-mid.png
 test -s visual-results/native-flight-clean-mid.png
 test -s visual-results/paired-flight/native-flight-first-moving-mid.png
 test -s visual-results/paired-flight/native-flight-clean-host-detach.png
+test -s visual-results/adaptive-flight/native-flight-first-moving-mid.png
+test -s visual-results/adaptive-flight/native-flight-moving-stale.png
+test -s visual-results/adaptive-flight/native-flight-clean-host-detach.png
+grep -F 'paired_covered_adaptive bound=' visual-results/adaptive-flight/native-flight-trace.txt
 # Export bounded aggregated timing rows into CI logs as well as the raw artifacts.
 # This is evidence availability, not a synthetic performance threshold.
 python3 - <<'PY'
 import re
 from pathlib import Path
-for folder in (Path("visual-results"), Path("visual-results/paired-flight")):
+for folder in (Path("visual-results"), Path("visual-results/paired-flight"), Path("visual-results/adaptive-flight")):
     trace = (folder / "native-flight-trace.txt").read_text()
     totals = re.findall(r"gpu_submit frames=(\d+) max_us=(\d+) over_8333us=(\d+) over_16667us=(\d+)", trace)
     split = re.findall(r"gpu_parts n=(\d+) prep_us=(\d+) apply_us=(\d+) prep8=(\d+) apply8=(\d+)", trace)

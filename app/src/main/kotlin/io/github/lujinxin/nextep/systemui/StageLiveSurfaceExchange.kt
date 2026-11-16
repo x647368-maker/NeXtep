@@ -67,10 +67,17 @@ internal class StageLiveSurfaceExchange private constructor(
         screen:StageLiveSurfaceFlightGeometry.Box,
         obstacles:List<StageLiveSurfaceFlightGeometry.Box>,
     ):Boolean {
-        if(finished.get() || isRunning || coveredFlight)return false
-        // Exercise the same default geometric admission as the production
-        // factory; the separate test clock is intentionally not a phone budget.
-        pairedRailPlan=StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
+        if(finished.get() || isRunning)return false
+        // The covered fixture must reproduce the old rejection and admit only
+        // the actual adaptive route. No production gate or task identity is bypassed.
+        pairedRailPlan=if(coveredFlight) {
+            if(!StageLiveSurfaceFlightGeometry.canUseCoveredFlight(slotStart,mainStart,
+                    incomingGeometryCrop,outgoingGeometryCrop,obstacles))return false
+            if(StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
+                    outgoingGeometryCrop,screen,obstacles,oldCovered=true)!=null)return false
+            StageAdaptiveCoveredRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
+                outgoingGeometryCrop,screen,obstacles)
+        } else StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
             outgoingGeometryCrop,screen,obstacles,oldCovered=false)
         return pairedRailPlan!=null
     }

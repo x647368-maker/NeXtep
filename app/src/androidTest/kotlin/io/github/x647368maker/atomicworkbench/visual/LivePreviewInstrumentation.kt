@@ -30,6 +30,7 @@ class LivePreviewInstrumentation : Instrumentation() {
     private var uiVisualOnly = false
     private var nativeFlightOnly = false
     private var pairedFlightOnly = false
+    private var adaptiveCoveredFlight = false
     private var requireDefaultAnimation = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
@@ -38,12 +39,14 @@ class LivePreviewInstrumentation : Instrumentation() {
         uiVisualOnly = arguments?.getString("uiVisualOnly") == "true"
         nativeFlightOnly = arguments?.getString("nativeFlightOnly") == "true"
         pairedFlightOnly = arguments?.getString("pairedFlightOnly") == "true"
+        adaptiveCoveredFlight = arguments?.getString("adaptiveCoveredFlight") == "true"
         requireDefaultAnimation = arguments?.getString("requireDefaultAnimation") == "true"
         start()
     }
     override fun onStart() {
         val result=Bundle()
         try {
+            check(!adaptiveCoveredFlight || pairedFlightOnly)
             check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly, uiVisualOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
             if(uiVisualOnly) {
                 val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
@@ -88,9 +91,11 @@ class LivePreviewInstrumentation : Instrumentation() {
                     }
                     "PRODUCTION_ANIMATION_GATE_PASS\n"
                 } else ""
-                val destination=if(pairedFlightOnly)File(out,"paired-flight").apply { mkdirs() } else out
-                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly)
-                val marker=if(pairedFlightOnly)"PAIRED_FLIGHT_PASS" else "NATIVE_FLIGHT_PASS"
+                val destination=if(adaptiveCoveredFlight)File(out,"adaptive-flight").apply { mkdirs() }
+                    else if(pairedFlightOnly)File(out,"paired-flight").apply { mkdirs() } else out
+                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly,adaptiveCoveredFlight)
+                val marker=if(adaptiveCoveredFlight)"ADAPTIVE_COVERED_FLIGHT_PASS"
+                    else if(pairedFlightOnly)"PAIRED_FLIGHT_PASS" else "NATIVE_FLIGHT_PASS"
                 result.putString("stream",status+"\n"+productionGateEvidence+marker+"\n")
                 runOnMainSync { activity.finish() }
                 finish(Activity.RESULT_OK,result)

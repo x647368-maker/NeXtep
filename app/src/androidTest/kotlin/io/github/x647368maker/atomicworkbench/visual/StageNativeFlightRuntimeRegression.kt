@@ -44,7 +44,12 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
         abs(Color.green(value)-Color.green(expected))<25 &&
         abs(Color.blue(value)-Color.blue(expected))<25
 
-    fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false):String {
+    fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false,adaptiveCovered:Boolean=false):String {
+        check(!adaptiveCovered || pairedRail)
+        val sourceW=if(adaptiveCovered)424 else 180
+        val sourceH=if(adaptiveCovered)839 else 240
+        val mainW=if(adaptiveCovered)318 else 270
+        val mainH=if(adaptiveCovered)693 else 360
         check(Build.VERSION.SDK_INT>=37)
         check(ValueAnimator.getDurationScale()>=2f) { "Test requires extended system animation scale" }
         val first=View(activity).apply { setBackgroundColor(blue) }
@@ -93,13 +98,13 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     val outgoing=TaskSurfaceCompat.MirrorSourceStamp(-1002,0,Any(),mb)
                     StageExchangeTelemetry.beginNativeTap("instrumented_live_root_flight")
                     val traceId=StageExchangeTelemetry.currentNativeTapId()
-                    val engine=constructor.newInstance(host,ma,mb,Rect(0,0,180,240),
-                        Rect(0,0,270,360),box(small),box(main),null,covers,false,
+                    val engine=constructor.newInstance(host,ma,mb,Rect(0,0,sourceW,sourceH),
+                        Rect(0,0,mainW,mainH),box(small),box(main),null,covers,adaptiveCovered,
                         incoming,outgoing,true) as StageLiveSurfaceExchange
                     flight=engine
                     if(pairedRail)check(engine.preparePairedRailRuntimeTest(
                         StageLiveSurfaceFlightGeometry.Box(0f,0f,host.width.toFloat(),host.height.toFloat()),
-                        listOf(box(other)))) { "No certified paired contain route" }
+                        listOf(box(other)))) { "No certified paired route: adaptive=$adaptiveCovered" }
                     val ended=CountDownLatch(1)
                     val finishes=AtomicInteger()
                     val moves=AtomicInteger()
@@ -158,20 +163,29 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 host.getLocationOnScreen(origin)
                 hostWidth=host.width
                 check(hostWidth>=1000 && host.height>=1800) { "Unexpected API37 test display" }
-                small=Rect(80,450,260,690)
-                main=Rect(400,1050,940,1770)
-                other=Rect(820,450,1000,690)
+                // Two-thirds-scale representative portrait report geometry.
+                // Actual PopupWindow buffers retain the two distinct source aspects.
+                if(adaptiveCovered) {
+                    check(hostWidth>=1272)
+                    small=Rect(12,359,200,731)
+                    main=Rect(212,307,848,1693)
+                    other=Rect(12,749,200,1121)
+                } else {
+                    small=Rect(80,450,260,690)
+                    main=Rect(400,1050,940,1770)
+                    other=Rect(820,450,1000,690)
+                }
                 host.addView(View(activity).apply { setBackgroundColor(protectedColor) },
                     FrameLayout.LayoutParams(other.width(),other.height()).apply {
                         leftMargin=other.left;topMargin=other.top
                     })
-                p1=PopupWindow(first,180,240,false).apply {
+                p1=PopupWindow(first,sourceW,sourceH,false).apply {
                     isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,20,30)
+                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,if(adaptiveCovered)hostWidth-sourceW else 20,30)
                 }
-                p2=PopupWindow(second,270,360,false).apply {
+                p2=PopupWindow(second,mainW,mainH,false).apply {
                     isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,340,30)
+                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,if(adaptiveCovered)hostWidth-mainW else 340,if(adaptiveCovered)910 else 30)
                 }
             }
             inst.waitForIdleSync()
@@ -179,6 +193,9 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             inst.runOnMainSync {
                 // Source positions include the status-bar inset; a requested
                 // PopupWindow offset is NOT its actual physical position.
+                check(first.width==sourceW && first.height==sourceH && second.width==mainW && second.height==mainH) {
+                    "Actual buffer fixture dimensions differ from requested crop"
+                }
                 sourceRoots=listOf(first,second).map { view ->
                     check(view.isAttachedToWindow && view.width>0 && view.height>0)
                     val at=IntArray(2);view.getLocationOnScreen(at)
@@ -239,13 +256,14 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             // Prepare the full-resolution sampling region and the unchanged
             // 12px lattice BEFORE the flight starts. Source exclusion is
             // based on measured physical root bounds, never expected offsets.
-            val scanHeight=main.bottom-small.top
+            val scanTop=minOf(small.top,main.top)
+            val scanHeight=main.bottom-scanTop
             val pixels=IntArray(hostWidth*scanHeight)
             val positions=ArrayList<Int>()
-            for(y in small.top until main.bottom step 12) {
+            for(y in scanTop until main.bottom step 12) {
                 for(x in 0 until hostWidth step 12) {
                     if(sourceRoots.none { it.contains(x,y) })
-                        positions.add((y-small.top)*hostWidth+x)
+                        positions.add((y-scanTop)*hostWidth+x)
                 }
             }
             val sampleOffsets=positions.toIntArray()
@@ -292,12 +310,12 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             // rather than 110 repeated Bitmap JNI row reads.
                             // Every coordinate and color threshold is unchanged.
                             frame.getPixels(pixels,0,hostWidth,origin[0],
-                                origin[1]+small.top,hostWidth,scanHeight)
+                                origin[1]+scanTop,hostWidth,scanHeight)
                             val readAt=SystemClock.uptimeMillis()
                             for(offset in sampleOffsets) {
                                 val c=pixels[offset]
                                 val x=offset%hostWidth
-                                val y=small.top+offset/hostWidth
+                                val y=scanTop+offset/hostWidth
                                 if(matches(c,blue)) { up++;ux+=x;uy+=y;if(!small.contains(x,y))movedUp++ }
                                 if(matches(c,orange)) { down++;dx+=x;dy+=y;if(!main.contains(x,y))movedDown++ }
                             }
@@ -391,7 +409,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 check(gone) { "Detached host left visible mirror/mask pixels" }
                 evidence.add("host-detach: actual detach, one finish, no move, both handles released, pixels restored")
             }
-            return if(pairedRail) "PASS paired contain trial: distinct source-excluded moving frames, both outgoing footprints, protected slot, rapid cancellation, host detach and stale migration rejection"
+            return if(adaptiveCovered) "PASS adaptive mixed-aspect covered flight: real moving pixels, protected slot, cancellation, stale-owner terminal and detach cleanup"
+                else if(pairedRail) "PASS paired contain trial: distinct source-excluded moving frames, both outgoing footprints, protected slot, rapid cancellation, host detach and stale migration rejection"
                 else "PASS production native GPU animator: moving live roots, protected slot, early/mid cancellation, stale migration rejection, repeat cleanup"
         } finally {
             File(out,"native-flight-runtime.txt").writeText(evidence.joinToString("\n"))

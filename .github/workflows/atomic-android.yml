@@ -296,7 +296,7 @@ jobs:
           timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
           test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
       - name: Verify genuine API37 two live GPU mirrors with a strict dedicated test
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: bash scripts/run-native-mirror-regression.sh
       - uses: actions/upload-artifact@v4
         if: always()
@@ -308,5 +308,6 @@ jobs:
             native-mirror-logcat.txt
             native-flight-instrumentation.txt
             paired-flight-instrumentation.txt
+            adaptive-flight-instrumentation.txt
             native-flight-logcat.txt
             /tmp/emulator-api37.log

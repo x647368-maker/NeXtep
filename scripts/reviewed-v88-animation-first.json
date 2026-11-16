@@ -416,9 +416,13 @@
         {
           "before": "        val paired=pairedRailPlan?.at(p)\n        val incoming=if(paired!=null)pairFrame(paired.incoming,incomingGeometryCrop) else\n            StageLiveSurfaceFlightGeometry.mirrorFrame(\n                slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,\n            ) ?: error(\"Unsafe incoming GPU rail path\")\n        val outgoing=if(paired!=null)pairFrame(paired.outgoing,outgoingGeometryCrop) else\n            StageLiveSurfaceFlightGeometry.mirrorFrame(\n                mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,\n            ) ?: error(\"Unsafe outgoing GPU rail path\")",
           "after": "        val paired=pairedRailPlan?.at(p)\n        // At p=0 keep the original complete source; at every later frame\n        // the planned viewport is independent of the uniformly scaled crop.\n        val incoming=(if(paired!=null && coveredFlight && p>0f)\n            StageAdaptiveCoveredRailRoute.frame(paired.incoming,incomingGeometryCrop)\n        else if(paired!=null && !coveredFlight)pairFrame(paired.incoming,incomingGeometryCrop)\n        else StageLiveSurfaceFlightGeometry.mirrorFrame(\n            slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,\n        )) ?: error(\"Unsafe incoming GPU rail path\")\n        val outgoing=(if(paired!=null && coveredFlight && p>0f)\n            StageAdaptiveCoveredRailRoute.frame(paired.outgoing,outgoingGeometryCrop)\n        else if(paired!=null && !coveredFlight)pairFrame(paired.outgoing,outgoingGeometryCrop)\n        else StageLiveSurfaceFlightGeometry.mirrorFrame(\n            mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,\n        )) ?: error(\"Unsafe outgoing GPU rail path\")"
+        },
+        {
+          "before": "        if(finished.get() || isRunning || coveredFlight)return false\n        // Exercise the same default geometric admission as the production\n        // factory; the separate test clock is intentionally not a phone budget.\n        pairedRailPlan=StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n            outgoingGeometryCrop,screen,obstacles,oldCovered=false)",
+          "after": "        if(finished.get() || isRunning)return false\n        // The covered fixture must reproduce the old rejection and admit only\n        // the actual adaptive route. No production gate or task identity is bypassed.\n        pairedRailPlan=if(coveredFlight) {\n            if(!StageLiveSurfaceFlightGeometry.canUseCoveredFlight(slotStart,mainStart,\n                    incomingGeometryCrop,outgoingGeometryCrop,obstacles))return false\n            if(StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n                    outgoingGeometryCrop,screen,obstacles,oldCovered=true)!=null)return false\n            StageAdaptiveCoveredRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n                outgoingGeometryCrop,screen,obstacles)\n        } else StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n            outgoingGeometryCrop,screen,obstacles,oldCovered=false)"
         }
       ],
-      "reviewed_blob_sha1": "1aa1b7d122d935bacad8b052e32ac68c1f2a2319"
+      "reviewed_blob_sha1": "4cb0c87a4fe84f7e2dbaa82208266b838f09e23f"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",
@@ -516,7 +520,7 @@
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": {
       "previous_blob_sha1": "68fd624e9b8d9ee81cc8807e863f121a97c18990",
-      "reviewed_blob_sha1": "0fcbc2d849cc712fe2421a7929c0cda31b1dec94",
+      "reviewed_blob_sha1": "6512f1e9d589852b1978b7d06afd28f5327e11ca",
       "patches": [
         {
           "before": "    private var pairedFlightOnly = false\n",
@@ -533,6 +537,22 @@
         {
           "before": "                result.putString(\"stream\",status+\"\\n\"+marker+\"\\n\")",
           "after": "                result.putString(\"stream\",status+\"\\n\"+productionGateEvidence+marker+\"\\n\")"
+        },
+        {
+          "before": "    private var pairedFlightOnly = false",
+          "after": "    private var pairedFlightOnly = false\n    private var adaptiveCoveredFlight = false"
+        },
+        {
+          "before": "        pairedFlightOnly = arguments?.getString(\"pairedFlightOnly\") == \"true\"",
+          "after": "        pairedFlightOnly = arguments?.getString(\"pairedFlightOnly\") == \"true\"\n        adaptiveCoveredFlight = arguments?.getString(\"adaptiveCoveredFlight\") == \"true\""
+        },
+        {
+          "before": "            check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly, uiVisualOnly).count { it } <= 1)",
+          "after": "            check(!adaptiveCoveredFlight || pairedFlightOnly)\n            check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly, uiVisualOnly).count { it } <= 1)"
+        },
+        {
+          "before": "                val destination=if(pairedFlightOnly)File(out,\"paired-flight\").apply { mkdirs() } else out\n                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly)\n                val marker=if(pairedFlightOnly)\"PAIRED_FLIGHT_PASS\" else \"NATIVE_FLIGHT_PASS\"",
+          "after": "                val destination=if(adaptiveCoveredFlight)File(out,\"adaptive-flight\").apply { mkdirs() }\n                    else if(pairedFlightOnly)File(out,\"paired-flight\").apply { mkdirs() } else out\n                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly,adaptiveCoveredFlight)\n                val marker=if(adaptiveCoveredFlight)\"ADAPTIVE_COVERED_FLIGHT_PASS\"\n                    else if(pairedFlightOnly)\"PAIRED_FLIGHT_PASS\" else \"NATIVE_FLIGHT_PASS\""
         }
       ]
     },
@@ -591,6 +611,92 @@
         }
       ],
       "reviewed_blob_sha1": "98cf7e6f67380534c3f6b83c41baf7237ca55d30"
+    },
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": {
+      "previous_blob_sha1": "a4b089745d0c4ace7f15fba4a2ab96d8a7be0341",
+      "reviewed_blob_sha1": "782c9e57649abe150a33ecf34b2b0cce56523364",
+      "patches": [
+        {
+          "before": "fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false):String {",
+          "after": "fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false,adaptiveCovered:Boolean=false):String {\n        check(!adaptiveCovered || pairedRail)\n        val sourceW=if(adaptiveCovered)424 else 180\n        val sourceH=if(adaptiveCovered)839 else 240\n        val mainW=if(adaptiveCovered)318 else 270\n        val mainH=if(adaptiveCovered)693 else 360"
+        },
+        {
+          "before": "constructor.newInstance(host,ma,mb,Rect(0,0,180,240),\n                        Rect(0,0,270,360),box(small),box(main),null,covers,false,",
+          "after": "constructor.newInstance(host,ma,mb,Rect(0,0,sourceW,sourceH),\n                        Rect(0,0,mainW,mainH),box(small),box(main),null,covers,adaptiveCovered,"
+        },
+        {
+          "before": "listOf(box(other)))) { \"No certified paired contain route\" }",
+          "after": "listOf(box(other)))) { \"No certified paired route: adaptive=$adaptiveCovered\" }"
+        },
+        {
+          "before": "                small=Rect(80,450,260,690)\n                main=Rect(400,1050,940,1770)\n                other=Rect(820,450,1000,690)",
+          "after": "                // Two-thirds-scale representative portrait report geometry.\n                // Actual PopupWindow buffers retain the two distinct source aspects.\n                if(adaptiveCovered) {\n                    check(hostWidth>=1272)\n                    small=Rect(12,359,200,731)\n                    main=Rect(212,307,848,1693)\n                    other=Rect(12,749,200,1121)\n                } else {\n                    small=Rect(80,450,260,690)\n                    main=Rect(400,1050,940,1770)\n                    other=Rect(820,450,1000,690)\n                }"
+        },
+        {
+          "before": "p1=PopupWindow(first,180,240,false).apply {\n                    isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))\n                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,20,30)\n                }\n                p2=PopupWindow(second,270,360,false).apply {\n                    isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))\n                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,340,30)",
+          "after": "p1=PopupWindow(first,sourceW,sourceH,false).apply {\n                    isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))\n                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,if(adaptiveCovered)hostWidth-sourceW else 20,30)\n                }\n                p2=PopupWindow(second,mainW,mainH,false).apply {\n                    isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))\n                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,if(adaptiveCovered)hostWidth-mainW else 340,if(adaptiveCovered)910 else 30)"
+        },
+        {
+          "before": "                sourceRoots=listOf(first,second).map { view ->",
+          "after": "                check(first.width==sourceW && first.height==sourceH && second.width==mainW && second.height==mainH) {\n                    \"Actual buffer fixture dimensions differ from requested crop\"\n                }\n                sourceRoots=listOf(first,second).map { view ->"
+        },
+        {
+          "before": "val scanHeight=main.bottom-small.top",
+          "after": "val scanTop=minOf(small.top,main.top)\n            val scanHeight=main.bottom-scanTop"
+        },
+        {
+          "before": "for(y in small.top until main.bottom step 12)",
+          "after": "for(y in scanTop until main.bottom step 12)"
+        },
+        {
+          "before": "positions.add((y-small.top)*hostWidth+x)",
+          "after": "positions.add((y-scanTop)*hostWidth+x)"
+        },
+        {
+          "before": "origin[1]+small.top,hostWidth,scanHeight)",
+          "after": "origin[1]+scanTop,hostWidth,scanHeight)"
+        },
+        {
+          "before": "val y=small.top+offset/hostWidth",
+          "after": "val y=scanTop+offset/hostWidth"
+        },
+        {
+          "before": "            return if(pairedRail) \"PASS paired contain trial:",
+          "after": "            return if(adaptiveCovered) \"PASS adaptive mixed-aspect covered flight: real moving pixels, protected slot, cancellation, stale-owner terminal and detach cleanup\"\n                else if(pairedRail) \"PASS paired contain trial:"
+        }
+      ]
+    },
+    "scripts/run-native-mirror-regression.sh": {
+      "previous_blob_sha1": "3b95886a4bfa1aa8e04a32d58f2f6c7ba4fa0518",
+      "reviewed_blob_sha1": "c37821ac0c47fc6a8b6855690804791561561e88",
+      "patches": [
+        {
+          "before": "grep -F 'PAIRED_FLIGHT_PASS' paired-flight-instrumentation.txt\n",
+          "after": "grep -F 'PAIRED_FLIGHT_PASS' paired-flight-instrumentation.txt\n\n# Mixed-aspect covered regression is independent of the old contain fixture.\nset +e\ntimeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e pairedFlightOnly true -e adaptiveCoveredFlight true -w \\\n  io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \\\n  | tee adaptive-flight-instrumentation.txt\nstatus=${PIPESTATUS[0]}\nset -e\nif [ \"$status\" -ne 0 ]; then\n  echo \"::error::API37 adaptive covered flight instrumentation failed (exit=$status)\"\n  exit \"$status\"\nfi\ngrep -F 'ADAPTIVE_COVERED_FLIGHT_PASS' adaptive-flight-instrumentation.txt\n"
+        },
+        {
+          "before": "test -s visual-results/paired-flight/native-flight-clean-host-detach.png",
+          "after": "test -s visual-results/paired-flight/native-flight-clean-host-detach.png\ntest -s visual-results/adaptive-flight/native-flight-first-moving-mid.png\ntest -s visual-results/adaptive-flight/native-flight-moving-stale.png\ntest -s visual-results/adaptive-flight/native-flight-clean-host-detach.png\ngrep -F 'paired_covered_adaptive bound=' visual-results/adaptive-flight/native-flight-trace.txt"
+        },
+        {
+          "before": "for folder in (Path(\"visual-results\"), Path(\"visual-results/paired-flight\")):",
+          "after": "for folder in (Path(\"visual-results\"), Path(\"visual-results/paired-flight\"), Path(\"visual-results/adaptive-flight\")):"
+        }
+      ]
+    },
+    ".github/workflows/atomic-android.yml": {
+      "previous_blob_sha1": "7f7d36d133053d7d3d37ae1d36bee7d217845959",
+      "reviewed_blob_sha1": "2bfcde6426eae8eb340a06b20e7c4644f6e63712",
+      "patches": [
+        {
+          "before": "      - name: Verify genuine API37 two live GPU mirrors with a strict dedicated test\n        timeout-minutes: 5",
+          "after": "      - name: Verify genuine API37 two live GPU mirrors with a strict dedicated test\n        timeout-minutes: 8"
+        },
+        {
+          "before": "            paired-flight-instrumentation.txt\n            native-flight-logcat.txt",
+          "after": "            paired-flight-instrumentation.txt\n            adaptive-flight-instrumentation.txt\n            native-flight-logcat.txt"
+        }
+      ]
     }
   }
 }
