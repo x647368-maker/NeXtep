@@ -282,7 +282,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",
-      "reviewed_blob_sha1": "6d01d733059dba4e4414376cbba268c909df84fc",
+      "reviewed_blob_sha1": "f33cde396bdfa1a90541309cb1dddc0605bbf5f1",
       "patches": [
         {
           "before": "    private var navigationScroll: ScrollView? = null",
@@ -303,6 +303,26 @@
         {
           "before": "color = if (wideLayout) blue else ink",
           "after": "color = blue"
+        },
+        {
+          "before": "    private fun sectionGlyph(index:Int)=listOf(\"groups\",\"diagnostics\",\"tile\")[index]",
+          "after": "    private fun sectionGlyph(index:Int)=listOf(\"groups\",\"diagnostics\",\"tile\")[index]\n    private fun sectionAccent(index: Int): Int = when (index) {\n        0 -> blue\n        1 -> Color.rgb(142, 88, 224)\n        else -> if (dark) Color.rgb(90, 201, 176) else Color.rgb(0, 119, 96)\n    }"
+        },
+        {
+          "before": "row(card,item.name,descriptions[item.page],item.icon,blue)",
+          "after": "row(card,item.name,descriptions[item.page],item.icon,sectionAccent(index))"
+        },
+        {
+          "before": "         for (section in StageHomeLayout.sections) {",
+          "after": "        for ((index, section) in StageHomeLayout.sections.withIndex()) {"
+        },
+        {
+          "before": "val accent = when (section.title) { \"工作台\" -> blue; \"故障诊断\" -> Color.rgb(142,88,224); else -> secondary }",
+          "after": "val accent = sectionAccent(index)"
+        },
+        {
+          "before": "icon = item.icon, color = blue)",
+          "after": "icon = item.icon, color = accent)"
         }
       ]
     },

@@ -78,7 +78,37 @@ internal object AtomicPopupMenu {
             cornerRadius=dp(20).toFloat();setStroke(dp(1),if(dark)Color.argb(85,232,245,255) else Color.argb(205,255,255,255))
         }
         val rows=LinearLayout(context).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(6),dp(6),dp(6),dp(6));setBackgroundColor(Color.TRANSPARENT)}
-        val content=ScrollView(context).apply{isFillViewport=false;clipToOutline=true;background=glass;addView(rows,android.view.ViewGroup.LayoutParams(-1,-2))}
+        val scroll=ScrollView(context).apply{isFillViewport=false;addView(rows,ViewGroup.LayoutParams(-1,-2))}
+        val content=LinearLayout(context).apply{
+            orientation=LinearLayout.HORIZONTAL
+            clipToOutline=true
+            background=glass
+        }
+        val grouped=StageMenuPolicy.isMain(items.map{it.first})
+        val xy=IntArray(2).also(anchor::getLocationOnScreen)
+        fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
+        val anchorBox=StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height)
+        val blocked=avoid.map{it.box()}
+        val categoryWidth=dp(120)
+        val fullWidth=dp(340)
+        val dualHeight=minOf(dp(280),(safe.height()*.38f).toInt())
+        val dualBounds=if(grouped && safe.width()>=dp(600) && dualHeight>=dp(140)) {
+            StageMenuPlacement.compact(safe.box(),anchorBox,fullWidth,dualHeight,fullWidth,dp(140),blocked,dp(8))
+                .takeIf { candidate -> candidate.w==fullWidth && blocked.none { candidate.overlap(it)>0 } }
+        } else null
+        val categories=LinearLayout(context).apply{
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(6),dp(6),dp(6),dp(6))
+        }
+        if (dualBounds!=null) {
+            content.addView(ScrollView(context).apply { addView(categories) },
+                LinearLayout.LayoutParams(categoryWidth,-1))
+            content.addView(View(context).apply {
+                setBackgroundColor(Color.argb(42,120,137,154))
+                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(1),-1))
+            content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+        } else content.addView(scroll,LinearLayout.LayoutParams(-1,-1))
         val popup=PopupWindow(content,1,1,true).apply {
             isOutsideTouchable=true;setTouchModal(false)
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));elevation=dp(4).toFloat()
@@ -92,7 +122,6 @@ internal object AtomicPopupMenu {
                 cancelPendingAction()
             }
         }
-        val grouped=StageMenuPolicy.isMain(items.map{it.first})
         var initialized=false
         fun fit(secondary:Boolean) {
             val maxWidth=safe.width().coerceAtLeast(1)
@@ -106,9 +135,8 @@ internal object AtomicPopupMenu {
             // Preserve measured labels, but keep the accepted compact scrolling viewport.
             val height=rows.measuredHeight.coerceIn(1,maxHeight)
                 .coerceAtMost(minOf(dp(300),(maxHeight*.38f).toInt()).coerceAtLeast(1))
-            val xy=IntArray(2);anchor.getLocationOnScreen(xy)
-            fun Rect.box()=StageMenuPlacement.Box(left,top,right,bottom)
-            val pos=StageMenuPlacement.compact(safe.box(),StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height),
+            if(dualBounds!=null && initialized)return
+            val pos=dualBounds ?: StageMenuPlacement.compact(safe.box(),anchorBox,
                 width,height,
                 // The short primary category page must remain fully readable.
                 // Prefer an empty rectangle that fits it; if none exists, the
@@ -116,21 +144,23 @@ internal object AtomicPopupMenu {
                 // action lists may shrink to a scrolling one-row viewport.
                 if(grouped && !secondary) width else dp(160),
                 if(grouped && !secondary) height else dp(60),
-                avoid.map{it.box()},dp(8))
+                blocked,dp(8))
             if(initialized)popup.update(pos.l,pos.t,pos.w,pos.h) else {
                 popup.width=pos.w;popup.height=pos.h
                 popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,pos.l,pos.t);initialized=true
             }
         }
-        fun row(label:String,click:()->Unit) {
-            rows.addView(TextView(context).apply {
+        fun row(label:String,parent:LinearLayout=rows,click:()->Unit):TextView {
+            val button=TextView(context).apply {
                 text=label;contentDescription=label;textSize=15f;minHeight=dp(48)
                 setTextColor(ink);gravity=Gravity.CENTER_VERTICAL or Gravity.START
                 setPadding(dp(12),dp(6),dp(12),dp(6));isClickable=true;isFocusable=true
                 background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),null,
                     GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})
                 setOnClickListener{click()}
-            },LinearLayout.LayoutParams(-1,-2))
+            }
+            parent.addView(button,LinearLayout.LayoutParams(-1,-2))
+            return button
         }
         fun action(label:String,run:()->Unit) = row(label) select@{
             if(active!==popup || !popup.isShowing || pendingAction!=null)return@select
@@ -171,12 +201,21 @@ internal object AtomicPopupMenu {
                 }
             })dismissActive()
         }
+        val categoryButtons=mutableMapOf<Int,TextView>()
         lateinit var page:(Int?)->Unit
         page=pageChange@{ category ->
             if(pendingAction!=null)return@pageChange
             if(active===popup && SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
-                content.animate().cancel();rows.removeAllViews();content.scrollTo(0,0)
-                if(grouped && category==null) {
+                content.animate().cancel();rows.removeAllViews();scroll.scrollTo(0,0)
+                if(dualBounds!=null) {
+                    for ((index, button) in categoryButtons) {
+                        val selected=index==category
+                        button.isSelected=selected
+                        button.setTypeface(null,if(selected)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                        button.setTextColor(if(selected) (if(dark) Color.rgb(173,214,255) else Color.rgb(25,89,153)) else ink)
+                    }
+                    items.filter { StageMenuPolicy.group(it.first)==category }.forEach { action(it.first,it.second) }
+                } else if(grouped && category==null) {
                     StageMenuPolicy.groups.forEachIndexed {index,title->
                         if(items.any{StageMenuPolicy.group(it.first)==index})row("$title  ›"){page(index)}
                     }
@@ -185,10 +224,22 @@ internal object AtomicPopupMenu {
                     items.filter{!grouped || StageMenuPolicy.group(it.first)==category}.forEach{action(it.first,it.second)}
                 }
                 fit(category!=null)
-                content.alpha=.35f;content.animate().alpha(1f).setDuration(100).start()
+                val animated=if(dualBounds!=null) scroll else content
+                animated.animate().cancel()
+                if(android.animation.ValueAnimator.areAnimatorsEnabled()){
+                    animated.alpha=.35f;animated.animate().alpha(1f).setDuration(100).start()
+                }
             } else dismissActive()
         }
-        runCatching{page(null)}.onFailure {
+        runCatching {
+            if (dualBounds!=null) {
+                StageMenuPolicy.groups.forEachIndexed { index,title ->
+                    if(items.any { StageMenuPolicy.group(it.first)==index })
+                        categoryButtons[index]=row(title,categories){ page(index) }
+                }
+            }
+            page(categoryButtons.keys.firstOrNull())
+        }.onFailure {
             dismissActive();io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("workspace_menu","Popup unavailable",it)
         }
     }

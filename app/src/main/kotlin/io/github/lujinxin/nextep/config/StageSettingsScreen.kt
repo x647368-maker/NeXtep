@@ -392,6 +392,11 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         parent.addView(header)
     }
     private fun sectionGlyph(index:Int)=listOf("groups","diagnostics","tile")[index]
+    private fun sectionAccent(index: Int): Int = when (index) {
+        0 -> blue
+        1 -> Color.rgb(142, 88, 224)
+        else -> if (dark) Color.rgb(90, 201, 176) else Color.rgb(0, 119, 96)
+    }
     private fun renderSectionNavigation(root:LinearLayout,selected:Int) {
         for((index,section) in StageHomeLayout.sections.withIndex()) {
             val color=if(index==selected) Color.WHITE else ink
@@ -425,7 +430,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             "tile" to "控制中心开关、智能隐藏等",
             "issue_all" to "记录有效诊断事件",
             "issue_specialties" to "五大专项、历史报告与导出")
-        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,blue){
+        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,sectionAccent(index)){
             if(item.page=="issue_all")launchIssue("all") else{
                 open(item.page)
                 if(item.page in listOf("core","windows","groups"))refresh()
@@ -451,20 +456,20 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         root.removeAllViews()
         if (UpdateCoordinator.available(activity) != null)
             row(group(root), "发现台前调度新版本", icon = "info") { open("update") }
-         for (section in StageHomeLayout.sections) {
+        for ((index, section) in StageHomeLayout.sections.withIndex()) {
             val heading = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(16),dp(StageHomeLayout.SECTION_TOP_DP),dp(16),0)
             }
             val glyph = when (section.title) { "工作台" -> "groups"; "故障诊断" -> "diagnostics"; else -> "tile" }
-            val accent = when (section.title) { "工作台" -> blue; "故障诊断" -> Color.rgb(142,88,224); else -> secondary }
+            val accent = sectionAccent(index)
             heading.addView(StageSettingsIcon(activity,glyph,accent),
                 LinearLayout.LayoutParams(dp(22),dp(22)).apply { marginEnd=dp(8) })
             heading.addView(label(section.title, if (wideLayout) 15f else 18f).apply { typeface = Typeface.DEFAULT_BOLD })
             root.addView(heading)
             val card = group(root)
             for (item in section.items) {
-                val entry = row(card, item.name, icon = item.icon, color = blue) {
+                val entry = row(card, item.name, icon = item.icon, color = accent) {
                 if (item.page == "issue_all") launchIssue("all") else {
                     open(item.page)
                     if (item.page in listOf("core", "windows", "groups")) refresh()
