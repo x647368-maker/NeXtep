@@ -67,7 +67,7 @@ echo 'PASS dual real GPU mirror composition and live producer update'
 # rapid successor isolation and handle/mask cleanup, NOT OEM task handoff.
 adb shell settings put global animator_duration_scale 3
 set +e
-timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e nativeFlightOnly true -w \
+timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e nativeFlightOnly true -e requireDefaultAnimation true -w \
   io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \
   | tee native-flight-instrumentation.txt
 status=${PIPESTATUS[0]}
@@ -76,6 +76,7 @@ if [ "$status" -ne 0 ]; then
   echo "::error::API37 live dual-card flight instrumentation failed (exit=$status)"
   exit "$status"
 fi
+grep -Fx 'PRODUCTION_ANIMATION_GATE_PASS' native-flight-instrumentation.txt
 grep -F 'NATIVE_FLIGHT_PASS' native-flight-instrumentation.txt
 
 set +e

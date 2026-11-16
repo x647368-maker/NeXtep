@@ -30,6 +30,7 @@ class LivePreviewInstrumentation : Instrumentation() {
     private var uiVisualOnly = false
     private var nativeFlightOnly = false
     private var pairedFlightOnly = false
+    private var requireDefaultAnimation = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
@@ -37,6 +38,7 @@ class LivePreviewInstrumentation : Instrumentation() {
         uiVisualOnly = arguments?.getString("uiVisualOnly") == "true"
         nativeFlightOnly = arguments?.getString("nativeFlightOnly") == "true"
         pairedFlightOnly = arguments?.getString("pairedFlightOnly") == "true"
+        requireDefaultAnimation = arguments?.getString("requireDefaultAnimation") == "true"
         start()
     }
     override fun onStart() {
@@ -67,10 +69,29 @@ class LivePreviewInstrumentation : Instrumentation() {
             val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
             val checks=mutableListOf<String>()
             if (nativeFlightOnly || pairedFlightOnly) {
+                val productionGateEvidence=if(requireDefaultAnimation) {
+                    check(nativeFlightOnly) { "Default animation contract must run in the normal flight" }
+                    // Read the INSTALLED target APK fields, not constants inlined
+                    // into the test APK. Also exercise the actual compiled gate.
+                    val config=targetContext.classLoader.loadClass(targetContext.packageName+".BuildConfig")
+                    check(config.getField("ATOMIC_NATIVE_SURFACE_TRIAL").getBoolean(null)) {
+                        "Installable development APK has live GPU animation disabled"
+                    }
+                    check(!config.getField("ATOMIC_PAIRED_RAIL_TRIAL").getBoolean(null)) {
+                        "Experimental paired rail unexpectedly enabled in default APK"
+                    }
+                    check(io.github.x647368maker.atomicworkbench.systemui.StagePrivateDualTaskFlightGate.enabled()) {
+                        "Compiled production GPU entry gate does not match build configuration"
+                    }
+                    check(io.github.x647368maker.atomicworkbench.systemui.StageTransientTapPolicy.snapshotFallbackEnabled()) {
+                        "Required animation fallback is disabled"
+                    }
+                    "PRODUCTION_ANIMATION_GATE_PASS\n"
+                } else ""
                 val destination=if(pairedFlightOnly)File(out,"paired-flight").apply { mkdirs() } else out
                 val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly)
                 val marker=if(pairedFlightOnly)"PAIRED_FLIGHT_PASS" else "NATIVE_FLIGHT_PASS"
-                result.putString("stream",status+"\n"+marker+"\n")
+                result.putString("stream",productionGateEvidence+status+"\n"+marker+"\n")
                 runOnMainSync { activity.finish() }
                 finish(Activity.RESULT_OK,result)
                 return
