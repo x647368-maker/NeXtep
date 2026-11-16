@@ -2351,34 +2351,52 @@ class NeXtepWindowController(
         slotIndex:Int, moveAsync:((Boolean)->Unit)->Unit,
         canRelease:()->Boolean, onFinished:()->Unit,
     ):Boolean {
-        if (!workspaceVisible || suspended || sidebarCollapsed || groupInputBlocked ||
-            !android.animation.ValueAnimator.areAnimatorsEnabled() ||
-            context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true ||
-            !WorkspaceWallpaperBackdrop.canCapture(context) || swapAnimator.isRunning ||
-            transientTapSwap.isRunning || liveSurfaceExchange?.isRunning==true) return false
+        val traceId=StageExchangeTelemetry.currentNativeTapId()
+        fun reject(reason:String):Boolean {
+            StageExchangeTelemetry.nativeEvent("snapshot_skip:$reason",traceId)
+            return false
+        }
+        val powerSave=context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true
+        val rejection=when {
+            !workspaceVisible -> "workspace_hidden"
+            suspended -> "workspace_suspended"
+            sidebarCollapsed -> "sidebar_collapsed"
+            groupInputBlocked -> "group_input_blocked"
+            !android.animation.ValueAnimator.areAnimatorsEnabled() -> "system_animators_disabled"
+            powerSave -> "power_saver"
+            !WorkspaceWallpaperBackdrop.canCapture(context) -> "screen_not_interactive"
+            swapAnimator.isRunning -> "workspace_preview_busy"
+            transientTapSwap.isRunning -> "renderthread_flight_busy"
+            liveSurfaceExchange?.isRunning==true -> "live_surface_flight_busy"
+            else -> null
+        }
+        if(rejection!=null)return reject(rejection)
         val g=geometry()
-        val task=mainTaskPresenter.currentTaskId() ?: return false
-        val slot=slotWindows.getOrNull(slotIndex) ?: return false
-        val state=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied ?: return false
-        val host=records.firstOrNull { it.title=="NeXtepContentPanel" }?.view as? FrameLayout ?: return false
+        val task=mainTaskPresenter.currentTaskId() ?: return reject("main_task_missing")
+        val slot=slotWindows.getOrNull(slotIndex) ?: return reject("slot_view_missing")
+        val state=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied
+            ?: return reject("slot_not_occupied")
+        val host=records.firstOrNull { it.title=="NeXtepContentPanel" }?.view as? FrameLayout
+            ?: return reject("content_panel_missing")
         val origin=IntArray(2)
         host.rootView.getLocationOnScreen(origin)
         if(!StageConcurrentNativeTrialPolicy.fullScreenHost(origin[0],origin[1],
-                host.rootView.width,host.rootView.height,g.screenWidth,g.screenHeight)) return false
+                host.rootView.width,host.rootView.height,g.screenWidth,g.screenHeight)) return reject("content_panel_not_fullscreen")
         val source=Rect()
-        if(!slot.view.getScreenVisibleRect(source))return false
+        if(!slot.view.getScreenVisibleRect(source))return reject("slot_bounds_missing")
         val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
         val slotCanvas=slot.sourceBounds()
         val slotCrop=Rect(0,0,slotCanvas.width,slotCanvas.height)
         val mainCrop=Rect(0,0,g.screenWidth,g.screenHeight)
-        val incoming=TaskSurfaceCompat.mirrorSourceStamp(state.taskId,state.displayId) ?: return false
-        val outgoing=TaskSurfaceCompat.mirrorSourceStamp(task,0) ?: return false
-        val atStart=slot.outputFrameMark() ?: return false
-        if(!TaskSurfaceCompat.isPresentationSettled(task,g))return false
+        val incoming=TaskSurfaceCompat.mirrorSourceStamp(state.taskId,state.displayId)
+            ?: return reject("incoming_mirror_stamp_missing")
+        val outgoing=TaskSurfaceCompat.mirrorSourceStamp(task,0)
+            ?: return reject("outgoing_mirror_stamp_missing")
+        val atStart=slot.outputFrameMark() ?: return reject("slot_output_mark_missing")
+        if(!TaskSurfaceCompat.isPresentationSettled(task,g))return reject("main_presentation_unsettled")
         fun same(a:VirtualDisplaySlot.OutputFrameMark,b:VirtualDisplaySlot.OutputFrameMark?):Boolean =
             b!=null && StageConcurrentNativeTrialPolicy.sameOutput(a.displayId,b.displayId,
                 a.texture,b.texture,a.surface,b.surface)
-        val traceId=StageExchangeTelemetry.currentNativeTapId()
         var outputAtConfirmedMove:VirtualDisplaySlot.OutputFrameMark?=null
         var reason=""
         var slotLatchRequested=false
@@ -2474,8 +2492,9 @@ class NeXtepWindowController(
         )
         if(!started){
             previewCapturePending=false;activeSwapViewport=null
+            return reject("attempt_start_rejected")
         }
-        return started
+        return true
     }
 
     private fun animateSwap(
@@ -2488,6 +2507,7 @@ class NeXtepWindowController(
         // The snapshot/mirror must sample the settled physical rail bounds.
         // Invalidate a queued or running layout-entry cue before capture.
         cancelRailLayoutMotion()
+        var tapFallbackFinish: (() -> Unit)? = null
         // P0 (3731.mp4 + PR51 real-device feedback): do not capture a
         // TextureView bitmap or await a screenshot before the real task move.
         // On the phased tap path the coordinator already owns an asynchronous,
@@ -2503,55 +2523,37 @@ class NeXtepWindowController(
             swapCapture.cancel()
             activeSwapViewport = null
             previewCapturePending = false
-            val tappedAt = android.os.SystemClock.uptimeMillis()
             StageExchangeTelemetry.beginNativeTap()
             val tapTraceId=StageExchangeTelemetry.currentNativeTapId()
-            NeXtepLog.info("swap_latency", "Phased tap swap: begin real task move without bitmap capture")
-            val phasedMove = checkNotNull(asyncMove)
-            // Only the private experimental branch enables an actual two-GPU-
-            // surface flight. Any unsupported or slow OEM falls back within
-            // this same click, without capture or delayed task migration.
-            // PR60 P0 (3796.mp4): PR54-59 bypassed the existing default-OFF
-            // real-device native performance gate for ordinary taps. The two
-            // live mirrors, the original app windows and a one-shot peek could
-            // present multiple visible geometry changes during one exchange.
-            // Until an OEM-specific occlusion/frame-timing design is validated,
-            // render NO auxiliary card flight or peek on this critical path.
-            // The real async coordinator below still moves each task ONCE.
-            // PR62 DRAFT-ONLY: private trial of two TASK-owned live GPU
-            // mirrors + atomic source/destination occlusion. It is separate
-            // from the legacy full-screen root performance gate, which stays
-            // disabled. Any missing leash/color layer stays on the one-move
-            // PR60 fallback without trying bitmap/peek effects.
-            // The user explicitly authorized temporary, in-memory snapshot motion.
-            // This private branch never starts the migrating-mirror flight.
-            if (StageTransientTapPolicy.privateTrialEnabled()) {
-                if (tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
-            } else if (StagePrivateDualTaskFlightGate.enabled() &&
-                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
-            oneShotSwapMotion.cancel()
-            StageExchangeTelemetry.nativeEvent("pr60:single_real_swap_no_extra_visual")
-            runCatching {
-                phasedMove { ok ->
-                    if (!ok) oneShotSwapMotion.cancel()
-                    NeXtepLog.info("swap_latency",
-                        "Phased task exchange finished ok=$ok elapsedMs=" +
-                            (android.os.SystemClock.uptimeMillis() - tappedAt))
-                    StageExchangeTelemetry.nativeEvent("fallback_move_ack_ok=$ok",tapTraceId)
-                    StageExchangeTelemetry.endNativeTap("fallback_real_move_$ok",tapTraceId)
+            var fallbackFinished=false
+            tapFallbackFinish = {
+                if (!fallbackFinished) {
+                    fallbackFinished=true
+                    StageExchangeTelemetry.endNativeTap("workspace_preview_fallback",tapTraceId)
                     onFinished()
-                    scheduleStageFocus()
                 }
-            }.onFailure {
-                NeXtepLog.error("swap_latency", "Phased tap move could not start", it)
-                oneShotSwapMotion.cancel()
-                StageExchangeTelemetry.nativeEvent("fallback_move_exception",tapTraceId)
-                StageExchangeTelemetry.endNativeTap("fallback_exception",tapTraceId)
-                onFinished()
             }
-            return
+            NeXtepLog.info("swap_latency", "Phased tap swap: select the best available visual backend")
+            val phasedMove = checkNotNull(asyncMove)
+            // v88 animation cascade:
+            // 1) Real task-owned SurfaceControl mirrors (live GPU pixels).
+            // 2) Bounded RenderThread flight of short-lived observed task frames.
+            // 3) The existing WorkspaceSwapAnimator path below, which captures
+            //    only transient previews and hands back to the real task buffers.
+            // The real task coordinator remains the sole owner of migration,
+            // identity checks and rollback. A rejected visual backend must not
+            // turn a successful task swap into an abrupt no-animation fallback.
+            if (StagePrivateDualTaskFlightGate.enabled() &&
+                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
+            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&
+                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
+
+            StageExchangeTelemetry.nativeEvent("tap_animation_fallback:workspace_preview",tapTraceId)
+            NeXtepLog.warn("swap_latency",
+                "Live GPU and RenderThread preflight unavailable; falling through to bounded workspace preview")
         }
         val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
+        val effectiveOnFinished=tapFallbackFinish ?: onFinished
         // Native two-layer flight is attempted BEFORE any bitmap capture.
         // It mirrors the real existing SurfaceFlinger task + rail surfaces.
         // No screenshot loop, no root/task reparent, no app restart.
@@ -2571,7 +2573,7 @@ class NeXtepWindowController(
                     asyncMove,canRelease,attemptNative=false)
             }) return
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-            animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,null,asyncMove,canRelease);return
+            animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,null,asyncMove,canRelease);return
         }
         // Mark the whole PREVIEW-PREPARATION interval, not only the
         // ValueAnimator. Without this guard, a rail count refresh during the
@@ -2600,7 +2602,7 @@ class NeXtepWindowController(
                 mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
             accept={
                 previewCapturePending = false
-                animateSwapPrepared(sourceIndex,targetIndex,drag,move,onFinished,it,asyncMove,canRelease)
+                animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,it,asyncMove,canRelease)
             },
             onCancel={
                 previewCapturePending = false
@@ -2608,7 +2610,7 @@ class NeXtepWindowController(
                 val flush = deferredSwapGeometryRefresh
                 deferredSwapGeometryRefresh = false
                 if (flush) scheduleWindowRefresh()
-                onFinished()
+                effectiveOnFinished()
             },
         )
     }
