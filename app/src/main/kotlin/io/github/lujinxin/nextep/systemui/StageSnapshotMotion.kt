@@ -74,13 +74,17 @@ internal object StageSnapshotMotion {
         fun sourceRadius(progress:Float,scale:Float):Float =
             if(scale.isFinite() && scale>0f)visibleRadius(progress,scale)/scale else 0f
     }
-    fun cornerTrack(flight:Flight,smallAtStart:Boolean,density:Float):CornerTrack {
-        fun radius(box:Box,small:Boolean):Float =
-            if(small)io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(box.w,box.h,density)
-            else io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(box.w,box.h,density)
-        return CornerTrack(radius(flight.from,smallAtStart),radius(flight.to,!smallAtStart),
+    fun endpointRadius(width:Float,height:Float,density:Float,preview:Boolean):Float =
+        if(preview)io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(width,height,density)
+        else io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(width,height,density)
+    // Unpaired/fixed previews clip the outer card (including contain bars),
+    // not the fitted bitmap. No route planner or per-frame track allocation.
+    fun frameRadius(start:Float,end:Float,progress:Float,width:Float,height:Float):Float =
+        (start+(end-start)*progress.coerceIn(0f,1f)).coerceIn(0f,min(width,height).coerceAtLeast(0f)*.5f)
+    fun cornerTrack(flight:Flight,smallAtStart:Boolean,density:Float):CornerTrack =
+        CornerTrack(endpointRadius(flight.from.w,flight.from.h,density,smallAtStart),
+            endpointRadius(flight.to.w,flight.to.h,density,!smallAtStart),
             min(flight.width,flight.height)*.5f)
-    }
     data class PairFlight(val up:Flight,val down:Flight){
         val usesSharedClock:Boolean get()=up.sharedPlan!=null && up.sharedPlan===down.sharedPlan
     }

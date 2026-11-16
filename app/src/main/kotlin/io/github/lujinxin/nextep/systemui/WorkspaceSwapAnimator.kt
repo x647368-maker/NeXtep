@@ -67,6 +67,8 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         uniformTapMorph: Boolean = false,
         sharedMotion: StageSnapshotMotion.PairFlight? = null,
         protectedBounds: List<RectF> = emptyList(),
+        sourceIsPreview: Boolean = true,
+        targetIsPreview: Boolean = false,
         onFinished: () -> Unit,
     ) {
         cancel()
@@ -88,7 +90,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
             sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,
             sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },
-            protectedBounds)
+            protectedBounds,sourceIsPreview,targetIsPreview)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -326,7 +328,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
     }
 }
 
-private class SwapPreviewView(
+internal class SwapPreviewView(
     context: Context,
     private val source: Bitmap,
     private val target: Bitmap?,
@@ -341,12 +343,18 @@ private class SwapPreviewView(
     private val uniformTapMorph: Boolean,
     private val sharedMotion: StageSnapshotMotion.PairFlight?,
     protectedBounds: List<RectF>,
+    sourceIsPreview:Boolean=true,
+    targetIsPreview:Boolean=false,
 ) : View(context) {
     private val protectedCards=protectedBounds.map { RectF(it) }
     val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
     val usesPairedRoute get()=sharedMotion!=null
     private val upCorners=sharedMotion?.up?.let{StageSnapshotMotion.cornerTrack(it,true,resources.displayMetrics.density)}
     private val downCorners=sharedMotion?.down?.let{StageSnapshotMotion.cornerTrack(it,false,resources.displayMetrics.density)}
+    private val sourceFrameRadius=StageSnapshotMotion.endpointRadius(sourceBounds.width(),sourceBounds.height(),
+        resources.displayMetrics.density,sourceIsPreview)
+    private val targetFrameRadius=StageSnapshotMotion.endpointRadius(targetBounds.width(),targetBounds.height(),
+        resources.displayMetrics.density,targetIsPreview)
     var progress = 0f
     var tapAccentProgress = 0f
     private val tapAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -387,8 +395,8 @@ private class SwapPreviewView(
             // Tap-to-swap: keep both original window frames perfectly stationary.
             // The real tasks migrate under the preview and appear only at handoff.
             // Do not interpolate width, height or 3D quad for these live windows.
-            if (target != null) drawFixedFrame(canvas, target, targetBounds)
-            drawFixedFrame(canvas, source, sourceBounds)
+            if (target != null) drawFixedFrame(canvas,target,targetBounds,targetFrameRadius)
+            drawFixedFrame(canvas,source,sourceBounds,sourceFrameRadius)
             val alpha = StageSwapTapAccentPolicy.opacity(tapAccentProgress)
             if (alpha > 0) {
                 tapAccentPaint.color = Color.argb(alpha, 198, 165, 255)
@@ -416,8 +424,9 @@ private class SwapPreviewView(
             // never map the bitmap corners onto a changing quadrilateral.
             // A uniform fit and letterbox protects text/video proportions
             // while the real tasks are moved and their live buffers settle.
-            if (target != null) drawUniformMotionFrame(canvas, target, targetBounds, sourceBounds)
-            drawUniformMotionFrame(canvas, source, start, targetBounds)
+            if (target != null) drawUniformMotionFrame(canvas,target,targetBounds,sourceBounds,
+                targetFrameRadius,sourceFrameRadius)
+            drawUniformMotionFrame(canvas,source,start,targetBounds,sourceFrameRadius,targetFrameRadius)
             canvas.restoreToCount(sharedSave)
             return
         }
@@ -441,7 +450,8 @@ private class SwapPreviewView(
         canvas.restoreToCount(save)
     }
 
-    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {
+    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF,
+                                       startRadius:Float,endRadius:Float) {
         val frame = StageExchangeMotion.frame(
             StageExchangeMotion.Box(from.left, from.top, from.right, from.bottom),
             StageExchangeMotion.Box(to.left, to.top, to.right, to.bottom), progress,
@@ -454,8 +464,7 @@ private class SwapPreviewView(
             bounds.left, bounds.top, bounds.right, bounds.bottom)
         destination.set(fit.left, fit.top, fit.right, fit.bottom)
         outline.reset()
-        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
-            bounds.width(), bounds.height(), resources.displayMetrics.density)
+        val radius=StageSnapshotMotion.frameRadius(startRadius,endRadius,progress,bounds.width(),bounds.height())
         outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
         val save = canvas.save()
         canvas.clipPath(outline)
@@ -464,13 +473,12 @@ private class SwapPreviewView(
         canvas.restoreToCount(save)
     }
 
-    private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF) {
+    private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF,endpointRadius:Float) {
         val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,
             bounds.left, bounds.top, bounds.right, bounds.bottom)
         destination.set(fit.left, fit.top, fit.right, fit.bottom)
         outline.reset()
-        val radius = io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
-            bounds.width(), bounds.height(), resources.displayMetrics.density)
+        val radius=StageSnapshotMotion.frameRadius(endpointRadius,endpointRadius,0f,bounds.width(),bounds.height())
         outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
         val save = canvas.save()
         canvas.clipPath(outline)

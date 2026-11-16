@@ -182,6 +182,23 @@ class StageSnapshotMotionTest {
             }
         }
     }
+    @Test fun unpairedOuterCardCornersDoNotDependOnRouteAdmission(){
+        for(density in listOf(1f,2f,3.5f,4f)){
+            val small=StageSnapshotMotion.endpointRadius(282f,557f,density,true)
+            val main=StageSnapshotMotion.endpointRadius(954f,2079f,density,false)
+            assertEquals(minOf(16f*density,282f*.24f),small,.001f)
+            assertEquals(minOf(16f*density,954f*.08f),main,.001f)
+            for((a,z) in listOf(small to main,main to small,small to small)){
+                assertEquals(a,StageSnapshotMotion.frameRadius(a,z,0f,282f,557f),.001f)
+                assertEquals(z,StageSnapshotMotion.frameRadius(a,z,1f,282f,557f),.001f)
+                assertEquals((a+z)*.5f,StageSnapshotMotion.frameRadius(a,z,.5f,282f,557f),.001f)
+                assertEquals(2f,StageSnapshotMotion.frameRadius(a,z,.5f,4f,9f),.001f)
+            }
+        }
+        // A short slot distinguishes the preview and main role.
+        assertEquals(56f,StageSnapshotMotion.endpointRadius(282f,557f,3.5f,true),.001f)
+        assertEquals(22.56f,StageSnapshotMotion.endpointRadius(282f,557f,3.5f,false),.001f)
+    }
     @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){
         assertEquals(100.25f,StageSnapshotMotion.hardwareEnd(100f,100f,.25f),.00001f)
         assertEquals(.5001f,StageSnapshotMotion.hardwareEnd(.5f,.5f,.0001f),.00001f)

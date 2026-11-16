@@ -3,7 +3,11 @@ package io.github.x647368maker.atomicworkbench.visual
 import android.app.Activity
 import android.app.Instrumentation
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.RectF
+import android.graphics.drawable.ColorDrawable
+import io.github.x647368maker.atomicworkbench.systemui.SwapPreviewView
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.WorkspaceSwapAnimator
 import java.util.concurrent.CountDownLatch
@@ -70,6 +74,53 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
         } finally {
             instrumentation.runOnMainSync { releaseAllowed = true; animator.cancel() }
         }
-        return "PASS production async preview retains protection during pending/cancel and releases exactly once after rollback completion"
+        verifyUnpairedCorners(activity)
+        return "PASS production async preview retains protection during pending/cancel and releases exactly once after rollback completion\n"+
+            "PASS actual fallback drawing: unpaired dual/source-only/fixed corners use explicit endpoint roles and preserve contain"
+    }
+
+    // Rasterize the exact production View with no admitted PairFlight.
+    // This is a deterministic renderer contract, not an OEM task handoff.
+    private fun verifyUnpairedCorners(activity:Activity) {
+        instrumentation.runOnMainSync {
+            val unit=16f*activity.resources.displayMetrics.density
+            val small=RectF(12f,12f,12f+5f*unit,12f+7f*unit)
+            val main=RectF(12f+6f*unit,12f,12f+18f*unit,12f+16f*unit)
+            val bg=Color.rgb(91,50,167)
+            val green=Color.rgb(34,194,102)
+            val orange=Color.rgb(239,119,39)
+            val raster=Bitmap.createBitmap(kotlin.math.ceil(main.right+12).toInt(),
+                kotlin.math.ceil(main.bottom+12).toInt(),Bitmap.Config.ARGB_8888)
+            try {
+                for((dual,frozen) in listOf(true to false,false to false,true to true,false to true)){
+                    val source=Bitmap.createBitmap(100,140,Bitmap.Config.ARGB_8888).apply{eraseColor(green)}
+                    val target=if(dual) Bitmap.createBitmap(120,160,Bitmap.Config.ARGB_8888).apply{eraseColor(orange)} else null
+                    val v=SwapPreviewView(activity,source,target,small,small,main,ColorDrawable(bg),null,
+                        null,null,frozen,!frozen,null,emptyList(),true,false)
+                    try {
+                        v.layout(0,0,raster.width,raster.height)
+                        fun draw(p:Float){
+                            raster.eraseColor(bg);v.progress=p;v.draw(Canvas(raster))
+                        }
+                        fun read(x:Float,y:Float)=raster.getPixel(x.toInt(),y.toInt())
+                        fun clippedSlot(){
+                            val d=unit*.15f
+                            check(read(small.left+d,small.top+d)==bg){"Small corner square: dual=$dual frozen=$frozen"}
+                        }
+                        draw(0f)
+                        clippedSlot()
+                        check(read(small.centerX(),small.centerY())==green)
+                        if(dual)check(read(main.centerX(),main.centerY())==orange)
+                        draw(1f)
+                        if(frozen || dual)clippedSlot()
+                        if(frozen) check(read(small.centerX(),small.centerY())==green)
+                        else {
+                            check(read(main.centerX(),main.centerY())==green)
+                            if(dual)check(read(small.centerX(),small.centerY())==orange)
+                        }
+                    } finally { v.release() }
+                }
+            } finally { raster.recycle() }
+        }
     }
 }

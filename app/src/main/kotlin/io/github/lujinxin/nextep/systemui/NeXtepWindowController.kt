@@ -3251,6 +3251,10 @@ class NeXtepWindowController(
                 uniformTapMorph = animateTap,
                 sharedMotion = sharedMotion,
                 protectedBounds = if(protectedGeometryComplete) protectedBounds else emptyList(),
+                // The fallback must know the real endpoint role even when
+                // no paired route can be planned (slot-slot and parking too).
+                sourceIsPreview = !parkingMain,
+                targetIsPreview = parkingMain || targetIndex != null,
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.
