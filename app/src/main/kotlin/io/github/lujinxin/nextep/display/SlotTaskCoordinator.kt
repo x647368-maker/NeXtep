@@ -530,16 +530,10 @@ class SlotTaskCoordinator(
         val normalized = normalizeLaunchIntent(sourceIntent)
             ?: return Result.failure(IllegalArgumentException("App does not resolve to a launcher Activity"))
         val component = checkNotNull(normalized.component)
-        val preferredTask = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
+        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
             it.component.packageName == component.packageName &&
                 it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
-        }
-        if (preferredTaskIdentity != null && !sameTaskIdentity(preferredTaskIdentity, preferredTask)) {
-            return Result.failure(IllegalStateException("原任务身份已变化，拒绝将其他任务作为替换回滚"))
-        }
-        val existing = preferredTask ?: if (preferredTaskIdentity == null) {
-            findLaunchTask(component, normalized.targetUser())
-        } else null
+        } ?: findLaunchTask(component, normalized.targetUser())
 
         return runTransition("open main component=$component") {
             val currentMain = taskRepository.foregroundTask()
