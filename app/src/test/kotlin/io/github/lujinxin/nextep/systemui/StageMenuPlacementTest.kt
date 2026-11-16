@@ -26,6 +26,32 @@ class StageMenuPlacementTest {
         assertEquals(3,StageMenuPolicy.group("恢复被隐藏的常用应用"))
         assertEquals(0,StageMenuPolicy.group("✓ 主窗口优先布局"))
     }
+    @Test fun shortLandscapeUsesRealFreeSpaceInsteadOfRejectingNominalHeight(){
+        for(height in listOf(400,500,536,537)){
+            val screen=b(0,0,800,height)
+            val preferred=minOf(252,(height*.38f).toInt())
+            val occupied=b(350,0,800,height)
+            val p=checkNotNull(StageMenuPlacement.dualGlass(screen,anchor,304,preferred,282,204,
+                listOf(occupied),8))
+            assertTrue(p.h>=204 && p.w>=282)
+            assertTrue(p.b<=screen.b && p.r<=screen.r && p.l>=screen.l && p.t>=screen.t)
+            assertEquals(0L,p.overlap(occupied))
+            val noRoom=b(0,203,800,height)
+            assertNull(StageMenuPlacement.dualGlass(screen,anchor,304,preferred,282,204,listOf(noRoom),8))
+        }
+    }
+    @Test fun measuredLargeFontMayExpandPreferredWidthAndHeightButNeverCoverTasks(){
+        val bounds=b(12,20,712,520)
+        for(minW in listOf(305,341,420))for(minH in listOf(204,252,280)){
+            val block=b(460,20,712,520)
+            val p=checkNotNull(StageMenuPlacement.dualGlass(bounds,anchor,304,190,minW,minH,listOf(block),8))
+            assertTrue(p.w>=minW && p.h>=minH && p.l>=bounds.l && p.t>=bounds.t && p.r<=bounds.r && p.b<=bounds.b)
+            assertEquals(0L,p.overlap(block))
+            val narrow=b(bounds.l+minW-1,bounds.t,bounds.r,bounds.b)
+            assertNull(StageMenuPlacement.dualGlass(bounds,anchor,304,190,minW,minH,listOf(narrow),8))
+            assertNull(StageMenuPlacement.dualGlass(b(0,0,minW-1,500),anchor,304,190,minW,minH,emptyList(),8))
+        }
+    }
     @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){
         val selected=setOf("左侧排列","主窗口优先布局")
         assertTrue(StageMenuPolicy.isSelected("左侧排列",selected))

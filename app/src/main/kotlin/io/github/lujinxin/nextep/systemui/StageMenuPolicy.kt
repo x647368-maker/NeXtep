@@ -55,8 +55,14 @@ internal object StageMenuPlacement {
     // both columns and four 48dp primary rows actually fit. Never displace
     // a real app window to manufacture space; retain accessible fallback.
     fun dualGlass(safe:Box,anchor:Box,w:Int,h:Int,minW:Int,minH:Int,avoid:List<Box>,gap:Int):Box? {
-        if(minW<=0 || minH<=0 || w<minW || h<minH || safe.w<minW || safe.h<minH)return null
-        return compact(safe,anchor,w,h,minW,minH,avoid,gap).takeIf {
+        if(minW<=0 || minH<=0 || safe.w<minW || safe.h<minH)return null
+        // Preferred dimensions are a visual target, not a hard admission cap.
+        // A short landscape viewport or larger measured font can need more
+        // than the nominal 38% height / portrait width. Search actual empty
+        // space at the accessible minimum before considering compact fallback.
+        val preferredW=maxOf(w,minW).coerceAtMost(safe.w)
+        val preferredH=maxOf(h,minH).coerceAtMost(safe.h)
+        return compact(safe,anchor,preferredW,preferredH,minW,minH,avoid,gap).takeIf {
             it.w>=minW && it.h>=minH && avoid.none { a->it.overlap(a)>0L }
         }
     }

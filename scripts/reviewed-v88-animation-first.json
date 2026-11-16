@@ -1513,7 +1513,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPolicy.kt": {
-      "reviewed_blob_sha1": "89f7970e1123da8f932fa88871cf9af6d274f9b4",
+      "reviewed_blob_sha1": "fd09d46585f64b323e6374d2c05240fc593dc0b2",
       "previous_blob_sha1": "653014e7ccb46168e118fe2f3d6b6e15413229d5",
       "patches": [
         {
@@ -1539,11 +1539,15 @@
         {
           "before": "            s.contains(\"侧栏\") || s.contains(\"常用应用\") || s==\"影音布局与自动模式\"->2",
           "after": "            s in listOf(\"常用应用管理\",\"快捷栏样式\",\"显示与动画\")->2\n            s.contains(\"侧栏\") || s.contains(\"常用应用\") || s==\"影音布局与自动模式\"->2"
+        },
+        {
+          "before": "        if(minW<=0 || minH<=0 || w<minW || h<minH || safe.w<minW || safe.h<minH)return null\n        return compact(safe,anchor,w,h,minW,minH,avoid,gap).takeIf {",
+          "after": "        if(minW<=0 || minH<=0 || safe.w<minW || safe.h<minH)return null\n        // Preferred dimensions are a visual target, not a hard admission cap.\n        // A short landscape viewport or larger measured font can need more\n        // than the nominal 38% height / portrait width. Search actual empty\n        // space at the accessible minimum before considering compact fallback.\n        val preferredW=maxOf(w,minW).coerceAtMost(safe.w)\n        val preferredH=maxOf(h,minH).coerceAtMost(safe.h)\n        return compact(safe,anchor,preferredW,preferredH,minW,minH,avoid,gap).takeIf {"
         }
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPlacementTest.kt": {
-      "reviewed_blob_sha1": "06bf882d4af1727fdbbc09a131f62252c30ba7a2",
+      "reviewed_blob_sha1": "5fc5a501e994fbe3acc7d80df95d59a1efd53282",
       "previous_blob_sha1": "3be52da72eb09119eb9b8ae5898d8baf6c7c4cb9",
       "patches": [
         {
@@ -1561,6 +1565,10 @@
         {
           "before": "        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)",
           "after": "        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)\n        assertTrue(listOf(\"常用应用管理\",\"快捷栏样式\",\"显示与动画\").all { StageMenuPolicy.group(it)==2 })"
+        },
+        {
+          "before": "    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){",
+          "after": "    @Test fun shortLandscapeUsesRealFreeSpaceInsteadOfRejectingNominalHeight(){\n        for(height in listOf(400,500,536,537)){\n            val screen=b(0,0,800,height)\n            val preferred=minOf(252,(height*.38f).toInt())\n            val occupied=b(350,0,800,height)\n            val p=checkNotNull(StageMenuPlacement.dualGlass(screen,anchor,304,preferred,282,204,\n                listOf(occupied),8))\n            assertTrue(p.h>=204 && p.w>=282)\n            assertTrue(p.b<=screen.b && p.r<=screen.r && p.l>=screen.l && p.t>=screen.t)\n            assertEquals(0L,p.overlap(occupied))\n            val noRoom=b(0,203,800,height)\n            assertNull(StageMenuPlacement.dualGlass(screen,anchor,304,preferred,282,204,listOf(noRoom),8))\n        }\n    }\n    @Test fun measuredLargeFontMayExpandPreferredWidthAndHeightButNeverCoverTasks(){\n        val bounds=b(12,20,712,520)\n        for(minW in listOf(305,341,420))for(minH in listOf(204,252,280)){\n            val block=b(460,20,712,520)\n            val p=checkNotNull(StageMenuPlacement.dualGlass(bounds,anchor,304,190,minW,minH,listOf(block),8))\n            assertTrue(p.w>=minW && p.h>=minH && p.l>=bounds.l && p.t>=bounds.t && p.r<=bounds.r && p.b<=bounds.b)\n            assertEquals(0L,p.overlap(block))\n            val narrow=b(bounds.l+minW-1,bounds.t,bounds.r,bounds.b)\n            assertNull(StageMenuPlacement.dualGlass(bounds,anchor,304,190,minW,minH,listOf(narrow),8))\n            assertNull(StageMenuPlacement.dualGlass(b(0,0,minW-1,500),anchor,304,190,minW,minH,emptyList(),8))\n        }\n    }\n    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){"
         }
       ]
     },
