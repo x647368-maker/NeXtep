@@ -422,6 +422,118 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
         }
     }
 
+    /** UI-only capture path. Does not start a diagnostic session or touch alarms/reports. */
+    fun runVisualEvidence(out:File):String {
+        evidence=File(out,"ui-visual-evidence-log.txt")
+        phase("BEGIN stable Apple-style home and secondary-page visual evidence")
+        val activity=awaitActivity(MainActivity::class.java,"visual-only settings home") {
+            inst.targetContext.startActivity(Intent(inst.targetContext,MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK))
+        }
+        fun homeScroll()=checkNotNull(descendants(activity.window.decorView).filterIsInstance<ScrollView>().firstOrNull()) {
+            "Missing real native home ScrollView"
+        }
+        fun visibleText(value:String):Boolean=ui {
+            val view=descendants(activity.window.decorView).filterIsInstance<TextView>()
+                .firstOrNull{it.text?.toString()==value}?:return@ui false
+            val rect=Rect()
+            view.isShown && view.getGlobalVisibleRect(rect) && rect.height()>=minOf(view.height,(view.height*0.8f).toInt().coerceAtLeast(1))
+        }
+        fun returnHome(){
+            val back=ui {
+                descendants(activity.window.decorView).firstOrNull {
+                    it.isShown && it.contentDescription?.toString()=="返回" && it.isClickable
+                }?:error("Missing real secondary-page back control")
+            }
+            check(ui{back.isEnabled && back.performClick()}){"Secondary-page back rejected"}
+            await("return to real phone home"){hasText(activity,"台前调度") && hasText(activity,"窗口布局")}
+        }
+        try {
+            await("real native phone home"){hasText(activity,"台前调度") &&
+                hasText(activity,"窗口布局") && hasText(activity,"一键综合诊断")}
+            screenshot(out,"ui-home-phone-top.png",activity)
+            val homeScroller=ui{homeScroll()}
+            val contentHeight=ui{homeScroller.getChildAt(0)?.height?:0}
+            val viewportHeight=ui{homeScroller.height}
+            phase("HOME scroll before y=${ui{homeScroller.scrollY}} content=$contentHeight viewport=$viewportHeight")
+            ui {
+                homeScroller.isFocusableInTouchMode=true
+                homeScroller.requestFocus()
+                homeScroller.scrollTo(0,(contentHeight-viewportHeight).coerceAtLeast(0))
+                homeScroller.fullScroll(View.FOCUS_DOWN)
+            }
+            Thread.sleep(350)
+            phase("HOME scroll after y=${ui{homeScroller.scrollY}} max=${ui{(homeScroller.getChildAt(0)?.height?:0)-homeScroller.height}} about=${visibleText("关于与使用帮助")} credit=${visibleText("ZMW小武 × GPT")} origin=${visibleText("基于 NeXtep 二次开发")}")
+            await("home bottom rows and original attribution fully visible"){
+                visibleText("关于与使用帮助") && visibleText("二次开发：ZMW小武 × GPT") &&
+                    visibleText("基于 NeXtep 二次开发")
+            }
+            screenshot(out,"ui-home-phone-bottom.png",activity)
+            phase("PASS phone home bottom includes final support row, credits and original-project attribution")
+            val pages=listOf(
+                "windows" to "窗口布局",
+                "core" to "影音与快捷栏",
+                "groups" to "工作组",
+                "gestures" to "启动手势",
+                "tile" to "快捷开关",
+                "feedback" to "建议与反馈",
+                "about" to "关于与使用帮助"
+            )
+            for((route,title) in pages){
+                ui{homeScroll().fullScroll(if(route=="feedback" || route=="about") View.FOCUS_DOWN else View.FOCUS_UP)}
+                await("home navigation target visible $title"){visibleText(title)}
+                clickLabel(activity,title)
+                await("real secondary page $route"){hasText(activity,title)}
+                screenshot(out,"ui-secondary-$route.png",activity)
+                phase("PASS stable secondary page $route")
+                returnHome()
+            }
+            ui{homeScroll().fullScroll(View.FOCUS_UP)}
+            clickLabel(activity,"专项测试与报告")
+            await("diagnostic center landing actual page"){
+                hasText(activity,"故障测试与报告") && hasText(activity,"立即诊断") &&
+                    listOf("性能与流畅度","窗口与布局体验","应用与内容状态","系统与兼容性","功能与服务","历史报告").all{hasText(activity,it)}
+            }
+            screenshot(out,"ui-diagnostic-center-landing.png",activity)
+            // The landing page itself is captured above. Open the same real
+            // comprehensive Activity through the existing isolated task helper;
+            // this visual-only suite deliberately does not start a session.
+            val comprehensive=page("all",activity)
+            try{
+                await("comprehensive diagnostic original layout"){
+                    hasText(comprehensive,"全面综合诊断") && hasText(comprehensive,"开始综合诊断")
+                }
+                layoutEvidence(comprehensive,true)
+                ui {
+                    val nodes=descendants(comprehensive.window.decorView).filterIsInstance<TextView>()
+                    fun exact(value:String)=nodes.first{it.isShown && it.text.toString()==value}
+                    val scopeView=exact("全面综合诊断")
+                    val action=exact("开始综合诊断")
+                    val note=nodes.first{it.isShown && it.text.toString().startsWith("到期自动结束 · 不唤醒手机")}
+                    val host=scopeView.parent as ViewGroup
+                    check(descendants(host).contains(action) && descendants(host).contains(note)) {
+                        "Comprehensive CTA and low-power note must belong to the same main card"
+                    }
+                    val ay=IntArray(2); val ny=IntArray(2)
+                    action.getLocationOnScreen(ay);note.getLocationOnScreen(ny)
+                    check(ny[1]>=ay[1]+action.height){"Low-power note must follow the CTA"}
+                }
+                phase("PASS comprehensive CTA and low-power note share the scope card")
+                screenshot(out,"ui-diagnostic-center-comprehensive.png",comprehensive)
+            }finally{close(comprehensive)}
+            close(activity)
+            verifyHome(out,true,"2248x2268","420","polish-fold-inner-n3")
+            verifyHome(out,true,"2480x2268","480","polish-fold-inner-n5")
+            verifyHome(out,true,"2560x1600","400","polish-tablet-landscape")
+            verifyHome(out,false,"1600x2560","400","polish-tablet-portrait")
+            verifyHome(out,false,"1140x2520","480","polish-fold-outer")
+            val result="PASS actual Android UI visual evidence: phone home top/bottom, 7 native secondary pages, diagnostic center landing and comprehensive screen, 5 additional adaptive viewports"
+            File(out,"ui-visual-evidence-results.txt").writeText(result+"\n")
+            phase(result)
+            return result
+        }finally{close(activity)}
+    }
+
     fun run(out: File): String {
         evidence=File(out,"diagnostic-phase-log.txt")
         phase("BEGIN diagnostic suite SDK=${android.os.Build.VERSION.SDK_INT}")

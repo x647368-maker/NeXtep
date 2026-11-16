@@ -49,6 +49,8 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private lateinit var scopeHost: LinearLayout
     private lateinit var bodyHost: LinearLayout
     private lateinit var timingCard: LinearLayout
+    private lateinit var timingNote: TextView
+    private lateinit var controlsHost: LinearLayout
     private var advancedExpanded = false
     private lateinit var advancedControl: Button
     private lateinit var advancedBody: LinearLayout
@@ -189,8 +191,10 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             segments.addView(button,LinearLayout.LayoutParams(0,dp(52),1f))
         }
         timing.addView(segments)
-        timing.addView(line("到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。"))
+        timingNote=line("到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。")
+        timing.addView(timingNote,LinearLayout.LayoutParams(-1,-2))
         val controls=card()
+        controlsHost=controls
         status=line("")
         startButton=Button(this).apply{
             text="开始诊断";isAllCaps=false
@@ -455,20 +459,33 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             b.alpha=if(enabled||b.isSelected) 1f else .65f
         }
     }
-    // Only reparent the existing duration controls when the visible mode changes.
-    // The selected value, callbacks, token and deadline are untouched.
+    // Only reparent existing view groups when the visible mode changes.
+    // Session, selection, callbacks, token, duration and deadline are untouched.
     private fun placeTiming(id:String?) {
-        if(!::timingCard.isInitialized || !::scopeHost.isInitialized)return
+        if(!::timingCard.isInitialized || !::scopeHost.isInitialized ||
+            !::controlsHost.isInitialized || !::timingNote.isInitialized)return
         val comprehensive=StageIssueTestCatalog.find(id).id=="all"
         val target=if(comprehensive) scopeHost else bodyHost
-        if(timingCard.parent===target)return
-        (timingCard.parent as? android.view.ViewGroup)?.removeView(timingCard)
         val density=resources.displayMetrics.density
         fun dp(n:Int)=(n*density).toInt()
-        val index=if(comprehensive) scopeHost.indexOfChild(scope) else bodyHost.indexOfChild(scopeHost)+1
-        timingCard.setPadding(dp(if(comprehensive) 0 else 16),dp(10),dp(if(comprehensive) 0 else 16),dp(10))
-        target.addView(timingCard,index.coerceIn(0,target.childCount),
-            LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(if(comprehensive) 0 else 10)})
+        fun move(card:LinearLayout,index:Int) {
+            if(card.parent===target)return
+            (card.parent as? android.view.ViewGroup)?.removeView(card)
+            card.setPadding(dp(if(comprehensive) 0 else 16),dp(10),dp(if(comprehensive) 0 else 16),dp(10))
+            target.addView(card,index.coerceIn(0,target.childCount),
+                LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(if(comprehensive) 0 else 10)})
+        }
+        move(timingCard,if(comprehensive) scopeHost.indexOfChild(scope) else bodyHost.indexOfChild(scopeHost)+1)
+        move(controlsHost,if(comprehensive) scopeHost.indexOfChild(scope)+1 else bodyHost.indexOfChild(timingCard)+1)
+        val noteParent=if(comprehensive) controlsHost else timingCard
+        if(timingNote.parent!==noteParent) {
+            (timingNote.parent as? android.view.ViewGroup)?.removeView(timingNote)
+            timingNote.text=if(comprehensive)
+                "到期自动结束 · 不唤醒手机\n报告保存在本机，系统休眠时可能延后生成。"
+            else "到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。"
+            timingNote.gravity=if(comprehensive) Gravity.CENTER else Gravity.START
+            noteParent.addView(timingNote,LinearLayout.LayoutParams(-1,-2))
+        }
     }
     private fun showScope(id:String?){
         if(!::scope.isInitialized||!::instruction.isInitialized)return

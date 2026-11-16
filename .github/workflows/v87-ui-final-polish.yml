@@ -1,0 +1,59 @@
+name: v87 final UI polish evidence
+
+on:
+  push:
+    branches: ['review/v87-ui-final-polish', 'atomic-workbench/v87-final-integration-candidate', 'atomic-workbench/final-v87-correction']
+
+permissions:
+  contents: read
+
+jobs:
+  ui-visual-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve original historical and zero-polling guards
+        run: |
+          python3 scripts/verify-state-continuity.py
+          python3 scripts/verify-issue-auto-stop.py
+          python3 scripts/verify-sparse-rail-reflow.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install disposable Android 15 SDK image
+        run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0' 'emulator' 'system-images;android-35;google_apis;x86_64'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build production and instrumentation APKs for visual-only run
+        run: bash gradlew :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --stacktrace
+      - name: Start isolated Android 15 HWUI emulator
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          trap 'cat /tmp/ui-visual-emulator.log 2>/dev/null || true' EXIT
+          sudo chmod 666 /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/ui-visual-android-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name ui-visual-android15 --path "$ANDROID_AVD_HOME/ui-visual-android15.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_7
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/ui-visual-android15.avd" > "$ANDROID_AVD_HOME/ui-visual-android15.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd ui-visual-android15 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 2048 -cores 2 -gpu swiftshader_indirect > /tmp/ui-visual-emulator.log 2>&1 &
+          timeout 120 adb wait-for-device
+          timeout 180 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+      - name: Capture actual stable home, secondary pages and diagnostic center only
+        run: bash scripts/run-v87-ui-visual-evidence.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v87-final-ui-polish-api35
+          path: |
+            visual-results/
+            ui-visual-instrumentation.txt
+            /tmp/ui-visual-emulator.log

@@ -28,7 +28,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
 }
 
 // Explicit private debug-build A/B switch; normal and release builds retain
-// the existing snapshot path. No version or signing change.
+// the existing snapshot path. Release identity is declared in defaultConfig.
 val atomicNativeSurfaceTrial = providers.gradleProperty("atomicNativeSurfaceTrial")
     .map { it == "true" }.getOrElse(false)
 val atomicPairedRailTrial = providers.gradleProperty("atomicPairedRailTrial")
@@ -51,8 +51,8 @@ android {
         targetSdk = 36
         buildConfigField("boolean", "ATOMIC_NATIVE_SURFACE_TRIAL", "false")
         buildConfigField("boolean", "ATOMIC_PAIRED_RAIL_TRIAL", "false")
-        versionCode = 86
-        versionName = "0.9.71-dev"
+        versionCode = 87
+        versionName = "0.9.72-dev"
         testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
 
     }
