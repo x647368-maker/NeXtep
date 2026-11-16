@@ -44,7 +44,7 @@ adb shell dumpsys power > "$out/power-before.txt"
 adb shell dumpsys SurfaceFlinger --list > "$out/surfaces-before.txt"
 adb logcat -c
 set +e
-timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -e performanceOnly true -w "$pkg.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation" 2>&1 | tee "$out/instrumentation.txt"
+timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -w "$pkg.test/io.github.x647368maker.atomicworkbench.visual.PerformanceEvidenceInstrumentation" 2>&1 | tee "$out/instrumentation.txt"
 status=$?
 set -e
 # Always preserve real partial results, even with timeout or failed assertion.

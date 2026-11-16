@@ -9,7 +9,6 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.media.ImageReader
-import android.os.Debug
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
@@ -33,8 +32,6 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
         val taskIds = mutableListOf<Int>()
         val frames = List(4) { AtomicInteger() }
         val lines = mutableListOf("AOSP real display migration baseline; no ColorOS/Xposed/smoothness claim")
-        val phaseRows=mutableListOf("task,destination,wall_ns,queue_ns,main_ns,binder_ns,observation_ns,query_ns,query_count,sleep_ns,sleep_count,main_cpu_ns,dispatch_return_ns,ok")
-        val bufferRows=mutableListOf("round,slot,task,destination,wait_ns,frames_before_move,frames_after_wait,ok")
         var sampling = true
         var lastFrame = 0L
         val gaps = mutableListOf<Long>()
@@ -57,56 +54,20 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
         }
         fun move(id: Int, destination: Int) {
             val start=SystemClock.elapsedRealtimeNanos()
-            var entered=0L;var left=0L;var binder=0L;var observation=0L
-            var queryNs=0L;var queryCount=0;var sleepNs=0L;var sleepCount=0
-            var cpu=0L;var ok=false
-            try {
-                i.runOnMainSync {
-                    entered=SystemClock.elapsedRealtimeNanos()
-                    val cpuStart=Debug.threadCpuTimeNanos()
-                    try {
-                        StageExchangeTelemetry.measure("exchange_move") {
-                            StageExchangeTelemetry.measure("probe_display_binder") {
-                                val t=SystemClock.elapsedRealtimeNanos()
-                                try { ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow() }
-                                finally { binder=SystemClock.elapsedRealtimeNanos()-t }
-                            }
-                            StageExchangeTelemetry.measure("probe_display_observation") {
-                                val t=SystemClock.elapsedRealtimeNanos()
-                                fun observed():Int? {
-                                    val q=SystemClock.elapsedRealtimeNanos()
-                                    try {return taskDisplay(id)} finally {
-                                        queryNs+=SystemClock.elapsedRealtimeNanos()-q;queryCount++
-                                    }
-                                }
-                                try {
-                                    // Preserve the original 700ms guard, 30ms polling,
-                                    // query ordering and final real display assertion.
-                                    val end=SystemClock.uptimeMillis()+700
-                                    while(observed()!=destination && SystemClock.uptimeMillis()<end) {
-                                        val sleep=SystemClock.elapsedRealtimeNanos()
-                                        SystemClock.sleep(30)
-                                        sleepNs+=SystemClock.elapsedRealtimeNanos()-sleep;sleepCount++
-                                    }
-                                    check(observed()==destination) { "Display migration not observed task=$id destination=$destination" }
-                                } finally { observation=SystemClock.elapsedRealtimeNanos()-t }
-                            }
-                        }
-                    } finally {
-                        cpu=Debug.threadCpuTimeNanos()-cpuStart
-                        left=SystemClock.elapsedRealtimeNanos()
-                    }
+            i.runOnMainSync {
+                StageExchangeTelemetry.measure("exchange_move") {
+                StageExchangeTelemetry.measure("probe_display_binder") {
+                    ActivityTaskManagerCompat.moveTaskToDisplay(id,destination).getOrThrow()
                 }
-                ok=true
-            } finally {
-                val returned=SystemClock.elapsedRealtimeNanos()
-                val wall=returned-start
-                lines.add("move task=$id display=$destination main_thread_ms="+wall/1_000_000.0)
-                phaseRows.add(listOf(id,destination,wall,
-                    if(entered>0)entered-start else -1L,
-                    if(left>0)left-entered else -1L,binder,observation,queryNs,queryCount,sleepNs,
-                    sleepCount,cpu,if(left>0)returned-left else -1L,if(ok)1 else 0).joinToString(","))
+                // Preserve production readiness deadlines and polling for this baseline only.
+                StageExchangeTelemetry.measure("probe_display_observation") {
+                    val end=SystemClock.uptimeMillis()+700
+                    while(taskDisplay(id)!=destination && SystemClock.uptimeMillis()<end) SystemClock.sleep(30)
+                    check(taskDisplay(id)==destination) { "Display migration not observed task=$id destination=$destination" }
+                }
+                }
             }
+            lines.add("move task=$id display=$destination main_thread_ms=${(SystemClock.elapsedRealtimeNanos()-start)/1_000_000.0}")
         }
         i.uiAutomation.adoptShellPermissionIdentity()
         try {
@@ -163,13 +124,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 check(taskDisplay(ids[slot])==0)
                 val before=frames[slot].get()
                 move(ids[slot],displays[slot].display.displayId)
-                val waitStart=SystemClock.elapsedRealtimeNanos()
-                var bufferOk=false
-                try {awaitFrame(slot,before);bufferOk=true}
-                finally {
-                    bufferRows.add(listOf(round,slot,ids[slot],displays[slot].display.displayId,
-                        SystemClock.elapsedRealtimeNanos()-waitStart,before,frames[slot].get(),if(bufferOk)1 else 0).joinToString(","))
-                }
+                awaitFrame(slot,before)
                 lines.add("round=$round slot=$slot task_id_retained=true fresh_buffers=${frames[slot].get()-before}")
             }
             i.runOnMainSync { sampling=false;Choreographer.getInstance().removeFrameCallback(callback) }
@@ -189,8 +144,6 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
             i.uiAutomation.dropShellPermissionIdentity()
             // Always retain partial evidence if an actual move or fresh-buffer assertion fails.
             File(out,"real-task-migration.txt").writeText(lines.joinToString("\n"))
-            File(out,"migration-phases.csv").writeText(phaseRows.joinToString("\n")+"\n")
-            File(out,"migration-buffer-waits.csv").writeText(bufferRows.joinToString("\n")+"\n")
         }
     }
 }

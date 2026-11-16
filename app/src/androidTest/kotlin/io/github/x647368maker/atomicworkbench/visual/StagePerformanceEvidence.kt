@@ -302,7 +302,7 @@ internal class StagePerformanceEvidence(private val inst: Instrumentation) {
         }
         check(worker?.isAlive!=true && destroyed.get()==4){"Four producers did not fully detach/release"}
         // Original framework migration semantics, with additional phase clocks only.
-        TaskMigrationRegression(inst).run(activity,out)
+        PerformanceTaskMigrationProbe(inst).run(activity,out)
         ui {activity.finish()}
         return "PERFORMANCE_EVIDENCE_PASS: 3x120 valid frames per four-card layout, separate reflow, migration phase timings"
     }
