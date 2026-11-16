@@ -2,7 +2,7 @@
   "files": {
     "app/src/main/kotlin/io/github/lujinxin/nextep/display/SlotTaskCoordinator.kt": {
       "previous_blob_sha1": "2e30e5d8d59151f8751fe76be3edb8163784fb0b",
-      "reviewed_blob_sha1": "e55bab9b4068360768dd4c4797ec8f2c9161d9f4",
+      "reviewed_blob_sha1": "ec5e55173874329635a7836fff39916e7335ab13",
       "patches": [
         {
           "before": "        var animationFinished = false\n        fun finish() {\n            if (token != transitionGeneration) return\n            if (exchangeSession?.settled == false) return\n            if (!animationFinished) return\n            StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)\n            confirmedOutput=null",
@@ -111,6 +111,14 @@
         {
           "before": "            )\n        }\n    }\n\n    private fun validActiveSlot(index: Int): Boolean =\n        active && !suspended && slotLifecycleGate.allowsMutation() &&\n            index in slots.indices && !transitionInProgress\n\n    private fun retainedTaskDescription(): String =\n        slotRecords.map { it.retainedTaskId }.toString()",
           "after": "            )\n        }\n    }\n\n    private fun validActiveSlot(\n        index: Int,\n        lifecycleLease: StageSlotLifecycleGate.Lease? = null,\n    ): Boolean =\n        active && !suspended && slotLifecycleGate.allowsMutation(lifecycleLease) &&\n            index in slots.indices && !transitionInProgress\n\n    private fun retainedTaskDescription(): String =\n        slotRecords.map { it.retainedTaskId }.toString()"
+        },
+        {
+          "before": "            confirmedOutput=null\n            exchangeSession = null\n            visualTransitionPending = false\n            transitionInProgress = false\n            slots.forEach { it.view.setBusy(\n                suspended || recentSelectionPending || slotLifecycleGate.isExitPending\n            ) }\n            val actions = exchangeEndActions.toList()\n            exchangeEndActions.clear()\n            actions.forEach { exchangeHandler.post(it) }\n            if (active && !suspended) {",
+          "after": "            confirmedOutput=null\n            exchangeSession = null\n            visualTransitionPending = false\n            transitionInProgress = false\n            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }\n            val actions = exchangeEndActions.toList()\n            exchangeEndActions.clear()\n            actions.forEach { exchangeHandler.post(it) }\n            if (active && !suspended) {"
+        },
+        {
+          "before": "        fun finishTransition() {\n            if (token != transitionGeneration || !transitionInProgress) return\n            visualTransitionPending = false\n            transitionInProgress = false\n            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }\n            // Taps keep their task identity while the preview is visible. Start\n            // the last selection only after the previous overlay has gone away.\n            dispatchPendingSelection()\n            if (movePerformed) {",
+          "after": "        fun finishTransition() {\n            if (token != transitionGeneration || !transitionInProgress) return\n            visualTransitionPending = false\n            transitionInProgress = false\n            slots.forEach { it.view.setBusy(\n                suspended || recentSelectionPending || slotLifecycleGate.isExitPending\n            ) }\n            // Taps keep their task identity while the preview is visible. Start\n            // the last selection only after the previous overlay has gone away.\n            dispatchPendingSelection()\n            if (movePerformed) {"
         }
       ]
     },

@@ -1730,9 +1730,7 @@ class SlotTaskCoordinator(
             exchangeSession = null
             visualTransitionPending = false
             transitionInProgress = false
-            slots.forEach { it.view.setBusy(
-                suspended || recentSelectionPending || slotLifecycleGate.isExitPending
-            ) }
+            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
             val actions = exchangeEndActions.toList()
             exchangeEndActions.clear()
             actions.forEach { exchangeHandler.post(it) }
@@ -2222,7 +2220,9 @@ class SlotTaskCoordinator(
             if (token != transitionGeneration || !transitionInProgress) return
             visualTransitionPending = false
             transitionInProgress = false
-            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
+            slots.forEach { it.view.setBusy(
+                suspended || recentSelectionPending || slotLifecycleGate.isExitPending
+            ) }
             // Taps keep their task identity while the preview is visible. Start
             // the last selection only after the previous overlay has gone away.
             dispatchPendingSelection()
