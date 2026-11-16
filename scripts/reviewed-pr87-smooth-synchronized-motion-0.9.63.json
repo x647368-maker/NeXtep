@@ -677,6 +677,24 @@
           "after": "            view.scaleY = start.uniformScale\n            view.alpha = runningAlpha[view]?.coerceIn(0f, 1f) ?: start.alpha\n            active[view] = epoch\n            val listener=object:View.OnAttachStateChangeListener {\n                override fun onViewAttachedToWindow(v: View) = Unit\n                override fun onViewDetachedFromWindow(v: View) {\n                    // Framework cancellation does not guarantee withEndAction.\n                    // Clear just this card's own epoch and transformations.\n                    if(active[v]==epoch) {\n                        active.remove(v)\n                        end(v)\n                    }\n                }\n            }\n            attachment[view]=listener\n            try {\n                view.addOnAttachStateChangeListener(listener)\n                view.animate()\n                    .translationX(0f).translationY(0f)\n                    .scaleX(1f).scaleY(1f).alpha(1f)\n                    .setDuration(StageSparseRailReflowPolicy.DURATION_MS)\n                    .setInterpolator(easing)\n                    .withEndAction {\n                        if (active[view] == epoch) {\n                            active.remove(view)\n                            unbind(view)\n                            view.scaleX = 1f\n                            view.scaleY = 1f\n                            view.translationX = 0f\n                            view.translationY = 0f\n                            view.alpha = 1f\n                        }\n                    }.start()\n            } catch (error: RuntimeException) {\n                if(active[view]==epoch) {\n                    active.remove(view)\n                    end(view)\n                }\n            }\n        }\n    }\n}"
         }
       ]
+    },
+    "app/src/main/resources/META-INF/xposed/module.prop": {
+      "previous_blob_sha1": "296cf448705c407dd256ef270e0fa825f5372b38",
+      "patches": [
+        {
+          "before": "version=0.9.71-dev\nversionCode=86",
+          "after": "version=0.9.72-dev\nversionCode=87"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt": {
+      "previous_blob_sha1": "4fbbd2503e540832de4b28eb82eb3daf1eeec277",
+      "patches": [
+        {
+          "before": "const val BUILD = \"0.9.71-dev/86\"",
+          "after": "const val BUILD = \"0.9.72-dev/87\""
+        }
+      ]
     }
   }
 }
