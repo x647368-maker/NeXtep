@@ -55,6 +55,13 @@ internal object StageConcurrentNativeTrialPolicy {
     fun wallpaperHostMatches(width:Int,height:Int,physicalW:Int,physicalH:Int):Boolean =
         physicalW>1 && physicalH>1 && width==physicalW && height==physicalH
 
+    // Publication of an optional prepared buffer is a separate operation
+    // from publication of the ordinary backdrop. Every ownership gate must
+    // still match at delivery, including after power or viewport transitions.
+    fun wallpaperTexturePublishable(generationCurrent:Boolean,epochCurrent:Boolean,
+        frameCurrent:Boolean,visible:Boolean,viewportCurrent:Boolean,eligible:Boolean):Boolean =
+        generationCurrent && epochCurrent && frameCurrent && visible && viewportCurrent && eligible
+
     fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {
         lastPrepareMs=ms
         if (disabled || nowMs<retryAtMs || ms < 0L) return false

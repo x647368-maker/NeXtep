@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "e5e5203dad71c0ac3e71c49d3851780138ba088d",
+      "reviewed_blob_sha1": "35f6a23a88888b9fc19824a55a10aea3ff8127d0",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -217,6 +217,18 @@
         {
           "before": "                    if(textured!=null && workspaceVisible && !suspended &&\n                        wallpaperKey(current)==wallpaperKey(geometry) &&",
           "after": "                    if(textured!=null && workspaceVisible && !suspended &&\n                        textureEpoch==gpuWallpaperEpoch.get() &&\n                        wallpaperKey(current)==wallpaperKey(geometry) &&"
+        },
+        {
+          "before": "            // Only a newly captured, exact-resolution physical frame is\n            // admissible. Do not prepare a fitted stale/rotated cache.\n            val textured=if(prepareTexture && generation==backdropGeneration.get() &&\n                textureEpoch==gpuWallpaperEpoch.get() &&\n                bitmap!=null && bitmap.width==geometry.screenWidth && bitmap.height==geometry.screenHeight &&\n                WorkspaceWallpaperBackdrop.canCapture(context) &&\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false)\n                runCatching {\n                    StageGpuWallpaperBuffer.prepare(bitmap) { outcome ->\n                        NeXtepLog.info(\"wallpaper_backdrop\",\"GPU cover preparation: \"+outcome)\n                    }\n                }.getOrNull() else null\n            backdropHandler.post {\n                if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n                    textured?.close()\n                    bitmap?.recycle()\n                    fitted?.recycle()\n                    return@post\n                }\n                if (bitmap != null) {\n                    wallpaperBitmap = bitmap\n                    wallpaperRotation = geometry.displayRotation\n                    val current=this@NeXtepWindowController.geometry()\n                    if(textured!=null && workspaceVisible && !suspended &&\n                        textureEpoch==gpuWallpaperEpoch.get() &&\n                        wallpaperKey(current)==wallpaperKey(geometry) &&\n                        context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false) {\n                        gpuWallpaper.replace(wallpaperKey(geometry),textured)\n                    } else {\n                        textured?.close()\n                        gpuWallpaper.clear()\n                    }\n                } else if (fitted != null) {",
+          "after": "            // Publish the ordinary wallpaper independently of optional GPU\n            // preparation. A slow render callback must not delay the backdrop.\n            backdropHandler.post {\n                if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n                    bitmap?.recycle()\n                    fitted?.recycle()\n                    return@post\n                }\n                if (bitmap != null) {\n                    gpuWallpaper.clear()\n                    wallpaperBitmap = bitmap\n                    wallpaperRotation = geometry.displayRotation\n                } else if (fitted != null) {"
+        },
+        {
+          "before": "                applyWallpaperBackdrop(this@NeXtepWindowController.geometry())\n                // A waking live engine can briefly expose its initial frame even",
+          "after": "                applyWallpaperBackdrop(this@NeXtepWindowController.geometry())\n                if(prepareTexture && bitmap!=null) {\n                    // The published bitmap now belongs to the drawable cache.\n                    // The capture rejection path can no longer recycle it\n                    // concurrently with texture preparation.\n                    queueWallpaperTexture(geometry,generation,textureEpoch,bitmap)\n                }\n                // A waking live engine can briefly expose its initial frame even"
+        },
+        {
+          "before": "    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? =",
+          "after": "    private fun queueWallpaperTexture(\n        capturedGeometry:WorkspaceGeometry,generation:Int,textureEpoch:Int,frame:Bitmap,\n    ) {\n        val key=wallpaperKey(capturedGeometry)\n        if(!workspaceVisible || suspended || isExchangePending() ||\n            generation!=backdropGeneration.get() ||\n            textureEpoch!=gpuWallpaperEpoch.get() ||\n            wallpaperBitmap!==frame || frame.isRecycled ||\n            frame.width!=key.width || frame.height!=key.height ||\n            wallpaperKey(geometry())!=key ||\n            !StagePrivateDualTaskFlightGate.enabled() ||\n            !StageConcurrentNativeTrialPolicy.allowed(true,\n                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))return\n        // One optional job on the existing capture worker. No new executor,\n        // retry loop, frame wait, or texture upload triggered by a tap.\n        backdropWorker.execute {\n            if(generation!=backdropGeneration.get() ||\n                textureEpoch!=gpuWallpaperEpoch.get() || frame.isRecycled ||\n                !WorkspaceWallpaperBackdrop.canCapture(context) ||\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false)return@execute\n            val textured=runCatching {\n                StageGpuWallpaperBuffer.prepare(frame) { outcome ->\n                    NeXtepLog.info(\"wallpaper_backdrop\",\"GPU cover preparation: \"+outcome)\n                }\n            }.getOrNull() ?: return@execute\n            if(!backdropHandler.post {\n                val current=runCatching {\n                    StageConcurrentNativeTrialPolicy.wallpaperTexturePublishable(\n                        generation==backdropGeneration.get(),\n                        textureEpoch==gpuWallpaperEpoch.get(),\n                        wallpaperBitmap===frame && !frame.isRecycled,\n                        workspaceVisible && !suspended,\n                        wallpaperKey(geometry())==key,\n                        StagePrivateDualTaskFlightGate.enabled() &&\n                            WorkspaceWallpaperBackdrop.canCapture(context) &&\n                            StageConcurrentNativeTrialPolicy.allowed(true,\n                                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))\n                }.getOrDefault(false)\n                if(current)gpuWallpaper.replace(key,textured) else textured.close()\n            })textured.close()\n        }\n    }\n\n    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? ="
         }
       ]
     },
@@ -388,9 +400,13 @@
         {
           "before": "    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {",
           "after": "    // Deliberately narrower than native fullScreenHost admission: buffer\n    // cropping uses physical pixels and cannot fit a mismatched viewport.\n    fun wallpaperHostMatches(width:Int,height:Int,physicalW:Int,physicalH:Int):Boolean =\n        physicalW>1 && physicalH>1 && width==physicalW && height==physicalH\n\n    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {"
+        },
+        {
+          "before": "    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {",
+          "after": "    // Publication of an optional prepared buffer is a separate operation\n    // from publication of the ordinary backdrop. Every ownership gate must\n    // still match at delivery, including after power or viewport transitions.\n    fun wallpaperTexturePublishable(generationCurrent:Boolean,epochCurrent:Boolean,\n        frameCurrent:Boolean,visible:Boolean,viewportCurrent:Boolean,eligible:Boolean):Boolean =\n        generationCurrent && epochCurrent && frameCurrent && visible && viewportCurrent && eligible\n\n    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {"
         }
       ],
-      "reviewed_blob_sha1": "ef3981f6912e6f606278e9e7d99df677e88eeabc"
+      "reviewed_blob_sha1": "a4a1442b025d63cf6e7d1e3fbae494c5f67e648e"
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicyTest.kt": {
       "previous_blob_sha1": "a3352b04384b04666ad3fb3847ab39a0503c2077",
@@ -414,9 +430,13 @@
         {
           "before": "    @Test fun trialAlwaysGatedByVisibilityAndSaver() {",
           "after": "    @Test fun wallpaperCoverRequiresExactPhysicalHostButNativeGateIsUnchanged() {\n        val p=StageConcurrentNativeTrialPolicy\n        for((w,h) in listOf(1272 to 2772,2772 to 1272,2248 to 2480,\n                2480 to 2248,2560 to 1600,1600 to 2560)) {\n            assertTrue(p.wallpaperHostMatches(w,h,w,h))\n            assertFalse(p.wallpaperHostMatches(w+1,h,w,h))\n            assertFalse(p.wallpaperHostMatches(w,h+1,w,h))\n            assertFalse(p.wallpaperHostMatches(w-1,h,w,h))\n            assertFalse(p.wallpaperHostMatches(w,h-1,w,h))\n            assertFalse(p.wallpaperHostMatches(h,w,w,h))\n            assertTrue(p.fullScreenHost(0,0,w+1,h+1,w,h))\n        }\n        assertFalse(p.wallpaperHostMatches(0,0,0,0))\n        assertFalse(p.wallpaperHostMatches(1,1,1,1))\n    }\n\n    @Test fun trialAlwaysGatedByVisibilityAndSaver() {"
+        },
+        {
+          "before": "    @Test fun trialAlwaysGatedByVisibilityAndSaver() {",
+          "after": "    @Test fun optionalWallpaperPublicationRejectsAllStaleOrIneligibleCombinations() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(mask in 0 until 64) {\n            fun yes(bit:Int)=mask and (1 shl bit)!=0\n            assertEquals(mask==63,p.wallpaperTexturePublishable(\n                yes(0),yes(1),yes(2),yes(3),yes(4),yes(5)))\n        }\n    }\n\n    @Test fun trialAlwaysGatedByVisibilityAndSaver() {"
         }
       ],
-      "reviewed_blob_sha1": "ef5f56ed11dbd31a4d1f1f1b3fcd67400885d6f8"
+      "reviewed_blob_sha1": "1593692d42024e0158c8f9508b1885e33f35382b"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
       "previous_blob_sha1": "bd8569f0fd711d87da1443016063d39bf2e98ad8",

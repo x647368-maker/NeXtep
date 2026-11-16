@@ -3458,38 +3458,18 @@ class NeXtepWindowController(
                         .wideTablet(geometry.screenWidth, geometry.screenHeight)) null
                 else WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)
             } else null
-            // Only a newly captured, exact-resolution physical frame is
-            // admissible. Do not prepare a fitted stale/rotated cache.
-            val textured=if(prepareTexture && generation==backdropGeneration.get() &&
-                textureEpoch==gpuWallpaperEpoch.get() &&
-                bitmap!=null && bitmap.width==geometry.screenWidth && bitmap.height==geometry.screenHeight &&
-                WorkspaceWallpaperBackdrop.canCapture(context) &&
-                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false)
-                runCatching {
-                    StageGpuWallpaperBuffer.prepare(bitmap) { outcome ->
-                        NeXtepLog.info("wallpaper_backdrop","GPU cover preparation: "+outcome)
-                    }
-                }.getOrNull() else null
+            // Publish the ordinary wallpaper independently of optional GPU
+            // preparation. A slow render callback must not delay the backdrop.
             backdropHandler.post {
                 if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-                    textured?.close()
                     bitmap?.recycle()
                     fitted?.recycle()
                     return@post
                 }
                 if (bitmap != null) {
+                    gpuWallpaper.clear()
                     wallpaperBitmap = bitmap
                     wallpaperRotation = geometry.displayRotation
-                    val current=this@NeXtepWindowController.geometry()
-                    if(textured!=null && workspaceVisible && !suspended &&
-                        textureEpoch==gpuWallpaperEpoch.get() &&
-                        wallpaperKey(current)==wallpaperKey(geometry) &&
-                        context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false) {
-                        gpuWallpaper.replace(wallpaperKey(geometry),textured)
-                    } else {
-                        textured?.close()
-                        gpuWallpaper.clear()
-                    }
                 } else if (fitted != null) {
                     gpuWallpaper.clear()
                     wallpaperBitmap = fitted
@@ -3498,6 +3478,12 @@ class NeXtepWindowController(
                 // A capture may finish after a window closes/collapses. Crop for the
                 // current layout, not the geometry that started this asynchronous job.
                 applyWallpaperBackdrop(this@NeXtepWindowController.geometry())
+                if(prepareTexture && bitmap!=null) {
+                    // The published bitmap now belongs to the drawable cache.
+                    // The capture rejection path can no longer recycle it
+                    // concurrently with texture preparation.
+                    queueWallpaperTexture(geometry,generation,textureEpoch,bitmap)
+                }
                 // A waking live engine can briefly expose its initial frame even
                 // when capture succeeds. Refresh again after it has started drawing.
                 if (attempt < BACKDROP_SETTLE_REFRESHES ||
@@ -3510,6 +3496,51 @@ class NeXtepWindowController(
                     }, minOf(1_000L, 200L * (attempt + 1)))
                 }
             }
+        }
+    }
+
+    private fun queueWallpaperTexture(
+        capturedGeometry:WorkspaceGeometry,generation:Int,textureEpoch:Int,frame:Bitmap,
+    ) {
+        val key=wallpaperKey(capturedGeometry)
+        if(!workspaceVisible || suspended || isExchangePending() ||
+            generation!=backdropGeneration.get() ||
+            textureEpoch!=gpuWallpaperEpoch.get() ||
+            wallpaperBitmap!==frame || frame.isRecycled ||
+            frame.width!=key.width || frame.height!=key.height ||
+            wallpaperKey(geometry())!=key ||
+            !StagePrivateDualTaskFlightGate.enabled() ||
+            !StageConcurrentNativeTrialPolicy.allowed(true,
+                android.animation.ValueAnimator.areAnimatorsEnabled(),
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))return
+        // One optional job on the existing capture worker. No new executor,
+        // retry loop, frame wait, or texture upload triggered by a tap.
+        backdropWorker.execute {
+            if(generation!=backdropGeneration.get() ||
+                textureEpoch!=gpuWallpaperEpoch.get() || frame.isRecycled ||
+                !WorkspaceWallpaperBackdrop.canCapture(context) ||
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false)return@execute
+            val textured=runCatching {
+                StageGpuWallpaperBuffer.prepare(frame) { outcome ->
+                    NeXtepLog.info("wallpaper_backdrop","GPU cover preparation: "+outcome)
+                }
+            }.getOrNull() ?: return@execute
+            if(!backdropHandler.post {
+                val current=runCatching {
+                    StageConcurrentNativeTrialPolicy.wallpaperTexturePublishable(
+                        generation==backdropGeneration.get(),
+                        textureEpoch==gpuWallpaperEpoch.get(),
+                        wallpaperBitmap===frame && !frame.isRecycled,
+                        workspaceVisible && !suspended,
+                        wallpaperKey(geometry())==key,
+                        StagePrivateDualTaskFlightGate.enabled() &&
+                            WorkspaceWallpaperBackdrop.canCapture(context) &&
+                            StageConcurrentNativeTrialPolicy.allowed(true,
+                                android.animation.ValueAnimator.areAnimatorsEnabled(),
+                                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))
+                }.getOrDefault(false)
+                if(current)gpuWallpaper.replace(key,textured) else textured.close()
+            })textured.close()
         }
     }
 

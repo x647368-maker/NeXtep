@@ -100,6 +100,15 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(p.wallpaperHostMatches(1,1,1,1))
     }
 
+    @Test fun optionalWallpaperPublicationRejectsAllStaleOrIneligibleCombinations() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(mask in 0 until 64) {
+            fun yes(bit:Int)=mask and (1 shl bit)!=0
+            assertEquals(mask==63,p.wallpaperTexturePublishable(
+                yes(0),yes(1),yes(2),yes(3),yes(4),yes(5)))
+        }
+    }
+
     @Test fun trialAlwaysGatedByVisibilityAndSaver() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         assertEquals(360L, StageConcurrentNativeTrialPolicy.DURATION_MS)
