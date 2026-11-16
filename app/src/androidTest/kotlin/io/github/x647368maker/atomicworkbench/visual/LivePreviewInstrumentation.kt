@@ -91,7 +91,7 @@ class LivePreviewInstrumentation : Instrumentation() {
                 val destination=if(pairedFlightOnly)File(out,"paired-flight").apply { mkdirs() } else out
                 val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly)
                 val marker=if(pairedFlightOnly)"PAIRED_FLIGHT_PASS" else "NATIVE_FLIGHT_PASS"
-                result.putString("stream",productionGateEvidence+status+"\n"+marker+"\n")
+                result.putString("stream",status+"\n"+productionGateEvidence+marker+"\n")
                 runOnMainSync { activity.finish() }
                 finish(Activity.RESULT_OK,result)
                 return
