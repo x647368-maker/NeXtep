@@ -51,8 +51,8 @@ android {
         targetSdk = 36
         buildConfigField("boolean", "ATOMIC_NATIVE_SURFACE_TRIAL", "false")
         buildConfigField("boolean", "ATOMIC_PAIRED_RAIL_TRIAL", "false")
-        versionCode = 87
-        versionName = "0.9.72-dev"
+        versionCode = 88
+        versionName = "0.9.73-dev"
         testInstrumentationRunner = "io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation"
 
     }
