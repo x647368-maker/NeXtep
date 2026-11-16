@@ -37,6 +37,10 @@ internal class StageAppCatalog(context: Context) {
             }
         }, IntentFilter(Intent.ACTION_USER_UNLOCKED), Context.RECEIVER_NOT_EXPORTED) }
     }
+    // Main-lane read of the existing catalogue only. No async menu reopen
+    // or fresh package scan for a saved pin.
+    fun cachedLabel(key:String):String?=cached?.firstOrNull { it.key==key }?.label
+
     fun request(callback: (Result<List<LauncherAppRepository.AppEntry>>) -> Unit) {
         cached?.let { callback(Result.success(it)); return }
         waiting += callback; load()

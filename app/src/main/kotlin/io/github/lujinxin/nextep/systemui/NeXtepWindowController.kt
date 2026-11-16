@@ -1661,10 +1661,7 @@ class NeXtepWindowController(
             "顶部横排" to { changeStageLayout(true) },
             "左侧排列" to { changeStageLayout(false,SidebarSide.LEFT) },
             "右侧排列" to { changeStageLayout(false,SidebarSide.RIGHT) },
-            (if (!core.enabled) "常用应用栏已关闭（设置中可开启）" else if (core.expanded) "收起常用应用快捷栏" else "展开常用应用快捷栏") to {
-                if (core.enabled) setQuickExpanded(!core.expanded)
-                else showStageMessage("请在设置 → 影音与快捷栏中开启常用应用栏")
-            },
+            // Quick visibility is managed in 快捷栏样式.
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
             "常用应用管理" to { showQuickManagementMenu(anchor) },
@@ -1674,13 +1671,7 @@ class NeXtepWindowController(
             "窗口顺序调整" to { showSlotOrderMenu(anchor) },
             "隐藏/显示侧边栏" to { toggleRailFromMenu() },
             "添加小窗" to { chooseWindowApp(anchor,null) },
-            "影音布局与自动模式" to { showCinemaMenu(anchor) },
-            (if (smartRail.enabled) "关闭智能侧栏" else "开启智能侧栏（静置收起）") to {
-                smartRail.setEnabled(!smartRail.enabled)
-                showStageMessage(if (smartRail.enabled) "智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务" else "已恢复原有侧栏行为")
-            },
-            "侧栏自动收起时间（${smartRail.idleSeconds}秒）" to { showSmartRailDelayMenu(anchor) },
-            (if (smartRail.pinned) "取消固定侧栏" else "固定侧栏") to { smartRail.setPinned(!smartRail.pinned) },
+            // Cinema and rail controls are managed in 显示与动画.
             "将当前微信任务移入小窗" to { runCatching { moveWechat() }.onFailure { showStageMessage(it.message ?: "微信任务未移动") } },
             "替换主应用" to { chooseWindowApp(anchor, null, main = true) },
             "添加常用应用到快捷栏" to { chooseWindowApp(anchor, null, quickPin = true) },
@@ -1706,19 +1697,42 @@ class NeXtepWindowController(
 
     private fun showQuickManagementMenu(anchor:View) {
         if(!menuQuickOrDisplayReady())return
-        AtomicPopupMenu.show(context,anchor,listOf(
-            "添加常用应用" to {
-                if(menuQuickOrDisplayReady())chooseWindowApp(anchor,null,quickPin=true)
-            },
-            "恢复隐藏应用" to {
-                if(menuQuickOrDisplayReady()){core.hiddenApps=emptySet();refreshQuickBar()}
-            },
-            "管理已显示的常用应用" to {
+        val items=mutableListOf<Pair<String,()->Unit>>()
+        items += "管理已显示的常用应用" to {
                 if(menuQuickOrDisplayReady()) {
                     if(core.enabled) {
                         setQuickExpanded(true)
                         showStageMessage("长按快捷栏应用图标，可固定、移除或调整排序")
                     } else showStageMessage("请先在快捷栏样式中启用常用应用栏")
+                }
+        }
+        // Manage every persisted pin, even ones outside this display's
+        // visible capacity. Keep add/restore in the original Other category.
+        core.pins.forEachIndexed { index,key->
+            val label=appCatalog.cachedLabel(key) ?: key
+            items += "固定应用 ${index+1}：$label" to {
+                if(menuQuickOrDisplayReady() && key in core.pins)showPinnedQuickActions(anchor,key)
+                else showStageMessage("固定应用已变化，请重新选择")
+            }
+        }
+        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds())
+    }
+
+    private fun showPinnedQuickActions(anchor:View,key:String) {
+        fun update(transform:(List<String>)->List<String>) {
+            if(!menuQuickOrDisplayReady() || key !in core.pins)return
+            core.pins=transform(core.pins)
+            refreshQuickBar()
+        }
+        AtomicPopupMenu.show(context,anchor,listOf(
+            "向前排序" to { update { StageQuickPolicy.move(it,key,-1) } },
+            "向后排序" to { update { StageQuickPolicy.move(it,key,1) } },
+            "取消固定" to { update { pins->pins.filter { it!=key } } },
+            "从常用应用栏移除" to {
+                if(menuQuickOrDisplayReady() && key in core.pins) {
+                    core.pins=core.pins.filter { it!=key }
+                    core.hiddenApps=core.hiddenApps+key
+                    refreshQuickBar()
                 }
             },
         ),avoidBounds=menuAvoidBounds())
@@ -1756,6 +1770,18 @@ class NeXtepWindowController(
                 }
             },
             "影音布局与自动模式" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },
+            (if (smartRail.enabled) "关闭智能侧栏" else "开启智能侧栏（静置收起）") to {
+                if(menuQuickOrDisplayReady()) {
+                    smartRail.setEnabled(!smartRail.enabled)
+                    showStageMessage(if (smartRail.enabled) "智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务" else "已恢复原有侧栏行为")
+                }
+            },
+            "侧栏自动收起时间（${smartRail.idleSeconds}秒）" to {
+                if(menuQuickOrDisplayReady())showSmartRailDelayMenu(anchor)
+            },
+            (if(smartRail.pinned) "取消固定侧栏" else "固定侧栏") to {
+                if(menuQuickOrDisplayReady())smartRail.setPinned(!smartRail.pinned)
+            },
             "打开完整设置" to { if(menuQuickOrDisplayReady())onSettingsRequested() },
         ),avoidBounds=menuAvoidBounds())
     }

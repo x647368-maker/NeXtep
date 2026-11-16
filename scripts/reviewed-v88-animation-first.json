@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "b088dfef25dfb0bd57000b48c6d1142ad616bb93",
+      "reviewed_blob_sha1": "773559256b0836ee627b0bb86733b30d83c2fc10",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -265,6 +265,26 @@
         {
           "before": "            val textured=runCatching {\n                StageGpuWallpaperBuffer.prepare(frame) { outcome ->\n                    NeXtepLog.info(\"wallpaper_backdrop\",\"GPU cover preparation: \"+outcome)\n                }\n            }.getOrNull() ?: return@execute",
           "after": "            var preparation=\"not_reported\"\n            val textured=runCatching {\n                StageGpuWallpaperBuffer.prepare(frame) { outcome ->\n                    preparation=outcome\n                    NeXtepLog.info(\"wallpaper_backdrop\",\"GPU cover preparation attempt=\"+attempt+\" \"+outcome)\n                }\n            }.getOrNull()\n            if(textured==null) {\n                if(StageConcurrentNativeTrialPolicy.retryWallpaperPreparation(attempt,preparation)) {\n                    // Re-enter the main-lane admission check after the\n                    // failed renderer has been closed. No second try on\n                    // stale geometry, a new swap, lock, or saver entry.\n                    backdropHandler.post {\n                        queueWallpaperTexture(capturedGeometry,generation,textureEpoch,frame,attempt+1)\n                    }\n                }\n                return@execute\n            }"
+        },
+        {
+          "before": "            (if (!core.enabled) \"常用应用栏已关闭（设置中可开启）\" else if (core.expanded) \"收起常用应用快捷栏\" else \"展开常用应用快捷栏\") to {\n                if (core.enabled) setQuickExpanded(!core.expanded)\n                else showStageMessage(\"请在设置 → 影音与快捷栏中开启常用应用栏\")\n            },",
+          "after": "            // Quick visibility is managed in 快捷栏样式."
+        },
+        {
+          "before": "            \"影音布局与自动模式\" to { showCinemaMenu(anchor) },\n            (if (smartRail.enabled) \"关闭智能侧栏\" else \"开启智能侧栏（静置收起）\") to {\n                smartRail.setEnabled(!smartRail.enabled)\n                showStageMessage(if (smartRail.enabled) \"智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务\" else \"已恢复原有侧栏行为\")\n            },\n            \"侧栏自动收起时间（${smartRail.idleSeconds}秒）\" to { showSmartRailDelayMenu(anchor) },\n            (if (smartRail.pinned) \"取消固定侧栏\" else \"固定侧栏\") to { smartRail.setPinned(!smartRail.pinned) },",
+          "after": "            // Cinema and rail controls are managed in 显示与动画."
+        },
+        {
+          "before": "        AtomicPopupMenu.show(context,anchor,listOf(\n            \"添加常用应用\" to {\n                if(menuQuickOrDisplayReady())chooseWindowApp(anchor,null,quickPin=true)\n            },\n            \"恢复隐藏应用\" to {\n                if(menuQuickOrDisplayReady()){core.hiddenApps=emptySet();refreshQuickBar()}\n            },\n            \"管理已显示的常用应用\" to {",
+          "after": "        val items=mutableListOf<Pair<String,()->Unit>>()\n        items += \"管理已显示的常用应用\" to {"
+        },
+        {
+          "before": "                    } else showStageMessage(\"请先在快捷栏样式中启用常用应用栏\")\n                }\n            },\n        ),avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showQuickStyleMenu(anchor:View) {",
+          "after": "                    } else showStageMessage(\"请先在快捷栏样式中启用常用应用栏\")\n                }\n        }\n        // Manage every persisted pin, even ones outside this display's\n        // visible capacity. Keep add/restore in the original Other category.\n        core.pins.forEachIndexed { index,key->\n            val label=appCatalog.cachedLabel(key) ?: key\n            items += \"固定应用 ${index+1}：$label\" to {\n                if(menuQuickOrDisplayReady() && key in core.pins)showPinnedQuickActions(anchor,key)\n                else showStageMessage(\"固定应用已变化，请重新选择\")\n            }\n        }\n        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showPinnedQuickActions(anchor:View,key:String) {\n        fun update(transform:(List<String>)->List<String>) {\n            if(!menuQuickOrDisplayReady() || key !in core.pins)return\n            core.pins=transform(core.pins)\n            refreshQuickBar()\n        }\n        AtomicPopupMenu.show(context,anchor,listOf(\n            \"向前排序\" to { update { StageQuickPolicy.move(it,key,-1) } },\n            \"向后排序\" to { update { StageQuickPolicy.move(it,key,1) } },\n            \"取消固定\" to { update { pins->pins.filter { it!=key } } },\n            \"从常用应用栏移除\" to {\n                if(menuQuickOrDisplayReady() && key in core.pins) {\n                    core.pins=core.pins.filter { it!=key }\n                    core.hiddenApps=core.hiddenApps+key\n                    refreshQuickBar()\n                }\n            },\n        ),avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showQuickStyleMenu(anchor:View) {"
+        },
+        {
+          "before": "            \"影音布局与自动模式\" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },\n            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },",
+          "after": "            \"影音布局与自动模式\" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },\n            (if (smartRail.enabled) \"关闭智能侧栏\" else \"开启智能侧栏（静置收起）\") to {\n                if(menuQuickOrDisplayReady()) {\n                    smartRail.setEnabled(!smartRail.enabled)\n                    showStageMessage(if (smartRail.enabled) \"智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务\" else \"已恢复原有侧栏行为\")\n                }\n            },\n            \"侧栏自动收起时间（${smartRail.idleSeconds}秒）\" to {\n                if(menuQuickOrDisplayReady())showSmartRailDelayMenu(anchor)\n            },\n            (if(smartRail.pinned) \"取消固定侧栏\" else \"固定侧栏\") to {\n                if(menuQuickOrDisplayReady())smartRail.setPinned(!smartRail.pinned)\n            },\n            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },"
         }
       ]
     },
@@ -1393,6 +1413,16 @@
         {
           "before": "            24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}",
           "after": "            24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}\n            25->{rect(3f,3f,14f,14f);rect(10f,10f,21f,21f)}\n            26->{rect(2f,4f,22f,20f);line(8f,4f,8f,20f);line(4f,10f,6f,12f,4f,14f)}"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageAppCatalog.kt": {
+      "reviewed_blob_sha1": "e10f5d383149f4c531347898900a93361f521515",
+      "previous_blob_sha1": "55b80fcc2a515b71bc1d6bb1347452a206db8101",
+      "patches": [
+        {
+          "before": "    fun request(callback: (Result<List<LauncherAppRepository.AppEntry>>) -> Unit) {",
+          "after": "    // Main-lane read of the existing catalogue only. No async menu reopen\n    // or fresh package scan for a saved pin.\n    fun cachedLabel(key:String):String?=cached?.firstOrNull { it.key==key }?.label\n\n    fun request(callback: (Result<List<LauncherAppRepository.AppEntry>>) -> Unit) {"
         }
       ]
     }
