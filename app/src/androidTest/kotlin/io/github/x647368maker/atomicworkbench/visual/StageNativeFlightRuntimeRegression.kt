@@ -252,6 +252,11 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             // Recreate immediately after cleanup and observe physical moving
             // pixels. Repeat to verify stale task preflight at the endpoint.
             for(label in listOf("mid","stale")) {
+                var observed=false
+                // Admission can legitimately reject a slow compositor ACK.
+                // Repeat only a zero-frame, fully retired attempt; a flight
+                // that actually started must meet every original pixel assertion.
+                for(trial in 1..3) {
                 val attempt=begin()
                 try {
                     var moving=false
@@ -332,6 +337,20 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         }
                         evidence.add("$label samples=$samples elapsed=${SystemClock.uptimeMillis()-start}ms ended=${attempt.ended.count==0L}")
                     }
+                    if(!moving && attempt.ended.count==0L) {
+                        val rejectedBeforeFlight=java.util.concurrent.atomic.AtomicBoolean(false)
+                        inst.runOnMainSync {
+                            rejectedBeforeFlight.set(!firstCommitted.getBoolean(attempt.flight) &&
+                                submitted.getInt(attempt.flight)==0 && !attempt.flight.isRunning)
+                        }
+                        if(rejectedBeforeFlight.get()) {
+                            awaitReleased(attempt,"$label-admission-$trial")
+                            val failed=File(out,"native-flight-failed-moving-$label.png")
+                            if(failed.exists()) check(failed.renameTo(File(out,"native-flight-rejected-$label-$trial.png")))
+                            evidence.add("$label attempt $trial: admission rejected before any flight frame; no move, one finish, handles and pixels restored")
+                            continue
+                        }
+                    }
                     check(moving) {
                         "No two moving real GPU card pixel regions during $label; samples=$samples distinct=$distinctMoving bothOutside=$outsideBoth; inspect native-flight-runtime.txt and native-flight-trace.txt"
                     }
@@ -346,7 +365,11 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             "Stale task test did not reach committed terminal geometry"
                         }
                     }
+                    observed=true
+                    break
                 } finally { inst.runOnMainSync { attempt.flight.stop() } }
+                }
+                check(observed) { "No admitted flight with real moving pixels after three $label attempts" }
             }
             if(pairedRail) {
                 val detached=begin(detachImmediately=true)
