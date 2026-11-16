@@ -2593,7 +2593,7 @@ class NeXtepWindowController(
                 StageExchangeTelemetry.nativeEvent(
                     "tap_renderthread_fallback:$reason",tapTraceId)
                 val accepted=tryTransientTapSwap(sourceIndex,phasedMove,canRelease,
-                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)
+                    onFinished,workspacePreviewFallback)
                 if(!accepted) {
                     previewCapturePending=false
                     activeSwapViewport=geometry()
@@ -2605,7 +2605,7 @@ class NeXtepWindowController(
                     onVisualUnavailable=renderThreadFallback)) return
             if (StageTransientTapPolicy.snapshotFallbackEnabled() &&
                 tryTransientTapSwap(sourceIndex,phasedMove,canRelease,
-                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)) return
+                    onFinished,workspacePreviewFallback)) return
 
             StageExchangeTelemetry.nativeEvent("tap_animation_fallback:workspace_preview",tapTraceId)
             NeXtepLog.warn("swap_latency",
