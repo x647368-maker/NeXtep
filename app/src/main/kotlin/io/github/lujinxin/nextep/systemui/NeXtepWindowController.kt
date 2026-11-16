@@ -1667,6 +1667,9 @@ class NeXtepWindowController(
             },
             (if (!core.mainPriority) "✓ 完整显示布局" else "完整显示布局") to { setMainPriority(false) },
             (if (core.mainPriority) "✓ 主窗口优先布局" else "主窗口优先布局") to { setMainPriority(true) },
+            "主窗口与小窗交换" to { showMainSlotExchangeMenu(anchor) },
+            "窗口顺序调整" to { showSlotOrderMenu(anchor) },
+            "隐藏/显示侧边栏" to { toggleRailFromMenu() },
             "添加小窗" to { chooseWindowApp(anchor,null) },
             "影音布局与自动模式" to { showCinemaMenu(anchor) },
             (if (smartRail.enabled) "关闭智能侧栏" else "开启智能侧栏（静置收起）") to {
@@ -1688,6 +1691,83 @@ class NeXtepWindowController(
             if(viewport.isTopRail()) "顶部横排" else if(sidebarSide==SidebarSide.LEFT) "左侧排列" else "右侧排列",
             if(core.mainPriority) "主窗口优先布局" else "完整显示布局",
         ))
+    }
+
+    // These entries reuse the existing task exchange, visual reorder and
+    // rail owners. Never create a replacement task or write window geometry.
+    private fun menuWindowEngine(): SlotTaskCoordinator? {
+        if(!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching() ||
+            isExchangePending() || swapAnimator.isRunning || previewCapturePending ||
+            transientTapSwap.isRunning || liveSurfaceExchange?.isRunning==true || nativeSwapHost!=null)return null
+        return slotCoordinator?.takeIf { it.isGroupRestoreReady() }
+    }
+
+    private fun menuSlotStillOwned(engine:SlotTaskCoordinator,index:Int,expected:SlotState.Occupied):Boolean {
+        val current=engine.slotStates().getOrNull(index) as? SlotState.Occupied
+        return current!=null && current.taskId==expected.taskId && current.displayId==expected.displayId &&
+            current.component==expected.component
+    }
+
+    private fun menuOccupiedSlots(engine:SlotTaskCoordinator):List<Pair<Int,SlotState.Occupied>> =
+        stageOrder.mapNotNull { index->
+            (engine.slotStates().getOrNull(index) as? SlotState.Occupied)?.let { index to it }
+        }
+
+    private fun showMainSlotExchangeMenu(anchor:View) {
+        val engine=menuWindowEngine() ?: run { showStageMessage("窗口正在切换，请稍后重试");return }
+        val entries=menuOccupiedSlots(engine)
+        if(entries.isEmpty()){showStageMessage("暂无可交换的小窗");return}
+        AtomicPopupMenu.show(context,anchor,entries.mapIndexed { position,(index,state)->
+            "小窗 ${position+1}：${state.component.packageName}" to {
+                if(menuWindowEngine()!==engine || !menuSlotStillOwned(engine,index,state)) {
+                    showStageMessage("小窗已变化，请重新选择")
+                } else {
+                    if(sidebarCollapsed)setSidebarCollapsed(false)
+                    if(smartRail.hidden)smartRail.interact()
+                    if(menuWindowEngine()===engine && menuSlotStillOwned(engine,index,state))
+                        engine.onSlotClicked(index)
+                    else showStageMessage("窗口正在切换，请重新选择")
+                }
+            }
+        },avoidBounds=menuAvoidBounds())
+    }
+
+    private fun showSlotOrderMenu(anchor:View) {
+        val engine=menuWindowEngine() ?: run { showStageMessage("窗口正在切换，请稍后重试");return }
+        val entries=menuOccupiedSlots(engine)
+        if(entries.size<2){showStageMessage("至少需要两个小窗才能调整顺序");return}
+        AtomicPopupMenu.show(context,anchor,entries.mapIndexed { position,(source,state)->
+            "选择小窗 ${position+1}：${state.component.packageName}" to {
+                if(menuWindowEngine()!==engine || !menuSlotStillOwned(engine,source,state))
+                    showStageMessage("小窗已变化，请重新选择")
+                else {
+                    val targets=menuOccupiedSlots(engine).mapIndexedNotNull { targetPosition,(target,other)->
+                        if(source==target)null else
+                            "与小窗 ${targetPosition+1} 交换：${other.component.packageName}" to {
+                                if(menuWindowEngine()===engine &&
+                                    menuSlotStillOwned(engine,source,state) &&
+                                    menuSlotStillOwned(engine,target,other)) {
+                                    // Same visual-only operation as drag reorder:
+                                    // no display migration or producer replacement.
+                                    stageOrder=StageVisualOrder.swap(stageOrder,source,target)
+                                    applyStageStack(geometry())
+                                    NeXtepLog.info("task_continuity","menu_visual_reorder tasks=${state.taskId},${other.taskId} display_migrations=0 launch_requests=0")
+                                } else showStageMessage("小窗已变化，请重新选择")
+                            }
+                    }
+                    if(targets.isEmpty())showStageMessage("暂无可调整的小窗")
+                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())
+                }
+            }
+        },avoidBounds=menuAvoidBounds())
+    }
+
+    private fun toggleRailFromMenu() {
+        if(menuWindowEngine()==null){showStageMessage("窗口正在切换，请稍后重试");return}
+        if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return
+        if(smartRail.hidden)smartRail.interact()
+        else if(smartRail.enabled && !sidebarCollapsed)smartRail.hideNow()
+        else setSidebarCollapsed(!sidebarCollapsed)
     }
 
     /** All workspace popups use the same visible task regions. A hidden rail

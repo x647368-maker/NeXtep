@@ -37,6 +37,9 @@ class StageMenuPlacementTest {
             "切换全屏（保留工作区）","添加小窗","替换主应用","退出台前调度","恢复被隐藏的常用应用")
         assertEquals(labels.size,labels.map(StageMenuPolicy::actionGlyph).toSet().size)
         assertEquals(StageMenuPolicy.actionGlyph("✓ 主窗口优先布局"),StageMenuPolicy.actionGlyph("主窗口优先布局"))
+        val management=listOf("主窗口与小窗交换","窗口顺序调整","隐藏/显示侧边栏")
+        assertTrue(management.all { StageMenuPolicy.group(it)==1 })
+        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)
     }
     @Test fun fullSizeWithoutObstacles(){
         val p=choose(emptyList())

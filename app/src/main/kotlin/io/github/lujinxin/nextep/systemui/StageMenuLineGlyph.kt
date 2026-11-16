@@ -47,6 +47,8 @@ internal class StageMenuLineGlyph(private val group:Int,private val style:Int):D
             22->{rect(3f,3f,21f,21f);line(9f,3f,9f,21f);line(12f,8f,16f,12f,12f,16f)}
             23->{rect(3f,3f,10f,10f);rect(14f,3f,21f,10f);rect(3f,14f,10f,21f);rect(14f,14f,21f,21f)}
             24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}
+            25->{rect(3f,3f,14f,14f);rect(10f,10f,21f,21f)}
+            26->{rect(2f,4f,22f,20f);line(8f,4f,8f,20f);line(4f,10f,6f,12f,4f,14f)}
             0->{
                 if(style==0){rect(3f,3f,10f,10f);rect(14f,3f,21f,10f);rect(3f,14f,10f,21f);rect(14f,14f,21f,21f)}
                 else {rect(3f,4f,21f,20f);line(9f,4f,9f,20f);line(3f,9f,9f,9f)}

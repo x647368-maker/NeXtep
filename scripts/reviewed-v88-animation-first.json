@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "0ecc4a48c7cd97e74088d01b964ac5b596383ee1",
+      "reviewed_blob_sha1": "6d520ccb5e1be71b08365afac28fd0abdfb25920",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -233,6 +233,14 @@
         {
           "before": "            \"关闭主窗（移回后台）\" to { closeMainWindow() },\n            \"退出台前调度\" to { onExitRequested() },\n        ), avoidBounds = menuAvoidBounds())",
           "after": "            \"关闭主窗（移回后台）\" to { closeMainWindow() },\n            \"退出台前调度\" to { onExitRequested() },\n        ), avoidBounds = menuAvoidBounds(), selectedLabels = setOf(\n            if(viewport.isTopRail()) \"顶部横排\" else if(sidebarSide==SidebarSide.LEFT) \"左侧排列\" else \"右侧排列\",\n            if(core.mainPriority) \"主窗口优先布局\" else \"完整显示布局\",\n        ))"
+        },
+        {
+          "before": "            \"添加小窗\" to { chooseWindowApp(anchor,null) },\n            \"影音布局与自动模式\" to { showCinemaMenu(anchor) },",
+          "after": "            \"主窗口与小窗交换\" to { showMainSlotExchangeMenu(anchor) },\n            \"窗口顺序调整\" to { showSlotOrderMenu(anchor) },\n            \"隐藏/显示侧边栏\" to { toggleRailFromMenu() },\n            \"添加小窗\" to { chooseWindowApp(anchor,null) },\n            \"影音布局与自动模式\" to { showCinemaMenu(anchor) },"
+        },
+        {
+          "before": "    /** All workspace popups use the same visible task regions. A hidden rail",
+          "after": "    // These entries reuse the existing task exchange, visual reorder and\n    // rail owners. Never create a replacement task or write window geometry.\n    private fun menuWindowEngine(): SlotTaskCoordinator? {\n        if(!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching() ||\n            isExchangePending() || swapAnimator.isRunning || previewCapturePending ||\n            transientTapSwap.isRunning || liveSurfaceExchange?.isRunning==true || nativeSwapHost!=null)return null\n        return slotCoordinator?.takeIf { it.isGroupRestoreReady() }\n    }\n\n    private fun menuSlotStillOwned(engine:SlotTaskCoordinator,index:Int,expected:SlotState.Occupied):Boolean {\n        val current=engine.slotStates().getOrNull(index) as? SlotState.Occupied\n        return current!=null && current.taskId==expected.taskId && current.displayId==expected.displayId &&\n            current.component==expected.component\n    }\n\n    private fun menuOccupiedSlots(engine:SlotTaskCoordinator):List<Pair<Int,SlotState.Occupied>> =\n        stageOrder.mapNotNull { index->\n            (engine.slotStates().getOrNull(index) as? SlotState.Occupied)?.let { index to it }\n        }\n\n    private fun showMainSlotExchangeMenu(anchor:View) {\n        val engine=menuWindowEngine() ?: run { showStageMessage(\"窗口正在切换，请稍后重试\");return }\n        val entries=menuOccupiedSlots(engine)\n        if(entries.isEmpty()){showStageMessage(\"暂无可交换的小窗\");return}\n        AtomicPopupMenu.show(context,anchor,entries.mapIndexed { position,(index,state)->\n            \"小窗 ${position+1}：${state.component.packageName}\" to {\n                if(menuWindowEngine()!==engine || !menuSlotStillOwned(engine,index,state)) {\n                    showStageMessage(\"小窗已变化，请重新选择\")\n                } else {\n                    if(sidebarCollapsed)setSidebarCollapsed(false)\n                    if(smartRail.hidden)smartRail.interact()\n                    if(menuWindowEngine()===engine && menuSlotStillOwned(engine,index,state))\n                        engine.onSlotClicked(index)\n                    else showStageMessage(\"窗口正在切换，请重新选择\")\n                }\n            }\n        },avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showSlotOrderMenu(anchor:View) {\n        val engine=menuWindowEngine() ?: run { showStageMessage(\"窗口正在切换，请稍后重试\");return }\n        val entries=menuOccupiedSlots(engine)\n        if(entries.size<2){showStageMessage(\"至少需要两个小窗才能调整顺序\");return}\n        AtomicPopupMenu.show(context,anchor,entries.mapIndexed { position,(source,state)->\n            \"选择小窗 ${position+1}：${state.component.packageName}\" to {\n                if(menuWindowEngine()!==engine || !menuSlotStillOwned(engine,source,state))\n                    showStageMessage(\"小窗已变化，请重新选择\")\n                else {\n                    val targets=menuOccupiedSlots(engine).mapIndexedNotNull { targetPosition,(target,other)->\n                        if(source==target)null else\n                            \"与小窗 ${targetPosition+1} 交换：${other.component.packageName}\" to {\n                                if(menuWindowEngine()===engine &&\n                                    menuSlotStillOwned(engine,source,state) &&\n                                    menuSlotStillOwned(engine,target,other)) {\n                                    // Same visual-only operation as drag reorder:\n                                    // no display migration or producer replacement.\n                                    stageOrder=StageVisualOrder.swap(stageOrder,source,target)\n                                    applyStageStack(geometry())\n                                    NeXtepLog.info(\"task_continuity\",\"menu_visual_reorder tasks=${state.taskId},${other.taskId} display_migrations=0 launch_requests=0\")\n                                } else showStageMessage(\"小窗已变化，请重新选择\")\n                            }\n                    }\n                    if(targets.isEmpty())showStageMessage(\"暂无可调整的小窗\")\n                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())\n                }\n            }\n        },avoidBounds=menuAvoidBounds())\n    }\n\n    private fun toggleRailFromMenu() {\n        if(menuWindowEngine()==null){showStageMessage(\"窗口正在切换，请稍后重试\");return}\n        if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return\n        if(smartRail.hidden)smartRail.interact()\n        else if(smartRail.enabled && !sidebarCollapsed)smartRail.hideNow()\n        else setSidebarCollapsed(!sidebarCollapsed)\n    }\n\n    /** All workspace popups use the same visible task regions. A hidden rail"
         }
       ]
     },
@@ -1217,7 +1225,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPolicy.kt": {
-      "reviewed_blob_sha1": "834390dbf79ee900909a501548bd48503bdaf379",
+      "reviewed_blob_sha1": "6560d733ad9f29a42d40295dbe340ab4ca5647d3",
       "previous_blob_sha1": "653014e7ccb46168e118fe2f3d6b6e15413229d5",
       "patches": [
         {
@@ -1231,11 +1239,19 @@
         {
           "before": "    val groups=listOf(\"窗口布局\",\"窗口管理\",\"快捷栏与显示\",\"其他功能\")",
           "after": "    val groups=listOf(\"窗口布局\",\"窗口管理\",\"快捷栏与显示\",\"其他功能\")\n    private val layoutChoices=setOf(\"顶部横排\",\"左侧排列\",\"右侧排列\",\"主窗口优先布局\",\"完整显示布局\")\n    fun isLayoutChoice(label:String)=label.removePrefix(\"✓ \") in layoutChoices\n    fun isSelected(label:String,selected:Set<String>) =\n        isLayoutChoice(label) && (label.startsWith(\"✓ \") || label.removePrefix(\"✓ \") in selected)\n    // Distinguish actions without changing their text, callback or group.\n    // Numbers 0..3 remain the category glyph identifiers.\n    fun actionGlyph(label:String):Int {\n        val s=label.removePrefix(\"✓ \")\n        return when {\n            s==\"顶部横排\"->10\n            s==\"左侧排列\"->11\n            s==\"右侧排列\"->12\n            s==\"主窗口优先布局\"->13\n            s==\"完整显示布局\"->14\n            s==\"切换全屏（保留工作区）\"->15\n            s==\"添加小窗\" || s==\"添加常用应用到快捷栏\"->16\n            s==\"替换主应用\" || s==\"将当前微信任务移入小窗\"->17\n            s==\"关闭主窗（移回后台）\" || s==\"退出台前调度\"->18\n            s==\"恢复被隐藏的常用应用\"->19\n            s.contains(\"固定侧栏\")->20\n            s.contains(\"自动收起时间\")->21\n            s.contains(\"智能侧栏\")->22\n            s.contains(\"常用应用\")->23\n            s==\"影音布局与自动模式\"->24\n            else->group(s)\n        }\n    }"
+        },
+        {
+          "before": "            s in listOf(\"添加小窗\",\"将当前微信任务移入小窗\",\"替换主应用\",\"关闭主窗（移回后台）\")->1",
+          "after": "            s in listOf(\"主窗口与小窗交换\",\"窗口顺序调整\",\"隐藏/显示侧边栏\",\"添加小窗\",\"将当前微信任务移入小窗\",\"替换主应用\",\"关闭主窗（移回后台）\")->1"
+        },
+        {
+          "before": "            s==\"影音布局与自动模式\"->24\n            else->group(s)",
+          "after": "            s==\"影音布局与自动模式\"->24\n            s==\"主窗口与小窗交换\"->17\n            s==\"窗口顺序调整\"->25\n            s==\"隐藏/显示侧边栏\"->26\n            else->group(s)"
         }
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPlacementTest.kt": {
-      "reviewed_blob_sha1": "93ae749a8eceb65c24a3c8092b335ef3407b2690",
+      "reviewed_blob_sha1": "767b53cbe71c0fba345ee34dc2d2adeef51f3ae1",
       "previous_blob_sha1": "3be52da72eb09119eb9b8ae5898d8baf6c7c4cb9",
       "patches": [
         {
@@ -1245,11 +1261,15 @@
         {
           "before": "    @Test fun fullSizeWithoutObstacles(){",
           "after": "    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){\n        val selected=setOf(\"左侧排列\",\"主窗口优先布局\")\n        assertTrue(StageMenuPolicy.isSelected(\"左侧排列\",selected))\n        assertTrue(StageMenuPolicy.isSelected(\"主窗口优先布局\",selected))\n        assertTrue(StageMenuPolicy.isSelected(\"✓ 完整显示布局\",emptySet()))\n        assertFalse(StageMenuPolicy.isSelected(\"顶部横排\",selected))\n        assertFalse(StageMenuPolicy.isSelected(\"添加小窗\",setOf(\"添加小窗\")))\n        val labels=listOf(\"顶部横排\",\"左侧排列\",\"右侧排列\",\"主窗口优先布局\",\"完整显示布局\",\n            \"切换全屏（保留工作区）\",\"添加小窗\",\"替换主应用\",\"退出台前调度\",\"恢复被隐藏的常用应用\")\n        assertEquals(labels.size,labels.map(StageMenuPolicy::actionGlyph).toSet().size)\n        assertEquals(StageMenuPolicy.actionGlyph(\"✓ 主窗口优先布局\"),StageMenuPolicy.actionGlyph(\"主窗口优先布局\"))\n    }\n    @Test fun fullSizeWithoutObstacles(){"
+        },
+        {
+          "before": "        assertEquals(StageMenuPolicy.actionGlyph(\"✓ 主窗口优先布局\"),StageMenuPolicy.actionGlyph(\"主窗口优先布局\"))",
+          "after": "        assertEquals(StageMenuPolicy.actionGlyph(\"✓ 主窗口优先布局\"),StageMenuPolicy.actionGlyph(\"主窗口优先布局\"))\n        val management=listOf(\"主窗口与小窗交换\",\"窗口顺序调整\",\"隐藏/显示侧边栏\")\n        assertTrue(management.all { StageMenuPolicy.group(it)==1 })\n        assertEquals(3,management.map(StageMenuPolicy::actionGlyph).toSet().size)"
         }
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "7347d75ae6888e8746ceb335145252f9204d9304",
+      "reviewed_blob_sha1": "4a72ebba791e938c8119fb2adf9f870eb5289f48",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1295,16 +1315,24 @@
         {
           "before": "            verifySelectedCategory(StageMenuPolicy.groups.first())\n            click(\"窗口管理\")",
           "after": "            verifySelectedCategory(StageMenuPolicy.groups.first())\n            check(visibleWideNode(\"左侧排列\").isSelected)\n            check(!visibleWideNode(\"顶部横排\").isSelected)\n            click(\"窗口管理\")"
+        },
+        {
+          "before": "\"✓ 主窗口优先布局\",\"添加小窗\",\"影音布局与自动模式\"",
+          "after": "\"✓ 主窗口优先布局\",\"主窗口与小窗交换\",\"窗口顺序调整\",\"隐藏/显示侧边栏\",\"添加小窗\",\"影音布局与自动模式\""
         }
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuLineGlyph.kt": {
-      "reviewed_blob_sha1": "80df6db08d2b1bb6276dd64f79fc70777510db76",
+      "reviewed_blob_sha1": "46def0d1608fccda83c01ea6179c07ef21fde93e",
       "previous_blob_sha1": "a7ef71eed2c8c051f5220826dd9b2001bebc852b",
       "patches": [
         {
           "before": "        if(style==2)line(9f,5f,15f,12f,9f,19f)\n        else when(group) {",
           "after": "        if(style==2)line(9f,5f,15f,12f,9f,19f)\n        else if(style==3 || style==4) {\n            canvas.drawCircle(12f,12f,8.5f,pen)\n            if(style==3)line(7.5f,12f,10.5f,15f,16.5f,8.5f)\n        } else when(group) {\n            10->{rect(2f,3f,22f,21f);line(2f,9f,22f,9f);for(x in listOf(6f,10f,14f,18f))line(x,5f,x,7f)}\n            11,12->{rect(2f,3f,22f,21f);val x=if(group==11)8f else 16f;line(x,3f,x,21f)\n                val edge=if(group==11)2f else 22f;for(y in listOf(7.5f,12f,16.5f))line(edge,y,x,y)}\n            13->{rect(2f,4f,22f,20f);rect(7f,7f,20f,17f)}\n            14->{rect(2f,4f,22f,20f);line(10f,4f,10f,20f);line(2f,12f,10f,12f)}\n            15->{line(3f,9f,3f,3f,9f,3f);line(15f,3f,21f,3f,21f,9f);line(21f,15f,21f,21f,15f,21f);line(9f,21f,3f,21f,3f,15f)}\n            16->{rect(3f,3f,21f,21f);line(12f,7f,12f,17f);line(7f,12f,17f,12f)}\n            17->{line(3f,8f,20f,8f,16f,4f);line(21f,16f,4f,16f,8f,20f)}\n            18->{line(12f,2f,12f,11f);canvas.drawArc(3f,4f,21f,22f,-55f,290f,false,pen)}\n            19->{line(2f,12f,5f,8f,12f,5f,19f,8f,22f,12f,19f,16f,12f,19f,5f,16f,2f,12f);canvas.drawCircle(12f,12f,3f,pen)}\n            20->{line(7f,3f,17f,3f,15f,10f,19f,15f,5f,15f,9f,10f,7f,3f);line(12f,15f,12f,22f)}\n            21->{canvas.drawCircle(12f,12f,9f,pen);line(12f,6f,12f,12f,16f,15f)}\n            22->{rect(3f,3f,21f,21f);line(9f,3f,9f,21f);line(12f,8f,16f,12f,12f,16f)}\n            23->{rect(3f,3f,10f,10f);rect(14f,3f,21f,10f);rect(3f,14f,10f,21f);rect(14f,14f,21f,21f)}\n            24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}"
+        },
+        {
+          "before": "            24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}",
+          "after": "            24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}\n            25->{rect(3f,3f,14f,14f);rect(10f,10f,21f,21f)}\n            26->{rect(2f,4f,22f,20f);line(8f,4f,8f,20f);line(4f,10f,6f,12f,4f,14f)}"
         }
       ]
     }
