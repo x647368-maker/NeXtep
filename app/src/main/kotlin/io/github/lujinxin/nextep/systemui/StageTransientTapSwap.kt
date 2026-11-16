@@ -533,7 +533,9 @@ internal class StageTransientTapSwap(private val context:Context) {
                 }
             }.getOrNull() else null
             return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,
-                outgoing.width,outgoing.height,screen,obstacles)
+                outgoing.width,outgoing.height,screen,obstacles) {
+                deadline==null || SystemClock.uptimeMillis()<deadline
+            }
         }
     }
     internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,

@@ -138,6 +138,23 @@ class StageSnapshotMotionTest {
             }
         }
     }
+    @Test fun boundedPairedCorridorNeverReturnsAPartialRoute(){
+        val screen=b(0f,0f,1080f,2354f)
+        val small=b(30f,312f,246f,732f)
+        val main=b(264f,390f,1074f,2136f)
+        val others=listOf(b(30f,756f,246f,1176f),b(30f,1200f,246f,1620f))
+        val expected=checkNotNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others))
+        var probes=0
+        assertNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){++probes<5})
+        assertEquals(5,probes)
+        assertNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){false})
+        val bounded=checkNotNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){true})
+        assertEquals(expected,bounded)
+        for(i in 0..120){
+            assertEquals(expected.up.pose(i/120f),bounded.up.pose(i/120f))
+            assertEquals(expected.down.pose(i/120f),bounded.down.pose(i/120f))
+        }
+    }
     @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){
         assertEquals(100.25f,StageSnapshotMotion.hardwareEnd(100f,100f,.25f),.00001f)
         assertEquals(.5001f,StageSnapshotMotion.hardwareEnd(.5f,.5f,.0001f),.00001f)

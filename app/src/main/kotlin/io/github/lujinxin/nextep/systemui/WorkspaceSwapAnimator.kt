@@ -87,7 +87,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         handoff=StageStableHandoff()
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
             sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,
-            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null && it.usesSharedClock },
+            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },
             protectedBounds)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
@@ -202,8 +202,13 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
                 else StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)
             // The certified paired route already owns easing. Do not ease
             // its clock a second time in the final preview renderer.
-            interpolator = if(preview.usesSharedRoute) android.animation.TimeInterpolator { it }
-                else PathInterpolator(0.22f, 0f, 0.12f, 1f)
+            interpolator = when {
+                preview.usesSharedRoute -> android.animation.TimeInterpolator { it }
+                // Match the snapshot backend clock when the same bounded
+                // non-certified paired corridor is admitted.
+                preview.usesPairedRoute -> PathInterpolator(.32f,.08f,.36f,1f)
+                else -> PathInterpolator(0.22f, 0f, 0.12f, 1f)
+            }
             addUpdateListener {
                 preview.progress = it.animatedValue as Float
                 preview.invalidate()
@@ -339,6 +344,7 @@ private class SwapPreviewView(
 ) : View(context) {
     private val protectedCards=protectedBounds.map { RectF(it) }
     val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
+    val usesPairedRoute get()=sharedMotion!=null
     var progress = 0f
     var tapAccentProgress = 0f
     private val tapAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -368,6 +374,7 @@ private class SwapPreviewView(
         // Other slots and the control area remain visible throughout the exchange.
         val save = canvas.save()
         canvas.clipPath(backdropClip)
+        if(uniformTapMorph)protectedCards.forEach { canvas.clipOutRect(it) }
         canvas.drawColor(Color.BLACK)
         backdrop?.setBounds(0, 0, width, height)
         backdrop?.draw(canvas)
@@ -392,12 +399,12 @@ private class SwapPreviewView(
         }
         if (uniformTapMorph) {
             val pair=sharedMotion
-            if(pair!=null && target!=null && pair.usesSharedClock) {
-                // The certified path is shared with the GPU/RenderThread
-                // backends; preserve full-size source bitmaps and uniform
-                // contain, and clip any protected stationary rail cards.
-                val sharedSave=canvas.save()
-                protectedCards.forEach { canvas.clipOutRect(it) }
+            val sharedSave=canvas.save()
+            protectedCards.forEach { canvas.clipOutRect(it) }
+            if(pair!=null && target!=null) {
+                // Match either the certified or scored snapshot corridor.
+                // Preserve full-size source bitmaps, uniform contain and
+                // every protected stationary rail card.
                 drawSharedMotionFrame(canvas,target,pair.down)
                 drawSharedMotionFrame(canvas,source,pair.up)
                 canvas.restoreToCount(sharedSave)
@@ -409,6 +416,7 @@ private class SwapPreviewView(
             // while the real tasks are moved and their live buffers settle.
             if (target != null) drawUniformMotionFrame(canvas, target, targetBounds, sourceBounds)
             drawUniformMotionFrame(canvas, source, start, targetBounds)
+            canvas.restoreToCount(sharedSave)
             return
         }
         if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)

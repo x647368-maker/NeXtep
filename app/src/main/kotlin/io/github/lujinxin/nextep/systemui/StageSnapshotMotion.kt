@@ -114,10 +114,12 @@ internal object StageSnapshotMotion {
             .coerceAtLeast(0f)/area(b).coerceAtLeast(1f)
         return up.coerceIn(0f,1f) to down.coerceIn(0f,1f)
     }
-    private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float):Float{
+    private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float,
+                      withinBudget:()->Boolean):Float?{
         var minUp=1f;var minDown=1f;var totalUp=0f;var totalDown=0f
         // 31 interior samples catch brief overlap/occlusion between key poses.
         for(i in 1..31){
+            if(!withinBudget())return null
             val (u,d)=visibleFractions(pair,i/32f,screen,excluded)
             minUp=min(minUp,u);minDown=min(minDown,d)
             totalUp+=u;totalDown+=d
@@ -135,7 +137,8 @@ internal object StageSnapshotMotion {
      * dimensions and uniform endpoint scale; no bitmap is resized to score.
      */
     fun pairedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,
-                      screen:Box,excluded:List<Box>):PairFlight?{
+                      screen:Box,excluded:List<Box>,withinBudget:()->Boolean={true}):PairFlight?{
+        if(!withinBudget())return null
         val u=flight(small,main,iw,ih)?:return null
         val d=flight(main,small,ow,oh)?:return null
         val original=PairFlight(u,d)
@@ -148,7 +151,7 @@ internal object StageSnapshotMotion {
         val routeUp=u.copy(width=canonicalWidth,height=canonicalHeight)
         val routeDown=d.copy(width=canonicalWidth,height=canonicalHeight)
         var best=PairFlight(routeUp,routeDown)
-        var bestScore=score(best,screen,excluded,u.arc)
+        var bestScore=score(best,screen,excluded,u.arc,withinBudget)?:return null
         val maxArc=minOf(min(screen.w,screen.h)*.22f,
             min(main.w,main.h)*.34f,hypot(main.cx-small.cx,main.cy-small.cy)*.32f)
         for(factor in floatArrayOf(1f,-1f,2f,-2f,3f,-3f)){
@@ -156,7 +159,7 @@ internal object StageSnapshotMotion {
             for(bias in floatArrayOf(0f,.35f,.70f)){
                 val candidate=PairFlight(routeUp.copy(arc=arc,sizeBias=bias),
                     routeDown.copy(arc=arc,sizeBias=bias))
-                val rating=score(candidate,screen,excluded,u.arc)
+                val rating=score(candidate,screen,excluded,u.arc,withinBudget)?:return null
                 if(rating>bestScore+.0001f){
                     best=candidate;bestScore=rating
                 }
@@ -167,20 +170,26 @@ internal object StageSnapshotMotion {
             d.copy(arc=best.down.arc,sizeBias=best.down.sizeBias))
         // Keep the physical signed route fixed. Score only the crossing-size
         // adjustment against real source dimensions, once on the capture worker.
-        val baseline=(1..31).map{visibleFractions(chosen,it/32f,screen,excluded)}
+        val baseline=(1..31).map{
+            if(!withinBudget())return null
+            visibleFractions(chosen,it/32f,screen,excluded)
+        }
         val minUp=baseline.minOf{it.first};val minDown=baseline.minOf{it.second}
-        if(minUp>=.95f && minDown>=.95f)return chosen
+        if(minUp>=.95f && minDown>=.95f)return chosen.takeIf{withinBudget()}
         var result=chosen;var bestGain=.05f
         for(compactness in floatArrayOf(.12f,.24f)){
             val candidate=PairFlight(chosen.up.copy(crossingCompactness=compactness),
                 chosen.down.copy(crossingCompactness=compactness))
-            val fractions=(1..31).map{visibleFractions(candidate,it/32f,screen,excluded)}
+            val fractions=(1..31).map{
+                if(!withinBudget())return null
+                visibleFractions(candidate,it/32f,screen,excluded)
+            }
             if(fractions.indices.any{fractions[it].first+.001f<baseline[it].first ||
                     fractions[it].second+.001f<baseline[it].second})continue
             val gain=(fractions.minOf{it.first}-minUp)+(fractions.minOf{it.second}-minDown)
             if(gain>bestGain){result=candidate;bestGain=gain}
         }
-        return result
+        return result.takeIf{withinBudget()}
     }
     /** Hardware animator interpolates scalar start/end. For parallel axes
      * use a subpixel terminal delta, then restore exact endpoint on commit.

@@ -3166,11 +3166,14 @@ class NeXtepWindowController(
             targetPreview==null -> "workspace_preview_selected:source_only"
             else -> "workspace_preview_selected:dual"
         })
-        // Final fallback gets one bounded opportunity to reuse the same
-        // certified dual-card geometry; never plan again during a draw.
-        // Missing bounds, source-only, drag, HOME, or a budget miss leave
-        // the previous safe fallback untouched. No extra capture or worker.
-        val sharedDeadline=System.nanoTime()+2_000_000L
+        // Reuse the same certified or scored snapshot corridor during the
+        // final fallback. Keep planning one-shot, with a separate bounded
+        // reserve for the ordinary paired corridor if certification fails.
+        // Missing bounds, source-only, drag, HOME or a budget miss retain
+        // the existing safe fallback; no extra capture, worker or idle work.
+        val planningStart=System.nanoTime()
+        val sharedDeadline=planningStart+2_000_000L
+        val pairedDeadline=planningStart+4_000_000L
         val protectedBounds=mutableListOf<RectF>()
         var protectedGeometryComplete=true
         val sharedMotion=if(animateTap && targetIndex==null && targetPreview!=null &&
@@ -3186,16 +3189,26 @@ class NeXtepWindowController(
                     }
                 }
                 fun box(bounds:RectF)=StageSnapshotMotion.Box(bounds.left,bounds.top,bounds.right,bounds.bottom)
-                if(!protectedGeometryComplete || System.nanoTime()>=sharedDeadline)null
-                else runCatching {
-                    StageSnapshotMotion.sharedFlights(box(from),box(to),
-                        sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,
-                        StageSnapshotMotion.Box(0f,0f,geometry.screenWidth.toFloat(),geometry.screenHeight.toFloat()),
-                        protectedBounds.map(::box)) { System.nanoTime()<sharedDeadline }
-                }.getOrNull()
+                if(!protectedGeometryComplete || System.nanoTime()>=pairedDeadline)null
+                else {
+                    val a=box(from);val z=box(to)
+                    val screen=StageSnapshotMotion.Box(0f,0f,geometry.screenWidth.toFloat(),geometry.screenHeight.toFloat())
+                    val excluded=protectedBounds.map(::box)
+                    runCatching {
+                        val certified=if(System.nanoTime()<sharedDeadline)
+                            StageSnapshotMotion.sharedFlights(a,z,
+                                sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,
+                                screen,excluded){System.nanoTime()<sharedDeadline}
+                            else null
+                        certified ?: StageSnapshotMotion.pairedFlights(a,z,
+                            sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,
+                            screen,excluded){System.nanoTime()<pairedDeadline}
+                    }.getOrNull()
+                }
             }
         } else null
         if(sharedMotion?.usesSharedClock==true)tracePreview("workspace_preview_shared_certified_route")
+        else if(sharedMotion!=null)tracePreview("workspace_preview_shared_snapshot_corridor")
         val previewSlots = listOfNotNull(sourceSlot, targetSlot)
         val y700NativeHandoff =
             io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
@@ -3234,7 +3247,7 @@ class NeXtepWindowController(
                 freezeGeometry = drag == null && !animateTap,
                 uniformTapMorph = animateTap,
                 sharedMotion = sharedMotion,
-                protectedBounds = if(sharedMotion!=null) protectedBounds else emptyList(),
+                protectedBounds = if(protectedGeometryComplete) protectedBounds else emptyList(),
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.

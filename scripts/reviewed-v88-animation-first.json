@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "346741144a09bb656b7e6a50bb1d280ab559015e",
+      "reviewed_blob_sha1": "ed87ede8d60e63e490c785099b6bae3e00f7b937",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -309,6 +309,22 @@
         {
           "before": "                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())\n                }\n            }\n        },avoidBounds=menuAvoidBounds())\n    }",
           "after": "                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())\n                }\n            }\n        },avoidBounds=menuAvoidBounds(),submenuLabels=entries.mapIndexed { position,(_,state)->\n            \"选择小窗 ${position+1}：${state.component.packageName}\"\n        }.toSet())\n    }"
+        },
+        {
+          "before": "        // Final fallback gets one bounded opportunity to reuse the same\n        // certified dual-card geometry; never plan again during a draw.\n        // Missing bounds, source-only, drag, HOME, or a budget miss leave\n        // the previous safe fallback untouched. No extra capture or worker.\n        val sharedDeadline=System.nanoTime()+2_000_000L",
+          "after": "        // Reuse the same certified or scored snapshot corridor during the\n        // final fallback. Keep planning one-shot, with a separate bounded\n        // reserve for the ordinary paired corridor if certification fails.\n        // Missing bounds, source-only, drag, HOME or a budget miss retain\n        // the existing safe fallback; no extra capture, worker or idle work.\n        val planningStart=System.nanoTime()\n        val sharedDeadline=planningStart+2_000_000L\n        val pairedDeadline=planningStart+4_000_000L"
+        },
+        {
+          "before": "                if(!protectedGeometryComplete || System.nanoTime()>=sharedDeadline)null\n                else runCatching {\n                    StageSnapshotMotion.sharedFlights(box(from),box(to),\n                        sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,\n                        StageSnapshotMotion.Box(0f,0f,geometry.screenWidth.toFloat(),geometry.screenHeight.toFloat()),\n                        protectedBounds.map(::box)) { System.nanoTime()<sharedDeadline }\n                }.getOrNull()",
+          "after": "                if(!protectedGeometryComplete || System.nanoTime()>=pairedDeadline)null\n                else {\n                    val a=box(from);val z=box(to)\n                    val screen=StageSnapshotMotion.Box(0f,0f,geometry.screenWidth.toFloat(),geometry.screenHeight.toFloat())\n                    val excluded=protectedBounds.map(::box)\n                    runCatching {\n                        val certified=if(System.nanoTime()<sharedDeadline)\n                            StageSnapshotMotion.sharedFlights(a,z,\n                                sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,\n                                screen,excluded){System.nanoTime()<sharedDeadline}\n                            else null\n                        certified ?: StageSnapshotMotion.pairedFlights(a,z,\n                            sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,\n                            screen,excluded){System.nanoTime()<pairedDeadline}\n                    }.getOrNull()\n                }"
+        },
+        {
+          "before": "        if(sharedMotion?.usesSharedClock==true)tracePreview(\"workspace_preview_shared_certified_route\")",
+          "after": "        if(sharedMotion?.usesSharedClock==true)tracePreview(\"workspace_preview_shared_certified_route\")\n        else if(sharedMotion!=null)tracePreview(\"workspace_preview_shared_snapshot_corridor\")"
+        },
+        {
+          "before": "                protectedBounds = if(sharedMotion!=null) protectedBounds else emptyList(),",
+          "after": "                protectedBounds = if(protectedGeometryComplete) protectedBounds else emptyList(),"
         }
       ]
     },
@@ -490,9 +506,13 @@
         {
           "before": "                !StageTransientTapPolicy.canHandoff(flightDone,moveAck))return",
           "after": "                !(StageTransientTapPolicy.canHandoff(flightDone,moveAck) ||\n                    StageTransientTapPolicy.canRecoverUnconfirmedTerminal(moveStarted,moveAck,terminalReceiptMissing)))return"
+        },
+        {
+          "before": "            return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,\n                outgoing.width,outgoing.height,screen,obstacles)",
+          "after": "            return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,\n                outgoing.width,outgoing.height,screen,obstacles) {\n                deadline==null || SystemClock.uptimeMillis()<deadline\n            }"
         }
       ],
-      "reviewed_blob_sha1": "463b15d9ef5b628f7d79477300bfc0a6ff2e2571"
+      "reviewed_blob_sha1": "5919bb7cf7089a6ee5cdd96b3e640333c9560967"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
       "previous_blob_sha1": "35cf704cfcece47001b45911dad3ea209e3e3155",
@@ -1168,12 +1188,48 @@
         {
           "before": "    data class PairFlight(val up:Flight,val down:Flight)",
           "after": "    data class PairFlight(val up:Flight,val down:Flight){\n        val usesSharedClock:Boolean get()=up.sharedPlan!=null && up.sharedPlan===down.sharedPlan\n    }\n    // Same admission and clock as GPU; full bitmap contain is not dynamic GPU crop.\n    fun sharedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,\n                      screen:Box,excluded:List<Box>,withinBudget:()->Boolean):PairFlight? {\n        val u=flight(small,main,iw,ih)?:return null\n        val d=flight(main,small,ow,oh)?:return null\n        if(!withinBudget() || !screen.valid())return null\n        fun convert(b:Box)=StageLiveSurfaceFlightGeometry.Box(b.left,b.top,b.right,b.bottom)\n        val a=convert(small);val z=convert(main);val view=convert(screen)\n        val obstacles=excluded.map(::convert)\n        val ic=StageLiveSurfaceFlightGeometry.Crop(0,0,iw,ih)\n        val oc=StageLiveSurfaceFlightGeometry.Crop(0,0,ow,oh)\n        val covered=StageLiveSurfaceFlightGeometry.canUseCoveredFlight(a,z,ic,oc,obstacles)\n        val plan=StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)\n            ?: (if(covered && withinBudget())\n                StageAdaptiveCoveredRailRoute.choose(a,z,ic,oc,view,obstacles,withinBudget) else null)\n            ?:return null\n        // Reject any change to the existing snapshot endpoints.\n        fun matches(box:StageLiveSurfaceFlightGeometry.Box,pose:Pose,w:Int,h:Int):Boolean =\n            abs(box.cx-pose.cx)<=.02f && abs(box.cy-pose.cy)<=.02f &&\n                abs(min(box.width/w,box.height/h)-pose.scale)*max(w,h)<=.02f\n        val first=plan.at(0f);val last=plan.at(1f)\n        if(!matches(first.incoming,u.start,iw,ih)||!matches(last.incoming,u.end,iw,ih)||\n           !matches(first.outgoing,d.start,ow,oh)||!matches(last.outgoing,d.end,ow,oh)||!withinBudget())return null\n        return PairFlight(u.copy(sharedPlan=plan,sharedIncoming=true),d.copy(sharedPlan=plan))\n    }"
+        },
+        {
+          "before": "private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float):Float{",
+          "after": "private fun score(pair:PairFlight,screen:Box,excluded:List<Box>,baseArc:Float,\n                      withinBudget:()->Boolean):Float?{"
+        },
+        {
+          "before": "        for(i in 1..31){\n            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)",
+          "after": "        for(i in 1..31){\n            if(!withinBudget())return null\n            val (u,d)=visibleFractions(pair,i/32f,screen,excluded)"
+        },
+        {
+          "before": "    fun pairedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,\n                      screen:Box,excluded:List<Box>):PairFlight?{\n        val u=flight(small,main,iw,ih)?:return null",
+          "after": "    fun pairedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,\n                      screen:Box,excluded:List<Box>,withinBudget:()->Boolean={true}):PairFlight?{\n        if(!withinBudget())return null\n        val u=flight(small,main,iw,ih)?:return null"
+        },
+        {
+          "before": "        var bestScore=score(best,screen,excluded,u.arc)",
+          "after": "        var bestScore=score(best,screen,excluded,u.arc,withinBudget)?:return null"
+        },
+        {
+          "before": "                val rating=score(candidate,screen,excluded,u.arc)",
+          "after": "                val rating=score(candidate,screen,excluded,u.arc,withinBudget)?:return null"
+        },
+        {
+          "before": "        val baseline=(1..31).map{visibleFractions(chosen,it/32f,screen,excluded)}",
+          "after": "        val baseline=(1..31).map{\n            if(!withinBudget())return null\n            visibleFractions(chosen,it/32f,screen,excluded)\n        }"
+        },
+        {
+          "before": "        if(minUp>=.95f && minDown>=.95f)return chosen",
+          "after": "        if(minUp>=.95f && minDown>=.95f)return chosen.takeIf{withinBudget()}"
+        },
+        {
+          "before": "            val fractions=(1..31).map{visibleFractions(candidate,it/32f,screen,excluded)}",
+          "after": "            val fractions=(1..31).map{\n                if(!withinBudget())return null\n                visibleFractions(candidate,it/32f,screen,excluded)\n            }"
+        },
+        {
+          "before": "        return result\n    }\n    /** Hardware animator",
+          "after": "        return result.takeIf{withinBudget()}\n    }\n    /** Hardware animator"
         }
       ],
-      "reviewed_blob_sha1": "6f3940e489b8db82db24f008def34e3ec58bcb0f"
+      "reviewed_blob_sha1": "cfd1bc4a4a114b4ef4d98aa5d169435cf36bbb56"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
-      "reviewed_blob_sha1": "62bba009150b6c38c45d8478fb5e3db532364608",
+      "reviewed_blob_sha1": "aa7ba7c290b647d09736f20d637817446b92df2a",
       "previous_blob_sha1": "00feec10aa9bdf0666b650f3878fd2bd0b078ee7",
       "patches": [
         {
@@ -1239,6 +1295,30 @@
         {
           "before": "        overlay = null\n        completion = null\n        if (previous != null) {",
           "after": "        overlay = null\n        completion = null\n        val attachment=detachListener\n        detachListener=null\n        if(attachment!=null)previous?.removeOnAttachStateChangeListener(attachment)\n        if (previous != null) {"
+        },
+        {
+          "before": "            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null && it.usesSharedClock },",
+          "after": "            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },"
+        },
+        {
+          "before": "            interpolator = if(preview.usesSharedRoute) android.animation.TimeInterpolator { it }\n                else PathInterpolator(0.22f, 0f, 0.12f, 1f)",
+          "after": "            interpolator = when {\n                preview.usesSharedRoute -> android.animation.TimeInterpolator { it }\n                // Match the snapshot backend clock when the same bounded\n                // non-certified paired corridor is admitted.\n                preview.usesPairedRoute -> PathInterpolator(.32f,.08f,.36f,1f)\n                else -> PathInterpolator(0.22f, 0f, 0.12f, 1f)\n            }"
+        },
+        {
+          "before": "    val usesSharedRoute get()=sharedMotion?.usesSharedClock==true\n    var progress = 0f",
+          "after": "    val usesSharedRoute get()=sharedMotion?.usesSharedClock==true\n    val usesPairedRoute get()=sharedMotion!=null\n    var progress = 0f"
+        },
+        {
+          "before": "        canvas.clipPath(backdropClip)\n        canvas.drawColor(Color.BLACK)",
+          "after": "        canvas.clipPath(backdropClip)\n        if(uniformTapMorph)protectedCards.forEach { canvas.clipOutRect(it) }\n        canvas.drawColor(Color.BLACK)"
+        },
+        {
+          "before": "            if(pair!=null && target!=null && pair.usesSharedClock) {\n                // The certified path is shared with the GPU/RenderThread\n                // backends; preserve full-size source bitmaps and uniform\n                // contain, and clip any protected stationary rail cards.\n                val sharedSave=canvas.save()\n                protectedCards.forEach { canvas.clipOutRect(it) }",
+          "after": "            val sharedSave=canvas.save()\n            protectedCards.forEach { canvas.clipOutRect(it) }\n            if(pair!=null && target!=null) {\n                // Match either the certified or scored snapshot corridor.\n                // Preserve full-size source bitmaps, uniform contain and\n                // every protected stationary rail card."
+        },
+        {
+          "before": "            drawUniformMotionFrame(canvas, source, start, targetBounds)\n            return",
+          "after": "            drawUniformMotionFrame(canvas, source, start, targetBounds)\n            canvas.restoreToCount(sharedSave)\n            return"
         }
       ]
     },
@@ -1565,6 +1645,16 @@
         {
           "before": "台前调度 v0.9.73-dev（versionCode 88）｜88版动画优先深度优化\n\n本版从87版真机测试基线独立建立开发线。87版保留，不在原分支上反复打补丁。\n\n本版严格按以下顺序开发：\n\n1. **动画引擎（最高优先级）**\n   - 真实任务窗口交换优先使用双任务 SurfaceControl/GPU 飞行动画；保留RenderThread短时任务画面动画与现有工作区预览作为有界回退。\n   - 统一主窗/小窗运动方向、轨迹、速度曲线、比例和圆角连续性，重点检查首帧响应、掉帧、闪烁、黑帧、错位及动画结束后的真实画面交接。\n   - 覆盖快速连续交换、任务身份变化、取消、中断、关闭、替换、工作区退出、异常回滚和全部图层/Bitmap/Animator资源释放。\n   - 对真实任务迁移耗时、动画帧间隔、GPU提交/合成、功耗与温升建立可核验记录；事务ACK不冒充可见像素验收。\n\n2. **二级页面**\n   - 修复二级页面只显示标题、内容被压缩裁切、滚动区域错误及菜单遮挡真实任务的问题。\n   - 保证每个分类的完整功能可见、可操作，空间不足时使用合理滚动而不是压缩到不可用高度。\n\n3. **首页视觉与菜单重构**\n   - 恢复各功能独立彩色图标。\n   - 按已确认设计恢复左侧一级分类常驻、右侧二级内容切换的液态玻璃双栏菜单。\n   - 统一手机、折叠屏和平板的视觉语义，不擅自改变已确认的功能归属。\n\n4. **侧栏恢复**\n   - 扩大透明触控热区，保留白色竖条视觉提示。\n   - 点击及边缘滑动均可可靠恢复；不得抢占主窗操作或系统返回手势；展开后主窗及时重新布局。\n\n5. **最后进行全机型回归**\n   - 一加 Ace 7 Pro、OPPO Find N5 折叠/展开、联想 Y700 横/竖屏及其他既定适配设备。\n   - 前四项形成稳定候选后统一回归，不以单机或模拟器通过代替OEM真机验收。\n\n**继承与保护：** 保留87版已验收的主窗/四小窗几何、真实任务与输入映射、工作组、快捷栏、通知栏交互、原包名、原签名和低功耗约束。不降低画质、不减少小窗、不冻结第三方进程、不以固定截图替代真实任务。\n\n**当前状态：开发中。** 上述项目是88版开发目标，不代表已实现或验收。未完成CI、专项测试及真机验收前，不发布88版安装包。\n",
           "after": "台前调度 v0.9.74-dev（versionCode 89）｜89版动画与液态玻璃菜单测试候选\n\n本版在88版独立冻结基线上继续开发，用于原签名真机体验验收，不是公开稳定版。\n\n1. **窗口交换动画**\n   - 优化顶部、左侧、右侧排列下的成对轨迹约束、等比画面运动和端点一致性；可用时优先真实 GPU 镜像，保留原有安全回退。\n   - 加强首帧及末帧事务回执、过期任务身份拒绝、动画取消、宿主分离和资源释放保护。事务回执不等同于第三方应用新画面已显示。\n   - 在条件满足且缓存有效时使用实际壁纸纹理遮罩，避免原固定深色遮罩造成的突兀色块；壁纸本体先显示，纹理准备独立执行。仅回调超时允许一次空闲恢复，失败时保留安全降级。\n\n2. **液态玻璃菜单**\n   - 主窗菜单按窗口布局、窗口管理、快捷栏与显示、其他功能四类组织。在有足够安全空间时保留左侧分类和右侧内容，使用独立圆角半透明玻璃、白色线性图标和蓝色选中态。\n   - 按真实布局状态标记顶部、左侧、右侧及主窗显示策略；动态测量分类文字，空间不足时使用可滚动的紧凑菜单，不移动真实窗口来制造空间。\n   - 窗口管理接入原主小窗交换、顺序调整、侧栏展收机制。快捷栏管理复用现有添加、固定、排序、移除及恢复设置，支持管理已保存但当前屏幕未显示的固定应用；归并重复入口。\n   - 保留已确认的首页、二级设置页面、原窗口几何和快捷栏本体。未增加独立窗口尺寸、圆角或快捷栏位置设置。\n\n3. **稳定性与验收**\n   - 保留原包名、原证书要求、更新校验、工作组、通知栏交互及已通过的历史功能。未减少真实小窗数量或降低任务画质。\n   - 自动化覆盖几何、真实模拟器 GPU 像素、取消和释放、双栏菜单点击及生产者身份保护。历史测试中曾出现纹理回调超时和运动像素取样失败；不得以编译通过代替真机体验。\n   - 一加 Ace 7 Pro、OPPO Find N5/N3、联想 Y700 等真实设备的流畅度、黑影、任务交接、玻璃质感和功耗仍须验收；不承诺所有 ROM 上完全无异常。\n\n**当前状态：私下测试候选。** 版本元数据已统一；仅在最终构建验证、原证书验签后交付测试，不自动发布或推送在线更新。\n"
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotionTest.kt": {
+      "previous_blob_sha1": "dff6dd55349ca6563aeeb86dd72c32bb9c23e289",
+      "reviewed_blob_sha1": "4aa5e21bec681db41df1cd90811daf2756422c97",
+      "patches": [
+        {
+          "before": "    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){",
+          "after": "    @Test fun boundedPairedCorridorNeverReturnsAPartialRoute(){\n        val screen=b(0f,0f,1080f,2354f)\n        val small=b(30f,312f,246f,732f)\n        val main=b(264f,390f,1074f,2136f)\n        val others=listOf(b(30f,756f,246f,1176f),b(30f,1200f,246f,1620f))\n        val expected=checkNotNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others))\n        var probes=0\n        assertNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){++probes<5})\n        assertEquals(5,probes)\n        assertNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){false})\n        val bounded=checkNotNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){true})\n        assertEquals(expected,bounded)\n        for(i in 0..120){\n            assertEquals(expected.up.pose(i/120f),bounded.up.pose(i/120f))\n            assertEquals(expected.down.pose(i/120f),bounded.down.pose(i/120f))\n        }\n    }\n    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){"
         }
       ]
     }
