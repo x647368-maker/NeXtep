@@ -27,17 +27,21 @@ import java.util.concurrent.TimeUnit
 class LivePreviewInstrumentation : Instrumentation() {
     private var nativeMirrorOnly = false
     private var diagnosticOnly = false
+    private var nativeFlightOnly = false
+    private var pairedFlightOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
         diagnosticOnly = arguments?.getString("diagnosticOnly") == "true"
+        nativeFlightOnly = arguments?.getString("nativeFlightOnly") == "true"
+        pairedFlightOnly = arguments?.getString("pairedFlightOnly") == "true"
         start()
     }
     override fun onStart() {
         val result=Bundle()
         try {
+            check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
             if (diagnosticOnly) {
-                check(!nativeMirrorOnly) { "Choose exactly one dedicated instrumentation mode" }
                 val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
                 val status=StageIssueUiRegression(this).run(out)
                 check(status.startsWith("PASS actual Android diagnostics"))
@@ -52,6 +56,15 @@ class LivePreviewInstrumentation : Instrumentation() {
             waitForIdleSync()
             val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
             val checks=mutableListOf<String>()
+            if (nativeFlightOnly || pairedFlightOnly) {
+                val destination=if(pairedFlightOnly)File(out,"paired-flight").apply { mkdirs() } else out
+                val status=StageNativeFlightRuntimeRegression(this).run(activity,root,destination,pairedFlightOnly)
+                val marker=if(pairedFlightOnly)"PAIRED_FLIGHT_PASS" else "NATIVE_FLIGHT_PASS"
+                result.putString("stream",status+"\n"+marker+"\n")
+                runOnMainSync { activity.finish() }
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             if (nativeMirrorOnly) {
                 // The API37 job tests the actual compositor primitive, NOT
                 // the full legacy API35 suite. SKIP is a failure in this mode.

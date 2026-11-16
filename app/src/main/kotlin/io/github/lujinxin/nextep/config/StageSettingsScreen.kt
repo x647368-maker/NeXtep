@@ -349,8 +349,11 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10),0,dp(10),0); minimumHeight = dp(StageHomeLayout.HEADER_DP)
         }
+        if(wideLayout) header.addView(ImageView(activity).apply {setImageResource(R.drawable.ic_atomic_workbench)},
+            LinearLayout.LayoutParams(dp(30),dp(30)).apply{marginEnd=dp(8)})
         val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         words.addView(label("台前调度", if (wideLayout) 21f else 30f).apply { typeface = Typeface.DEFAULT_BOLD })
+        if(wideLayout) words.addView(label("Atomic Workbench",10f,secondary))
         stateText = label(homeState(), 12f, secondary).apply { setPadding(0,dp(6),0,0) }
         words.addView(stateText)
         header.addView(words, LinearLayout.LayoutParams(0,-2,1f))
@@ -451,9 +454,15 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         }
         footer.addView(ImageView(activity).apply { setImageResource(R.drawable.ic_atomic_workbench) },
             LinearLayout.LayoutParams(dp(32),dp(32)).apply { marginEnd=dp(10) })
-        footer.addView(label("台前调度 · Atomic Workbench\nZMW小武 × GPT\n基于 NeXtep 二次开发 · $versionName", 11f, secondary).apply {
-            setLineSpacing(dp(3).toFloat(),1f)
-        },LinearLayout.LayoutParams(-2,-2,0f))
+        val identity=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL}
+        identity.addView(label("台前调度 · Atomic Workbench",12f).apply{typeface=Typeface.DEFAULT_BOLD})
+        identity.addView(label("二次开发：ZMW小武 × GPT",11f,secondary))
+        identity.addView(label("基于 NeXtep 二次开发",10f,secondary))
+        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))
+        footer.addView(label(versionName,11f,secondary).apply{
+            gravity=Gravity.CENTER;setPadding(dp(8),dp(5),dp(8),dp(5))
+            background=GradientDrawable().apply{setColor(cardColor);cornerRadius=dp(14).toFloat()}
+        },LinearLayout.LayoutParams(-2,-2).apply{marginStart=dp(6)})
         root.addView(footer)
     }
     private fun windows(root: LinearLayout) {

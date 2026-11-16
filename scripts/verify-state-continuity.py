@@ -528,7 +528,13 @@ assert 'frame.leash!==stamp.leash' in _pr78_writer and 'frame.token!=stamp.token
 assert 'frame.displayId!=expectedDisplay' in _pr78_writer
 assert 'StageHeldEndpointPolicy.fit(' in _pr78_writer
 assert 'transaction.setVisibility' not in _pr78_writer and 'transaction.setAlpha' not in _pr78_writer
-assert 'if (concurrentHandoff && frameComplete) armHeldEndpointWriter()' in _pr78_flight
+# Preserve the exact historic condition on the reviewed prior source.
+_pr78_prior_flight=undo_pr92('app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt',_pr78_flight.encode('utf-8')).decode('utf-8')
+assert 'if (concurrentHandoff && frameComplete) armHeldEndpointWriter()' in _pr78_prior_flight
+# An unconfirmed/unmasked fallback must never arm the held endpoint writer.
+assert 'if (concurrentHandoff && frameComplete && !unmaskedMove) armHeldEndpointWriter()' in _pr78_flight
+assert 'StageConcurrentNativeTrialPolicy.sourceIdentityReady(' in _pr78_flight
+assert 'StageConcurrentNativeTrialPolicy.movePresentation(' in _pr78_flight
 assert _pr78_flight.count('disarmHeldEndpointWriter()')>=3
 
 # PR77: only exact existing Shell-observed destination coordinates.
@@ -694,7 +700,15 @@ for reviewed_path in pr67_review:
 _pr67_geometry=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt').read_text()
 _pr67_controller=(root/'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt').read_text()
 assert 'fun intersectionArea(' in _pr67_geometry
-assert 'val baseline=otherSlots.map' in _pr67_geometry
+# Preserve the exact prior per-source overlap allowance. The current
+# proof is continuous over both phases rather than a 24-point sample.
+_pr67_prior_geometry=undo_pr92('app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt',_pr67_geometry.encode('utf-8')).decode('utf-8')
+assert 'val baseline=otherSlots.map' in _pr67_prior_geometry
+assert 'val limit=peakSweptOverlap(start,start,obstacle)+1.0' in _pr67_geometry
+assert 'peakSweptOverlap(start,middle,obstacle)<=limit' in _pr67_geometry
+assert 'peakSweptOverlap(middle,end,obstacle)<=limit' in _pr67_geometry
+assert 'return safe(small,main,smallCropWidth,smallCropHeight)' in _pr67_geometry
+assert 'safe(main,small,mainCropWidth,mainCropHeight)' in _pr67_geometry
 assert 'railLeftRight = small.cx < main.left' in _pr67_geometry
 assert _pr67_controller.count('!is SlotState.Occupied') >= 2
 assert _pr67_controller.count('otherSlotBounds=slotWindows.mapIndexedNotNull') == 2

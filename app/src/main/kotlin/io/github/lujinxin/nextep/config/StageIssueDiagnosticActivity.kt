@@ -46,6 +46,9 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
     private lateinit var pageSubtitle: TextView
     private lateinit var scopeHeading: TextView
     private lateinit var scope: LinearLayout
+    private lateinit var scopeHost: LinearLayout
+    private lateinit var bodyHost: LinearLayout
+    private lateinit var timingCard: LinearLayout
     private var advancedExpanded = false
     private lateinit var advancedControl: Button
     private lateinit var advancedBody: LinearLayout
@@ -113,8 +116,9 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         val background = Color.parseColor(if (dark) "#141519" else "#F3F5FA")
         val body=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
-            setPadding(dp(20),dp(18),dp(20),dp(34))
+            setPadding(dp(20),dp(12),dp(20),dp(26))
         }
+        bodyHost=body
         fun line(label:String,size:Float=14f)=TextView(this).apply {
             text=label
             textSize=size
@@ -123,9 +127,9 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         }
         fun card(): LinearLayout = LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
-            setPadding(dp(16),dp(12),dp(16),dp(12))
+            setPadding(dp(16),dp(10),dp(16),dp(10))
             this.background=GradientDrawable().apply { setColor(surface);cornerRadius=dp(22).toFloat() }
-            body.addView(this,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(14)})
+            body.addView(this,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(10)})
         }
         val top=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
         top.addView(line("‹",32f).apply {
@@ -137,6 +141,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         pageSubtitle=line("正常使用 · 记录真实事件 · 生成本机报告")
         body.addView(pageSubtitle)
         val scopeCard=card()
+        scopeHost=scopeCard
         scopeHeading=line("诊断范围",18f).apply {typeface=Typeface.DEFAULT_BOLD}
         scopeCard.addView(scopeHeading)
         scopeCard.addView(line("蓝色勾表示纳入诊断范围，不代表测试通过",12f))
@@ -156,11 +161,9 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
                 advancedExpanded=!advancedExpanded;renderAdvanced()
             }
         }
-        scopeCard.addView(advancedControl,LinearLayout.LayoutParams(-1,-2))
         advancedBody=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
         instruction=line("")
         advancedBody.addView(instruction)
-        scopeCard.addView(advancedBody,LinearLayout.LayoutParams(-1,-2))
         renderAdvanced()
         category.onItemSelectedListener=object:AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent:AdapterView<*>?,view:View?,position:Int,id:Long) {
@@ -173,6 +176,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         }
 
         val timing=card()
+        timingCard=timing
         timing.addView(line("诊断时长（默认15分钟）",16f).apply {typeface=Typeface.DEFAULT_BOLD})
         val segments=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
         for ((index,value) in durationValues.withIndex()) {
@@ -188,7 +192,6 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         timing.addView(line("到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。"))
         val controls=card()
         status=line("")
-        controls.addView(status)
         startButton=Button(this).apply{
             text="开始诊断";isAllCaps=false
             this.background=GradientDrawable().apply {setColor(Color.rgb(15,103,241));cornerRadius=dp(26).toFloat()}
@@ -198,6 +201,11 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         stopButton=Button(this).apply{text="提前结束并生成报告";setOnClickListener{finishTest("用户提前结束")}}
         for (b in listOf(startButton,markButton,stopButton))
             controls.addView(b,LinearLayout.LayoutParams(-1,-2))
+        controls.addView(status)
+        // Advanced details remain collapsed and reachable below the primary action.
+        val details=card()
+        details.addView(advancedControl,LinearLayout.LayoutParams(-1,-2))
+        details.addView(advancedBody,LinearLayout.LayoutParams(-1,-2))
 
         val reportCard=card()
         reportCard.addView(line("问题描述（可选，最多400字）",16f))
@@ -422,6 +430,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         renderDuration()
         val id=if(active)session.selectedCategory() else chosenCategory()
         showScope(id)
+        placeTiming(id)
         startButton.visibility=if(active||pending) View.GONE else View.VISIBLE
         markButton.visibility=if(active) View.VISIBLE else View.GONE
         stopButton.visibility=if(active) View.VISIBLE else View.GONE
@@ -446,6 +455,21 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             b.alpha=if(enabled||b.isSelected) 1f else .65f
         }
     }
+    // Only reparent the existing duration controls when the visible mode changes.
+    // The selected value, callbacks, token and deadline are untouched.
+    private fun placeTiming(id:String?) {
+        if(!::timingCard.isInitialized || !::scopeHost.isInitialized)return
+        val comprehensive=StageIssueTestCatalog.find(id).id=="all"
+        val target=if(comprehensive) scopeHost else bodyHost
+        if(timingCard.parent===target)return
+        (timingCard.parent as? android.view.ViewGroup)?.removeView(timingCard)
+        val density=resources.displayMetrics.density
+        fun dp(n:Int)=(n*density).toInt()
+        val index=if(comprehensive) scopeHost.indexOfChild(scope) else bodyHost.indexOfChild(scopeHost)+1
+        timingCard.setPadding(dp(if(comprehensive) 0 else 16),dp(10),dp(if(comprehensive) 0 else 16),dp(10))
+        target.addView(timingCard,index.coerceIn(0,target.childCount),
+            LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(if(comprehensive) 0 else 10)})
+    }
     private fun showScope(id:String?){
         if(!::scope.isInitialized||!::instruction.isInitialized)return
         val selected=StageIssueTestCatalog.find(id)
@@ -466,7 +490,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             },LinearLayout.LayoutParams(-1,dp(1).coerceAtLeast(1)).apply {marginStart=dp(54)})
             val row=LinearLayout(this).apply {
                 orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
-                minimumHeight=dp(62);setPadding(0,dp(9),0,dp(9))
+                minimumHeight=dp(58);setPadding(0,dp(7),0,dp(7))
             }
             val icon=FrameLayout(this).apply {
                 background=GradientDrawable().apply {
@@ -476,7 +500,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
                 addView(StageSettingsIcon(this@StageIssueDiagnosticActivity,item.icon,item.tint),
                     FrameLayout.LayoutParams(dp(26),dp(26),Gravity.CENTER))
             }
-            row.addView(icon,LinearLayout.LayoutParams(dp(46),dp(46)).apply{marginEnd=dp(13)})
+            row.addView(icon,LinearLayout.LayoutParams(dp(42),dp(42)).apply{marginEnd=dp(12)})
             val words=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
             words.addView(TextView(this).apply{text=item.title;textSize=17f;setTextColor(ink);typeface=Typeface.DEFAULT_BOLD})
             if(item.description.isNotBlank())words.addView(TextView(this).apply{

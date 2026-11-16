@@ -7,6 +7,70 @@ class StageLiveSurfaceFlightGeometryTest {
     private fun b(l:Float,t:Float,r:Float,z:Float) =
         StageLiveSurfaceFlightGeometry.Box(l,t,r,z)
 
+    @Test fun unifiedPhaseCurveIsMonotonicSymmetricAndSmoothAtJoins() {
+        val g=StageLiveSurfaceFlightGeometry
+        assertEquals(0f,g.phaseEase(0f),0f)
+        assertEquals(1f,g.phaseEase(1f),0f)
+        assertEquals(0f,g.phaseEase(Float.NaN),0f)
+        assertEquals(0f,g.phaseEase(-1f),0f)
+        assertEquals(1f,g.phaseEase(2f),0f)
+        var previous=0f
+        for(i in 0..10000) {
+            val t=i/10000f
+            val p=g.phaseEase(t)
+            assertTrue(p in 0f..1f && p>=previous)
+            assertEquals(1f,p+g.phaseEase(1f-t),.000001f)
+            previous=p
+        }
+        for(h in listOf(.01f,.005f,.0025f,.00125f)) {
+            assertTrue(g.phaseEase(h)/(h*h)<.1f)
+            assertTrue((1f-g.phaseEase(1f-h))/(h*h)<.11f)
+        }
+    }
+    @Test fun reverseRailFlightsUseSameGeometryAtOppositeTimes() {
+        val g=StageLiveSurfaceFlightGeometry
+        val main=b(300f,220f,1300f,1220f)
+        for(small in listOf(b(20f,450f,220f,650f),b(1380f,500f,1580f,700f),
+            b(530f,10f,730f,210f))) {
+            for(i in 0..1000) {
+                val p=i/1000f
+                val up=g.railCorridorFlight(small,main,400,800,p)!!
+                val down=g.railCorridorFlight(main,small,400,800,1f-p)!!
+                assertEquals(up.box.cx,down.box.cx,.003f)
+                assertEquals(up.box.cy,down.box.cy,.003f)
+                assertEquals(up.scale,down.scale,.00001f)
+            }
+        }
+    }
+
+    @Test fun continuousSweptOverlapFindsInteriorExtrema() {
+        val g=StageLiveSurfaceFlightGeometry
+        assertEquals(16.0,g.peakSweptOverlap(
+            b(0f,0f,4f,4f),b(1000f,0f,1004f,4f),b(22f,0f,26f,4f)),.000001)
+        assertEquals(36.0,g.peakSweptOverlap(
+            b(0f,0f,2f,10f),b(0f,0f,10f,2f),b(0f,0f,12f,12f)),.000001)
+        assertEquals(0.0,g.peakSweptOverlap(
+            b(0f,0f,4f,4f),b(1000f,0f,1004f,4f),b(20f,10f,30f,14f)),.000001)
+    }
+
+    @Test fun corridorRejectsBriefObstructionMissedByOldTwentyFourSamples() {
+        val g=StageLiveSurfaceFlightGeometry
+        val small=b(4f,4f,14f,14f)
+        val main=b(1000f,0f,1100f,100f)
+        // Between the first two interior samples of the unified phase curve.
+        val blocker=b(50f,4f,54f,8f)
+        fun overlap(card:StageLiveSurfaceFlightGeometry.Box):Float =
+            (minOf(card.right,blocker.right)-maxOf(card.left,blocker.left)).coerceAtLeast(0f)*
+                (minOf(card.bottom,blocker.bottom)-maxOf(card.top,blocker.top)).coerceAtLeast(0f)
+        for(i in 0..24) {
+            val p=i/24f
+            assertTrue(overlap(g.railCorridorFlight(small,main,10,10,p)!!.box)<=1f)
+            assertTrue(overlap(g.railCorridorFlight(main,small,100,100,p)!!.box)<=1f)
+        }
+        for(n in listOf(4,24,80,240))
+            assertFalse(g.corridorAvoidsOtherSlots(small,main,10,10,listOf(blocker),n))
+    }
+
     @Test fun twoLiveCompositorLayersMustMoveInOppositeDirections() {
         val small=b(30f,240f,280f,690f)
         val main=b(310f,160f,1070f,2360f)

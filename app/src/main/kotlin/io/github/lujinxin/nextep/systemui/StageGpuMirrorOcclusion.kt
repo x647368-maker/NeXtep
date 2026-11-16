@@ -52,15 +52,18 @@ internal class StageGpuMirrorOcclusion private constructor(
                 fun layer(name: String): SurfaceControl {
                     val builder = SurfaceControl.Builder().setName(name)
                     colorLayerMethod.invoke(builder)
-                    return builder.build().also {
-                        check(it.isValid) { "Color layer unavailable" }
+                    val control=builder.build()
+                    if (!control.isValid) {
+                        runCatching { control.release() }
+                        error("Color layer unavailable")
                     }
+                    return control
                 }
                 first = layer("AtomicSwapOriginalSlotCover")
                 val second = layer("AtomicSwapOriginalMainCover")
                 StageGpuMirrorOcclusion(checkNotNull(first), second)
             }.getOrElse {
-                first?.release()
+                runCatching { first?.release() }
                 null
             }
         }
@@ -109,7 +112,11 @@ internal class StageGpuMirrorOcclusion private constructor(
     }
 
     fun release() {
-        sourceCover.release()
-        mainCover.release()
+        // Even if one vendor handle throws, the other cover must be released.
+        try {
+            sourceCover.release()
+        } finally {
+            mainCover.release()
+        }
     }
 }
