@@ -712,9 +712,17 @@
         {
           "before": "            if(valid)return Plan(segments,bound,trim)",
           "after": "            if(valid)return if(withinBudget())Plan(segments,bound,trim) else null"
+        },
+        {
+          "before": "        fun at(t:Float):PairBox = mix(mix(a,control,t),mix(control,b,t),t)",
+          "after": "        // Exactly the same de Casteljau scalar operations, but construct only\n        // the final pair/boxes. Do not allocate two intermediate pairs per\n        // display frame or change the certified curve's floating-point order.\n        fun at(t:Float):PairBox = PairBox(\n            quadratic(a.incoming,control.incoming,b.incoming,t),\n            quadratic(a.outgoing,control.outgoing,b.outgoing,t))"
+        },
+        {
+          "before": "    private fun mix(a:Box,b:Box,t:Float):Box {",
+          "after": "    private fun quadratic(a:Box,c:Box,b:Box,t:Float):Box {\n        fun edge(x:Float,y:Float,z:Float):Float {\n            val left=x+(y-x)*t\n            val right=y+(z-y)*t\n            return left+(right-left)*t\n        }\n        return Box(edge(a.left,c.left,b.left),edge(a.top,c.top,b.top),\n            edge(a.right,c.right,b.right),edge(a.bottom,c.bottom,b.bottom))\n    }\n    private fun mix(a:Box,b:Box,t:Float):Box {"
         }
       ],
-      "reviewed_blob_sha1": "98cf7e6f67380534c3f6b83c41baf7237ca55d30"
+      "reviewed_blob_sha1": "237a6de703e78b05971c2c4ff68e7524db3eaf0e"
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": {
       "previous_blob_sha1": "a4b089745d0c4ace7f15fba4a2ab96d8a7be0341",
@@ -905,7 +913,7 @@
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageCertifiedRailRouteTest.kt": {
-      "reviewed_blob_sha1": "c17b83c42dcc0dd184b75625ab26344b54136c76",
+      "reviewed_blob_sha1": "e5ae5df0a8d6a7323ea5516fbc77f0d59ef8a14a",
       "previous_blob_sha1": "d06bba00c80f2b24758b3522977a11e367308738",
       "patches": [
         {
@@ -915,6 +923,10 @@
         {
           "before": "                for(i in 0..1000) {\n                    val k=plan.at(i/1000f)\n                    assertTrue(StageCertifiedRailRoute.overlapFraction(k.incoming,k.outgoing)<=.3501)",
           "after": "                var prior=plan.at(0f)\n                val horizontal=rail!=\"top\"\n                val sign=if(rail==\"right\")-1f else 1f\n                fun axis(b:Box)=if(horizontal)b.cx else b.cy\n                for(i in 0..1000) {\n                    val k=plan.at(i/1000f)\n                    assertTrue(\"incoming rail reversal $rail $width/$height $selected $i\",\n                        (axis(k.incoming)-axis(prior.incoming))*sign>=-.005f)\n                    assertTrue(\"outgoing rail reversal $rail $width/$height $selected $i\",\n                        (axis(prior.outgoing)-axis(k.outgoing))*sign>=-.005f)\n                    prior=k\n                    assertTrue(StageCertifiedRailRoute.overlapFraction(k.incoming,k.outgoing)<=.3501)"
+        },
+        {
+          "before": "    @Test fun usefulCoveredCropIsNotReplacedByContain() {",
+          "after": "    @Test fun curveEvaluationMatchesOriginalNestedInterpolationExactly() {\n        fun box(x:Float,y:Float,w:Float,h:Float)=Box(x,y,x+w,y+h)\n        fun mix(a:Box,b:Box,t:Float):Box {\n            fun edge(x:Float,y:Float)=x+(y-x)*t\n            return Box(edge(a.left,b.left),edge(a.top,b.top),\n                edge(a.right,b.right),edge(a.bottom,b.bottom))\n        }\n        fun checkBox(a:Box,b:Box) {\n            assertEquals(a.left.toRawBits(),b.left.toRawBits())\n            assertEquals(a.top.toRawBits(),b.top.toRawBits())\n            assertEquals(a.right.toRawBits(),b.right.toRawBits())\n            assertEquals(a.bottom.toRawBits(),b.bottom.toRawBits())\n        }\n        for((width,height) in listOf(1272f to 2772f,2772f to 1272f,2248f to 2480f,\n            2480f to 2248f,2560f to 1600f,1600f to 2560f)) {\n            val a=PairedRailCandidate.PairBox(box(12f,height*.25f,width*.17f,height*.28f),\n                box(width*.32f,19f,width*.61f,height*.78f))\n            val c=PairedRailCandidate.PairBox(box(width*.41f,height*.10f,width*.20f,height*.36f),\n                box(width*.22f,height*.60f,width*.29f,height*.19f))\n            val b=PairedRailCandidate.PairBox(a.outgoing,a.incoming)\n            val curve=SmoothPairedRailCandidate.Curve(a,c,b)\n            for(i in 0..4096) {\n                val t=i/4096f\n                val actual=curve.at(t)\n                checkBox(mix(mix(a.incoming,c.incoming,t),mix(c.incoming,b.incoming,t),t),actual.incoming)\n                checkBox(mix(mix(a.outgoing,c.outgoing,t),mix(c.outgoing,b.outgoing,t),t),actual.outgoing)\n            }\n        }\n    }\n\n    @Test fun usefulCoveredCropIsNotReplacedByContain() {"
         }
       ]
     },

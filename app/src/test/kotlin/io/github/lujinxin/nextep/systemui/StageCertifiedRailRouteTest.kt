@@ -62,6 +62,36 @@ class StageCertifiedRailRouteTest {
         assertFalse(PairedRailCandidate.followsRailAxis(listOf(left[0],k(200f,100f,300f,100f)),true))
     }
 
+    @Test fun curveEvaluationMatchesOriginalNestedInterpolationExactly() {
+        fun box(x:Float,y:Float,w:Float,h:Float)=Box(x,y,x+w,y+h)
+        fun mix(a:Box,b:Box,t:Float):Box {
+            fun edge(x:Float,y:Float)=x+(y-x)*t
+            return Box(edge(a.left,b.left),edge(a.top,b.top),
+                edge(a.right,b.right),edge(a.bottom,b.bottom))
+        }
+        fun checkBox(a:Box,b:Box) {
+            assertEquals(a.left.toRawBits(),b.left.toRawBits())
+            assertEquals(a.top.toRawBits(),b.top.toRawBits())
+            assertEquals(a.right.toRawBits(),b.right.toRawBits())
+            assertEquals(a.bottom.toRawBits(),b.bottom.toRawBits())
+        }
+        for((width,height) in listOf(1272f to 2772f,2772f to 1272f,2248f to 2480f,
+            2480f to 2248f,2560f to 1600f,1600f to 2560f)) {
+            val a=PairedRailCandidate.PairBox(box(12f,height*.25f,width*.17f,height*.28f),
+                box(width*.32f,19f,width*.61f,height*.78f))
+            val c=PairedRailCandidate.PairBox(box(width*.41f,height*.10f,width*.20f,height*.36f),
+                box(width*.22f,height*.60f,width*.29f,height*.19f))
+            val b=PairedRailCandidate.PairBox(a.outgoing,a.incoming)
+            val curve=SmoothPairedRailCandidate.Curve(a,c,b)
+            for(i in 0..4096) {
+                val t=i/4096f
+                val actual=curve.at(t)
+                checkBox(mix(mix(a.incoming,c.incoming,t),mix(c.incoming,b.incoming,t),t),actual.incoming)
+                checkBox(mix(mix(a.outgoing,c.outgoing,t),mix(c.outgoing,b.outgoing,t),t),actual.outgoing)
+            }
+        }
+    }
+
     @Test fun usefulCoveredCropIsNotReplacedByContain() {
         assertNull(StageCertifiedRailRoute.choose(small,main,incoming,Crop(0,0,290,360),
             screen,listOf(other),true))

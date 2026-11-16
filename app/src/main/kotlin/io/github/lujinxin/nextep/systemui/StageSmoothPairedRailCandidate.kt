@@ -8,7 +8,12 @@ import io.github.x647368maker.atomicworkbench.systemui.PairedRailCandidate.PairB
 internal object SmoothPairedRailCandidate {
     private const val LIMIT=.35
     data class Curve(val a:PairBox,val control:PairBox,val b:PairBox) {
-        fun at(t:Float):PairBox = mix(mix(a,control,t),mix(control,b,t),t)
+        // Exactly the same de Casteljau scalar operations, but construct only
+        // the final pair/boxes. Do not allocate two intermediate pairs per
+        // display frame or change the certified curve's floating-point order.
+        fun at(t:Float):PairBox = PairBox(
+            quadratic(a.incoming,control.incoming,b.incoming,t),
+            quadratic(a.outgoing,control.outgoing,b.outgoing,t))
         fun split():Pair<Curve,Curve> {
             val l=mix(a,control,.5f);val r=mix(control,b,.5f);val m=mix(l,r,.5f)
             return Curve(a,l,m) to Curve(m,r,b)
@@ -29,6 +34,15 @@ internal object SmoothPairedRailCandidate {
         val ramp=.12f
         fun eased(x:Float):Float {val u=x/ramp;return ramp*(u*u*u-.5f*u*u*u*u)/(1-ramp)}
         return when {t<ramp->eased(t);t>1-ramp->1-eased(1-t);else->(t-ramp*.5f)/(1-ramp)}
+    }
+    private fun quadratic(a:Box,c:Box,b:Box,t:Float):Box {
+        fun edge(x:Float,y:Float,z:Float):Float {
+            val left=x+(y-x)*t
+            val right=y+(z-y)*t
+            return left+(right-left)*t
+        }
+        return Box(edge(a.left,c.left,b.left),edge(a.top,c.top,b.top),
+            edge(a.right,c.right,b.right),edge(a.bottom,c.bottom,b.bottom))
     }
     private fun mix(a:Box,b:Box,t:Float):Box {
         fun f(x:Float,y:Float)=x+(y-x)*t
