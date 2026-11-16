@@ -66,6 +66,38 @@ internal object StageMenuPlacement {
             it.w>=minW && it.h>=minH && avoid.none { a->it.overlap(a)>0L }
         }
     }
+    // The main ellipsis opens the user's two-panel menu AT the ellipsis,
+    // not at a remote empty strip. A short empty gap is not a reason to
+    // change the navigation model. Prefer an unobstructed anchored height
+    // when it fits the categories; otherwise allow a bounded glass overlay.
+    // No task/window geometry is changed and no obscured pixels are captured.
+    fun pinnedDual(safe:Box,anchor:Box,preferredW:Int,preferredH:Int,
+                   minW:Int,minH:Int,avoid:List<Box>,gap:Int):Box? {
+        if(minW<=0 || minH<=0 || safe.w<minW || safe.h<minH)return null
+        val w=maxOf(preferredW,minW).coerceAtMost(safe.w)
+        val h=maxOf(preferredH,minH).coerceAtMost(safe.h)
+        val x=anchor.l.coerceIn(safe.l,safe.r-w)
+        val below=(anchor.b+gap).coerceIn(safe.t,safe.b)
+        val above=(anchor.t-gap).coerceIn(safe.t,safe.b)
+        val horizontal=avoid.filter{it.l<x+w && it.r>x && it.b>safe.t && it.t<safe.b}
+        val down=safe.b-below;val up=above-safe.t
+        if(down>=minH || down>=up){
+            val available=minOf(h,down)
+            if(available>=minH){
+                val nearest=horizontal.filter{it.b>below}.minOfOrNull{(it.t-below).coerceAtLeast(0)}?:available
+                val height=if(nearest>=minH)minOf(available,nearest) else available
+                return Box(x,below,x+w,below+height)
+            }
+        } else if(up>=minH){
+            val available=minOf(h,up)
+            val nearest=horizontal.filter{it.t<above}.minOfOrNull{(above-it.b).coerceAtLeast(0)}?:available
+            val height=if(nearest>=minH)minOf(available,nearest) else available
+            return Box(x,above-height,x+w,above)
+        }
+        // A very short viewport can straddle the anchor; maintain reachability.
+        val top=below.coerceIn(safe.t,safe.b-h)
+        return Box(x,top,x+w,top+h)
+    }
     fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {
         val homeX=anchor.l;val homeY=anchor.b+gap
         val xs=mutableListOf(homeX,anchor.r-w,safe.l,safe.r-w)

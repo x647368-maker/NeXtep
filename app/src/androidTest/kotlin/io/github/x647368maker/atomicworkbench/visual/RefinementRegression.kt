@@ -155,6 +155,7 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle()
                 val dual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())
                     .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }
+                check(dual){"Main ellipsis silently degraded to a single pane: $mode"}
                 if(category==0){
                     val b=Rect();inst.uiAutomation.rootInActiveWindow!!.getBoundsInScreen(b)
                     check(b.width() > 0 && b.width() <= m.widthPixels && b.height() > 0 && b.height() <= m.heightPixels)
@@ -174,7 +175,8 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                     fired.set(-1);ui{AtomicPopupMenu.show(activity,anchor,actions,avoid)};settle()
                     val nowDual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())
                         .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }
-                    click(if(nowDual)StageMenuPolicy.groups[category] else "${StageMenuPolicy.groups[category]}  ›")
+                    check(nowDual){"Main ellipsis changed navigation model: $mode"}
+                    click(StageMenuPolicy.groups[category])
                     click(commands[index])
                     // Menu actions dismiss with a 70ms compositor fade and then post
                     // their callback on the anchor. An HWUI-saturated emulator can
@@ -208,7 +210,7 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             check(textures.toSet()==initial && destroyed==0){"Presentation rebuilt TextureView producers"}
             counts.add("$mode=${commands.size} callbacks, all four categories, producer identities unchanged")
         }
-        record("PASS real grouped native popup: ${counts.joinToString("; ")}; bounded dual glass or compact fallback; all original actions reachable")
+        record("PASS real grouped native popup: ${counts.joinToString("; ")}; pinned dual glass required on all three layouts; all original actions reachable")
         // Use an isolated density-qualified context to exercise the wide
         // popup on the same display without changing device configuration.
         val wideConfig=android.content.res.Configuration(activity.resources.configuration).apply {
@@ -320,6 +322,47 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         }
         verifyDualMenu(wideContext,Rect(m.widthPixels/2,0,m.widthPixels,m.heightPixels),"wide")
         verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),"phone portrait")
+        // Reconstruct the 89 real-device short gap. The old fixture permitted
+        // a single-column menu or relocating it to the bottom. Both now fail.
+        val handle=IntArray(2)
+        ui{anchor.getLocationOnScreen(handle)}
+        val shortGap=Rect(0,handle[1]+anchor.height+(12*m.density).toInt(),m.widthPixels,m.heightPixels)
+        val crowdedInline=actions.map{entry->
+            if(entry.first=="快捷栏样式")entry.first to {
+                AtomicPopupMenu.show(activity,anchor,listOf("固定应用" to {fired.set(99)}),listOf(shortGap))
+            } else entry
+        }
+        ui{AtomicPopupMenu.show(activity,anchor,crowdedInline,listOf(shortGap),submenuLabels=setOf("快捷栏样式"))};settle()
+        fun crowdedNode(label:String)=checkNotNull(inst.uiAutomation.rootInActiveWindow)
+            .findAccessibilityNodeInfosByText(label).firstOrNull{it.text?.toString()==label && it.isVisibleToUser}
+            ?:error("Crowded menu missing $label")
+        val pinned=Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen)
+        check(kotlin.math.abs(pinned.top-(handle[1]+anchor.height))< (16*m.density).toInt()){
+            "Crowded main menu moved away from ellipsis: $pinned"}
+        check(StageMenuPolicy.groups.all { crowdedNode(it).isVisibleToUser })
+        val left=Rect().also(crowdedNode("窗口布局")::getBoundsInScreen)
+        val right=Rect().also(crowdedNode("顶部横排")::getBoundsInScreen)
+        check(left.right<=right.left){"Crowded root is not two panes"}
+        val window=checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId
+        for(index in 0..3){
+            click(StageMenuPolicy.groups[index])
+            check(crowdedNode(StageMenuPolicy.groups[index]).isSelected)
+            check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)
+            inst.uiAutomation.takeScreenshot()?.let{shot->
+                File(out,"menu-crowded-category-${index+1}.png").outputStream().use{shot.compress(Bitmap.CompressFormat.PNG,100,it)}
+                shot.recycle()
+            }
+        }
+        click("快捷栏与显示");click("快捷栏样式")
+        check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)
+        check(crowdedNode("固定应用").isVisibleToUser)
+        check(StageMenuPolicy.groups.all { crowdedNode(it).isVisibleToUser })
+        click("固定应用")
+        val crowdedDeadline=SystemClock.uptimeMillis()+2000
+        while(fired.get()!=99 && SystemClock.uptimeMillis()<crowdedDeadline)Thread.sleep(25)
+        check(fired.get()==99 && !AtomicPopupMenu.isShowing())
+        check(textures.toSet()==initial && destroyed==0)
+        record("PASS crowded phone real popup: pinned dual panes, all four categories, inline child and leaf, no task recreation")
         // Exercise the real popup action/dismiss/reopen path used by the
         // production submenus. Callbacks are fixture counters, not task moves.
         val submenuCalls=java.util.concurrent.atomic.AtomicInteger(0)

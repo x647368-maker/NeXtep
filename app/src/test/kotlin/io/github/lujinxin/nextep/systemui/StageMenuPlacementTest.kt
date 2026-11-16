@@ -52,6 +52,31 @@ class StageMenuPlacementTest {
             assertNull(StageMenuPlacement.dualGlass(b(0,0,minW-1,500),anchor,304,190,minW,minH,emptyList(),8))
         }
     }
+    @Test fun occupiedPhoneKeepsTwoPanesPinnedUnderEllipsis(){
+        val screen=b(8,26,355,770)
+        val handle=b(10,40,52,82)
+        // Reproduce the short header gap in the 89 device video, in dp.
+        for(protectedTop in listOf(96,110,126,210,300)){
+            val avoid=listOf(b(8,protectedTop,95,760),b(100,protectedTop,355,760))
+            val p=checkNotNull(StageMenuPlacement.pinnedDual(screen,handle,276,152,220,128,avoid,2))
+            assertEquals(10,p.l);assertEquals(84,p.t);assertEquals(276,p.w)
+            assertTrue(p.h>=128 && p.h<=152 && p.b<=screen.b)
+            if(protectedTop>=212)assertTrue(avoid.none{p.overlap(it)>0L})
+        }
+        val occupied=listOf(b(0,96,363,770))
+        val roomy=checkNotNull(StageMenuPlacement.pinnedDual(screen,handle,276,152,220,128,
+            listOf(b(0,218,363,770)),2))
+        assertEquals(134,roomy.h)
+        assertEquals(0L,roomy.overlap(b(0,218,363,770)))
+        assertNull(StageMenuPlacement.pinnedDual(b(0,0,219,700),handle,276,152,220,128,occupied,2))
+    }
+    @Test fun pinnedMenuRespectsOffsetsAndShortLandscape(){
+        val screen=b(24,18,800,330)
+        val handle=b(35,270,83,318)
+        val pos=checkNotNull(StageMenuPlacement.pinnedDual(screen,handle,320,160,220,128,emptyList(),2))
+        assertEquals(35,pos.l);assertEquals(268,pos.b);assertEquals(160,pos.h)
+        assertTrue(pos.t>=screen.t && pos.r<=screen.r)
+    }
     @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){
         val selected=setOf("左侧排列","主窗口优先布局")
         assertTrue(StageMenuPolicy.isSelected("左侧排列",selected))

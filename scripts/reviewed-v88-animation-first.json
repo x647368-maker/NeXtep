@@ -922,7 +922,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "c51d5d0b83e47233ae0e3f94de235458d99efcf9",
+      "reviewed_blob_sha1": "5f5f864f47c58daf17c25c0831b2397f5ecb9695",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -1039,6 +1039,54 @@
         {
           "before": "        Orientation.TL_BR,intArrayOf(Color.argb(135,81,103,122),",
           "after": "        GradientDrawable.Orientation.TL_BR,intArrayOf(Color.argb(135,81,103,122),"
+        },
+        {
+          "before": "        val fullWidth=dp(if(compactWidth)304 else 340)",
+          "after": "        // The supplied portrait design is about 75% of the viewport wide,\n        // with compact 4-row categories and a wider independent right pane.\n        val fullWidth=dp(if(compactWidth)276 else 312)"
+        },
+        {
+          "before": "            textSize=13f\n            setTypeface(null,android.graphics.Typeface.BOLD)",
+          "after": "            textSize=12f\n            includeFontPadding=false\n            setTypeface(null,android.graphics.Typeface.BOLD)"
+        },
+        {
+          "before": "        val categoryWidth=maxOf(dp(if(compactWidth)132 else 140),titleWidth+categoryInsets)\n        val minDualWidth=maxOf(dp(if(compactWidth)282 else 304),categoryWidth+dp(3)+dp(147))\n        val metrics=categoryPaint.fontMetricsInt\n        val categoryHeight=maxOf(dp(48),metrics.bottom-metrics.top+dp(8))*StageMenuPolicy.groups.size+dp(12)\n        val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())\n        val dualBounds=if(grouped) StageMenuPlacement.dualGlass(\n            safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,\n            categoryHeight,blocked,dp(8)) else null",
+          "after": "        val preferredCategoryWidth=maxOf(dp(if(compactWidth)120 else 132),titleWidth+categoryInsets)\n        val preferredDualWidth=maxOf(fullWidth,preferredCategoryWidth+dp(3)+dp(144))\n        val metrics=categoryPaint.fontMetricsInt\n        val categoryHeight=maxOf(dp(30),metrics.bottom-metrics.top+dp(4))*StageMenuPolicy.groups.size+dp(8)\n        val dualHeight=maxOf(dp(if(compactWidth)152 else 180),categoryHeight)\n        val dualBounds=if(grouped) StageMenuPlacement.pinnedDual(\n            safe.box(),anchorBox,preferredDualWidth,dualHeight,dp(220),\n            minOf(categoryHeight,safe.height().coerceAtLeast(1)),blocked,dp(2)) else null\n        val categoryWidth=dualBounds?.let {\n            preferredCategoryWidth.coerceAtMost((it.w-dp(3))*46/100).coerceAtLeast(1)\n        } ?: preferredCategoryWidth\n        if(grouped)io.github.x647368maker.atomicworkbench.logging.NeXtepLog.info(\"workspace_menu\",\n            if(dualBounds==null)\"grouped viewport too narrow; accessible compact fallback\"\n            else \"pinned_dual width=${dualBounds.w} height=${dualBounds.h} overlap=${blocked.sumOf{dualBounds.overlap(it)}}\")"
+        },
+        {
+          "before": "            categories.setPadding(dp(4),dp(6),dp(4),dp(6))\n            rows.setPadding(dp(5),dp(6),dp(5),dp(6))",
+          "after": "            categories.setPadding(dp(4),dp(4),dp(4),dp(4))\n            rows.setPadding(dp(4),dp(4),dp(4),dp(4))"
+        },
+        {
+          "before": "        fun fit(secondary:Boolean) {\n            val maxWidth=safe.width().coerceAtLeast(1)\n            val maxHeight=safe.height().coerceAtLeast(1)",
+          "after": "        fun fit(secondary:Boolean) {\n            val maxWidth=safe.width().coerceAtLeast(1)\n            val maxHeight=safe.height().coerceAtLeast(1)\n            if(dualBounds!=null) {\n                // Independent natural pane heights. Resize only the popup,\n                // never its anchor, task cards or left/right column widths.\n                val rightWidth=(dualBounds.w-categoryWidth-dp(3)).coerceAtLeast(1)\n                categories.measure(View.MeasureSpec.makeMeasureSpec(categoryWidth,View.MeasureSpec.EXACTLY),\n                    View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))\n                rows.measure(View.MeasureSpec.makeMeasureSpec(rightWidth,View.MeasureSpec.EXACTLY),\n                    View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))\n                val h=maxOf(categories.measuredHeight,rows.measuredHeight).coerceIn(1,dualBounds.h)\n                if(initialized)popup.update(dualBounds.l,dualBounds.t,dualBounds.w,h)\n                else {\n                    popup.width=dualBounds.w;popup.height=h\n                    popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,dualBounds.l,dualBounds.t)\n                    initialized=true\n                }\n                return\n            }"
+        },
+        {
+          "before": "            if(dualBounds!=null && initialized)return\n            val pos=dualBounds ?: StageMenuPlacement.compact(safe.box(),anchorBox,",
+          "after": "            val pos=StageMenuPlacement.compact(safe.box(),anchorBox,"
+        },
+        {
+          "before": "                    textSize=13f\n                    setTextColor(Color.WHITE)\n                    setShadowLayer(dp(1).toFloat(),0f,dp(1).toFloat(),Color.argb(205,0,0,0))\n                    setPadding(dp(5),dp(4),dp(5),dp(4))",
+          "after": "                    textSize=12f\n                    includeFontPadding=false\n                    minHeight=dp(if(categoryRow)30 else 28)\n                    setTextColor(Color.WHITE)\n                    setShadowLayer(dp(1).toFloat(),0f,dp(1).toFloat(),Color.argb(205,0,0,0))\n                    setPadding(dp(5),dp(2),dp(5),dp(2))"
+        },
+        {
+          "before": "                val selectedGlass=if(dualBounds!=null && parent===categories)",
+          "after": "                val selectedGlass=if(dualBounds!=null && (parent===categories || StageMenuPolicy.isLayoutChoice(label)))"
+        },
+        {
+          "before": "                            cornerRadius=dp(12).toFloat()\n                            setStroke(dp(1),Color.argb(124,186,232,255))",
+          "after": "                            cornerRadius=dp(10).toFloat()\n                            setStroke(dp(1),Color.argb(124,186,232,255))"
+        },
+        {
+          "before": "                        // Geometry may change while an old menu is open. Never\n                        // reuse its placement if current protected bounds moved.\n                        if(nextAvoid.any{dualBounds.overlap(it.box())>0L})dismissActive()\n                        else {\n                            childPages.add(InlinePage(label,next,nextSubmenus))\n                            renderRight()\n                        }",
+          "after": "                        // Existing intentional compact overlay is not itself\n                        // a reason to dismiss an inline page. Only invalidate\n                        // if the actual protected geometry has changed.\n                        if(nextAvoid.map{it.box()}.toSet()!=blocked.toSet())dismissActive()\n                        else {\n                            childPages.add(InlinePage(label,next,nextSubmenus))\n                            renderRight()\n                            fit(true)\n                        }"
+        },
+        {
+          "before": "                        childPages.removeAt(childPages.lastIndex)\n                        renderRight()\n                    } else dismissActive()",
+          "after": "                        childPages.removeAt(childPages.lastIndex)\n                        renderRight()\n                        fit(true)\n                    } else dismissActive()"
+        },
+        {
+          "before": "            } else {\n                items.filter{StageMenuPolicy.group(it.first)==selectedCategory}\n                    .forEach { action(it.first,it.second,it.first in submenuLabels) }\n            }\n        }\n        val categoryButtons",
+          "after": "            } else {\n                // The supplied layout panel has no duplicate title; other\n                // categories have one compact descriptive right-pane header.\n                selectedCategory?.takeIf{it!=0}?.let { index->\n                    rows.addView(TextView(context).apply {\n                        text=StageMenuPolicy.groups[index]\n                        textSize=11f\n                        includeFontPadding=false\n                        setTextColor(Color.WHITE)\n                        setPadding(dp(5),dp(2),dp(5),dp(3))\n                        gravity=Gravity.CENTER_VERTICAL\n                        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO\n                    },LinearLayout.LayoutParams(-1,-2))\n                }\n                items.filter{StageMenuPolicy.group(it.first)==selectedCategory}\n                    .forEach { action(it.first,it.second,it.first in submenuLabels) }\n            }\n        }\n        val categoryButtons"
         }
       ]
     },
@@ -1601,7 +1649,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPolicy.kt": {
-      "reviewed_blob_sha1": "fd09d46585f64b323e6374d2c05240fc593dc0b2",
+      "reviewed_blob_sha1": "7130cbbd48bf35ffae854a09c07273e598f4b6ae",
       "previous_blob_sha1": "653014e7ccb46168e118fe2f3d6b6e15413229d5",
       "patches": [
         {
@@ -1631,11 +1679,15 @@
         {
           "before": "        if(minW<=0 || minH<=0 || w<minW || h<minH || safe.w<minW || safe.h<minH)return null\n        return compact(safe,anchor,w,h,minW,minH,avoid,gap).takeIf {",
           "after": "        if(minW<=0 || minH<=0 || safe.w<minW || safe.h<minH)return null\n        // Preferred dimensions are a visual target, not a hard admission cap.\n        // A short landscape viewport or larger measured font can need more\n        // than the nominal 38% height / portrait width. Search actual empty\n        // space at the accessible minimum before considering compact fallback.\n        val preferredW=maxOf(w,minW).coerceAtMost(safe.w)\n        val preferredH=maxOf(h,minH).coerceAtMost(safe.h)\n        return compact(safe,anchor,preferredW,preferredH,minW,minH,avoid,gap).takeIf {"
+        },
+        {
+          "before": "    fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {",
+          "after": "    // The main ellipsis opens the user's two-panel menu AT the ellipsis,\n    // not at a remote empty strip. A short empty gap is not a reason to\n    // change the navigation model. Prefer an unobstructed anchored height\n    // when it fits the categories; otherwise allow a bounded glass overlay.\n    // No task/window geometry is changed and no obscured pixels are captured.\n    fun pinnedDual(safe:Box,anchor:Box,preferredW:Int,preferredH:Int,\n                   minW:Int,minH:Int,avoid:List<Box>,gap:Int):Box? {\n        if(minW<=0 || minH<=0 || safe.w<minW || safe.h<minH)return null\n        val w=maxOf(preferredW,minW).coerceAtMost(safe.w)\n        val h=maxOf(preferredH,minH).coerceAtMost(safe.h)\n        val x=anchor.l.coerceIn(safe.l,safe.r-w)\n        val below=(anchor.b+gap).coerceIn(safe.t,safe.b)\n        val above=(anchor.t-gap).coerceIn(safe.t,safe.b)\n        val horizontal=avoid.filter{it.l<x+w && it.r>x && it.b>safe.t && it.t<safe.b}\n        val down=safe.b-below;val up=above-safe.t\n        if(down>=minH || down>=up){\n            val available=minOf(h,down)\n            if(available>=minH){\n                val nearest=horizontal.filter{it.b>below}.minOfOrNull{(it.t-below).coerceAtLeast(0)}?:available\n                val height=if(nearest>=minH)minOf(available,nearest) else available\n                return Box(x,below,x+w,below+height)\n            }\n        } else if(up>=minH){\n            val available=minOf(h,up)\n            val nearest=horizontal.filter{it.t<above}.minOfOrNull{(above-it.b).coerceAtLeast(0)}?:available\n            val height=if(nearest>=minH)minOf(available,nearest) else available\n            return Box(x,above-height,x+w,above)\n        }\n        // A very short viewport can straddle the anchor; maintain reachability.\n        val top=below.coerceIn(safe.t,safe.b-h)\n        return Box(x,top,x+w,top+h)\n    }\n    fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {"
         }
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPlacementTest.kt": {
-      "reviewed_blob_sha1": "5fc5a501e994fbe3acc7d80df95d59a1efd53282",
+      "reviewed_blob_sha1": "92ff77bdb6d3bb1d81a37802bba65c8a978c0012",
       "previous_blob_sha1": "3be52da72eb09119eb9b8ae5898d8baf6c7c4cb9",
       "patches": [
         {
@@ -1657,11 +1709,15 @@
         {
           "before": "    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){",
           "after": "    @Test fun shortLandscapeUsesRealFreeSpaceInsteadOfRejectingNominalHeight(){\n        for(height in listOf(400,500,536,537)){\n            val screen=b(0,0,800,height)\n            val preferred=minOf(252,(height*.38f).toInt())\n            val occupied=b(350,0,800,height)\n            val p=checkNotNull(StageMenuPlacement.dualGlass(screen,anchor,304,preferred,282,204,\n                listOf(occupied),8))\n            assertTrue(p.h>=204 && p.w>=282)\n            assertTrue(p.b<=screen.b && p.r<=screen.r && p.l>=screen.l && p.t>=screen.t)\n            assertEquals(0L,p.overlap(occupied))\n            val noRoom=b(0,203,800,height)\n            assertNull(StageMenuPlacement.dualGlass(screen,anchor,304,preferred,282,204,listOf(noRoom),8))\n        }\n    }\n    @Test fun measuredLargeFontMayExpandPreferredWidthAndHeightButNeverCoverTasks(){\n        val bounds=b(12,20,712,520)\n        for(minW in listOf(305,341,420))for(minH in listOf(204,252,280)){\n            val block=b(460,20,712,520)\n            val p=checkNotNull(StageMenuPlacement.dualGlass(bounds,anchor,304,190,minW,minH,listOf(block),8))\n            assertTrue(p.w>=minW && p.h>=minH && p.l>=bounds.l && p.t>=bounds.t && p.r<=bounds.r && p.b<=bounds.b)\n            assertEquals(0L,p.overlap(block))\n            val narrow=b(bounds.l+minW-1,bounds.t,bounds.r,bounds.b)\n            assertNull(StageMenuPlacement.dualGlass(bounds,anchor,304,190,minW,minH,listOf(narrow),8))\n            assertNull(StageMenuPlacement.dualGlass(b(0,0,minW-1,500),anchor,304,190,minW,minH,emptyList(),8))\n        }\n    }\n    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){"
+        },
+        {
+          "before": "    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){",
+          "after": "    @Test fun occupiedPhoneKeepsTwoPanesPinnedUnderEllipsis(){\n        val screen=b(8,26,355,770)\n        val handle=b(10,40,52,82)\n        // Reproduce the short header gap in the 89 device video, in dp.\n        for(protectedTop in listOf(96,110,126,210,300)){\n            val avoid=listOf(b(8,protectedTop,95,760),b(100,protectedTop,355,760))\n            val p=checkNotNull(StageMenuPlacement.pinnedDual(screen,handle,276,152,220,128,avoid,2))\n            assertEquals(10,p.l);assertEquals(84,p.t);assertEquals(276,p.w)\n            assertTrue(p.h>=128 && p.h<=152 && p.b<=screen.b)\n            if(protectedTop>=212)assertTrue(avoid.none{p.overlap(it)>0L})\n        }\n        val occupied=listOf(b(0,96,363,770))\n        val roomy=checkNotNull(StageMenuPlacement.pinnedDual(screen,handle,276,152,220,128,\n            listOf(b(0,218,363,770)),2))\n        assertEquals(134,roomy.h)\n        assertEquals(0L,roomy.overlap(b(0,218,363,770)))\n        assertNull(StageMenuPlacement.pinnedDual(b(0,0,219,700),handle,276,152,220,128,occupied,2))\n    }\n    @Test fun pinnedMenuRespectsOffsetsAndShortLandscape(){\n        val screen=b(24,18,800,330)\n        val handle=b(35,270,83,318)\n        val pos=checkNotNull(StageMenuPlacement.pinnedDual(screen,handle,320,160,220,128,emptyList(),2))\n        assertEquals(35,pos.l);assertEquals(268,pos.b);assertEquals(160,pos.h)\n        assertTrue(pos.t>=screen.t && pos.r<=screen.r)\n    }\n    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){"
         }
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "b61580df9e1d8602c3752c0dc1bd23a2a9125343",
+      "reviewed_blob_sha1": "40bb16900cd2583497e41d4a6bc0fac9bd0e526b",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1731,6 +1787,22 @@
         {
           "before": "        fun record(s:String){log.add(s);File(out,\"refinement-results.txt\").writeText(log.joinToString(\"\\n\")+\"\\n\")}\n        val cards=mutableListOf<TaskSwitcherView>()",
           "after": "        fun record(s:String){log.add(s);File(out,\"refinement-results.txt\").writeText(log.joinToString(\"\\n\")+\"\\n\")}\n        // Rasterize the exact production material over a transparent bitmap.\n        // This is an alpha/rim contract, not a claim of live optical refraction.\n        ui {\n            val material=AtomicPopupMenu.dualGlassPane(2f)\n            val raster=Bitmap.createBitmap(240,400,Bitmap.Config.ARGB_8888)\n            try {\n                material.setBounds(0,0,raster.width,raster.height)\n                material.draw(Canvas(raster))\n                val center=Color.alpha(raster.getPixel(120,200))\n                check(center in 110..200){\"Glass center must transmit underlying content: alpha=$center\"}\n                check(Color.alpha(raster.getPixel(0,0))<=12){\"Glass corners must remain transparent\"}\n                val edge=(0..5).maxOf{y->Color.alpha(raster.getPixel(40,y))}\n                check(edge>center){\"Directional rim must have a brighter local edge: $edge vs $center\"}\n            } finally { raster.recycle() }\n        }\n        record(\"PASS production glass material alpha/transparent corners/directional rim raster contract\")\n        val cards=mutableListOf<TaskSwitcherView>()"
+        },
+        {
+          "before": "                if(category==0){\n                    val b=Rect();",
+          "after": "                check(dual){\"Main ellipsis silently degraded to a single pane: $mode\"}\n                if(category==0){\n                    val b=Rect();"
+        },
+        {
+          "before": "                    val nowDual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())\n                        .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }\n                    click(if(nowDual)StageMenuPolicy.groups[category] else \"${StageMenuPolicy.groups[category]}  ›\")",
+          "after": "                    val nowDual=inst.uiAutomation.rootInActiveWindow!!.findAccessibilityNodeInfosByText(StageMenuPolicy.groups.first())\n                        .any { it.text?.toString()==StageMenuPolicy.groups.first() && it.isSelected }\n                    check(nowDual){\"Main ellipsis changed navigation model: $mode\"}\n                    click(StageMenuPolicy.groups[category])"
+        },
+        {
+          "before": "        record(\"PASS real grouped native popup: ${counts.joinToString(\"; \")}; bounded dual glass or compact fallback; all original actions reachable\")",
+          "after": "        record(\"PASS real grouped native popup: ${counts.joinToString(\"; \")}; pinned dual glass required on all three layouts; all original actions reachable\")"
+        },
+        {
+          "before": "        verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),\"phone portrait\")\n        // Exercise the real popup action/dismiss/reopen path used by the",
+          "after": "        verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),\"phone portrait\")\n        // Reconstruct the 89 real-device short gap. The old fixture permitted\n        // a single-column menu or relocating it to the bottom. Both now fail.\n        val handle=IntArray(2)\n        ui{anchor.getLocationOnScreen(handle)}\n        val shortGap=Rect(0,handle[1]+anchor.height+(12*m.density).toInt(),m.widthPixels,m.heightPixels)\n        val crowdedInline=actions.map{entry->\n            if(entry.first==\"快捷栏样式\")entry.first to {\n                AtomicPopupMenu.show(activity,anchor,listOf(\"固定应用\" to {fired.set(99)}),listOf(shortGap))\n            } else entry\n        }\n        ui{AtomicPopupMenu.show(activity,anchor,crowdedInline,listOf(shortGap),submenuLabels=setOf(\"快捷栏样式\"))};settle()\n        fun crowdedNode(label:String)=checkNotNull(inst.uiAutomation.rootInActiveWindow)\n            .findAccessibilityNodeInfosByText(label).firstOrNull{it.text?.toString()==label && it.isVisibleToUser}\n            ?:error(\"Crowded menu missing $label\")\n        val pinned=Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen)\n        check(kotlin.math.abs(pinned.top-(handle[1]+anchor.height))< (16*m.density).toInt()){\n            \"Crowded main menu moved away from ellipsis: $pinned\"}\n        check(StageMenuPolicy.groups.all { crowdedNode(it).isVisibleToUser })\n        val left=Rect().also(crowdedNode(\"窗口布局\")::getBoundsInScreen)\n        val right=Rect().also(crowdedNode(\"顶部横排\")::getBoundsInScreen)\n        check(left.right<=right.left){\"Crowded root is not two panes\"}\n        val window=checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId\n        for(index in 0..3){\n            click(StageMenuPolicy.groups[index])\n            check(crowdedNode(StageMenuPolicy.groups[index]).isSelected)\n            check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)\n            inst.uiAutomation.takeScreenshot()?.let{shot->\n                File(out,\"menu-crowded-category-${index+1}.png\").outputStream().use{shot.compress(Bitmap.CompressFormat.PNG,100,it)}\n                shot.recycle()\n            }\n        }\n        click(\"快捷栏与显示\");click(\"快捷栏样式\")\n        check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)\n        check(crowdedNode(\"固定应用\").isVisibleToUser)\n        check(StageMenuPolicy.groups.all { crowdedNode(it).isVisibleToUser })\n        click(\"固定应用\")\n        val crowdedDeadline=SystemClock.uptimeMillis()+2000\n        while(fired.get()!=99 && SystemClock.uptimeMillis()<crowdedDeadline)Thread.sleep(25)\n        check(fired.get()==99 && !AtomicPopupMenu.isShowing())\n        check(textures.toSet()==initial && destroyed==0)\n        record(\"PASS crowded phone real popup: pinned dual panes, all four categories, inline child and leaf, no task recreation\")\n        // Exercise the real popup action/dismiss/reopen path used by the"
         }
       ]
     },

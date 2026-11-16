@@ -161,23 +161,32 @@ internal object AtomicPopupMenu {
         val anchorBox=StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height)
         val blocked=avoid.map{it.box()}
         val compactWidth=safe.width()<dp(600)
-        val fullWidth=dp(if(compactWidth)304 else 340)
+        // The supplied portrait design is about 75% of the viewport wide,
+        // with compact 4-row categories and a wider independent right pane.
+        val fullWidth=dp(if(compactWidth)276 else 312)
         // Measure the longest real title in its selected bold font, including
         // the user's SP scaling. Keep every character plus icon and chevron.
         val categoryPaint=TextView(context).apply {
-            textSize=13f
+            textSize=12f
+            includeFontPadding=false
             setTypeface(null,android.graphics.Typeface.BOLD)
         }.paint
         val titleWidth=ceil(StageMenuPolicy.groups.maxOf(categoryPaint::measureText)).toInt()
         val categoryInsets=dp(4)*2+dp(5)*2+dp(14)+dp(8)+dp(4)*2+dp(2)
-        val categoryWidth=maxOf(dp(if(compactWidth)132 else 140),titleWidth+categoryInsets)
-        val minDualWidth=maxOf(dp(if(compactWidth)282 else 304),categoryWidth+dp(3)+dp(147))
+        val preferredCategoryWidth=maxOf(dp(if(compactWidth)120 else 132),titleWidth+categoryInsets)
+        val preferredDualWidth=maxOf(fullWidth,preferredCategoryWidth+dp(3)+dp(144))
         val metrics=categoryPaint.fontMetricsInt
-        val categoryHeight=maxOf(dp(48),metrics.bottom-metrics.top+dp(8))*StageMenuPolicy.groups.size+dp(12)
-        val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())
-        val dualBounds=if(grouped) StageMenuPlacement.dualGlass(
-            safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,
-            categoryHeight,blocked,dp(8)) else null
+        val categoryHeight=maxOf(dp(30),metrics.bottom-metrics.top+dp(4))*StageMenuPolicy.groups.size+dp(8)
+        val dualHeight=maxOf(dp(if(compactWidth)152 else 180),categoryHeight)
+        val dualBounds=if(grouped) StageMenuPlacement.pinnedDual(
+            safe.box(),anchorBox,preferredDualWidth,dualHeight,dp(220),
+            minOf(categoryHeight,safe.height().coerceAtLeast(1)),blocked,dp(2)) else null
+        val categoryWidth=dualBounds?.let {
+            preferredCategoryWidth.coerceAtMost((it.w-dp(3))*46/100).coerceAtLeast(1)
+        } ?: preferredCategoryWidth
+        if(grouped)io.github.x647368maker.atomicworkbench.logging.NeXtepLog.info("workspace_menu",
+            if(dualBounds==null)"grouped viewport too narrow; accessible compact fallback"
+            else "pinned_dual width=${dualBounds.w} height=${dualBounds.h} overlap=${blocked.sumOf{dualBounds.overlap(it)}}")
         val categories=LinearLayout(context).apply{
             orientation=LinearLayout.VERTICAL
             setPadding(dp(6),dp(6),dp(6),dp(6))
@@ -188,8 +197,8 @@ internal object AtomicPopupMenu {
             fun pane()=dualGlassPane(density)
             content.background=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             content.clipToOutline=false
-            categories.setPadding(dp(4),dp(6),dp(4),dp(6))
-            rows.setPadding(dp(5),dp(6),dp(5),dp(6))
+            categories.setPadding(dp(4),dp(4),dp(4),dp(4))
+            rows.setPadding(dp(4),dp(4),dp(4),dp(4))
             content.addView(ScrollView(context).apply {
                 background=pane();clipToOutline=true;isVerticalScrollBarEnabled=false
                 addView(categories)
@@ -218,6 +227,23 @@ internal object AtomicPopupMenu {
         fun fit(secondary:Boolean) {
             val maxWidth=safe.width().coerceAtLeast(1)
             val maxHeight=safe.height().coerceAtLeast(1)
+            if(dualBounds!=null) {
+                // Independent natural pane heights. Resize only the popup,
+                // never its anchor, task cards or left/right column widths.
+                val rightWidth=(dualBounds.w-categoryWidth-dp(3)).coerceAtLeast(1)
+                categories.measure(View.MeasureSpec.makeMeasureSpec(categoryWidth,View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+                rows.measure(View.MeasureSpec.makeMeasureSpec(rightWidth,View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+                val h=maxOf(categories.measuredHeight,rows.measuredHeight).coerceIn(1,dualBounds.h)
+                if(initialized)popup.update(dualBounds.l,dualBounds.t,dualBounds.w,h)
+                else {
+                    popup.width=dualBounds.w;popup.height=h
+                    popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,dualBounds.l,dualBounds.t)
+                    initialized=true
+                }
+                return
+            }
             // Measure real labels, including system font scaling, before placing.
             rows.measure(View.MeasureSpec.makeMeasureSpec(maxWidth,View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
@@ -227,8 +253,7 @@ internal object AtomicPopupMenu {
             // Preserve measured labels, but keep the accepted compact scrolling viewport.
             val height=rows.measuredHeight.coerceIn(1,maxHeight)
                 .coerceAtMost(minOf(dp(300),(maxHeight*.38f).toInt()).coerceAtLeast(1))
-            if(dualBounds!=null && initialized)return
-            val pos=dualBounds ?: StageMenuPlacement.compact(safe.box(),anchorBox,
+            val pos=StageMenuPlacement.compact(safe.box(),anchorBox,
                 width,height,
                 // The short primary category page must remain fully readable.
                 // Prefer an empty rectangle that fits it; if none exists, the
@@ -249,10 +274,12 @@ internal object AtomicPopupMenu {
                 setPadding(dp(12),dp(6),dp(12),dp(6));isClickable=true;isFocusable=true
                 if(dualBounds!=null) {
                     val categoryRow=parent===categories
-                    textSize=13f
+                    textSize=12f
+                    includeFontPadding=false
+                    minHeight=dp(if(categoryRow)30 else 28)
                     setTextColor(Color.WHITE)
                     setShadowLayer(dp(1).toFloat(),0f,dp(1).toFloat(),Color.argb(205,0,0,0))
-                    setPadding(dp(5),dp(4),dp(5),dp(4))
+                    setPadding(dp(5),dp(2),dp(5),dp(2))
                     val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)
                         else StageMenuPolicy.actionGlyph(label)
                     val size=dp(14)
@@ -273,14 +300,14 @@ internal object AtomicPopupMenu {
                     setCompoundDrawables(glyph,null,marker,null)
                     compoundDrawablePadding=dp(4)
                 }
-                val selectedGlass=if(dualBounds!=null && parent===categories)
+                val selectedGlass=if(dualBounds!=null && (parent===categories || StageMenuPolicy.isLayoutChoice(label)))
                     android.graphics.drawable.StateListDrawable().apply {
                         addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(
                             GradientDrawable.Orientation.TOP_BOTTOM,
                             intArrayOf(Color.argb(214,44,166,253),Color.argb(211,18,118,216),
                                 Color.argb(194,21,92,185))
                         ).apply {
-                            cornerRadius=dp(12).toFloat()
+                            cornerRadius=dp(10).toFloat()
                             setStroke(dp(1),Color.argb(124,186,232,255))
                         })
                         addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
@@ -306,12 +333,14 @@ internal object AtomicPopupMenu {
                 val navigation=InlineNavigation(context,anchor){ next,nextAvoid,nextSubmenus ->
                     if(active===popup && popup.isShowing && anchor.isAttachedToWindow &&
                         SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
-                        // Geometry may change while an old menu is open. Never
-                        // reuse its placement if current protected bounds moved.
-                        if(nextAvoid.any{dualBounds.overlap(it.box())>0L})dismissActive()
+                        // Existing intentional compact overlay is not itself
+                        // a reason to dismiss an inline page. Only invalidate
+                        // if the actual protected geometry has changed.
+                        if(nextAvoid.map{it.box()}.toSet()!=blocked.toSet())dismissActive()
                         else {
                             childPages.add(InlinePage(label,next,nextSubmenus))
                             renderRight()
+                            fit(true)
                         }
                     }
                 }
@@ -369,10 +398,24 @@ internal object AtomicPopupMenu {
                         SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
                         childPages.removeAt(childPages.lastIndex)
                         renderRight()
+                        fit(true)
                     } else dismissActive()
                 }
                 child.items.forEach { action(it.first,it.second,it.first in child.submenuLabels) }
             } else {
+                // The supplied layout panel has no duplicate title; other
+                // categories have one compact descriptive right-pane header.
+                selectedCategory?.takeIf{it!=0}?.let { index->
+                    rows.addView(TextView(context).apply {
+                        text=StageMenuPolicy.groups[index]
+                        textSize=11f
+                        includeFontPadding=false
+                        setTextColor(Color.WHITE)
+                        setPadding(dp(5),dp(2),dp(5),dp(3))
+                        gravity=Gravity.CENTER_VERTICAL
+                        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },LinearLayout.LayoutParams(-1,-2))
+                }
                 items.filter{StageMenuPolicy.group(it.first)==selectedCategory}
                     .forEach { action(it.first,it.second,it.first in submenuLabels) }
             }
