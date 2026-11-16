@@ -27,5 +27,10 @@ internal object StageTransientTapPolicy {
             !valid() -> MoveRequest.STALE
             else -> MoveRequest.START
         }
+    /** A failed preview may hand back to the established workspace animator only
+     * while this attempt still owns the tap and before any real task move starts. */
+    fun canFallbackToWorkspacePreview(current:Boolean,moveStarted:Boolean,valid:Boolean):Boolean =
+        current && !moveStarted && valid
+
     fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged
 }
