@@ -98,7 +98,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if (page == "home") StageHomeLayout.GROUP_GAP_DP else 18) })
     }
     private fun row(parent: LinearLayout, title: String, detail: String? = null, icon: String? = null,
-        color: Int = blue, end: View? = null, action: (() -> Unit)? = null): View {
+        color: Int = blue, end: View? = null, filledIcon: Boolean = false, action: (() -> Unit)? = null): View {
         if (parent.childCount > 0) parent.addView(View(activity).apply {
             setBackgroundColor(if (frostedPage() && !dark) 0xCCDADDEA.toInt() else dividerColor)
         },
@@ -106,9 +106,15 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         return LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(if (page == "home") StageHomeLayout.ROW_DP else 62); setPadding(dp(18), dp(if (page == "home") 10 else 12), dp(18), dp(if (page == "home") 10 else 12))
+            // Color tiles are confined to home/section entries. Keep the text
+            // start, the minimum row height and the click target unchanged.
+            val tile = filledIcon && icon != "stage"
+            val iconSize = dp(if (tile) 30 else 24)
             if (icon != null) addView(if (icon == "stage") ImageView(activity).apply {
                 setImageResource(R.drawable.ic_stage_manager_apple); scaleType = ImageView.ScaleType.FIT_CENTER
-            } else StageSettingsIcon(activity, icon, color), LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(16) })
+            } else StageSettingsIcon(activity, icon, color, tile), LinearLayout.LayoutParams(iconSize, iconSize).apply {
+                marginEnd = dp(if (tile) 10 else 16)
+            })
             val words = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
             words.addView(label(title, 16f, if (icon == "exit") Color.rgb(220, 65, 60) else ink))
             if (!detail.isNullOrBlank()) words.addView(label(detail, 12f, secondary).apply {
@@ -397,6 +403,27 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         1 -> Color.rgb(142, 88, 224)
         else -> if (dark) Color.rgb(90, 201, 176) else Color.rgb(0, 119, 96)
     }
+    // Reference home uses semantic colors per function, not one color per group.
+    // Saturated stops keep the white native glyph legible in both themes.
+    private fun homeItemColor(route: String, section: Int): Int = when (route) {
+        "windows" -> Color.rgb(23, 101, 207)
+        "core" -> Color.rgb(117, 65, 204)
+        "groups" -> Color.rgb(34, 132, 77)
+        "gestures" -> Color.rgb(179, 91, 0)
+        "tile" -> Color.rgb(88, 98, 113)
+        "issue_all" -> Color.rgb(117, 65, 204)
+        "issue_specialties" -> Color.rgb(23, 101, 207)
+        "update" -> Color.rgb(34, 132, 77)
+        "feedback" -> Color.rgb(23, 101, 207)
+        "donate" -> Color.rgb(198, 40, 74)
+        "about" -> Color.rgb(88, 98, 113)
+        else -> sectionAccent(section)
+    }
+    private fun homeItemGlyph(item: StageHomeLayout.Item): String = when (item.page) {
+        "groups" -> "issue_layers"
+        "issue_specialties" -> "issue_document"
+        else -> item.icon
+    }
     private fun renderSectionNavigation(root:LinearLayout,selected:Int) {
         for((index,section) in StageHomeLayout.sections.withIndex()) {
             val color=if(index==selected) Color.WHITE else ink
@@ -430,7 +457,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             "tile" to "控制中心开关、智能隐藏等",
             "issue_all" to "记录有效诊断事件",
             "issue_specialties" to "五大专项、历史报告与导出")
-        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,sectionAccent(index)){
+        for(item in section.items) row(card,item.name,descriptions[item.page],homeItemGlyph(item),homeItemColor(item.page,index),filledIcon=true){
             if(item.page=="issue_all")launchIssue("all") else{
                 open(item.page)
                 if(item.page in listOf("core","windows","groups"))refresh()
@@ -469,7 +496,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             root.addView(heading)
             val card = group(root)
             for (item in section.items) {
-                val entry = row(card, item.name, icon = item.icon, color = accent) {
+                val entry = row(card, item.name, icon = homeItemGlyph(item), color = homeItemColor(item.page,index), filledIcon = true) {
                 if (item.page == "issue_all") launchIssue("all") else {
                     open(item.page)
                     if (item.page in listOf("core", "windows", "groups")) refresh()
@@ -852,10 +879,20 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
 }
 
 /** Small colored setting glyphs, drawn natively and aligned like system list icons. */
-internal class StageSettingsIcon(context: Context, private val kind: String, color: Int) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 2.1f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+internal class StageSettingsIcon(context: Context, private val kind: String, color: Int,
+    private val filledTile: Boolean = false) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = if (filledTile) Color.WHITE else color; style = Paint.Style.STROKE; strokeWidth = 2.1f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    init {
+        if (filledTile) {
+            val shade = Color.rgb(Color.red(color) * 3 / 4, Color.green(color) * 3 / 4, Color.blue(color) * 3 / 4)
+            // Static native drawable: no blur, extra surface, animation or sampling.
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(color, shade)).apply {
+                cornerRadius = 8f * resources.displayMetrics.density
+            }
+        }
+    }
     override fun onDraw(canvas: Canvas) {
-        val save = canvas.save(); val scale = minOf(width, height) / 24f
+        val save = canvas.save(); val scale = minOf(width, height) / (if (filledTile) 34f else 24f)
         canvas.translate((width - 24 * scale) / 2, (height - 24 * scale) / 2); canvas.scale(scale, scale)
         fun rect(l: Float, t: Float, r: Float, b: Float) = canvas.drawRoundRect(l, t, r, b, 1.5f, 1.5f, paint)
         when (kind) {

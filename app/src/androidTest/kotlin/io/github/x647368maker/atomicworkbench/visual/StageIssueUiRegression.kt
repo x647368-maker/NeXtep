@@ -451,6 +451,32 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
         try {
             await("real native phone home"){hasText(activity,"台前调度") &&
                 hasText(activity,"窗口布局") && hasText(activity,"一键综合诊断")}
+            ui {
+                val expected = mapOf(
+                    "窗口布局" to android.graphics.Color.rgb(23,101,207),
+                    "影音与快捷栏" to android.graphics.Color.rgb(117,65,204),
+                    "工作组" to android.graphics.Color.rgb(34,132,77),
+                    "启动手势" to android.graphics.Color.rgb(179,91,0),
+                    "快捷开关" to android.graphics.Color.rgb(88,98,113),
+                    "一键综合诊断" to android.graphics.Color.rgb(117,65,204),
+                    "专项测试与报告" to android.graphics.Color.rgb(23,101,207),
+                    "软件更新" to android.graphics.Color.rgb(34,132,77),
+                    "建议与反馈" to android.graphics.Color.rgb(23,101,207),
+                    "打赏作者" to android.graphics.Color.rgb(198,40,74),
+                    "关于与使用帮助" to android.graphics.Color.rgb(88,98,113))
+                for ((title,tint) in expected) {
+                    val label=descendants(homeScroll()).filterIsInstance<TextView>()
+                        .first { it.text.toString()==title }
+                    val row=(label.parent as ViewGroup).parent as ViewGroup
+                    val tile=descendants(row)
+                        .filterIsInstance<io.github.x647368maker.atomicworkbench.config.StageSettingsIcon>().single()
+                    val gradient=tile.background as? android.graphics.drawable.GradientDrawable
+                        ?: error("Missing native color tile for $title")
+                    check(gradient.colors?.firstOrNull()==tint) { "Wrong icon palette for $title" }
+                    check(tile.width>0 && tile.height==tile.width) { "Invalid tile bounds for $title" }
+                }
+            }
+            phase("PASS 11 native home icon tiles: semantic colors and square bounds")
             screenshot(out,"ui-home-phone-top.png",activity)
             val homeScroller=ui{homeScroll()}
             val contentHeight=ui{homeScroller.getChildAt(0)?.height?:0}
