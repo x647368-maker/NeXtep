@@ -1,9 +1,14 @@
 package io.github.x647368maker.atomicworkbench.systemui
 
-/** Per-tap only. No background capture, refresh or repeating idle timer. */
+/**
+ * Per-tap only. No background capture, refresh or repeating idle timer.
+ *
+ * v88 route order is live SurfaceControl flight -> short-lived RenderThread
+ * snapshot flight -> existing WorkspaceSwapAnimator preview. The snapshot
+ * renderer remains a bounded fallback even when the live GPU route is enabled.
+ */
 internal object StageTransientTapPolicy {
-    // Mutually exclusive backends: ordinary builds retain snapshots.
-    fun privateTrialEnabled():Boolean=!StagePrivateDualTaskFlightGate.enabled()
+    fun snapshotFallbackEnabled(): Boolean = true
     const val CAPTURE_BUDGET_MS=160L
     const val FIRST_COMMIT_BUDGET_MS=110L
     const val FLIGHT_MS=300L
