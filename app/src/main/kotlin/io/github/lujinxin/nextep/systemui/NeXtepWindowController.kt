@@ -2545,6 +2545,7 @@ class NeXtepWindowController(
         // Invalidate a queued or running layout-entry cue before capture.
         cancelRailLayoutMotion()
         var tapFallbackFinish: (() -> Unit)? = null
+        var workspaceTapTraceId: Long? = null
         // P0 (3731.mp4 + PR51 real-device feedback): do not capture a
         // TextureView bitmap or await a screenshot before the real task move.
         // On the phased tap path the coordinator already owns an asynchronous,
@@ -2562,6 +2563,7 @@ class NeXtepWindowController(
             previewCapturePending = false
             StageExchangeTelemetry.beginNativeTap()
             val tapTraceId=StageExchangeTelemetry.currentNativeTapId()
+            workspaceTapTraceId=tapTraceId
             var fallbackFinished=false
             tapFallbackFinish = {
                 if (!fallbackFinished) {
@@ -2587,8 +2589,10 @@ class NeXtepWindowController(
                     previewCapturePending=false
                     activeSwapViewport=geometry()
                     animateSwapPrepared(sourceIndex,targetIndex,drag,move,
-                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)
+                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease,tapTraceId)
                     true
+                }.onFailure {
+                    if(tapTraceId!=null) StageExchangeTelemetry.nativeEvent("workspace_preview_exception",tapTraceId)
                 }.getOrDefault(false)
             }
             val renderThreadFallback: (String) -> Boolean = { reason ->
@@ -2634,7 +2638,7 @@ class NeXtepWindowController(
                     asyncMove,canRelease,attemptNative=false)
             }) return
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-            animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,null,asyncMove,canRelease);return
+            animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,null,asyncMove,canRelease,workspaceTapTraceId);return
         }
         // Mark the whole PREVIEW-PREPARATION interval, not only the
         // ValueAnimator. Without this guard, a rail count refresh during the
@@ -2663,7 +2667,7 @@ class NeXtepWindowController(
                 mainTaskPresenter.currentTaskId()==task && slotCoordinator?.slotStates().orEmpty()==states},
             accept={
                 previewCapturePending = false
-                animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,it,asyncMove,canRelease)
+                animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,it,asyncMove,canRelease,workspaceTapTraceId)
             },
             onCancel={
                 previewCapturePending = false
@@ -2813,8 +2817,15 @@ class NeXtepWindowController(
         capturedMainPreview: Bitmap?,
         asyncMove: (((Boolean) -> Unit) -> Unit)? = null,
         canRelease: () -> Boolean = { true },
+        tapTraceId: Long? = null,
     ) {
-        fun withoutPreview() {
+        // Only the initiating tap owns these bounded diagnostic events.
+        // A later asynchronous fallback must not annotate a successor tap.
+        fun tracePreview(event: String) {
+            if(tapTraceId!=null) StageExchangeTelemetry.nativeEvent(event,tapTraceId)
+        }
+        fun withoutPreview(reason: String) {
+            tracePreview("workspace_no_visual:$reason")
             activeSwapViewport = null
             previewCapturePending = false
             if (deferredSwapGeometryRefresh) {
@@ -2826,7 +2837,11 @@ class NeXtepWindowController(
             else try { move() } finally { onFinished(); scheduleStageFocus() }
         }
         if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
-            withoutPreview()
+            withoutPreview(when {
+                !workspaceVisible -> "workspace_hidden"
+                suspended -> "workspace_suspended"
+                else -> "capture_unavailable"
+            })
             return
         }
         // An in-flight occupied/ready callback can temporarily recalculate
@@ -2839,14 +2854,18 @@ class NeXtepWindowController(
         val sourceSlot = slotWindows.getOrNull(sourceIndex)
         val sourceRect = Rect()
         if (previewHost == null || sourceSlot == null || !sourceSlot.view.getScreenVisibleRect(sourceRect)) {
-            withoutPreview()
+            withoutPreview(when {
+                previewHost==null -> "host_missing"
+                sourceSlot==null -> "source_slot_missing"
+                else -> "source_bounds_missing"
+            })
             return
         }
         val states = slotCoordinator?.slotStates().orEmpty()
         val sourceState = states.getOrNull(sourceIndex)
         val parkingMain = drag == null && targetIndex == null && sourceState is SlotState.Ready
         if (!parkingMain && sourceState !is SlotState.Occupied) {
-            withoutPreview()
+            withoutPreview("source_not_occupied")
             return
         }
         val mainRect = Rect(geometry.contentLeft, geometry.contentTop, geometry.contentRight, geometry.contentBottom)
@@ -2858,7 +2877,7 @@ class NeXtepWindowController(
         val targetRect = Rect(mainRect)
         if (targetIndex != null) {
             if (targetSlot == null || !targetSlot.view.getScreenVisibleRect(targetRect)) {
-                withoutPreview()
+                withoutPreview("target_bounds_missing")
                 return
             }
         }
@@ -2884,7 +2903,7 @@ class NeXtepWindowController(
             if (targetPreview !== sourcePreview && targetPreview?.isRecycled == false)
                 targetPreview.recycle()
             NeXtepLog.warn("swap_morph", "Source TextureView preview missing; genuine task migration retained")
-            withoutPreview()
+            withoutPreview("source_preview_missing")
             return
         }
         if (needsTargetPreview && targetPreview == null) {
@@ -2927,6 +2946,12 @@ class NeXtepWindowController(
                 StageCrossDeviceSwapMotionPolicy.Bounds(to.left, to.top, to.right, to.bottom),
                 sourcePreview != null,
             )
+        tracePreview(when {
+            drag!=null -> "workspace_preview_selected:drag"
+            !animateTap -> "workspace_preview_selected:fixed"
+            targetPreview==null -> "workspace_preview_selected:source_only"
+            else -> "workspace_preview_selected:dual"
+        })
         val previewSlots = listOfNotNull(sourceSlot, targetSlot)
         val y700NativeHandoff =
             io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy

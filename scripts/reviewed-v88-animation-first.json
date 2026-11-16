@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "95ffa6c0483060d84662b7ea50bd40196b05614e",
+      "reviewed_blob_sha1": "d75b792251b3a049fd72abe1983953824aea056a",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -97,6 +97,54 @@
         {
           "before": "            if (smartRail.hidden) {\n                text = if (io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(geometry)) \"━\" else \"│\"\n                textSize = 18f\n            }",
           "after": "            (background as? android.graphics.drawable.GradientDrawable)\n                ?.setColor(if (smartRail.hidden) Color.TRANSPARENT else Color.argb(210, 28, 43, 53))\n            if (smartRail.hidden) {\n                text = if (io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(geometry)) \"━\" else \"│\"\n                textSize = 18f\n            }"
+        },
+        {
+          "before": "        var tapFallbackFinish: (() -> Unit)? = null\n",
+          "after": "        var tapFallbackFinish: (() -> Unit)? = null\n        var workspaceTapTraceId: Long? = null\n"
+        },
+        {
+          "before": "            val tapTraceId=StageExchangeTelemetry.currentNativeTapId()\n            var fallbackFinished=false",
+          "after": "            val tapTraceId=StageExchangeTelemetry.currentNativeTapId()\n            workspaceTapTraceId=tapTraceId\n            var fallbackFinished=false"
+        },
+        {
+          "before": "                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)\n                    true\n                }.getOrDefault(false)",
+          "after": "                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease,tapTraceId)\n                    true\n                }.onFailure {\n                    if(tapTraceId!=null) StageExchangeTelemetry.nativeEvent(\"workspace_preview_exception\",tapTraceId)\n                }.getOrDefault(false)"
+        },
+        {
+          "before": "            animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,null,asyncMove,canRelease);return",
+          "after": "            animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,null,asyncMove,canRelease,workspaceTapTraceId);return"
+        },
+        {
+          "before": "                animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,it,asyncMove,canRelease)",
+          "after": "                animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,it,asyncMove,canRelease,workspaceTapTraceId)"
+        },
+        {
+          "before": "        capturedMainPreview: Bitmap?,\n        asyncMove: (((Boolean) -> Unit) -> Unit)? = null,\n        canRelease: () -> Boolean = { true },\n    ) {\n        fun withoutPreview() {",
+          "after": "        capturedMainPreview: Bitmap?,\n        asyncMove: (((Boolean) -> Unit) -> Unit)? = null,\n        canRelease: () -> Boolean = { true },\n        tapTraceId: Long? = null,\n    ) {\n        // Only the initiating tap owns these bounded diagnostic events.\n        // A later asynchronous fallback must not annotate a successor tap.\n        fun tracePreview(event: String) {\n            if(tapTraceId!=null) StageExchangeTelemetry.nativeEvent(event,tapTraceId)\n        }\n        fun withoutPreview(reason: String) {\n            tracePreview(\"workspace_no_visual:$reason\")"
+        },
+        {
+          "before": "        if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n            withoutPreview()\n            return\n        }",
+          "after": "        if (!workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n            withoutPreview(when {\n                !workspaceVisible -> \"workspace_hidden\"\n                suspended -> \"workspace_suspended\"\n                else -> \"capture_unavailable\"\n            })\n            return\n        }"
+        },
+        {
+          "before": "        if (previewHost == null || sourceSlot == null || !sourceSlot.view.getScreenVisibleRect(sourceRect)) {\n            withoutPreview()\n            return\n        }",
+          "after": "        if (previewHost == null || sourceSlot == null || !sourceSlot.view.getScreenVisibleRect(sourceRect)) {\n            withoutPreview(when {\n                previewHost==null -> \"host_missing\"\n                sourceSlot==null -> \"source_slot_missing\"\n                else -> \"source_bounds_missing\"\n            })\n            return\n        }"
+        },
+        {
+          "before": "        if (!parkingMain && sourceState !is SlotState.Occupied) {\n            withoutPreview()\n            return\n        }",
+          "after": "        if (!parkingMain && sourceState !is SlotState.Occupied) {\n            withoutPreview(\"source_not_occupied\")\n            return\n        }"
+        },
+        {
+          "before": "            if (targetSlot == null || !targetSlot.view.getScreenVisibleRect(targetRect)) {\n                withoutPreview()\n                return\n            }",
+          "after": "            if (targetSlot == null || !targetSlot.view.getScreenVisibleRect(targetRect)) {\n                withoutPreview(\"target_bounds_missing\")\n                return\n            }"
+        },
+        {
+          "before": "            NeXtepLog.warn(\"swap_morph\", \"Source TextureView preview missing; genuine task migration retained\")\n            withoutPreview()",
+          "after": "            NeXtepLog.warn(\"swap_morph\", \"Source TextureView preview missing; genuine task migration retained\")\n            withoutPreview(\"source_preview_missing\")"
+        },
+        {
+          "before": "        val previewSlots = listOfNotNull(sourceSlot, targetSlot)\n        val y700NativeHandoff =",
+          "after": "        tracePreview(when {\n            drag!=null -> \"workspace_preview_selected:drag\"\n            !animateTap -> \"workspace_preview_selected:fixed\"\n            targetPreview==null -> \"workspace_preview_selected:source_only\"\n            else -> \"workspace_preview_selected:dual\"\n        })\n        val previewSlots = listOfNotNull(sourceSlot, targetSlot)\n        val y700NativeHandoff ="
         }
       ]
     },
