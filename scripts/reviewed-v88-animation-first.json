@@ -1,7 +1,7 @@
 {
   "files": {
     "app/build.gradle.kts": {
-      "reviewed_blob_sha1": "846d2b053517a767ab894dbba277c03e9846f8f5",
+      "reviewed_blob_sha1": "8a1c786356873f47f9db2cbb0ba2350a8d07df13",
       "previous_blob_sha1": "6bd058b2dccb8a11f9cde1b51dd4551f95549e4b",
       "patches": [
         {
@@ -11,6 +11,10 @@
         {
           "before": "        buildConfigField(\"boolean\", \"ATOMIC_NATIVE_SURFACE_TRIAL\", \"false\")\n        buildConfigField(\"boolean\", \"ATOMIC_PAIRED_RAIL_TRIAL\", \"false\")\n        versionCode = 87\n        versionName = \"0.9.72-dev\"\n        testInstrumentationRunner = \"io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation\"\n",
           "after": "        buildConfigField(\"boolean\", \"ATOMIC_NATIVE_SURFACE_TRIAL\", \"false\")\n        buildConfigField(\"boolean\", \"ATOMIC_PAIRED_RAIL_TRIAL\", \"false\")\n        versionCode = 88\n        versionName = \"0.9.73-dev\"\n        testInstrumentationRunner = \"io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation\"\n"
+        },
+        {
+          "before": "        versionCode = 88\n        versionName = \"0.9.73-dev\"",
+          "after": "        versionCode = 89\n        versionName = \"0.9.74-dev\""
         }
       ]
     },
@@ -299,12 +303,16 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt": {
-      "reviewed_blob_sha1": "47a11afa49c54bfd74637b80186df1b1592e204e",
+      "reviewed_blob_sha1": "2cb10bb6d160bd3e459c8ffd61ad02b54e87a33f",
       "previous_blob_sha1": "800279847aa044557674ff97ad990dd9baf161d2",
       "patches": [
         {
           "before": "/** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */\ninternal object StageRuntimeIdentity {\n    const val BUILD = \"0.9.72-dev/87\"\n    const val ACTION = \"io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_30\"\n    const val AUDIT_ACTION=\"io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1\"",
           "after": "/** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */\ninternal object StageRuntimeIdentity {\n    const val BUILD = \"0.9.73-dev/88\"\n    const val ACTION = \"io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_30\"\n    const val AUDIT_ACTION=\"io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1\""
+        },
+        {
+          "before": "const val BUILD = \"0.9.73-dev/88\"",
+          "after": "const val BUILD = \"0.9.74-dev/89\""
         }
       ]
     },
@@ -1022,7 +1030,7 @@
     },
     ".github/workflows/atomic-android.yml": {
       "previous_blob_sha1": "7f7d36d133053d7d3d37ae1d36bee7d217845959",
-      "reviewed_blob_sha1": "2bfcde6426eae8eb340a06b20e7c4644f6e63712",
+      "reviewed_blob_sha1": "01661e38b07ef0016cb3ffd0496cb0873a4aa47d",
       "patches": [
         {
           "before": "      - name: Verify genuine API37 two live GPU mirrors with a strict dedicated test\n        timeout-minutes: 5",
@@ -1031,6 +1039,10 @@
         {
           "before": "            paired-flight-instrumentation.txt\n            native-flight-logcat.txt",
           "after": "            paired-flight-instrumentation.txt\n            adaptive-flight-instrumentation.txt\n            native-flight-logcat.txt"
+        },
+        {
+          "before": "atomic-workbench-v0.9.73-dev-88-",
+          "after": "atomic-workbench-v0.9.74-dev-89-"
         }
       ]
     },
@@ -1431,6 +1443,16 @@
         {
           "before": "    fun request(callback: (Result<List<LauncherAppRepository.AppEntry>>) -> Unit) {",
           "after": "    // Main-lane read of the existing catalogue only. No async menu reopen\n    // or fresh package scan for a saved pin.\n    fun cachedLabel(key:String):String?=cached?.firstOrNull { it.key==key }?.label\n\n    fun request(callback: (Result<List<LauncherAppRepository.AppEntry>>) -> Unit) {"
+        }
+      ]
+    },
+    "RELEASE_NOTES.md": {
+      "reviewed_blob_sha1": "7374570df06d1835ca358e553b91a5cd282ea5ea",
+      "previous_blob_sha1": "0fa570176092f1c8c3ead87f15cebe1d89dc4932",
+      "patches": [
+        {
+          "before": "台前调度 v0.9.73-dev（versionCode 88）｜88版动画优先深度优化\n\n本版从87版真机测试基线独立建立开发线。87版保留，不在原分支上反复打补丁。\n\n本版严格按以下顺序开发：\n\n1. **动画引擎（最高优先级）**\n   - 真实任务窗口交换优先使用双任务 SurfaceControl/GPU 飞行动画；保留RenderThread短时任务画面动画与现有工作区预览作为有界回退。\n   - 统一主窗/小窗运动方向、轨迹、速度曲线、比例和圆角连续性，重点检查首帧响应、掉帧、闪烁、黑帧、错位及动画结束后的真实画面交接。\n   - 覆盖快速连续交换、任务身份变化、取消、中断、关闭、替换、工作区退出、异常回滚和全部图层/Bitmap/Animator资源释放。\n   - 对真实任务迁移耗时、动画帧间隔、GPU提交/合成、功耗与温升建立可核验记录；事务ACK不冒充可见像素验收。\n\n2. **二级页面**\n   - 修复二级页面只显示标题、内容被压缩裁切、滚动区域错误及菜单遮挡真实任务的问题。\n   - 保证每个分类的完整功能可见、可操作，空间不足时使用合理滚动而不是压缩到不可用高度。\n\n3. **首页视觉与菜单重构**\n   - 恢复各功能独立彩色图标。\n   - 按已确认设计恢复左侧一级分类常驻、右侧二级内容切换的液态玻璃双栏菜单。\n   - 统一手机、折叠屏和平板的视觉语义，不擅自改变已确认的功能归属。\n\n4. **侧栏恢复**\n   - 扩大透明触控热区，保留白色竖条视觉提示。\n   - 点击及边缘滑动均可可靠恢复；不得抢占主窗操作或系统返回手势；展开后主窗及时重新布局。\n\n5. **最后进行全机型回归**\n   - 一加 Ace 7 Pro、OPPO Find N5 折叠/展开、联想 Y700 横/竖屏及其他既定适配设备。\n   - 前四项形成稳定候选后统一回归，不以单机或模拟器通过代替OEM真机验收。\n\n**继承与保护：** 保留87版已验收的主窗/四小窗几何、真实任务与输入映射、工作组、快捷栏、通知栏交互、原包名、原签名和低功耗约束。不降低画质、不减少小窗、不冻结第三方进程、不以固定截图替代真实任务。\n\n**当前状态：开发中。** 上述项目是88版开发目标，不代表已实现或验收。未完成CI、专项测试及真机验收前，不发布88版安装包。\n",
+          "after": "台前调度 v0.9.74-dev（versionCode 89）｜89版动画与液态玻璃菜单测试候选\n\n本版在88版独立冻结基线上继续开发，用于原签名真机体验验收，不是公开稳定版。\n\n1. **窗口交换动画**\n   - 优化顶部、左侧、右侧排列下的成对轨迹约束、等比画面运动和端点一致性；可用时优先真实 GPU 镜像，保留原有安全回退。\n   - 加强首帧及末帧事务回执、过期任务身份拒绝、动画取消、宿主分离和资源释放保护。事务回执不等同于第三方应用新画面已显示。\n   - 在条件满足且缓存有效时使用实际壁纸纹理遮罩，避免原固定深色遮罩造成的突兀色块；壁纸本体先显示，纹理准备独立执行。仅回调超时允许一次空闲恢复，失败时保留安全降级。\n\n2. **液态玻璃菜单**\n   - 主窗菜单按窗口布局、窗口管理、快捷栏与显示、其他功能四类组织。在有足够安全空间时保留左侧分类和右侧内容，使用独立圆角半透明玻璃、白色线性图标和蓝色选中态。\n   - 按真实布局状态标记顶部、左侧、右侧及主窗显示策略；动态测量分类文字，空间不足时使用可滚动的紧凑菜单，不移动真实窗口来制造空间。\n   - 窗口管理接入原主小窗交换、顺序调整、侧栏展收机制。快捷栏管理复用现有添加、固定、排序、移除及恢复设置，支持管理已保存但当前屏幕未显示的固定应用；归并重复入口。\n   - 保留已确认的首页、二级设置页面、原窗口几何和快捷栏本体。未增加独立窗口尺寸、圆角或快捷栏位置设置。\n\n3. **稳定性与验收**\n   - 保留原包名、原证书要求、更新校验、工作组、通知栏交互及已通过的历史功能。未减少真实小窗数量或降低任务画质。\n   - 自动化覆盖几何、真实模拟器 GPU 像素、取消和释放、双栏菜单点击及生产者身份保护。历史测试中曾出现纹理回调超时和运动像素取样失败；不得以编译通过代替真机体验。\n   - 一加 Ace 7 Pro、OPPO Find N5/N3、联想 Y700 等真实设备的流畅度、黑影、任务交接、玻璃质感和功耗仍须验收；不承诺所有 ROM 上完全无异常。\n\n**当前状态：私下测试候选。** 版本元数据已统一；仅在最终构建验证、原证书验签后交付测试，不自动发布或推送在线更新。\n"
         }
       ]
     }
