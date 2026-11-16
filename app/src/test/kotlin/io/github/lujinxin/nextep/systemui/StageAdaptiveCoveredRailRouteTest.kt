@@ -34,6 +34,16 @@ class StageAdaptiveCoveredRailRouteTest {
                     for(o in obstacles)assertTrue(g.peakSweptOverlap(f.box,f.box,o)<=1.01)
                 }
             }
+            // Against the actual reconstructed rail positions, verify a single
+            // forward horizontal direction for both roles across the rounded
+            // trajectory, independent of the distinct source aspect ratios.
+            var prior=plan.at(0f)
+            for(i in 1..2000) {
+                val now=plan.at(i/2000f)
+                assertTrue("incoming reverses rail direction at $i",now.incoming.cx+.003f>=prior.incoming.cx)
+                assertTrue("outgoing reverses rail direction at $i",now.outgoing.cx-.003f<=prior.outgoing.cx)
+                prior=now
+            }
             val end=plan.at(1f)
             val up=checkNotNull(StageAdaptiveCoveredRailRoute.frame(end.incoming,incoming))
             val down=checkNotNull(StageAdaptiveCoveredRailRoute.frame(end.outgoing,outgoing))

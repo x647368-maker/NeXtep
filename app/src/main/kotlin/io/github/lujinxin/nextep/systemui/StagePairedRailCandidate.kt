@@ -19,6 +19,29 @@ internal object PairedRailCandidate {
         fun mix(x:Float,y:Float)=x+(y-x)*p
         return Box(mix(a.left,b.left),mix(a.top,b.top),mix(a.right,b.right),mix(a.bottom,b.bottom))
     }
+    // The physical rail normal, not bitmap aspect or the selected backend,
+    // owns travel direction. The incoming and outgoing centers must advance
+    // in opposite directions on that axis. Perpendicular clearance is fine;
+    // reversing past a previously traversed rail coordinate is not.
+    internal fun followsRailAxis(keys:List<PairBox>,horizontal:Boolean):Boolean {
+        if(keys.size<2)return false
+        fun axis(b:Box)=if(horizontal)b.cx else b.cy
+        val first=keys.first();val last=keys.last()
+        val advance=axis(last.incoming)-axis(first.incoming)
+        val retreat=axis(last.outgoing)-axis(first.outgoing)
+        if(!advance.isFinite() || !retreat.isFinite() ||
+            abs(advance)<2f || abs(retreat)<2f || advance*retreat>=0f)return false
+        val sign=if(advance>0f)1f else -1f
+        // Convex quadratic smoothing of monotonically ordered control
+        // points preserves this projection at every continuous instant.
+        // Subpixel tolerance covers only floating point center arithmetic.
+        val epsilon=.002f
+        return keys.zipWithNext().all { (a,b) ->
+            val up=(axis(b.incoming)-axis(a.incoming))*sign
+            val down=(axis(a.outgoing)-axis(b.outgoing))*sign
+            up.isFinite() && down.isFinite() && up>=-epsilon && down>=-epsilon
+        }
+    }
     private fun area(a:Box)=a.width.toDouble()*a.height
     private fun fit(width:Int,height:Int,target:Box):Pair<Float,Float> {
         val s=min(target.width/width,target.height/height)
@@ -93,6 +116,9 @@ internal object PairedRailCandidate {
                     PairBox(at(main.cx+(mx+lx-main.cx)*lead,main.cy+(my+ly-main.cy)*lead,ia),at(ex,ey,oz)),
                     PairBox(at(main.cx,main.cy,iz),at(small.cx,small.cy,oz)))
                 if(keys.any{!inside(it.incoming,screen)||!inside(it.outgoing,screen)})continue
+                // Use the existing bounded candidate search to reject any
+                // detour which would make either card reverse its rail travel.
+                if(!followsRailAxis(keys,leftRight))continue
                 var valid=true;var maximum=0.0
                 for(i in 0 until keys.lastIndex){
                     if(!withinBudget())return null

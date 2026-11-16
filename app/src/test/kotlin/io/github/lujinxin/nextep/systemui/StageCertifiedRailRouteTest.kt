@@ -45,6 +45,23 @@ class StageCertifiedRailRouteTest {
         }
     }
 
+    @Test fun railNormalDirectionIsIndependentOfLateralDetours() {
+        fun k(x:Float,y:Float,ox:Float,oy:Float)=PairedRailCandidate.PairBox(
+            Box(x-5f,y-5f,x+5f,y+5f),Box(ox-5f,oy-5f,ox+5f,oy+5f))
+        val left=listOf(k(20f,100f,200f,100f),k(100f,140f,150f,60f),k(200f,100f,20f,100f))
+        assertTrue(PairedRailCandidate.followsRailAxis(left,true))
+        assertTrue(PairedRailCandidate.followsRailAxis(left.reversed(),true))
+        assertFalse(PairedRailCandidate.followsRailAxis(left.toMutableList().apply {
+            add(2,k(90f,140f,155f,60f))
+        },true))
+        val top=listOf(k(100f,20f,100f,200f),k(140f,100f,60f,150f),k(100f,200f,100f,20f))
+        assertTrue(PairedRailCandidate.followsRailAxis(top,false))
+        assertFalse(PairedRailCandidate.followsRailAxis(top.toMutableList().apply {
+            add(2,k(140f,90f,60f,155f))
+        },false))
+        assertFalse(PairedRailCandidate.followsRailAxis(listOf(left[0],k(200f,100f,300f,100f)),true))
+    }
+
     @Test fun usefulCoveredCropIsNotReplacedByContain() {
         assertNull(StageCertifiedRailRoute.choose(small,main,incoming,Crop(0,0,290,360),
             screen,listOf(other),true))
@@ -112,8 +129,17 @@ class StageCertifiedRailRouteTest {
                 assertTrue(g.endpointGapPx(first.outgoing,g.mirrorFrame(large,selectedBox,b,0f,covered)!!.box)<=2f)
                 assertTrue(g.endpointGapPx(last.incoming,g.mirrorFrame(selectedBox,large,a,1f,covered)!!.box)<=2f)
                 assertTrue(g.endpointGapPx(last.outgoing,g.mirrorFrame(large,selectedBox,b,1f,covered)!!.box)<=2f)
+                var prior=plan.at(0f)
+                val horizontal=rail!="top"
+                val sign=if(rail=="right")-1f else 1f
+                fun axis(b:Box)=if(horizontal)b.cx else b.cy
                 for(i in 0..1000) {
                     val k=plan.at(i/1000f)
+                    assertTrue("incoming rail reversal $rail $width/$height $selected $i",
+                        (axis(k.incoming)-axis(prior.incoming))*sign>=-.005f)
+                    assertTrue("outgoing rail reversal $rail $width/$height $selected $i",
+                        (axis(prior.outgoing)-axis(k.outgoing))*sign>=-.005f)
+                    prior=k
                     assertTrue(StageCertifiedRailRoute.overlapFraction(k.incoming,k.outgoing)<=.3501)
                     for((card,root,ratio) in listOf(
                         Triple(k.incoming,first.incoming,a.right.toFloat()/a.bottom),
