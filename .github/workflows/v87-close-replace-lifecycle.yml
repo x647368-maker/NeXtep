@@ -1,0 +1,40 @@
+name: Isolated v87 close-replace lifecycle compile
+
+on:
+  push:
+    branches: ['atomic-workbench/v87-close-replace-lifecycle-guard']
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile Android production and instrumentation sources
+        run: bash scripts/ci-android-build.sh :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+      - name: Run project unit tests including lifecycle lease races
+        run: bash scripts/ci-android-build.sh :app:testDebugUnitTest
+      - name: Confirm experimental GPU paths remain disabled by default
+        run: |
+          grep -R --include=BuildConfig.java -E 'ATOMIC_NATIVE_SURFACE_TRIAL[[:space:]]*=[[:space:]]*false;' app/build/generated/source/buildConfig/debug
+          grep -R --include=BuildConfig.java -E 'ATOMIC_PAIRED_RAIL_TRIAL[[:space:]]*=[[:space:]]*false;' app/build/generated/source/buildConfig/debug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: close-replace-lifecycle-unit-results
+          path: app/build/test-results/testDebugUnitTest/
