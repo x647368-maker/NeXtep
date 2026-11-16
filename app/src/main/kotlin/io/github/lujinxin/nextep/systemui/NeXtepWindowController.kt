@@ -2360,6 +2360,7 @@ class NeXtepWindowController(
     private fun tryTransientTapSwap(
         slotIndex:Int, moveAsync:((Boolean)->Unit)->Unit,
         canRelease:()->Boolean, onFinished:()->Unit,
+        onVisualUnavailable:((String)->Boolean)?=null,
     ):Boolean {
         val traceId=StageExchangeTelemetry.currentNativeTapId()
         fun reject(reason:String):Boolean {
@@ -2489,6 +2490,15 @@ class NeXtepWindowController(
             mainBackdrop=matchingWallpaperFrame(g)?.let {
                 WorkspaceWallpaperBackdrop.crop(it,0,0,0,wallpaperRotation,g.displayRotation)
             },
+            onVisualUnavailable={ reason ->
+                previewCapturePending=false
+                activeSwapViewport=g
+                val accepted=runCatching { onVisualUnavailable?.invoke(reason) ?: false }
+                    .getOrDefault(false)
+                if(!accepted) StageExchangeTelemetry.nativeEvent(
+                    "snapshot_workspace_preview_rejected:$reason",traceId)
+                accepted
+            },
             onFinished={
                 previewCapturePending=false
                 activeSwapViewport=null
@@ -2556,7 +2566,16 @@ class NeXtepWindowController(
             if (StagePrivateDualTaskFlightGate.enabled() &&
                 tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
             if (StageTransientTapPolicy.snapshotFallbackEnabled() &&
-                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
+                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished,
+                    onVisualUnavailable={ reason ->
+                        StageExchangeTelemetry.nativeEvent(
+                            "tap_workspace_preview_fallback:$reason",tapTraceId)
+                        runCatching {
+                            animateSwapPrepared(sourceIndex,targetIndex,drag,move,
+                                tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)
+                            true
+                        }.getOrDefault(false)
+                    })) return
 
             StageExchangeTelemetry.nativeEvent("tap_animation_fallback:workspace_preview",tapTraceId)
             NeXtepLog.warn("swap_latency",
