@@ -2723,6 +2723,9 @@ class NeXtepWindowController(
         canRelease: () -> Boolean = { true },
         attemptNative: Boolean = true,
     ) {
+        // A user swap takes precedence over optional wallpaper preparation.
+        // Invalidate queued work/recovery, but retain any already ready texture.
+        gpuWallpaperEpoch.incrementAndGet()
         // The snapshot/mirror must sample the settled physical rail bounds.
         // Invalidate a queued or running layout-entry cue before capture.
         cancelRailLayoutMotion()
@@ -3651,6 +3654,7 @@ class NeXtepWindowController(
 
     private fun queueWallpaperTexture(
         capturedGeometry:WorkspaceGeometry,generation:Int,textureEpoch:Int,frame:Bitmap,
+        attempt:Int=0,
     ) {
         val key=wallpaperKey(capturedGeometry)
         if(!workspaceVisible || suspended || isExchangePending() ||
@@ -3663,18 +3667,32 @@ class NeXtepWindowController(
             !StageConcurrentNativeTrialPolicy.allowed(true,
                 android.animation.ValueAnimator.areAnimatorsEnabled(),
                 context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))return
-        // One optional job on the existing capture worker. No new executor,
-        // retry loop, frame wait, or texture upload triggered by a tap.
+        // One optional job on the existing capture worker, with at most
+        // one recovery after a real callback timeout. No new executor,
+        // periodic retry, frame wait, or upload triggered by a tap.
         backdropWorker.execute {
             if(generation!=backdropGeneration.get() ||
                 textureEpoch!=gpuWallpaperEpoch.get() || frame.isRecycled ||
                 !WorkspaceWallpaperBackdrop.canCapture(context) ||
                 context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false)return@execute
+            var preparation="not_reported"
             val textured=runCatching {
                 StageGpuWallpaperBuffer.prepare(frame) { outcome ->
-                    NeXtepLog.info("wallpaper_backdrop","GPU cover preparation: "+outcome)
+                    preparation=outcome
+                    NeXtepLog.info("wallpaper_backdrop","GPU cover preparation attempt="+attempt+" "+outcome)
                 }
-            }.getOrNull() ?: return@execute
+            }.getOrNull()
+            if(textured==null) {
+                if(StageConcurrentNativeTrialPolicy.retryWallpaperPreparation(attempt,preparation)) {
+                    // Re-enter the main-lane admission check after the
+                    // failed renderer has been closed. No second try on
+                    // stale geometry, a new swap, lock, or saver entry.
+                    backdropHandler.post {
+                        queueWallpaperTexture(capturedGeometry,generation,textureEpoch,frame,attempt+1)
+                    }
+                }
+                return@execute
+            }
             if(!backdropHandler.post {
                 val current=runCatching {
                     StageConcurrentNativeTrialPolicy.wallpaperTexturePublishable(

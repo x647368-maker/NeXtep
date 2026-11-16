@@ -62,6 +62,11 @@ internal object StageConcurrentNativeTrialPolicy {
         frameCurrent:Boolean,visible:Boolean,viewportCurrent:Boolean,eligible:Boolean):Boolean =
         generationCurrent && epochCurrent && frameCurrent && visible && viewportCurrent && eligible
 
+    // Only a missing callback is recoverable in this optional, off-input
+    // preparation path. Each attempt retains its original deadline.
+    fun retryWallpaperPreparation(attempt:Int,outcome:String):Boolean =
+        attempt==0 && outcome.startsWith("callback_wait:TimeoutException ")
+
     fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {
         lastPrepareMs=ms
         if (disabled || nowMs<retryAtMs || ms < 0L) return false

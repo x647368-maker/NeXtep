@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.StageGpuMirrorOcclusion
 import io.github.x647368maker.atomicworkbench.systemui.StageGpuWallpaperBuffer
+import io.github.x647368maker.atomicworkbench.systemui.StageConcurrentNativeTrialPolicy
 import io.github.x647368maker.atomicworkbench.systemui.StageWallpaperCoverCache
 import java.io.File
 import kotlin.math.abs
@@ -53,10 +54,22 @@ internal class StageWallpaperCoverRuntimeRegression(private val inst:Instrumenta
                 drawRect(width*.5f,0f,width.toFloat(),height.toFloat(),p)
             }
             var preparation="not_reported"
-            val prepared=StageGpuWallpaperBuffer.prepare(wallpaper){ preparation=it }
-            try { File(out,"wallpaper-cover-preparation.txt").writeText(preparation+"\n") }
-            catch(error:Exception){ prepared?.close();throw error }
-            checkNotNull(prepared) { "Wallpaper buffer render unavailable: "+preparation }
+            val evidence=mutableListOf<String>()
+            fun prepare(attempt:Int):android.hardware.HardwareBuffer? {
+                val result=StageGpuWallpaperBuffer.prepare(wallpaper){ preparation=it }
+                evidence.add("attempt="+attempt+" "+preparation)
+                try {
+                    File(out,"wallpaper-cover-preparation.txt").writeText(evidence.joinToString("\n")+"\n")
+                    android.util.Log.i("StageWallpaperCover",evidence.last())
+                } catch(error:Exception){ result?.close();throw error }
+                return result
+            }
+            var prepared=prepare(0)
+            // Use the same bounded production policy, preserving evidence
+            // from the first attempt. Never bypass the real pixel assertion.
+            if(prepared==null && StageConcurrentNativeTrialPolicy.retryWallpaperPreparation(0,preparation))
+                prepared=prepare(1)
+            checkNotNull(prepared) { "Wallpaper buffer render unavailable: "+evidence.joinToString("; ") }
         } finally { wallpaper.recycle() }
         var masks:StageGpuMirrorOcclusion?=null
         val cache=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()

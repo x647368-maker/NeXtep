@@ -109,6 +109,17 @@ class StageConcurrentNativeTrialPolicyTest {
         }
     }
 
+    @Test fun wallpaperRecoveryIsBoundedAndOnlyForCallbackTimeout() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(attempt in -1..3)for(reason in listOf("callback_wait:TimeoutException elapsed_ms=172",
+            "fence_timeout elapsed_ms=120","unusable_buffer elapsed_ms=1","ready elapsed_ms=30",
+            "ui_lane_denied elapsed_ms=0","callback_wait:InterruptedException elapsed_ms=10",
+            "renderer_create:IllegalArgumentException elapsed_ms=2","not_reported")) {
+            assertEquals(attempt==0 && reason.startsWith("callback_wait:TimeoutException "),
+                p.retryWallpaperPreparation(attempt,reason))
+        }
+    }
+
     @Test fun trialAlwaysGatedByVisibilityAndSaver() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         assertEquals(360L, StageConcurrentNativeTrialPolicy.DURATION_MS)
