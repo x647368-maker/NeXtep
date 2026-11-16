@@ -306,4 +306,7 @@ jobs:
             visual-results/
             native-mirror-instrumentation.txt
             native-mirror-logcat.txt
+            native-flight-instrumentation.txt
+            paired-flight-instrumentation.txt
+            native-flight-logcat.txt
             /tmp/emulator-api37.log
