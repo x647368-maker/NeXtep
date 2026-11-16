@@ -654,9 +654,13 @@
         {
           "before": "                if(keys.any{!inside(it.incoming,screen)||!inside(it.outgoing,screen)})continue\n                var valid=true;var maximum=0.0",
           "after": "                if(keys.any{!inside(it.incoming,screen)||!inside(it.outgoing,screen)})continue\n                // Use the existing bounded candidate search to reject any\n                // detour which would make either card reverse its rail travel.\n                if(!followsRailAxis(keys,leftRight))continue\n                var valid=true;var maximum=0.0"
+        },
+        {
+          "before": "val lx=-vy/length*lane;val ly=vx/length*lane",
+          "after": "val normalX=-vy/length*lane;val normalY=vx/length*lane\n                val correctAxis=if(leftRight)abs(normalX)>abs(vx)*.5f else abs(normalY)>abs(vy)*.5f\n                val lx=if(!correctAxis)normalX else if(leftRight)0f else if(vy>0f)-lane else lane\n                val ly=if(!correctAxis)normalY else if(!leftRight)0f else if(vx>0f)lane else -lane"
         }
       ],
-      "reviewed_blob_sha1": "cd40dbd5a6bc644af2efa0996ad490cbcf745be4"
+      "reviewed_blob_sha1": "6bdf80e511ff4eed19e255c18998becd7bc2336e"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": {
       "previous_blob_sha1": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c",

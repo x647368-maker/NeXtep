@@ -109,7 +109,10 @@ internal object PairedRailCandidate {
             for(factor in if(coverViewports) floatArrayOf(.5f,.75f,1f,1.25f,1.5f,2f,2.5f,3f) else floatArrayOf(.5f,.75f,1f,1.25f,1.5f,2f)) for(sign in floatArrayOf(1f,-1f)) {
                 if(!withinBudget())return null
                 val lane=min(small.width,small.height)*factor*sign
-                val lx=-vy/length*lane;val ly=vx/length*lane
+                val normalX=-vy/length*lane;val normalY=vx/length*lane
+                val correctAxis=if(leftRight)abs(normalX)>abs(vx)*.5f else abs(normalY)>abs(vy)*.5f
+                val lx=if(!correctAxis)normalX else if(leftRight)0f else if(vy>0f)-lane else lane
+                val ly=if(!correctAxis)normalY else if(!leftRight)0f else if(vx>0f)lane else -lane
                 val keys=listOf(PairBox(at(small.cx,small.cy,ia),at(main.cx,main.cy,oa)),
                     PairBox(at(ex,ey,ia),at(main.cx+(mx-lx-main.cx)*lead,main.cy+(my-ly-main.cy)*lead,oz)),
                     PairBox(at(mx+lx,my+ly,ia),at(mx-lx,my-ly,oz)),
