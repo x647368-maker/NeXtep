@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "35f6a23a88888b9fc19824a55a10aea3ff8127d0",
+      "reviewed_blob_sha1": "0ecc4a48c7cd97e74088d01b964ac5b596383ee1",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -229,6 +229,10 @@
         {
           "before": "    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? =",
           "after": "    private fun queueWallpaperTexture(\n        capturedGeometry:WorkspaceGeometry,generation:Int,textureEpoch:Int,frame:Bitmap,\n    ) {\n        val key=wallpaperKey(capturedGeometry)\n        if(!workspaceVisible || suspended || isExchangePending() ||\n            generation!=backdropGeneration.get() ||\n            textureEpoch!=gpuWallpaperEpoch.get() ||\n            wallpaperBitmap!==frame || frame.isRecycled ||\n            frame.width!=key.width || frame.height!=key.height ||\n            wallpaperKey(geometry())!=key ||\n            !StagePrivateDualTaskFlightGate.enabled() ||\n            !StageConcurrentNativeTrialPolicy.allowed(true,\n                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))return\n        // One optional job on the existing capture worker. No new executor,\n        // retry loop, frame wait, or texture upload triggered by a tap.\n        backdropWorker.execute {\n            if(generation!=backdropGeneration.get() ||\n                textureEpoch!=gpuWallpaperEpoch.get() || frame.isRecycled ||\n                !WorkspaceWallpaperBackdrop.canCapture(context) ||\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false)return@execute\n            val textured=runCatching {\n                StageGpuWallpaperBuffer.prepare(frame) { outcome ->\n                    NeXtepLog.info(\"wallpaper_backdrop\",\"GPU cover preparation: \"+outcome)\n                }\n            }.getOrNull() ?: return@execute\n            if(!backdropHandler.post {\n                val current=runCatching {\n                    StageConcurrentNativeTrialPolicy.wallpaperTexturePublishable(\n                        generation==backdropGeneration.get(),\n                        textureEpoch==gpuWallpaperEpoch.get(),\n                        wallpaperBitmap===frame && !frame.isRecycled,\n                        workspaceVisible && !suspended,\n                        wallpaperKey(geometry())==key,\n                        StagePrivateDualTaskFlightGate.enabled() &&\n                            WorkspaceWallpaperBackdrop.canCapture(context) &&\n                            StageConcurrentNativeTrialPolicy.allowed(true,\n                                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))\n                }.getOrDefault(false)\n                if(current)gpuWallpaper.replace(key,textured) else textured.close()\n            })textured.close()\n        }\n    }\n\n    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? ="
+        },
+        {
+          "before": "            \"关闭主窗（移回后台）\" to { closeMainWindow() },\n            \"退出台前调度\" to { onExitRequested() },\n        ), avoidBounds = menuAvoidBounds())",
+          "after": "            \"关闭主窗（移回后台）\" to { closeMainWindow() },\n            \"退出台前调度\" to { onExitRequested() },\n        ), avoidBounds = menuAvoidBounds(), selectedLabels = setOf(\n            if(viewport.isTopRail()) \"顶部横排\" else if(sidebarSide==SidebarSide.LEFT) \"左侧排列\" else \"右侧排列\",\n            if(core.mainPriority) \"主窗口优先布局\" else \"完整显示布局\",\n        ))"
         }
       ]
     },
@@ -702,7 +706,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "fe92a3de7b516cdf0c80a54e72a48b01e7849510",
+      "reviewed_blob_sha1": "e04e76a3fb0be3d034e842223983c3c21bcdabdd",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -735,6 +739,22 @@
         {
           "before": "                        button.setTextColor(if(selected) (if(dark) Color.rgb(173,214,255) else Color.rgb(25,89,153)) else ink)",
           "after": "                        button.setTextColor(Color.WHITE)"
+        },
+        {
+          "before": "fun show(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoidBounds:List<Rect> = emptyList()) {",
+          "after": "fun show(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoidBounds:List<Rect> = emptyList(),\n        selectedLabels:Set<String> = emptySet()) {"
+        },
+        {
+          "before": "{showClosed(context,anchor,items,avoidBounds.map{Rect(it)})},",
+          "after": "{showClosed(context,anchor,items,avoidBounds.map{Rect(it)},selectedLabels.toSet())},"
+        },
+        {
+          "before": "private fun showClosed(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoid:List<Rect>) {",
+          "after": "private fun showClosed(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoid:List<Rect>,\n        selectedLabels:Set<String>) {"
+        },
+        {
+          "before": "                    val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)\n                        else StageMenuPolicy.group(label)\n                    val size=dp(14)\n                    val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}\n                    val arrow=if(categoryRow)StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)} else null\n                    setCompoundDrawables(glyph,null,arrow,null)",
+          "after": "                    val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)\n                        else StageMenuPolicy.actionGlyph(label)\n                    val size=dp(14)\n                    val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}\n                    val selected=!categoryRow && StageMenuPolicy.isSelected(label,selectedLabels)\n                    val choice=!categoryRow && StageMenuPolicy.isLayoutChoice(label)\n                    if(choice) {\n                        // Keep the complete original command in the accessibility\n                        // label while displaying its selection as a right hand mark.\n                        text=label.removePrefix(\"✓ \")\n                        isSelected=selected\n                    }\n                    val marker=when {\n                        categoryRow->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}\n                        choice->StageMenuLineGlyph(0,if(selected)3 else 4).apply {setBounds(0,0,size,size)}\n                        else->null\n                    }\n                    setCompoundDrawables(glyph,null,marker,null)"
         }
       ]
     },
@@ -1197,7 +1217,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPolicy.kt": {
-      "reviewed_blob_sha1": "69dd5393d78beb1f636351a230e20271b7196983",
+      "reviewed_blob_sha1": "834390dbf79ee900909a501548bd48503bdaf379",
       "previous_blob_sha1": "653014e7ccb46168e118fe2f3d6b6e15413229d5",
       "patches": [
         {
@@ -1207,21 +1227,29 @@
         {
           "before": "    fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {",
           "after": "    // Narrow portrait uses the same persistent two-pane design whenever\n    // both columns and four 48dp primary rows actually fit. Never displace\n    // a real app window to manufacture space; retain accessible fallback.\n    fun dualGlass(safe:Box,anchor:Box,w:Int,h:Int,minW:Int,minH:Int,avoid:List<Box>,gap:Int):Box? {\n        if(minW<=0 || minH<=0 || w<minW || h<minH || safe.w<minW || safe.h<minH)return null\n        return compact(safe,anchor,w,h,minW,minH,avoid,gap).takeIf {\n            it.w>=minW && it.h>=minH && avoid.none { a->it.overlap(a)>0L }\n        }\n    }\n    fun place(safe:Box,anchor:Box,w:Int,h:Int,avoid:List<Box>,gap:Int):Box {"
+        },
+        {
+          "before": "    val groups=listOf(\"窗口布局\",\"窗口管理\",\"快捷栏与显示\",\"其他功能\")",
+          "after": "    val groups=listOf(\"窗口布局\",\"窗口管理\",\"快捷栏与显示\",\"其他功能\")\n    private val layoutChoices=setOf(\"顶部横排\",\"左侧排列\",\"右侧排列\",\"主窗口优先布局\",\"完整显示布局\")\n    fun isLayoutChoice(label:String)=label.removePrefix(\"✓ \") in layoutChoices\n    fun isSelected(label:String,selected:Set<String>) =\n        isLayoutChoice(label) && (label.startsWith(\"✓ \") || label.removePrefix(\"✓ \") in selected)\n    // Distinguish actions without changing their text, callback or group.\n    // Numbers 0..3 remain the category glyph identifiers.\n    fun actionGlyph(label:String):Int {\n        val s=label.removePrefix(\"✓ \")\n        return when {\n            s==\"顶部横排\"->10\n            s==\"左侧排列\"->11\n            s==\"右侧排列\"->12\n            s==\"主窗口优先布局\"->13\n            s==\"完整显示布局\"->14\n            s==\"切换全屏（保留工作区）\"->15\n            s==\"添加小窗\" || s==\"添加常用应用到快捷栏\"->16\n            s==\"替换主应用\" || s==\"将当前微信任务移入小窗\"->17\n            s==\"关闭主窗（移回后台）\" || s==\"退出台前调度\"->18\n            s==\"恢复被隐藏的常用应用\"->19\n            s.contains(\"固定侧栏\")->20\n            s.contains(\"自动收起时间\")->21\n            s.contains(\"智能侧栏\")->22\n            s.contains(\"常用应用\")->23\n            s==\"影音布局与自动模式\"->24\n            else->group(s)\n        }\n    }"
         }
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageMenuPlacementTest.kt": {
-      "reviewed_blob_sha1": "0aee199e0cf61cce7a0c804d22e896d523a5cb06",
+      "reviewed_blob_sha1": "93ae749a8eceb65c24a3c8092b335ef3407b2690",
       "previous_blob_sha1": "3be52da72eb09119eb9b8ae5898d8baf6c7c4cb9",
       "patches": [
         {
           "before": "    @Test fun fullSizeWithoutObstacles(){",
           "after": "    @Test fun portraitGlassAllowsNarrowerTwoPaneWithoutOverlappingTasks(){\n        val phone=b(8,32,355,780)\n        val p=StageMenuPlacement.dualGlass(phone,anchor,304,252,282,204,\n            listOf(b(0,300,363,780)),8)!!\n        assertTrue(p.w in 282..304 && p.h>=204)\n        assertEquals(0L,p.overlap(b(0,300,363,780)))\n        assertNull(StageMenuPlacement.dualGlass(phone,anchor,304,252,282,204,\n            listOf(b(0,180,363,780)),8))\n        assertEquals(3,StageMenuPolicy.group(\"切换全屏（保留工作区）\"))\n        assertEquals(3,StageMenuPolicy.group(\"添加常用应用到快捷栏\"))\n        assertEquals(3,StageMenuPolicy.group(\"恢复被隐藏的常用应用\"))\n        assertEquals(0,StageMenuPolicy.group(\"✓ 主窗口优先布局\"))\n    }\n    @Test fun fullSizeWithoutObstacles(){"
+        },
+        {
+          "before": "    @Test fun fullSizeWithoutObstacles(){",
+          "after": "    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){\n        val selected=setOf(\"左侧排列\",\"主窗口优先布局\")\n        assertTrue(StageMenuPolicy.isSelected(\"左侧排列\",selected))\n        assertTrue(StageMenuPolicy.isSelected(\"主窗口优先布局\",selected))\n        assertTrue(StageMenuPolicy.isSelected(\"✓ 完整显示布局\",emptySet()))\n        assertFalse(StageMenuPolicy.isSelected(\"顶部横排\",selected))\n        assertFalse(StageMenuPolicy.isSelected(\"添加小窗\",setOf(\"添加小窗\")))\n        val labels=listOf(\"顶部横排\",\"左侧排列\",\"右侧排列\",\"主窗口优先布局\",\"完整显示布局\",\n            \"切换全屏（保留工作区）\",\"添加小窗\",\"替换主应用\",\"退出台前调度\",\"恢复被隐藏的常用应用\")\n        assertEquals(labels.size,labels.map(StageMenuPolicy::actionGlyph).toSet().size)\n        assertEquals(StageMenuPolicy.actionGlyph(\"✓ 主窗口优先布局\"),StageMenuPolicy.actionGlyph(\"主窗口优先布局\"))\n    }\n    @Test fun fullSizeWithoutObstacles(){"
         }
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "69a7bcaa1f965293a5f5c8adc829523bec23965c",
+      "reviewed_blob_sha1": "7347d75ae6888e8746ceb335145252f9204d9304",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1247,6 +1275,36 @@
         {
           "before": "        record(\"PASS real grouped native popup: ${counts.joinToString(\"; \")}; bounded 208dp primary and 220dp secondary; all original actions reachable\")",
           "after": "        record(\"PASS real grouped native popup: ${counts.joinToString(\"; \")}; bounded dual glass or compact fallback; all original actions reachable\")"
+        },
+        {
+          "before": "        fun scrollContainer(node: android.view.accessibility.AccessibilityNodeInfo): android.view.accessibility.AccessibilityNodeInfo? {\n            if (node.isScrollable) return node\n            return (0 until node.childCount).firstNotNullOfOrNull { index ->\n                node.getChild(index)?.let(::scrollContainer)\n            }\n        }",
+          "after": "        fun scrollContainers(node: android.view.accessibility.AccessibilityNodeInfo): List<android.view.accessibility.AccessibilityNodeInfo> {\n            if(node.isScrollable)return listOf(node)\n            return (0 until node.childCount).flatMap { index ->\n                node.getChild(index)?.let(::scrollContainers).orEmpty()\n            }\n        }"
+        },
+        {
+          "before": "                .firstOrNull { it.text?.toString() == label && it.isVisibleToUser }",
+          "after": "                .firstOrNull { (it.text?.toString()==label || it.contentDescription?.toString()==label) && it.isVisibleToUser }"
+        },
+        {
+          "before": "            } else scrollContainer(root)",
+          "after": "            } else {\n                val containers=scrollContainers(root)\n                // An offscreen action belongs to the right pane, not the\n                // first scrollable category list. Leave single-pane unchanged.\n                val category=label in StageMenuPolicy.groups\n                if(category) containers.minByOrNull { Rect().also(it::getBoundsInScreen).left }\n                else containers.maxByOrNull { Rect().also(it::getBoundsInScreen).left }\n            }"
+        },
+        {
+          "before": "            ui { AtomicPopupMenu.show(menuContext,anchor,actions,listOf(protected)) }",
+          "after": "            ui { AtomicPopupMenu.show(menuContext,anchor,actions,listOf(protected),\n                selectedLabels=setOf(\"左侧排列\",\"主窗口优先布局\")) }"
+        },
+        {
+          "before": "            verifySelectedCategory(StageMenuPolicy.groups.first())\n            click(\"窗口管理\")",
+          "after": "            verifySelectedCategory(StageMenuPolicy.groups.first())\n            check(visibleWideNode(\"左侧排列\").isSelected)\n            check(!visibleWideNode(\"顶部横排\").isSelected)\n            click(\"窗口管理\")"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageMenuLineGlyph.kt": {
+      "reviewed_blob_sha1": "80df6db08d2b1bb6276dd64f79fc70777510db76",
+      "previous_blob_sha1": "a7ef71eed2c8c051f5220826dd9b2001bebc852b",
+      "patches": [
+        {
+          "before": "        if(style==2)line(9f,5f,15f,12f,9f,19f)\n        else when(group) {",
+          "after": "        if(style==2)line(9f,5f,15f,12f,9f,19f)\n        else if(style==3 || style==4) {\n            canvas.drawCircle(12f,12f,8.5f,pen)\n            if(style==3)line(7.5f,12f,10.5f,15f,16.5f,8.5f)\n        } else when(group) {\n            10->{rect(2f,3f,22f,21f);line(2f,9f,22f,9f);for(x in listOf(6f,10f,14f,18f))line(x,5f,x,7f)}\n            11,12->{rect(2f,3f,22f,21f);val x=if(group==11)8f else 16f;line(x,3f,x,21f)\n                val edge=if(group==11)2f else 22f;for(y in listOf(7.5f,12f,16.5f))line(edge,y,x,y)}\n            13->{rect(2f,4f,22f,20f);rect(7f,7f,20f,17f)}\n            14->{rect(2f,4f,22f,20f);line(10f,4f,10f,20f);line(2f,12f,10f,12f)}\n            15->{line(3f,9f,3f,3f,9f,3f);line(15f,3f,21f,3f,21f,9f);line(21f,15f,21f,21f,15f,21f);line(9f,21f,3f,21f,3f,15f)}\n            16->{rect(3f,3f,21f,21f);line(12f,7f,12f,17f);line(7f,12f,17f,12f)}\n            17->{line(3f,8f,20f,8f,16f,4f);line(21f,16f,4f,16f,8f,20f)}\n            18->{line(12f,2f,12f,11f);canvas.drawArc(3f,4f,21f,22f,-55f,290f,false,pen)}\n            19->{line(2f,12f,5f,8f,12f,5f,19f,8f,22f,12f,19f,16f,12f,19f,5f,16f,2f,12f);canvas.drawCircle(12f,12f,3f,pen)}\n            20->{line(7f,3f,17f,3f,15f,10f,19f,15f,5f,15f,9f,10f,7f,3f);line(12f,15f,12f,22f)}\n            21->{canvas.drawCircle(12f,12f,9f,pen);line(12f,6f,12f,12f,16f,15f)}\n            22->{rect(3f,3f,21f,21f);line(9f,3f,9f,21f);line(12f,8f,16f,12f,12f,16f)}\n            23->{rect(3f,3f,10f,10f);rect(14f,3f,21f,10f);rect(3f,14f,10f,21f);rect(14f,14f,21f,21f)}\n            24->{rect(3f,5f,21f,19f);line(10f,9f,15f,12f,10f,15f,10f,9f)}"
         }
       ]
     }

@@ -52,15 +52,17 @@ internal object AtomicPopupMenu {
     fun dismissAll(){gate.cancel()}
     internal fun isShowing()=active?.isShowing==true
     fun onPanelChanged(){gate.panelChanged()}
-    fun show(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoidBounds:List<Rect> = emptyList()) {
+    fun show(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoidBounds:List<Rect> = emptyList(),
+        selectedLabels:Set<String> = emptySet()) {
         StageRuntimeIdentity.install(context)
         if(items.isEmpty())return
         SystemUiPanelMonitor.refresh(context)
         gate.request({anchor.isAttachedToWindow},{SystemUiPanelCollapser.tryCollapse(context)},
-            {showClosed(context,anchor,items,avoidBounds.map{Rect(it)})},
+            {showClosed(context,anchor,items,avoidBounds.map{Rect(it)},selectedLabels.toSet())},
             {Toast.makeText(context,"请先收起系统通知栏或控制中心，再打开菜单",Toast.LENGTH_SHORT).show()})
     }
-    private fun showClosed(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoid:List<Rect>) {
+    private fun showClosed(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoid:List<Rect>,
+        selectedLabels:Set<String>) {
         if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return
         val density=context.resources.displayMetrics.density
         fun dp(n:Int)=ceil(n*density).toInt()
@@ -174,11 +176,23 @@ internal object AtomicPopupMenu {
                     setShadowLayer(dp(1).toFloat(),0f,dp(1).toFloat(),Color.argb(205,0,0,0))
                     setPadding(dp(5),dp(4),dp(5),dp(4))
                     val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)
-                        else StageMenuPolicy.group(label)
+                        else StageMenuPolicy.actionGlyph(label)
                     val size=dp(14)
                     val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}
-                    val arrow=if(categoryRow)StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)} else null
-                    setCompoundDrawables(glyph,null,arrow,null)
+                    val selected=!categoryRow && StageMenuPolicy.isSelected(label,selectedLabels)
+                    val choice=!categoryRow && StageMenuPolicy.isLayoutChoice(label)
+                    if(choice) {
+                        // Keep the complete original command in the accessibility
+                        // label while displaying its selection as a right hand mark.
+                        text=label.removePrefix("✓ ")
+                        isSelected=selected
+                    }
+                    val marker=when {
+                        categoryRow->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}
+                        choice->StageMenuLineGlyph(0,if(selected)3 else 4).apply {setBounds(0,0,size,size)}
+                        else->null
+                    }
+                    setCompoundDrawables(glyph,null,marker,null)
                     compoundDrawablePadding=dp(4)
                 }
                 val selectedGlass=if(dualBounds!=null && parent===categories)

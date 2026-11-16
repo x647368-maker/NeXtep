@@ -26,6 +26,18 @@ class StageMenuPlacementTest {
         assertEquals(3,StageMenuPolicy.group("恢复被隐藏的常用应用"))
         assertEquals(0,StageMenuPolicy.group("✓ 主窗口优先布局"))
     }
+    @Test fun selectedLayoutAndActionGlyphFollowRealCommandIdentity(){
+        val selected=setOf("左侧排列","主窗口优先布局")
+        assertTrue(StageMenuPolicy.isSelected("左侧排列",selected))
+        assertTrue(StageMenuPolicy.isSelected("主窗口优先布局",selected))
+        assertTrue(StageMenuPolicy.isSelected("✓ 完整显示布局",emptySet()))
+        assertFalse(StageMenuPolicy.isSelected("顶部横排",selected))
+        assertFalse(StageMenuPolicy.isSelected("添加小窗",setOf("添加小窗")))
+        val labels=listOf("顶部横排","左侧排列","右侧排列","主窗口优先布局","完整显示布局",
+            "切换全屏（保留工作区）","添加小窗","替换主应用","退出台前调度","恢复被隐藏的常用应用")
+        assertEquals(labels.size,labels.map(StageMenuPolicy::actionGlyph).toSet().size)
+        assertEquals(StageMenuPolicy.actionGlyph("✓ 主窗口优先布局"),StageMenuPolicy.actionGlyph("主窗口优先布局"))
+    }
     @Test fun fullSizeWithoutObstacles(){
         val p=choose(emptyList())
         assertEquals(208,p.w);assertEquals(252,p.h);inside(safe,p)

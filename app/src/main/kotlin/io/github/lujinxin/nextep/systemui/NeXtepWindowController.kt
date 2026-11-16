@@ -1684,7 +1684,10 @@ class NeXtepWindowController(
             },
             "关闭主窗（移回后台）" to { closeMainWindow() },
             "退出台前调度" to { onExitRequested() },
-        ), avoidBounds = menuAvoidBounds())
+        ), avoidBounds = menuAvoidBounds(), selectedLabels = setOf(
+            if(viewport.isTopRail()) "顶部横排" else if(sidebarSide==SidebarSide.LEFT) "左侧排列" else "右侧排列",
+            if(core.mainPriority) "主窗口优先布局" else "完整显示布局",
+        ))
     }
 
     /** All workspace popups use the same visible task regions. A hidden rail

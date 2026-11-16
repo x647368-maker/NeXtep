@@ -20,20 +20,27 @@ internal class RefinementRegression(private val inst:Instrumentation) {
     private fun click(label:String) {
         // Compact menus can expose only part of a row. Scroll the actual
         // popup until the touch coordinates lie inside its visible viewport.
-        fun scrollContainer(node: android.view.accessibility.AccessibilityNodeInfo): android.view.accessibility.AccessibilityNodeInfo? {
-            if (node.isScrollable) return node
-            return (0 until node.childCount).firstNotNullOfOrNull { index ->
-                node.getChild(index)?.let(::scrollContainer)
+        fun scrollContainers(node: android.view.accessibility.AccessibilityNodeInfo): List<android.view.accessibility.AccessibilityNodeInfo> {
+            if(node.isScrollable)return listOf(node)
+            return (0 until node.childCount).flatMap { index ->
+                node.getChild(index)?.let(::scrollContainers).orEmpty()
             }
         }
         val b = Rect()
         for (attempt in 0..20) {
             val root = checkNotNull(inst.uiAutomation.rootInActiveWindow)
             val node = root.findAccessibilityNodeInfosByText(label)
-                .firstOrNull { it.text?.toString() == label && it.isVisibleToUser }
+                .firstOrNull { (it.text?.toString()==label || it.contentDescription?.toString()==label) && it.isVisibleToUser }
             val scroll = if (node != null) {
                 generateSequence(node.parent) { it.parent }.firstOrNull { it.isScrollable }
-            } else scrollContainer(root)
+            } else {
+                val containers=scrollContainers(root)
+                // An offscreen action belongs to the right pane, not the
+                // first scrollable category list. Leave single-pane unchanged.
+                val category=label in StageMenuPolicy.groups
+                if(category) containers.minByOrNull { Rect().also(it::getBoundsInScreen).left }
+                else containers.maxByOrNull { Rect().also(it::getBoundsInScreen).left }
+            }
             val viewport = Rect()
             (scroll ?: root).getBoundsInScreen(viewport)
             if (node != null) {
@@ -194,7 +201,8 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         val wideContext=activity.createConfigurationContext(wideConfig)
         fun verifyDualMenu(menuContext:Context,protected:Rect,viewport:String) {
             fired.set(-1)
-            ui { AtomicPopupMenu.show(menuContext,anchor,actions,listOf(protected)) }
+            ui { AtomicPopupMenu.show(menuContext,anchor,actions,listOf(protected),
+                selectedLabels=setOf("左侧排列","主窗口优先布局")) }
             settle()
             fun visibleWideNode(label:String):android.view.accessibility.AccessibilityNodeInfo {
                 val active=checkNotNull(inst.uiAutomation.rootInActiveWindow)
@@ -208,6 +216,8 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 }
             }
             verifySelectedCategory(StageMenuPolicy.groups.first())
+            check(visibleWideNode("左侧排列").isSelected)
+            check(!visibleWideNode("顶部横排").isSelected)
             click("窗口管理")
             verifySelectedCategory("窗口管理")
             val category=visibleWideRow("窗口管理")

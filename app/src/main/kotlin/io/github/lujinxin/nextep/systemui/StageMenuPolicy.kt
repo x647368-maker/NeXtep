@@ -13,6 +13,33 @@ internal object StageMenuPolicy {
         }
     }
     val groups=listOf("窗口布局","窗口管理","快捷栏与显示","其他功能")
+    private val layoutChoices=setOf("顶部横排","左侧排列","右侧排列","主窗口优先布局","完整显示布局")
+    fun isLayoutChoice(label:String)=label.removePrefix("✓ ") in layoutChoices
+    fun isSelected(label:String,selected:Set<String>) =
+        isLayoutChoice(label) && (label.startsWith("✓ ") || label.removePrefix("✓ ") in selected)
+    // Distinguish actions without changing their text, callback or group.
+    // Numbers 0..3 remain the category glyph identifiers.
+    fun actionGlyph(label:String):Int {
+        val s=label.removePrefix("✓ ")
+        return when {
+            s=="顶部横排"->10
+            s=="左侧排列"->11
+            s=="右侧排列"->12
+            s=="主窗口优先布局"->13
+            s=="完整显示布局"->14
+            s=="切换全屏（保留工作区）"->15
+            s=="添加小窗" || s=="添加常用应用到快捷栏"->16
+            s=="替换主应用" || s=="将当前微信任务移入小窗"->17
+            s=="关闭主窗（移回后台）" || s=="退出台前调度"->18
+            s=="恢复被隐藏的常用应用"->19
+            s.contains("固定侧栏")->20
+            s.contains("自动收起时间")->21
+            s.contains("智能侧栏")->22
+            s.contains("常用应用")->23
+            s=="影音布局与自动模式"->24
+            else->group(s)
+        }
+    }
 }
 
 internal object StageMenuPlacement {
