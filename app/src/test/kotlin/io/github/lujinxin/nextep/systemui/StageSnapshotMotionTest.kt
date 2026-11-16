@@ -155,6 +155,33 @@ class StageSnapshotMotionTest {
             assertEquals(expected.down.pose(i/120f),bounded.down.pose(i/120f))
         }
     }
+    @Test fun snapshotRoundnessMatchesBothPhysicalEndpointPolicies(){
+        val small=b(0f,0f,282f,557f)
+        val main=b(304f,0f,1258f,2079f)
+        val density=3.5f
+        for((w,h) in listOf(1272 to 2772,2772 to 1272,1440 to 1440)){
+            val up=checkNotNull(StageSnapshotMotion.flight(small,main,w,h))
+            val down=checkNotNull(StageSnapshotMotion.flight(main,small,w,h))
+            for((flight,smallFirst) in listOf(up to true,down to false)){
+                val corners=StageSnapshotMotion.cornerTrack(flight,smallFirst,density)
+                val liveSmall=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(small.w,small.h,density)
+                val liveMain=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(main.w,main.h,density)
+                fun expected(whichSmall:Boolean,scale:Float)=minOf(if(whichSmall)liveSmall else liveMain,minOf(w,h)*scale*.5f)
+                assertEquals(expected(smallFirst,flight.start.scale),corners.sourceRadius(0f,flight.start.scale)*flight.start.scale,.001f)
+                assertEquals(expected(!smallFirst,flight.end.scale),corners.sourceRadius(1f,flight.end.scale)*flight.end.scale,.001f)
+                var last=corners.visibleRadius(0f,flight.start.scale)
+                for(i in 1..120){
+                    val p=i/120f
+                    val scale=flight.pose(p).scale
+                    val visible=corners.sourceRadius(p,scale)*scale
+                    assertTrue(visible.isFinite() && visible>=0f && visible<=minOf(w,h)*scale*.5f+.001f)
+                    assertEquals(corners.visibleRadius(p,scale),visible,.001f)
+                    assertTrue(abs(visible-last)<5f)
+                    last=visible
+                }
+            }
+        }
+    }
     @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){
         assertEquals(100.25f,StageSnapshotMotion.hardwareEnd(100f,100f,.25f),.00001f)
         assertEquals(.5001f,StageSnapshotMotion.hardwareEnd(.5f,.5f,.0001f),.00001f)

@@ -345,6 +345,8 @@ private class SwapPreviewView(
     private val protectedCards=protectedBounds.map { RectF(it) }
     val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
     val usesPairedRoute get()=sharedMotion!=null
+    private val upCorners=sharedMotion?.up?.let{StageSnapshotMotion.cornerTrack(it,true,resources.displayMetrics.density)}
+    private val downCorners=sharedMotion?.down?.let{StageSnapshotMotion.cornerTrack(it,false,resources.displayMetrics.density)}
     var progress = 0f
     var tapAccentProgress = 0f
     private val tapAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -405,8 +407,8 @@ private class SwapPreviewView(
                 // Match either the certified or scored snapshot corridor.
                 // Preserve full-size source bitmaps, uniform contain and
                 // every protected stationary rail card.
-                drawSharedMotionFrame(canvas,target,pair.down)
-                drawSharedMotionFrame(canvas,source,pair.up)
+                drawSharedMotionFrame(canvas,target,pair.down,checkNotNull(downCorners))
+                drawSharedMotionFrame(canvas,source,pair.up,checkNotNull(upCorners))
                 canvas.restoreToCount(sharedSave)
                 return
             }
@@ -423,14 +425,14 @@ private class SwapPreviewView(
         drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)
     }
 
-    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight) {
+    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight,
+                                      corners:StageSnapshotMotion.CornerTrack) {
         val pose=flight.pose(progress)
         if(!pose.cx.isFinite() || !pose.cy.isFinite() || !pose.scale.isFinite() || pose.scale<=0f)return
         val halfW=bitmap.width*pose.scale*.5f
         val halfH=bitmap.height*pose.scale*.5f
         destination.set(pose.cx-halfW,pose.cy-halfH,pose.cx+halfW,pose.cy+halfH)
-        val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
-            destination.width(),destination.height(),resources.displayMetrics.density)
+        val radius=corners.visibleRadius(progress,pose.scale)
         outline.reset()
         outline.addRoundRect(destination,radius,radius,Path.Direction.CW)
         val save=canvas.save()

@@ -565,14 +565,25 @@ internal class StageTransientTapSwap(private val context:Context) {
             mask.reset();mask.addRect(RectF(slotRect),Path.Direction.CW)
             invalidate()
         }
-        private val upView=CardView(context,incoming,main)
-        private val downView=CardView(context,outgoing,main)
+        private val density=context.resources.displayMetrics.density
+        private val upCorners=up?.let{StageSnapshotMotion.cornerTrack(it,true,density)}
+        private val downCorners=down?.let{StageSnapshotMotion.cornerTrack(it,false,density)}
+        private val upView=CardView(context,incoming)
+        private val downView=CardView(context,outgoing)
         private val animations=mutableListOf<Animator>()
         var progress=0f
             set(value){
                 field=value.coerceIn(0f,1f)
-                up?.let{upView.place(it.pose(field))}
-                down?.let{downView.place(it.pose(field))}
+                up?.let {
+                    val pose=it.pose(field)
+                    upView.place(pose)
+                    upCorners?.let{track->upView.round(track.sourceRadius(field,pose.scale))}
+                }
+                down?.let {
+                    val pose=it.pose(field)
+                    downView.place(pose)
+                    downCorners?.let{track->downView.round(track.sourceRadius(field,pose.scale))}
+                }
             }
         var drawn=false
             private set
@@ -679,9 +690,22 @@ internal class StageTransientTapSwap(private val context:Context) {
                     list+=channel(v,f,"SCALE_X"){it.scale}
                     list+=channel(v,f,"SCALE_Y"){it.scale}
                 }
-                // Start all eight RenderNode property channels as one set.
-                // Independent start() calls can land on different frame pulses,
-                // briefly desynchronizing translation and scale between the cards.
+                // RenderNodeAnimator has no portable outline-radius channel.
+                // Keep all eight transform channels on RenderThread. One bounded
+                // UI pulse updates only the two outlines, never the bitmap or
+                // translation/scale. Exact endpoints are restored by progress=1
+                // before the existing terminal-frame receipt.
+                list+=ValueAnimator.ofFloat(0f,1f).apply {
+                    this.duration=duration
+                    interpolator=easing
+                    addUpdateListener { animator->
+                        val p=animator.animatedValue as Float
+                        upCorners?.let{upView.round(it.sourceRadius(p,a.pose(p).scale))}
+                        downCorners?.let{downView.round(it.sourceRadius(p,b.pose(p).scale))}
+                    }
+                }
+                // Start all eight RenderNode property channels and the one
+                // outline channel as one set, with the same duration/clock.
                 val synchronizedSet=AnimatorSet()
                 synchronizedSet.playTogether(list)
                 synchronizedSet.addListener(object:AnimatorListenerAdapter(){
@@ -723,24 +747,23 @@ internal class StageTransientTapSwap(private val context:Context) {
                 runCatching{anim.cancel()}
             }
         }
-        private class CardView(context:Context,private val bitmap:Bitmap,main:Rect):View(context){
+        private class CardView(context:Context,private val bitmap:Bitmap):View(context){
             private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
             private val image=RectF(0f,0f,bitmap.width.toFloat(),bitmap.height.toFloat())
+            private var sourceRadius=0f
             init{
                 pivotX=bitmap.width*.5f;pivotY=bitmap.height*.5f
-                // Use the physical main endpoint's roundness, converted to
-                // source coordinates. Interpolation scales naturally with
-                // each card. The actual live corners are never modified.
-                val scale=minOf(main.width().toFloat()/bitmap.width,
-                    main.height().toFloat()/bitmap.height).coerceAtLeast(.001f)
-                val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
-                    main.width().toFloat(),main.height().toFloat(),resources.displayMetrics.density)/scale
                 outlineProvider=object:ViewOutlineProvider(){
                     override fun getOutline(view:View,outline:Outline){
-                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,radius)
+                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,sourceRadius)
                     }
                 }
                 clipToOutline=true
+            }
+            fun round(value:Float){
+                if(sourceRadius==value)return
+                sourceRadius=value
+                invalidateOutline()
             }
             fun place(p:StageSnapshotMotion.Pose){
                 translationX=p.cx-bitmap.width*.5f

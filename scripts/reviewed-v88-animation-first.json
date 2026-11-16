@@ -510,9 +510,21 @@
         {
           "before": "            return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,\n                outgoing.width,outgoing.height,screen,obstacles)",
           "after": "            return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,\n                outgoing.width,outgoing.height,screen,obstacles) {\n                deadline==null || SystemClock.uptimeMillis()<deadline\n            }"
+        },
+        {
+          "before": "        private val upView=CardView(context,incoming,main)\n        private val downView=CardView(context,outgoing,main)\n        private val animations=mutableListOf<Animator>()\n        var progress=0f\n            set(value){\n                field=value.coerceIn(0f,1f)\n                up?.let{upView.place(it.pose(field))}\n                down?.let{downView.place(it.pose(field))}\n            }",
+          "after": "        private val density=context.resources.displayMetrics.density\n        private val upCorners=up?.let{StageSnapshotMotion.cornerTrack(it,true,density)}\n        private val downCorners=down?.let{StageSnapshotMotion.cornerTrack(it,false,density)}\n        private val upView=CardView(context,incoming)\n        private val downView=CardView(context,outgoing)\n        private val animations=mutableListOf<Animator>()\n        var progress=0f\n            set(value){\n                field=value.coerceIn(0f,1f)\n                up?.let {\n                    val pose=it.pose(field)\n                    upView.place(pose)\n                    upCorners?.let{track->upView.round(track.sourceRadius(field,pose.scale))}\n                }\n                down?.let {\n                    val pose=it.pose(field)\n                    downView.place(pose)\n                    downCorners?.let{track->downView.round(track.sourceRadius(field,pose.scale))}\n                }\n            }"
+        },
+        {
+          "before": "                // Start all eight RenderNode property channels as one set.\n                // Independent start() calls can land on different frame pulses,\n                // briefly desynchronizing translation and scale between the cards.\n                val synchronizedSet=AnimatorSet()",
+          "after": "                // RenderNodeAnimator has no portable outline-radius channel.\n                // Keep all eight transform channels on RenderThread. One bounded\n                // UI pulse updates only the two outlines, never the bitmap or\n                // translation/scale. Exact endpoints are restored by progress=1\n                // before the existing terminal-frame receipt.\n                list+=ValueAnimator.ofFloat(0f,1f).apply {\n                    this.duration=duration\n                    interpolator=easing\n                    addUpdateListener { animator->\n                        val p=animator.animatedValue as Float\n                        upCorners?.let{upView.round(it.sourceRadius(p,a.pose(p).scale))}\n                        downCorners?.let{downView.round(it.sourceRadius(p,b.pose(p).scale))}\n                    }\n                }\n                // Start all eight RenderNode property channels and the one\n                // outline channel as one set, with the same duration/clock.\n                val synchronizedSet=AnimatorSet()"
+        },
+        {
+          "before": "        private class CardView(context:Context,private val bitmap:Bitmap,main:Rect):View(context){\n            private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)\n            private val image=RectF(0f,0f,bitmap.width.toFloat(),bitmap.height.toFloat())\n            init{\n                pivotX=bitmap.width*.5f;pivotY=bitmap.height*.5f\n                // Use the physical main endpoint's roundness, converted to\n                // source coordinates. Interpolation scales naturally with\n                // each card. The actual live corners are never modified.\n                val scale=minOf(main.width().toFloat()/bitmap.width,\n                    main.height().toFloat()/bitmap.height).coerceAtLeast(.001f)\n                val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n                    main.width().toFloat(),main.height().toFloat(),resources.displayMetrics.density)/scale\n                outlineProvider=object:ViewOutlineProvider(){\n                    override fun getOutline(view:View,outline:Outline){\n                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,radius)\n                    }\n                }\n                clipToOutline=true\n            }\n            fun place(p:StageSnapshotMotion.Pose){",
+          "after": "        private class CardView(context:Context,private val bitmap:Bitmap):View(context){\n            private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)\n            private val image=RectF(0f,0f,bitmap.width.toFloat(),bitmap.height.toFloat())\n            private var sourceRadius=0f\n            init{\n                pivotX=bitmap.width*.5f;pivotY=bitmap.height*.5f\n                outlineProvider=object:ViewOutlineProvider(){\n                    override fun getOutline(view:View,outline:Outline){\n                        outline.setRoundRect(0,0,bitmap.width,bitmap.height,sourceRadius)\n                    }\n                }\n                clipToOutline=true\n            }\n            fun round(value:Float){\n                if(sourceRadius==value)return\n                sourceRadius=value\n                invalidateOutline()\n            }\n            fun place(p:StageSnapshotMotion.Pose){"
         }
       ],
-      "reviewed_blob_sha1": "5919bb7cf7089a6ee5cdd96b3e640333c9560967"
+      "reviewed_blob_sha1": "a73096a13f121c66d2889fe1e3e109df37bfdfa8"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
       "previous_blob_sha1": "35cf704cfcece47001b45911dad3ea209e3e3155",
@@ -1244,12 +1256,16 @@
         {
           "before": "        return result\n    }\n    /** Hardware animator",
           "after": "        return result.takeIf{withinBudget()}\n    }\n    /** Hardware animator"
+        },
+        {
+          "before": "    data class PairFlight(val up:Flight,val down:Flight){",
+          "after": "    // Roundness belongs to the physical visible endpoint, not to the\n    // captured bitmap. Keep the live slot's preview-radius policy and the\n    // main-window policy distinct, then interpolate in visible pixels.\n    data class CornerTrack(val startRadius:Float,val endRadius:Float,val maxSourceRadius:Float){\n        fun visibleRadius(progress:Float,scale:Float):Float {\n            val p=progress.coerceIn(0f,1f)\n            return (startRadius+(endRadius-startRadius)*p).coerceIn(0f,maxSourceRadius*scale)\n        }\n        fun sourceRadius(progress:Float,scale:Float):Float =\n            if(scale.isFinite() && scale>0f)visibleRadius(progress,scale)/scale else 0f\n    }\n    fun cornerTrack(flight:Flight,smallAtStart:Boolean,density:Float):CornerTrack {\n        fun radius(box:Box,small:Boolean):Float =\n            if(small)io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(box.w,box.h,density)\n            else io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(box.w,box.h,density)\n        return CornerTrack(radius(flight.from,smallAtStart),radius(flight.to,!smallAtStart),\n            min(flight.width,flight.height)*.5f)\n    }\n    data class PairFlight(val up:Flight,val down:Flight){"
         }
       ],
-      "reviewed_blob_sha1": "cfd1bc4a4a114b4ef4d98aa5d169435cf36bbb56"
+      "reviewed_blob_sha1": "fef88cc49f130a9b6e9f89729e31c35ce76d8989"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
-      "reviewed_blob_sha1": "aa7ba7c290b647d09736f20d637817446b92df2a",
+      "reviewed_blob_sha1": "5d027dcd73c64435d59754f8a27300cf71aae178",
       "previous_blob_sha1": "00feec10aa9bdf0666b650f3878fd2bd0b078ee7",
       "patches": [
         {
@@ -1339,6 +1355,22 @@
         {
           "before": "            drawUniformMotionFrame(canvas, source, start, targetBounds)\n            return",
           "after": "            drawUniformMotionFrame(canvas, source, start, targetBounds)\n            canvas.restoreToCount(sharedSave)\n            return"
+        },
+        {
+          "before": "    val usesPairedRoute get()=sharedMotion!=null\n    var progress = 0f",
+          "after": "    val usesPairedRoute get()=sharedMotion!=null\n    private val upCorners=sharedMotion?.up?.let{StageSnapshotMotion.cornerTrack(it,true,resources.displayMetrics.density)}\n    private val downCorners=sharedMotion?.down?.let{StageSnapshotMotion.cornerTrack(it,false,resources.displayMetrics.density)}\n    var progress = 0f"
+        },
+        {
+          "before": "                drawSharedMotionFrame(canvas,target,pair.down)\n                drawSharedMotionFrame(canvas,source,pair.up)",
+          "after": "                drawSharedMotionFrame(canvas,target,pair.down,checkNotNull(downCorners))\n                drawSharedMotionFrame(canvas,source,pair.up,checkNotNull(upCorners))"
+        },
+        {
+          "before": "    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight) {",
+          "after": "    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight,\n                                      corners:StageSnapshotMotion.CornerTrack) {"
+        },
+        {
+          "before": "        val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n            destination.width(),destination.height(),resources.displayMetrics.density)\n        outline.reset()",
+          "after": "        val radius=corners.visibleRadius(progress,pose.scale)\n        outline.reset()"
         }
       ]
     },
@@ -1682,11 +1714,15 @@
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotionTest.kt": {
       "previous_blob_sha1": "dff6dd55349ca6563aeeb86dd72c32bb9c23e289",
-      "reviewed_blob_sha1": "4aa5e21bec681db41df1cd90811daf2756422c97",
+      "reviewed_blob_sha1": "5bffe1892b56823c42b6388685ed78710ca98c7f",
       "patches": [
         {
           "before": "    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){",
           "after": "    @Test fun boundedPairedCorridorNeverReturnsAPartialRoute(){\n        val screen=b(0f,0f,1080f,2354f)\n        val small=b(30f,312f,246f,732f)\n        val main=b(264f,390f,1074f,2136f)\n        val others=listOf(b(30f,756f,246f,1176f),b(30f,1200f,246f,1620f))\n        val expected=checkNotNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others))\n        var probes=0\n        assertNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){++probes<5})\n        assertEquals(5,probes)\n        assertNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){false})\n        val bounded=checkNotNull(StageSnapshotMotion.pairedFlights(small,main,1080,2354,720,1600,screen,others){true})\n        assertEquals(expected,bounded)\n        for(i in 0..120){\n            assertEquals(expected.up.pose(i/120f),bounded.up.pose(i/120f))\n            assertEquals(expected.down.pose(i/120f),bounded.down.pose(i/120f))\n        }\n    }\n    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){"
+        },
+        {
+          "before": "    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){",
+          "after": "    @Test fun snapshotRoundnessMatchesBothPhysicalEndpointPolicies(){\n        val small=b(0f,0f,282f,557f)\n        val main=b(304f,0f,1258f,2079f)\n        val density=3.5f\n        for((w,h) in listOf(1272 to 2772,2772 to 1272,1440 to 1440)){\n            val up=checkNotNull(StageSnapshotMotion.flight(small,main,w,h))\n            val down=checkNotNull(StageSnapshotMotion.flight(main,small,w,h))\n            for((flight,smallFirst) in listOf(up to true,down to false)){\n                val corners=StageSnapshotMotion.cornerTrack(flight,smallFirst,density)\n                val liveSmall=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(small.w,small.h,density)\n                val liveMain=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(main.w,main.h,density)\n                fun expected(whichSmall:Boolean,scale:Float)=minOf(if(whichSmall)liveSmall else liveMain,minOf(w,h)*scale*.5f)\n                assertEquals(expected(smallFirst,flight.start.scale),corners.sourceRadius(0f,flight.start.scale)*flight.start.scale,.001f)\n                assertEquals(expected(!smallFirst,flight.end.scale),corners.sourceRadius(1f,flight.end.scale)*flight.end.scale,.001f)\n                var last=corners.visibleRadius(0f,flight.start.scale)\n                for(i in 1..120){\n                    val p=i/120f\n                    val scale=flight.pose(p).scale\n                    val visible=corners.sourceRadius(p,scale)*scale\n                    assertTrue(visible.isFinite() && visible>=0f && visible<=minOf(w,h)*scale*.5f+.001f)\n                    assertEquals(corners.visibleRadius(p,scale),visible,.001f)\n                    assertTrue(abs(visible-last)<5f)\n                    last=visible\n                }\n            }\n        }\n    }\n    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){"
         }
       ]
     }

@@ -63,6 +63,24 @@ internal object StageSnapshotMotion {
         val arc=minOf(min(small.w,small.h)*.40f,min(large.w,large.h)*.10f,distance*.12f)
         return Flight(from,to,width,height,arc,growing)
     }
+    // Roundness belongs to the physical visible endpoint, not to the
+    // captured bitmap. Keep the live slot's preview-radius policy and the
+    // main-window policy distinct, then interpolate in visible pixels.
+    data class CornerTrack(val startRadius:Float,val endRadius:Float,val maxSourceRadius:Float){
+        fun visibleRadius(progress:Float,scale:Float):Float {
+            val p=progress.coerceIn(0f,1f)
+            return (startRadius+(endRadius-startRadius)*p).coerceIn(0f,maxSourceRadius*scale)
+        }
+        fun sourceRadius(progress:Float,scale:Float):Float =
+            if(scale.isFinite() && scale>0f)visibleRadius(progress,scale)/scale else 0f
+    }
+    fun cornerTrack(flight:Flight,smallAtStart:Boolean,density:Float):CornerTrack {
+        fun radius(box:Box,small:Boolean):Float =
+            if(small)io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(box.w,box.h,density)
+            else io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(box.w,box.h,density)
+        return CornerTrack(radius(flight.from,smallAtStart),radius(flight.to,!smallAtStart),
+            min(flight.width,flight.height)*.5f)
+    }
     data class PairFlight(val up:Flight,val down:Flight){
         val usesSharedClock:Boolean get()=up.sharedPlan!=null && up.sharedPlan===down.sharedPlan
     }
