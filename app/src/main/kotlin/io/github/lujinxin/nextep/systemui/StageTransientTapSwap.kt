@@ -164,7 +164,7 @@ internal class StageTransientTapSwap(private val context:Context) {
                     // Plan once on the already active snapshot worker, using
                     // immutable copies of the viewport and protected slot geometry.
                     val plan=if(a!=null && b!=null && SystemClock.uptimeMillis()<deadline)
-                        runCatching{planFlight(a,b,slot,main,others,viewport)}.getOrNull()
+                        runCatching{planFlight(a,b,slot,main,others,viewport,deadline)}.getOrNull()
                     else null
                     val plannedAt=SystemClock.uptimeMillis()
                     if(!waitingCapture){a?.recycle();b?.recycle();return@execute}
@@ -502,9 +502,20 @@ internal class StageTransientTapSwap(private val context:Context) {
         private fun motionBox(r:Rect)=StageSnapshotMotion.Box(
             r.left.toFloat(),r.top.toFloat(),r.right.toFloat(),r.bottom.toFloat())
         private fun planFlight(incoming:Bitmap,outgoing:Bitmap,slot:Rect,main:Rect,
-                               others:List<Rect>,viewport:Rect)=StageSnapshotMotion.pairedFlights(
-            motionBox(slot),motionBox(main),incoming.width,incoming.height,outgoing.width,outgoing.height,
-            motionBox(viewport),others.map(::motionBox))
+                               others:List<Rect>,viewport:Rect,deadline:Long?=null):StageSnapshotMotion.PairFlight? {
+            val a=motionBox(slot);val z=motionBox(main);val screen=motionBox(viewport)
+            val obstacles=others.map(::motionBox)
+            val endNanos=System.nanoTime()+4_000_000L
+            // Production worker only; preserve the original capture deadline.
+            val shared=if(deadline!=null)runCatching {
+                StageSnapshotMotion.sharedFlights(a,z,incoming.width,incoming.height,
+                    outgoing.width,outgoing.height,screen,obstacles) {
+                    System.nanoTime()<endNanos && SystemClock.uptimeMillis()+4L<deadline
+                }
+            }.getOrNull() else null
+            return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,
+                outgoing.width,outgoing.height,screen,obstacles)
+        }
     }
     internal class FlightView(context:Context,private val incoming:Bitmap,private val outgoing:Bitmap,
                              slot:Rect,main:Rect,others:List<Rect>,private val backdrop:Drawable?,
@@ -614,7 +625,9 @@ internal class StageTransientTapSwap(private val context:Context) {
             progress=0f
             val a=up ?: error("Invalid incoming geometry")
             val b=down ?: error("Invalid outgoing geometry")
-            val easing=PathInterpolator(.32f,.08f,.36f,1f)
+            val easing:TimeInterpolator=if(pair?.usesSharedClock==true) TimeInterpolator{it}
+                else PathInterpolator(.32f,.08f,.36f,1f)
+            if(pair?.usesSharedClock==true)trace("snapshot_shared_certified_route")
             // Build every animator before starting any; an unsupported
             // reflection path leaves no partially animated card.
             val native=runCatching{

@@ -266,9 +266,21 @@
         {
           "before": "runCatching { onVisualUnavailable.invoke(why) }",
           "after": "runCatching { visualFallback(why) }"
+        },
+        {
+          "before": "runCatching{planFlight(a,b,slot,main,others,viewport)}.getOrNull()",
+          "after": "runCatching{planFlight(a,b,slot,main,others,viewport,deadline)}.getOrNull()"
+        },
+        {
+          "before": "                               others:List<Rect>,viewport:Rect)=StageSnapshotMotion.pairedFlights(\n            motionBox(slot),motionBox(main),incoming.width,incoming.height,outgoing.width,outgoing.height,\n            motionBox(viewport),others.map(::motionBox))",
+          "after": "                               others:List<Rect>,viewport:Rect,deadline:Long?=null):StageSnapshotMotion.PairFlight? {\n            val a=motionBox(slot);val z=motionBox(main);val screen=motionBox(viewport)\n            val obstacles=others.map(::motionBox)\n            val endNanos=System.nanoTime()+4_000_000L\n            // Production worker only; preserve the original capture deadline.\n            val shared=if(deadline!=null)runCatching {\n                StageSnapshotMotion.sharedFlights(a,z,incoming.width,incoming.height,\n                    outgoing.width,outgoing.height,screen,obstacles) {\n                    System.nanoTime()<endNanos && SystemClock.uptimeMillis()+4L<deadline\n                }\n            }.getOrNull() else null\n            return shared ?: StageSnapshotMotion.pairedFlights(a,z,incoming.width,incoming.height,\n                outgoing.width,outgoing.height,screen,obstacles)\n        }"
+        },
+        {
+          "before": "            val easing=PathInterpolator(.32f,.08f,.36f,1f)",
+          "after": "            val easing:TimeInterpolator=if(pair?.usesSharedClock==true) TimeInterpolator{it}\n                else PathInterpolator(.32f,.08f,.36f,1f)\n            if(pair?.usesSharedClock==true)trace(\"snapshot_shared_certified_route\")"
         }
       ],
-      "reviewed_blob_sha1": "c10c08f8aed7560e326fbf85a3635bcd004aaab6"
+      "reviewed_blob_sha1": "c2fa93d16e19a4eb0993c8ef33feb2c266a6a8da"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicy.kt": {
       "previous_blob_sha1": "35cf704cfcece47001b45911dad3ea209e3e3155",
@@ -697,6 +709,24 @@
           "after": "            paired-flight-instrumentation.txt\n            adaptive-flight-instrumentation.txt\n            native-flight-logcat.txt"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt": {
+      "previous_blob_sha1": "6359b53da0b060e0dc79531ce6cac8b3efa0c598",
+      "patches": [
+        {
+          "before": "val arc:Float,val growing:Boolean,val sizeBias:Float=0f,val crossingCompactness:Float=0f){",
+          "after": "val arc:Float,val growing:Boolean,val sizeBias:Float=0f,val crossingCompactness:Float=0f,\n                      val sharedPlan:SmoothPairedRailCandidate.Plan?=null,val sharedIncoming:Boolean=false){"
+        },
+        {
+          "before": "            // Sin^2 has zero slope",
+          "after": "            sharedPlan?.let { plan ->\n                // Certified GPU route owns the easing. Full snapshot stays contained.\n                if(p==0f)return Pose(from.cx,from.cy,s0)\n                if(p==1f)return Pose(to.cx,to.cy,s1)\n                val pair=plan.at(p)\n                val box=if(sharedIncoming)pair.incoming else pair.outgoing\n                return Pose(box.cx,box.cy,min(box.width/width,box.height/height))\n            }\n            // Sin^2 has zero slope"
+        },
+        {
+          "before": "    data class PairFlight(val up:Flight,val down:Flight)",
+          "after": "    data class PairFlight(val up:Flight,val down:Flight){\n        val usesSharedClock:Boolean get()=up.sharedPlan!=null && up.sharedPlan===down.sharedPlan\n    }\n    // Same admission and clock as GPU; full bitmap contain is not dynamic GPU crop.\n    fun sharedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,\n                      screen:Box,excluded:List<Box>,withinBudget:()->Boolean):PairFlight? {\n        val u=flight(small,main,iw,ih)?:return null\n        val d=flight(main,small,ow,oh)?:return null\n        if(!withinBudget() || !screen.valid())return null\n        fun convert(b:Box)=StageLiveSurfaceFlightGeometry.Box(b.left,b.top,b.right,b.bottom)\n        val a=convert(small);val z=convert(main);val view=convert(screen)\n        val obstacles=excluded.map(::convert)\n        val ic=StageLiveSurfaceFlightGeometry.Crop(0,0,iw,ih)\n        val oc=StageLiveSurfaceFlightGeometry.Crop(0,0,ow,oh)\n        val covered=StageLiveSurfaceFlightGeometry.canUseCoveredFlight(a,z,ic,oc,obstacles)\n        val plan=StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)\n            ?: (if(covered && withinBudget())\n                StageAdaptiveCoveredRailRoute.choose(a,z,ic,oc,view,obstacles,withinBudget) else null)\n            ?:return null\n        // Reject any change to the existing snapshot endpoints.\n        fun matches(box:StageLiveSurfaceFlightGeometry.Box,pose:Pose,w:Int,h:Int):Boolean =\n            abs(box.cx-pose.cx)<=.02f && abs(box.cy-pose.cy)<=.02f &&\n                abs(min(box.width/w,box.height/h)-pose.scale)*max(w,h)<=.02f\n        val first=plan.at(0f);val last=plan.at(1f)\n        if(!matches(first.incoming,u.start,iw,ih)||!matches(last.incoming,u.end,iw,ih)||\n           !matches(first.outgoing,d.start,ow,oh)||!matches(last.outgoing,d.end,ow,oh)||!withinBudget())return null\n        return PairFlight(u.copy(sharedPlan=plan,sharedIncoming=true),d.copy(sharedPlan=plan))\n    }"
+        }
+      ],
+      "reviewed_blob_sha1": "6f3940e489b8db82db24f008def34e3ec58bcb0f"
     }
   }
 }

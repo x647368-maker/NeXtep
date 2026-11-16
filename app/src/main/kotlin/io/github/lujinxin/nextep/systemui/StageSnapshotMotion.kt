@@ -16,7 +16,8 @@ internal object StageSnapshotMotion {
     }
     data class Pose(val cx:Float,val cy:Float,val scale:Float)
     data class Flight(val from:Box,val to:Box,val width:Int,val height:Int,
-                      val arc:Float,val growing:Boolean,val sizeBias:Float=0f,val crossingCompactness:Float=0f){
+                      val arc:Float,val growing:Boolean,val sizeBias:Float=0f,val crossingCompactness:Float=0f,
+                      val sharedPlan:SmoothPairedRailCandidate.Plan?=null,val sharedIncoming:Boolean=false){
         private val s0=min(from.w/width,from.h/height)
         private val s1=min(to.w/width,to.h/height)
         private val dx=to.cx-from.cx
@@ -26,6 +27,14 @@ internal object StageSnapshotMotion {
         val end get()=pose(1f)
         fun pose(progress:Float):Pose{
             val p=progress.coerceIn(0f,1f)
+            sharedPlan?.let { plan ->
+                // Certified GPU route owns the easing. Full snapshot stays contained.
+                if(p==0f)return Pose(from.cx,from.cy,s0)
+                if(p==1f)return Pose(to.cx,to.cy,s1)
+                val pair=plan.at(p)
+                val box=if(sharedIncoming)pair.incoming else pair.outgoing
+                return Pose(box.cx,box.cy,min(box.width/width,box.height/height))
+            }
             // Sin^2 has zero slope at both endpoints; opposite travel directions
             // imply opposite lateral offsets. No stationary phase or 90deg bend.
             val bend=sin(PI.toFloat()*p).let{it*it}*arc
@@ -54,7 +63,34 @@ internal object StageSnapshotMotion {
         val arc=minOf(min(small.w,small.h)*.40f,min(large.w,large.h)*.10f,distance*.12f)
         return Flight(from,to,width,height,arc,growing)
     }
-    data class PairFlight(val up:Flight,val down:Flight)
+    data class PairFlight(val up:Flight,val down:Flight){
+        val usesSharedClock:Boolean get()=up.sharedPlan!=null && up.sharedPlan===down.sharedPlan
+    }
+    // Same admission and clock as GPU; full bitmap contain is not dynamic GPU crop.
+    fun sharedFlights(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,
+                      screen:Box,excluded:List<Box>,withinBudget:()->Boolean):PairFlight? {
+        val u=flight(small,main,iw,ih)?:return null
+        val d=flight(main,small,ow,oh)?:return null
+        if(!withinBudget() || !screen.valid())return null
+        fun convert(b:Box)=StageLiveSurfaceFlightGeometry.Box(b.left,b.top,b.right,b.bottom)
+        val a=convert(small);val z=convert(main);val view=convert(screen)
+        val obstacles=excluded.map(::convert)
+        val ic=StageLiveSurfaceFlightGeometry.Crop(0,0,iw,ih)
+        val oc=StageLiveSurfaceFlightGeometry.Crop(0,0,ow,oh)
+        val covered=StageLiveSurfaceFlightGeometry.canUseCoveredFlight(a,z,ic,oc,obstacles)
+        val plan=StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)
+            ?: (if(covered && withinBudget())
+                StageAdaptiveCoveredRailRoute.choose(a,z,ic,oc,view,obstacles,withinBudget) else null)
+            ?:return null
+        // Reject any change to the existing snapshot endpoints.
+        fun matches(box:StageLiveSurfaceFlightGeometry.Box,pose:Pose,w:Int,h:Int):Boolean =
+            abs(box.cx-pose.cx)<=.02f && abs(box.cy-pose.cy)<=.02f &&
+                abs(min(box.width/w,box.height/h)-pose.scale)*max(w,h)<=.02f
+        val first=plan.at(0f);val last=plan.at(1f)
+        if(!matches(first.incoming,u.start,iw,ih)||!matches(last.incoming,u.end,iw,ih)||
+           !matches(first.outgoing,d.start,ow,oh)||!matches(last.outgoing,d.end,ow,oh)||!withinBudget())return null
+        return PairFlight(u.copy(sharedPlan=plan,sharedIncoming=true),d.copy(sharedPlan=plan))
+    }
     private fun rectangle(f:Flight,p:Float):Box{
         val c=f.pose(p)
         val hw=f.width*c.scale*.5f
