@@ -945,7 +945,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageWallpaperCoverRuntimeRegression.kt": {
-      "reviewed_blob_sha1": "b8cedb3d717bad3b060a8ff89834839af899c6b2",
+      "reviewed_blob_sha1": "39e66580966bf7c46fb8eab0166e10db40f97148",
       "previous_blob_sha1": "90657d5392aafdf1037412f4c50580fd4047cd70",
       "patches": [
         {
@@ -967,6 +967,44 @@
         {
           "before": "                host.removeAllViews()\n            }\n            buffer.close()",
           "after": "                cache.clear()\n                host.removeAllViews()\n            }\n            if(!buffer.isClosed)buffer.close()"
+        },
+        {
+          "before": "            checkNotNull(StageGpuWallpaperBuffer.prepare(wallpaper)) { \"Wallpaper buffer render unavailable\" }",
+          "after": "            var preparation=\"not_reported\"\n            val prepared=StageGpuWallpaperBuffer.prepare(wallpaper){ preparation=it }\n            try { File(out,\"wallpaper-cover-preparation.txt\").writeText(preparation+\"\\n\") }\n            catch(error:Exception){ prepared?.close();throw error }\n            checkNotNull(prepared) { \"Wallpaper buffer render unavailable: \"+preparation }"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageGpuWallpaperBuffer.kt": {
+      "reviewed_blob_sha1": "ad6100a8419afb5c2b2c7373636bae18923d460d",
+      "previous_blob_sha1": "4333c783b4a99a5e11a68abc37691b8769737f05",
+      "patches": [
+        {
+          "before": "    fun prepare(bitmap:Bitmap):HardwareBuffer? {\n        if(Looper.myLooper()==Looper.getMainLooper() || bitmap.isRecycled ||\n            bitmap.width<2 || bitmap.height<2 ||\n            bitmap.width.toLong()*bitmap.height>MAX_PIXELS)return null",
+          "after": "    // Report once per preparation, never from a render callback or per frame.\n    // Reporting cannot change ownership or the existing bounded wait policy.\n    fun prepare(bitmap:Bitmap,report:((String)->Unit)?=null):HardwareBuffer? {\n        val start=System.nanoTime()\n        fun emit(reason:String) {\n            if(report!=null)runCatching {\n                report(reason+\" elapsed_ms=\"+(System.nanoTime()-start)/1_000_000L)\n            }\n        }\n        val rejected=when {\n            Looper.myLooper()==Looper.getMainLooper()->\"ui_lane_denied\"\n            bitmap.isRecycled->\"bitmap_recycled\"\n            bitmap.width<2 || bitmap.height<2->\"invalid_dimensions\"\n            bitmap.width.toLong()*bitmap.height>MAX_PIXELS->\"pixel_limit\"\n            else->null\n        }\n        if(rejected!=null){emit(rejected);return null}\n        var stage=\"allocate\""
+        },
+        {
+          "before": "            if(!usable(target))return null\n            val content=RenderNode",
+          "after": "            if(!usable(target)){stage=\"unusable_buffer\";return null}\n            stage=\"record\"\n            val content=RenderNode"
+        },
+        {
+          "before": "            val hw=HardwareBufferRenderer(target)",
+          "after": "            stage=\"renderer_create\"\n            val hw=HardwareBufferRenderer(target)"
+        },
+        {
+          "before": "            hw.obtainRenderRequest().draw(Executor { it.run() }) { result ->",
+          "after": "            stage=\"draw_submit\"\n            hw.obtainRenderRequest().draw(Executor { it.run() }) { result ->"
+        },
+        {
+          "before": "            val result=completion.get(120L,TimeUnit.MILLISECONDS)\n            result.fence.use { fence ->\n                if(result.status!=HardwareBufferRenderer.RenderResult.SUCCESS ||\n                    !fence.await(Duration.ofMillis(120)))return null\n            }\n            success=true",
+          "after": "            stage=\"callback_wait\"\n            val result=completion.get(120L,TimeUnit.MILLISECONDS)\n            result.fence.use { fence ->\n                if(result.status!=HardwareBufferRenderer.RenderResult.SUCCESS) {\n                    stage=\"render_status_\"+result.status\n                    return null\n                }\n                stage=\"fence_wait\"\n                if(!fence.await(Duration.ofMillis(120))) {\n                    stage=\"fence_timeout\"\n                    return null\n                }\n            }\n            stage=\"ready\"\n            success=true"
+        },
+        {
+          "before": "        } catch(error:Exception) {\n            if(error is InterruptedException)",
+          "after": "        } catch(error:Exception) {\n            val failedAt=stage\n            stage=failedAt+\":\"+error.javaClass.simpleName\n            if(error is InterruptedException)"
+        },
+        {
+          "before": "            if(!success)runCatching { buffer?.close() }\n        }",
+          "after": "            if(!success)runCatching { buffer?.close() }\n            emit(stage)\n        }"
         }
       ]
     }

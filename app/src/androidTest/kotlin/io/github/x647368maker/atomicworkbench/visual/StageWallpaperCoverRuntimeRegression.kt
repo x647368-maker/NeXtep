@@ -52,7 +52,11 @@ internal class StageWallpaperCoverRuntimeRegression(private val inst:Instrumenta
                 val p=android.graphics.Paint().apply { color=right }
                 drawRect(width*.5f,0f,width.toFloat(),height.toFloat(),p)
             }
-            checkNotNull(StageGpuWallpaperBuffer.prepare(wallpaper)) { "Wallpaper buffer render unavailable" }
+            var preparation="not_reported"
+            val prepared=StageGpuWallpaperBuffer.prepare(wallpaper){ preparation=it }
+            try { File(out,"wallpaper-cover-preparation.txt").writeText(preparation+"\n") }
+            catch(error:Exception){ prepared?.close();throw error }
+            checkNotNull(prepared) { "Wallpaper buffer render unavailable: "+preparation }
         } finally { wallpaper.recycle() }
         var masks:StageGpuMirrorOcclusion?=null
         val cache=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()
