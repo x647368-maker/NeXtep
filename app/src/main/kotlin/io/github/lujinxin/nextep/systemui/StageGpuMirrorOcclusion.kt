@@ -37,7 +37,9 @@ internal class StageGpuMirrorOcclusion private constructor(
     private val mainCover: SurfaceControl,
     // Borrowed, immutable, already rendered. The caller owns its lifetime.
     private val wallpaper: HardwareBuffer? = null,
+    private val onReleased:(()->Unit)?=null,
 ) {
+    private val released=java.util.concurrent.atomic.AtomicBoolean(false)
     companion object {
         private val colorLayerMethod by lazy {
             SurfaceControl.Builder::class.java.getDeclaredMethod("setColorLayer")
@@ -53,12 +55,12 @@ internal class StageGpuMirrorOcclusion private constructor(
 
         // Explicit experimental entry; production retains create() until the
         // real pixel/lifetime gate and wallpaper cache integration are proven.
-        fun createTextured(buffer:HardwareBuffer):StageGpuMirrorOcclusion? {
+        fun createTextured(buffer:HardwareBuffer,onReleased:(()->Unit)?=null):StageGpuMirrorOcclusion? {
             if(!StageGpuWallpaperBuffer.usable(buffer))return null
-            return createInternal(buffer)
+            return createInternal(buffer,onReleased)
         }
 
-        private fun createInternal(wallpaper:HardwareBuffer?):StageGpuMirrorOcclusion? {
+        private fun createInternal(wallpaper:HardwareBuffer?,onReleased:(()->Unit)?=null):StageGpuMirrorOcclusion? {
             var first: SurfaceControl? = null
             return runCatching {
                 fun layer(name: String): SurfaceControl {
@@ -74,7 +76,7 @@ internal class StageGpuMirrorOcclusion private constructor(
                 }
                 first = layer("AtomicSwapOriginalSlotCover")
                 val second = layer("AtomicSwapOriginalMainCover")
-                StageGpuMirrorOcclusion(checkNotNull(first), second,wallpaper)
+                StageGpuMirrorOcclusion(checkNotNull(first), second,wallpaper,onReleased)
             }.getOrElse {
                 runCatching { first?.release() }
                 null
@@ -140,11 +142,13 @@ internal class StageGpuMirrorOcclusion private constructor(
     }
 
     fun release() {
-        // Even if one vendor handle throws, the other cover must be released.
+        // Both local handles must be retired before returning a cache lease.
+        // SurfaceFlinger retains its own buffer reference for submitted frames.
+        if(!released.compareAndSet(false,true))return
         try {
             sourceCover.release()
         } finally {
-            mainCover.release()
+            try { mainCover.release() } finally { onReleased?.invoke() }
         }
     }
 }

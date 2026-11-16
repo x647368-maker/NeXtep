@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.StageGpuMirrorOcclusion
 import io.github.x647368maker.atomicworkbench.systemui.StageGpuWallpaperBuffer
+import io.github.x647368maker.atomicworkbench.systemui.StageWallpaperCoverCache
 import java.io.File
 import kotlin.math.abs
 
@@ -54,14 +55,24 @@ internal class StageWallpaperCoverRuntimeRegression(private val inst:Instrumenta
             checkNotNull(StageGpuWallpaperBuffer.prepare(wallpaper)) { "Wallpaper buffer render unavailable" }
         } finally { wallpaper.recycle() }
         var masks:StageGpuMirrorOcclusion?=null
+        val cache=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()
+        val key=StageWallpaperCoverCache.Key(width,height,0)
         try {
             inst.runOnMainSync {
-                val overlay=checkNotNull(StageGpuMirrorOcclusion.createTextured(buffer))
+                cache.replace(key,buffer)
+                check(cache.acquire(key.copy(rotation=1))==null)
+                val lease=checkNotNull(cache.acquire(key))
+                val overlay=StageGpuMirrorOcclusion.createTextured(lease.resource,lease::close)
+                if(overlay==null){lease.close();error("Textured layer creation denied")}
                 masks=overlay
                 SurfaceControl.Transaction().use { tx ->
                     overlay.append(checkNotNull(host.rootSurfaceControl),tx,source,main,width,height)
                     tx.apply()
                 }
+                // Invalidate the cache as if a wallpaper change/rotation
+                // arrived while the original masks are still attached.
+                cache.clear()
+                check(!buffer.isClosed && cache.acquire(key)==null)
             }
             fun checkPixels(name:String,shown:Boolean) {
                 var ok=false
@@ -98,6 +109,7 @@ internal class StageWallpaperCoverRuntimeRegression(private val inst:Instrumenta
                 }
                 overlay.release()
                 masks=null
+                check(buffer.isClosed)
             }
             checkPixels("released",false)
             return "PASS shared immutable wallpaper texture: physical separate crops, unaffected protected pixels, reveal and release\nWALLPAPER_COVER_PASS"
@@ -108,9 +120,10 @@ internal class StageWallpaperCoverRuntimeRegression(private val inst:Instrumenta
                         SurfaceControl.Transaction().use { tx -> overlay.hide(tx);tx.apply() }
                     } finally { overlay.release() }
                 }
+                cache.clear()
                 host.removeAllViews()
             }
-            buffer.close()
+            if(!buffer.isClosed)buffer.close()
         }
     }
 }

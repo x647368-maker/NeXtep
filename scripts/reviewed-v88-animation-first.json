@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "1f7ed98073099b2d69a047a2705dc2a4dc9ced09",
+      "reviewed_blob_sha1": "e5e495430899982b5c221c8955f21c73d3ec8ac7",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -153,6 +153,42 @@
         {
           "before": "                freezeGeometry = drag == null && !animateTap,\n                uniformTapMorph = animateTap,\n                move = {",
           "after": "                freezeGeometry = drag == null && !animateTap,\n                uniformTapMorph = animateTap,\n                sharedMotion = sharedMotion,\n                protectedBounds = if(sharedMotion!=null) protectedBounds else emptyList(),\n                move = {"
+        },
+        {
+          "before": "    private var wallpaperRotation = 0\n    private var homePreview: Bitmap? = null",
+          "after": "    private var wallpaperRotation = 0\n    // One ready texture for the visible workspace, borrowed only by an\n    // admitted native swap. All cache operations run on the main lane.\n    private val gpuWallpaper=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()\n    private fun wallpaperKey(g:WorkspaceGeometry)=StageWallpaperCoverCache.Key(\n        g.screenWidth,g.screenHeight,g.displayRotation)\n    private fun acquireWallpaperCover(g:WorkspaceGeometry):StageGpuMirrorOcclusion? {\n        val lease=gpuWallpaper.acquire(wallpaperKey(g))?:return null\n        val cover=runCatching {\n            StageGpuMirrorOcclusion.createTextured(lease.resource,lease::close)\n        }.getOrNull()\n        if(cover==null)lease.close()\n        return cover\n    }\n    private var homePreview: Bitmap? = null"
+        },
+        {
+          "before": "                Intent.ACTION_WALLPAPER_CHANGED -> {\n                    clearHomePreview()",
+          "after": "                Intent.ACTION_WALLPAPER_CHANGED -> {\n                    gpuWallpaper.clear()\n                    clearHomePreview()"
+        },
+        {
+          "before": "        suspended = true\n        cancelDragVisuals()\n        clearHomePreview()",
+          "after": "        suspended = true\n        cancelDragVisuals()\n        gpuWallpaper.clear()\n        clearHomePreview()"
+        },
+        {
+          "before": "        workspaceVisible = false\n        cancelDragVisuals()\n        clearHomePreview()",
+          "after": "        workspaceVisible = false\n        cancelDragVisuals()\n        gpuWallpaper.clear()\n        clearHomePreview()"
+        },
+        {
+          "before": "        val geometry = geometry()\n        SystemServerWorkspaceBridge.publishLayout(context, viewport.layout())",
+          "after": "        val geometry = geometry()\n        gpuWallpaper.clearIfMismatched(wallpaperKey(geometry))\n        SystemServerWorkspaceBridge.publishLayout(context, viewport.layout())"
+        },
+        {
+          "before": "            backdrop=null,\n        ) ?: run {\n            val reason=StageLiveSurfaceExchange.lastOutcome()",
+          "after": "            backdrop=null,\n            wallpaperCoverFactory={acquireWallpaperCover(g)},\n        ) ?: run {\n            val reason=StageLiveSurfaceExchange.lastOutcome()"
+        },
+        {
+          "before": "                .useLiveSystemWallpaper(geometry)) {\n            backdropGeneration.incrementAndGet()\n            applyWallpaperBackdrop(geometry)",
+          "after": "                .useLiveSystemWallpaper(geometry)) {\n            gpuWallpaper.clear()\n            backdropGeneration.incrementAndGet()\n            applyWallpaperBackdrop(geometry)"
+        },
+        {
+          "before": "        val generation = backdropGeneration.incrementAndGet()\n        backdropWorker.execute {",
+          "after": "        val generation = backdropGeneration.incrementAndGet()\n        // Reuse the existing capture worker, only on the settled capture.\n        // No conversion on the first two refreshes, no timer or tap-time upload.\n        val prepareTexture=attempt>=BACKDROP_SETTLE_REFRESHES &&\n            StagePrivateDualTaskFlightGate.enabled() &&\n            StageConcurrentNativeTrialPolicy.allowed(workspaceVisible && !suspended,\n                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false) &&\n            !isExchangePending()\n        backdropWorker.execute {"
+        },
+        {
+          "before": "            backdropHandler.post {\n                if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n                    bitmap?.recycle()\n                    fitted?.recycle()\n                    return@post\n                }\n                if (bitmap != null) {\n                    wallpaperBitmap = bitmap\n                    wallpaperRotation = geometry.displayRotation\n                } else if (fitted != null) {\n                    wallpaperBitmap = fitted\n                    wallpaperRotation = geometry.displayRotation\n                }",
+          "after": "            // Only a newly captured, exact-resolution physical frame is\n            // admissible. Do not prepare a fitted stale/rotated cache.\n            val textured=if(prepareTexture && generation==backdropGeneration.get() &&\n                bitmap!=null && bitmap.width==geometry.screenWidth && bitmap.height==geometry.screenHeight &&\n                WorkspaceWallpaperBackdrop.canCapture(context) &&\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false)\n                runCatching { StageGpuWallpaperBuffer.prepare(bitmap) }.getOrNull() else null\n            backdropHandler.post {\n                if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {\n                    textured?.close()\n                    bitmap?.recycle()\n                    fitted?.recycle()\n                    return@post\n                }\n                if (bitmap != null) {\n                    wallpaperBitmap = bitmap\n                    wallpaperRotation = geometry.displayRotation\n                    val current=this@NeXtepWindowController.geometry()\n                    if(textured!=null && workspaceVisible && !suspended &&\n                        wallpaperKey(current)==wallpaperKey(geometry) &&\n                        context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false) {\n                        gpuWallpaper.replace(wallpaperKey(geometry),textured)\n                    } else {\n                        textured?.close()\n                        gpuWallpaper.clear()\n                    }\n                } else if (fitted != null) {\n                    gpuWallpaper.clear()\n                    wallpaperBitmap = fitted\n                    wallpaperRotation = geometry.displayRotation\n                }"
         }
       ]
     },
@@ -484,9 +520,17 @@
         {
           "before": "                    \" down=\"+outgoingRebased.get()+\" fail=\"+endpointWriteFailed.get())\n                NeXtepLog.info",
           "after": "                    \" down=\"+outgoingRebased.get()+\" fail=\"+endpointWriteFailed.get())\n                if(concurrentHandoff && coveredFlight && pairedRailPlan!=null)\n                    trace(\"endpoint_rebase_receipts up=\"+incomingRebaseCommitted.get()+\n                        \" down=\"+outgoingRebaseCommitted.get()+\" pixels_not_proven\")\n                NeXtepLog.info"
+        },
+        {
+          "before": "            backdrop: Drawable?,\n        ): StageLiveSurfaceExchange? {",
+          "after": "            backdrop: Drawable?,\n            wallpaperCoverFactory:(()->StageGpuMirrorOcclusion?)?=null,\n        ): StageLiveSurfaceExchange? {"
+        },
+        {
+          "before": "                val masks = StageGpuMirrorOcclusion.create()\n                    ?: return markUnavailable(\"atomic_occlusion_unavailable\")",
+          "after": "                // Borrow the texture only after every source/geometry gate.\n                // If a ready cache is absent or the vendor refuses a layer,\n                // retain the original opaque safety cover; never expose duplicates.\n                val textured=runCatching { wallpaperCoverFactory?.invoke() }.getOrNull()\n                val masks = textured ?: StageGpuMirrorOcclusion.create()\n                    ?: return markUnavailable(\"atomic_occlusion_unavailable\")\n                StageExchangeTelemetry.nativeEvent(\"mirror_cover=\"+\n                    if(textured!=null)\"cached_wallpaper\" else \"solid_safe\")"
         }
       ],
-      "reviewed_blob_sha1": "30d8db68142e767bef72d71641ea5cb012aadafa"
+      "reviewed_blob_sha1": "684831b965f108b0fbaf0d8111858490e9daf710"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",
@@ -851,7 +895,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageGpuMirrorOcclusion.kt": {
-      "reviewed_blob_sha1": "e372c8a9088d62ca1427408cb30d9eef372bf140",
+      "reviewed_blob_sha1": "eb8ae4a3d97e0e733beaf48d301f9c635aff7615",
       "previous_blob_sha1": "0a32a2c28c80547770512a51842dc21d4a7db144",
       "patches": [
         {
@@ -881,6 +925,48 @@
         {
           "before": "            // A color layer uses RGB values; no buffer is allocated or captured.\n            setColorMethod.invoke(transaction, control, floatArrayOf(.047f, .055f, .083f))\n            transaction.setCrop(control, Rect(0, 0, rect.width(), rect.height()))\n            transaction.setPosition(control, rect.left.toFloat(), rect.top.toFloat())",
           "after": "            if(texture==null) {\n                // Preserve the established opaque color-layer path.\n                setColorMethod.invoke(transaction, control, floatArrayOf(.047f, .055f, .083f))\n                transaction.setCrop(control, Rect(0, 0, rect.width(), rect.height()))\n                transaction.setPosition(control, rect.left.toFloat(), rect.top.toFloat())\n            } else {\n                // One shared opaque wallpaper texture, two disjoint crops.\n                // Submit with the same atomic parent/layer transaction.\n                transaction.setBuffer(control,texture)\n                transaction.setCrop(control,Rect(rect))\n                transaction.setPosition(control,0f,0f)\n            }"
+        },
+        {
+          "before": "    private val wallpaper: HardwareBuffer? = null,\n) {",
+          "after": "    private val wallpaper: HardwareBuffer? = null,\n    private val onReleased:(()->Unit)?=null,\n) {\n    private val released=java.util.concurrent.atomic.AtomicBoolean(false)"
+        },
+        {
+          "before": "        fun createTextured(buffer:HardwareBuffer):StageGpuMirrorOcclusion? {\n            if(!StageGpuWallpaperBuffer.usable(buffer))return null\n            return createInternal(buffer)\n        }\n\n        private fun createInternal(wallpaper:HardwareBuffer?):StageGpuMirrorOcclusion? {",
+          "after": "        fun createTextured(buffer:HardwareBuffer,onReleased:(()->Unit)?=null):StageGpuMirrorOcclusion? {\n            if(!StageGpuWallpaperBuffer.usable(buffer))return null\n            return createInternal(buffer,onReleased)\n        }\n\n        private fun createInternal(wallpaper:HardwareBuffer?,onReleased:(()->Unit)?=null):StageGpuMirrorOcclusion? {"
+        },
+        {
+          "before": "                StageGpuMirrorOcclusion(checkNotNull(first), second,wallpaper)",
+          "after": "                StageGpuMirrorOcclusion(checkNotNull(first), second,wallpaper,onReleased)"
+        },
+        {
+          "before": "        // Even if one vendor handle throws, the other cover must be released.\n        try {\n            sourceCover.release()\n        } finally {\n            mainCover.release()\n        }",
+          "after": "        // Both local handles must be retired before returning a cache lease.\n        // SurfaceFlinger retains its own buffer reference for submitted frames.\n        if(!released.compareAndSet(false,true))return\n        try {\n            sourceCover.release()\n        } finally {\n            try { mainCover.release() } finally { onReleased?.invoke() }\n        }"
+        }
+      ]
+    },
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageWallpaperCoverRuntimeRegression.kt": {
+      "reviewed_blob_sha1": "b8cedb3d717bad3b060a8ff89834839af899c6b2",
+      "previous_blob_sha1": "90657d5392aafdf1037412f4c50580fd4047cd70",
+      "patches": [
+        {
+          "before": "import io.github.x647368maker.atomicworkbench.systemui.StageGpuWallpaperBuffer",
+          "after": "import io.github.x647368maker.atomicworkbench.systemui.StageGpuWallpaperBuffer\nimport io.github.x647368maker.atomicworkbench.systemui.StageWallpaperCoverCache"
+        },
+        {
+          "before": "        var masks:StageGpuMirrorOcclusion?=null\n        try {\n            inst.runOnMainSync {\n                val overlay=checkNotNull(StageGpuMirrorOcclusion.createTextured(buffer))\n                masks=overlay",
+          "after": "        var masks:StageGpuMirrorOcclusion?=null\n        val cache=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()\n        val key=StageWallpaperCoverCache.Key(width,height,0)\n        try {\n            inst.runOnMainSync {\n                cache.replace(key,buffer)\n                check(cache.acquire(key.copy(rotation=1))==null)\n                val lease=checkNotNull(cache.acquire(key))\n                val overlay=StageGpuMirrorOcclusion.createTextured(lease.resource,lease::close)\n                if(overlay==null){lease.close();error(\"Textured layer creation denied\")}\n                masks=overlay"
+        },
+        {
+          "before": "                    tx.apply()\n                }\n            }\n            fun checkPixels",
+          "after": "                    tx.apply()\n                }\n                // Invalidate the cache as if a wallpaper change/rotation\n                // arrived while the original masks are still attached.\n                cache.clear()\n                check(!buffer.isClosed && cache.acquire(key)==null)\n            }\n            fun checkPixels"
+        },
+        {
+          "before": "                overlay.release()\n                masks=null\n            }\n            checkPixels(\"released\",false)",
+          "after": "                overlay.release()\n                masks=null\n                check(buffer.isClosed)\n            }\n            checkPixels(\"released\",false)"
+        },
+        {
+          "before": "                host.removeAllViews()\n            }\n            buffer.close()",
+          "after": "                cache.clear()\n                host.removeAllViews()\n            }\n            if(!buffer.isClosed)buffer.close()"
         }
       ]
     }
