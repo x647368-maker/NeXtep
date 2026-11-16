@@ -361,6 +361,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 // new crop mode or losing either visible endpoint.
                 val oldCovered = explicitPlan==null && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
                     from, to, incomingCrop, outgoingCrop, obstacles)
+                var adaptiveCovered=false
                 val certifiedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && !explicitPair) {
                     val began=SystemClock.elapsedRealtimeNanos()
                     // Soft deadline: bound search at each small planning step,
@@ -368,9 +369,13 @@ internal class StageLiveSurfaceExchange private constructor(
                     // existing outer 28ms total preparation admission.
                     val deadline=minOf(setupStarted+20_000_000L,began+4_000_000L)
                     runCatching {
-                        StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,
-                            StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),
-                            obstacles,oldCovered) { SystemClock.elapsedRealtimeNanos()<deadline }
+                        val screen=StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat())
+                        val withinBudget={SystemClock.elapsedRealtimeNanos()<deadline}
+                        StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
+                            obstacles,oldCovered,withinBudget) ?: if(oldCovered && withinBudget()) {
+                            StageAdaptiveCoveredRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
+                                obstacles,withinBudget).also { adaptiveCovered=it!=null }
+                        } else null
                     }.onFailure {
                         StageExchangeTelemetry.nativeEvent("certified_pair_planner_rejected")
                     }.getOrNull().also { plan ->
@@ -379,9 +384,10 @@ internal class StageLiveSurfaceExchange private constructor(
                     }
                 } else null
                 val pairedPlan=explicitPlan ?: certifiedPlan
-                val coveredFlight=pairedPlan==null && oldCovered
+                val coveredFlight=oldCovered && (pairedPlan==null || adaptiveCovered)
                 StageExchangeTelemetry.nativeEvent(
                     "mirror_crop_mode=" + when {
+                        adaptiveCovered -> "paired_covered_adaptive"
                         certifiedPlan!=null -> "paired_contain_certified"
                         explicitPlan!=null -> "paired_contain_trial"
                         coveredFlight -> "covered_safe"
@@ -488,7 +494,9 @@ internal class StageLiveSurfaceExchange private constructor(
             " up_fit=${finalIncoming.box.width.toInt()}x${finalIncoming.box.height.toInt()}" +
             " down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}")
         startedAtMs = SystemClock.uptimeMillis()
-        pairedRailPlan?.let { trace("paired_contain_trial bound="+it.bound+" trim="+it.trim) }
+        pairedRailPlan?.let {
+            trace((if(coveredFlight)"paired_covered_adaptive" else "paired_contain_trial")+" bound="+it.bound+" trim="+it.trim)
+        }
         trace(
             "mirror_start crop=${sourceCrop.width()}x${sourceCrop.height()}" +
             " main=${mainStart.width.toInt()}x${mainStart.height.toInt()}")
@@ -885,14 +893,20 @@ internal class StageLiveSurfaceExchange private constructor(
     }
     private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
         val paired=pairedRailPlan?.at(p)
-        val incoming=if(paired!=null)pairFrame(paired.incoming,incomingGeometryCrop) else
-            StageLiveSurfaceFlightGeometry.mirrorFrame(
-                slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,
-            ) ?: error("Unsafe incoming GPU rail path")
-        val outgoing=if(paired!=null)pairFrame(paired.outgoing,outgoingGeometryCrop) else
-            StageLiveSurfaceFlightGeometry.mirrorFrame(
-                mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,
-            ) ?: error("Unsafe outgoing GPU rail path")
+        // At p=0 keep the original complete source; at every later frame
+        // the planned viewport is independent of the uniformly scaled crop.
+        val incoming=(if(paired!=null && coveredFlight && p>0f)
+            StageAdaptiveCoveredRailRoute.frame(paired.incoming,incomingGeometryCrop)
+        else if(paired!=null && !coveredFlight)pairFrame(paired.incoming,incomingGeometryCrop)
+        else StageLiveSurfaceFlightGeometry.mirrorFrame(
+            slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,
+        )) ?: error("Unsafe incoming GPU rail path")
+        val outgoing=(if(paired!=null && coveredFlight && p>0f)
+            StageAdaptiveCoveredRailRoute.frame(paired.outgoing,outgoingGeometryCrop)
+        else if(paired!=null && !coveredFlight)pairFrame(paired.outgoing,outgoingGeometryCrop)
+        else StageLiveSurfaceFlightGeometry.mirrorFrame(
+            mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,
+        )) ?: error("Unsafe outgoing GPU rail path")
         // Both task mirrors are updated by the same GPU transaction. Cover
         // mode changes only their transient crop, never original task bounds.
         if (coveredFlight) {
