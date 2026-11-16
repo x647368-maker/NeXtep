@@ -40,7 +40,9 @@ internal object SmoothPairedRailCandidate {
     private fun overlap(a:Box,b:Box)=max(0f,min(a.right,b.right)-max(a.left,b.left)).toDouble()*max(0f,min(a.bottom,b.bottom)-max(a.top,b.top))
     // Convex-hull certificate for EVERY point of a quadratic, with bounded
     // subdivision. No sample-only admission and no search during drawing.
-    private fun certify(q:Curve,others:List<Box>,initial:PairBox,depth:Int):Double? {
+    private fun certify(q:Curve,others:List<Box>,initial:PairBox,depth:Int,
+                        withinBudget:()->Boolean):Double? {
+        if(!withinBudget())return null
         val a=q.a;val b=q.control;val c=q.b
         val ih=hull(a.incoming,b.incoming,c.incoming);val oh=hull(a.outgoing,b.outgoing,c.outgoing)
         val minArea=minOf(area(a.incoming),area(b.incoming),area(c.incoming),area(a.outgoing),area(b.outgoing),area(c.outgoing))
@@ -48,14 +50,16 @@ internal object SmoothPairedRailCandidate {
         if(bound<=LIMIT && others.all { overlap(ih,it)<=overlap(initial.incoming,it)+1.0 && overlap(oh,it)<=overlap(initial.outgoing,it)+1.0 })return bound
         if(depth==0)return null
         val (left,right)=q.split()
-        val l=certify(left,others,initial,depth-1)?:return null
-        val r=certify(right,others,initial,depth-1)?:return null
+        val l=certify(left,others,initial,depth-1,withinBudget)?:return null
+        val r=certify(right,others,initial,depth-1,withinBudget)?:return null
         return max(l,r)
     }
-    fun smooth(route:PairedRailCandidate.Plan,others:List<Box>):Plan? {
+    fun smooth(route:PairedRailCandidate.Plan,others:List<Box>,
+               withinBudget:()->Boolean={true}):Plan? {
         val k=route.keyframes
-        if(k.size!=5)return null
+        if(k.size!=5 || !withinBudget())return null
         for(trim in floatArrayOf(.18f,.12f,.08f,.04f)) {
+            if(!withinBudget())return null
             val segments=ArrayList<Segment>(7)
             var start=0f;var a=k.first()
             fun line(end:Float,b:PairBox) {segments.add(Segment(start,end,Curve(a,mix(a,b,.5f),b)));start=end;a=b}
@@ -71,10 +75,10 @@ internal object SmoothPairedRailCandidate {
             // containment and each source aspect hold by construction.
             var bound=0.0;var valid=true
             for(s in segments) {
-                val c=certify(s.curve,others,k.first(),5)
+                val c=certify(s.curve,others,k.first(),5,withinBudget)
                 if(c==null){valid=false;break};bound=max(bound,c)
             }
-            if(valid)return Plan(segments,bound,trim)
+            if(valid)return if(withinBudget())Plan(segments,bound,trim) else null
         }
         return null
     }

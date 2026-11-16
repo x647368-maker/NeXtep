@@ -372,9 +372,21 @@
         {
           "before": "                        \" apply8=$applyOver120HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+",
           "after": "                        \" apply8=$applyOver120HzBudget\")\n                if(nativeFrameCount>0) trace(\"gpu_unchanged_skipped=$unchangedFrameSkips\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+"
+        },
+        {
+          "before": "        ): StageLiveSurfaceExchange? {\n            if (Build.VERSION.SDK_INT < 31 || !host.isAttachedToWindow ||",
+          "after": "        ): StageLiveSurfaceExchange? {\n            val setupStarted=SystemClock.elapsedRealtimeNanos()\n            if (Build.VERSION.SDK_INT < 31 || !host.isAttachedToWindow ||"
+        },
+        {
+          "before": "                val pairedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && BuildConfig.ATOMIC_PAIRED_RAIL_TRIAL) {",
+          "after": "                val explicitPair=BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && BuildConfig.ATOMIC_PAIRED_RAIL_TRIAL\n                val explicitPlan=if(explicitPair) {"
+        },
+        {
+          "before": "                // Only contain bounds are certified by the new trial.\n                // Keep the original covered/contain route when rejected.\n                val coveredFlight = pairedPlan==null && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(\n                    from, to, incomingCrop, outgoingCrop, obstacles)\n                StageExchangeTelemetry.nativeEvent(\n                    \"mirror_crop_mode=\" + if (pairedPlan!=null) \"paired_contain_trial\" else if (coveredFlight) \"covered_safe\" else \"contain_reveal\")",
+          "after": "                // First preserve the established crop decision. The optional\n                // certified route can improve the crossing without adding a\n                // new crop mode or losing either visible endpoint.\n                val oldCovered = explicitPlan==null && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(\n                    from, to, incomingCrop, outgoingCrop, obstacles)\n                val certifiedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && !explicitPair) {\n                    val began=SystemClock.elapsedRealtimeNanos()\n                    // Soft deadline: bound search at each small planning step,\n                    // retain margin for source identity/occlusion and the\n                    // existing outer 28ms total preparation admission.\n                    val deadline=minOf(setupStarted+20_000_000L,began+4_000_000L)\n                    StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,\n                        StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),\n                        obstacles,oldCovered) { SystemClock.elapsedRealtimeNanos()<deadline }.also { plan ->\n                        StageExchangeTelemetry.nativeEvent(\"certified_pair_us=\"+\n                            (SystemClock.elapsedRealtimeNanos()-began)/1000L+\" accepted=\"+(plan!=null))\n                    }\n                } else null\n                val pairedPlan=explicitPlan ?: certifiedPlan\n                val coveredFlight=pairedPlan==null && oldCovered\n                StageExchangeTelemetry.nativeEvent(\n                    \"mirror_crop_mode=\" + when {\n                        certifiedPlan!=null -> \"paired_contain_certified\"\n                        explicitPlan!=null -> \"paired_contain_trial\"\n                        coveredFlight -> \"covered_safe\"\n                        else -> \"contain_reveal\"\n                    })"
         }
       ],
-      "reviewed_blob_sha1": "a4c28d249833d15236328a7dd74108a650368bac"
+      "reviewed_blob_sha1": "75265170002e93c35d33fbe855a0cffec35d1df7"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",
@@ -491,6 +503,58 @@
           "after": "                result.putString(\"stream\",status+\"\\n\"+productionGateEvidence+marker+\"\\n\")"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePairedRailCandidate.kt": {
+      "previous_blob_sha1": "3dbc534195d39f0a4f796b14944ea406d4887377",
+      "patches": [
+        {
+          "before": "    fun plan(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,screen:Box,others:List<Box>):Plan? {\n        if(!listOf(small,main,screen).all{it.valid()}||",
+          "after": "    fun plan(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,screen:Box,others:List<Box>,\n             withinBudget:()->Boolean={true}):Plan? {\n        if(!withinBudget()||!listOf(small,main,screen).all{it.valid()}||"
+        },
+        {
+          "before": "        for(factor in floatArrayOf(.5f,.75f,1f,1.25f,1.5f,2f)) for(sign in floatArrayOf(1f,-1f)) {\n            val lane=",
+          "after": "        for(factor in floatArrayOf(.5f,.75f,1f,1.25f,1.5f,2f)) for(sign in floatArrayOf(1f,-1f)) {\n            if(!withinBudget())return null\n            val lane="
+        },
+        {
+          "before": "            for(i in 0 until keys.lastIndex){\n                val a=keys[i];val b=keys[i+1]",
+          "after": "            for(i in 0 until keys.lastIndex){\n                if(!withinBudget())return null\n                val a=keys[i];val b=keys[i+1]"
+        },
+        {
+          "before": "                for(o in others){\n                    if(peak",
+          "after": "                for(o in others){\n                    if(!withinBudget())return null\n                    if(peak"
+        },
+        {
+          "before": "            if(valid)return Plan(keys,maximum,lane)",
+          "after": "            if(valid)return if(withinBudget())Plan(keys,maximum,lane) else null"
+        }
+      ],
+      "reviewed_blob_sha1": "8f2c557478008a866ea64559aaac6d96e3a40edf"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSmoothPairedRailCandidate.kt": {
+      "previous_blob_sha1": "2d5ee6be14a63c40fd1cdf08b76df43ee36ee42c",
+      "patches": [
+        {
+          "before": "    private fun certify(q:Curve,others:List<Box>,initial:PairBox,depth:Int):Double? {\n        val a=q.a;",
+          "after": "    private fun certify(q:Curve,others:List<Box>,initial:PairBox,depth:Int,\n                        withinBudget:()->Boolean):Double? {\n        if(!withinBudget())return null\n        val a=q.a;"
+        },
+        {
+          "before": "        val l=certify(left,others,initial,depth-1)?:return null\n        val r=certify(right,others,initial,depth-1)?:return null",
+          "after": "        val l=certify(left,others,initial,depth-1,withinBudget)?:return null\n        val r=certify(right,others,initial,depth-1,withinBudget)?:return null"
+        },
+        {
+          "before": "    fun smooth(route:PairedRailCandidate.Plan,others:List<Box>):Plan? {\n        val k=route.keyframes\n        if(k.size!=5)return null\n        for(trim in floatArrayOf(.18f,.12f,.08f,.04f)) {",
+          "after": "    fun smooth(route:PairedRailCandidate.Plan,others:List<Box>,\n               withinBudget:()->Boolean={true}):Plan? {\n        val k=route.keyframes\n        if(k.size!=5 || !withinBudget())return null\n        for(trim in floatArrayOf(.18f,.12f,.08f,.04f)) {\n            if(!withinBudget())return null"
+        },
+        {
+          "before": "                val c=certify(s.curve,others,k.first(),5)",
+          "after": "                val c=certify(s.curve,others,k.first(),5,withinBudget)"
+        },
+        {
+          "before": "            if(valid)return Plan(segments,bound,trim)",
+          "after": "            if(valid)return if(withinBudget())Plan(segments,bound,trim) else null"
+        }
+      ],
+      "reviewed_blob_sha1": "98cf7e6f67380534c3f6b83c41baf7237ca55d30"
     }
   }
 }

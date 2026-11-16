@@ -277,6 +277,7 @@ internal class StageLiveSurfaceExchange private constructor(
             fullScreenHeight: Int,
             backdrop: Drawable?,
         ): StageLiveSurfaceExchange? {
+            val setupStarted=SystemClock.elapsedRealtimeNanos()
             if (Build.VERSION.SDK_INT < 31 || !host.isAttachedToWindow ||
                 !sourceSlotView.isAttachedToWindow || !host.isHardwareAccelerated
             ) return markUnavailable("detached_or_software")
@@ -344,7 +345,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 }
                 val incomingCrop = StageLiveSurfaceFlightGeometry.Crop(
                     localCrop.left, localCrop.top, localCrop.right, localCrop.bottom)
-                val pairedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && BuildConfig.ATOMIC_PAIRED_RAIL_TRIAL) {
+                val explicitPair=BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && BuildConfig.ATOMIC_PAIRED_RAIL_TRIAL
+                val explicitPlan=if(explicitPair) {
                     val began=SystemClock.elapsedRealtimeNanos()
                     planPairedRail(from,to,incomingCrop,outgoingCrop,StageLiveSurfaceFlightGeometry.Box(
                         0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),obstacles).also { plan ->
@@ -352,12 +354,33 @@ internal class StageLiveSurfaceExchange private constructor(
                             (SystemClock.elapsedRealtimeNanos()-began)/1000L+" accepted="+(plan!=null))
                     }
                 } else null
-                // Only contain bounds are certified by the new trial.
-                // Keep the original covered/contain route when rejected.
-                val coveredFlight = pairedPlan==null && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
+                // First preserve the established crop decision. The optional
+                // certified route can improve the crossing without adding a
+                // new crop mode or losing either visible endpoint.
+                val oldCovered = explicitPlan==null && StageLiveSurfaceFlightGeometry.canUseCoveredFlight(
                     from, to, incomingCrop, outgoingCrop, obstacles)
+                val certifiedPlan=if(BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL && !explicitPair) {
+                    val began=SystemClock.elapsedRealtimeNanos()
+                    // Soft deadline: bound search at each small planning step,
+                    // retain margin for source identity/occlusion and the
+                    // existing outer 28ms total preparation admission.
+                    val deadline=minOf(setupStarted+20_000_000L,began+4_000_000L)
+                    StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,
+                        StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),
+                        obstacles,oldCovered) { SystemClock.elapsedRealtimeNanos()<deadline }.also { plan ->
+                        StageExchangeTelemetry.nativeEvent("certified_pair_us="+
+                            (SystemClock.elapsedRealtimeNanos()-began)/1000L+" accepted="+(plan!=null))
+                    }
+                } else null
+                val pairedPlan=explicitPlan ?: certifiedPlan
+                val coveredFlight=pairedPlan==null && oldCovered
                 StageExchangeTelemetry.nativeEvent(
-                    "mirror_crop_mode=" + if (pairedPlan!=null) "paired_contain_trial" else if (coveredFlight) "covered_safe" else "contain_reveal")
+                    "mirror_crop_mode=" + when {
+                        certifiedPlan!=null -> "paired_contain_certified"
+                        explicitPlan!=null -> "paired_contain_trial"
+                        coveredFlight -> "covered_safe"
+                        else -> "contain_reveal"
+                    })
                 if (!outgoing.isValid || !incoming.isValid) {
                     return markUnavailable("invalid_native_handles")
                 }

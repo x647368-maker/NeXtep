@@ -56,8 +56,9 @@ internal object PairedRailCandidate {
         }
         return peak
     }
-    fun plan(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,screen:Box,others:List<Box>):Plan? {
-        if(!listOf(small,main,screen).all{it.valid()}||listOf(iw,ih,ow,oh).any{it<2}||area(main)<=area(small)||others.any{!it.valid()})return null
+    fun plan(small:Box,main:Box,iw:Int,ih:Int,ow:Int,oh:Int,screen:Box,others:List<Box>,
+             withinBudget:()->Boolean={true}):Plan? {
+        if(!withinBudget()||!listOf(small,main,screen).all{it.valid()}||listOf(iw,ih,ow,oh).any{it<2}||area(main)<=area(small)||others.any{!it.valid()})return null
         val ia=fit(iw,ih,small);val iz=fit(iw,ih,main);val oa=fit(ow,oh,main);val oz=fit(ow,oh,small)
         val hx=max(ia.first,oz.first)/2;val hy=max(ia.second,oz.second)/2
         if(main.width<hx*2||main.height<hy*2)return null
@@ -74,6 +75,7 @@ internal object PairedRailCandidate {
         // offset wins, with fixed sign as tie-break; no per-frame search.
         val lead=.25f
         for(factor in floatArrayOf(.5f,.75f,1f,1.25f,1.5f,2f)) for(sign in floatArrayOf(1f,-1f)) {
+            if(!withinBudget())return null
             val lane=min(small.width,small.height)*factor*sign
             val lx=-vy/length*lane;val ly=vx/length*lane
             val keys=listOf(PairBox(at(small.cx,small.cy,ia),at(main.cx,main.cy,oa)),
@@ -84,6 +86,7 @@ internal object PairedRailCandidate {
             if(keys.any{!inside(it.incoming,screen)||!inside(it.outgoing,screen)})continue
             var valid=true;var maximum=0.0
             for(i in 0 until keys.lastIndex){
+                if(!withinBudget())return null
                 val a=keys[i];val b=keys[i+1]
                 // Each edge moves monotonically within a segment. All boxes
                 // preserve their source ratio so minimum area is at an end.
@@ -92,12 +95,13 @@ internal object PairedRailCandidate {
                 maximum=max(maximum,bound)
                 if(bound>.35){valid=false;break}
                 for(o in others){
+                    if(!withinBudget())return null
                     if(peak(a.incoming,b.incoming,o,o)>peak(keys[0].incoming,keys[0].incoming,o,o)+1.0||
                         peak(a.outgoing,b.outgoing,o,o)>peak(keys[0].outgoing,keys[0].outgoing,o,o)+1.0){valid=false;break}
                 }
                 if(!valid)break
             }
-            if(valid)return Plan(keys,maximum,lane)
+            if(valid)return if(withinBudget())Plan(keys,maximum,lane) else null
         }
         return null
     }
