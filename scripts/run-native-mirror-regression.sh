@@ -3,6 +3,22 @@ set -euo pipefail
 # Dedicated API37 production SurfaceFlinger mirror test. This is NOT the
 # legacy screenshot/HWUI suite and MUST fail, not SKIP, on mirror unavailability.
 mkdir -p /tmp/atomic-native visual-results
+
+collect_flight_evidence_on_failure() {
+  local result=$?
+  if (( result != 0 )); then
+    adb logcat -d > native-flight-logcat.txt || true
+    local archive=/tmp/atomic-native/failed-flight-results.tar
+    if adb exec-out run-as io.github.x647368maker.atomicworkbench \
+        tar -C files/visual-regression -cf - . > "$archive" && [[ -s "$archive" ]]; then
+      tar -xf "$archive" -C visual-results || true
+    fi
+    find visual-results -type f \( -name 'native-flight-runtime.txt' -o -name 'native-flight-trace.txt' \) \
+      -print -exec tail -60 {} \; || true
+  fi
+  return "$result"
+}
+trap collect_flight_evidence_on_failure EXIT
 keytool -genkeypair -keystore /tmp/atomic-native/test.p12 \
   -storetype PKCS12 -storepass android -keypass android -alias visual \
   -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Native SF Mirror Test'
