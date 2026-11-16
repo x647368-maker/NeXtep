@@ -120,6 +120,12 @@ internal class StageLiveSurfaceExchange private constructor(
     private val incomingRebased=AtomicBoolean(false)
     private val outgoingRebased=AtomicBoolean(false)
     private val endpointWriteFailed=AtomicBoolean(false)
+    // The first matching destination rebase receipt is stronger than a local
+    // frame write, but is NOT a fresh producer buffer or visible-pixel proof.
+    private val incomingRebaseReceiptArmed=AtomicBoolean(false)
+    private val outgoingRebaseReceiptArmed=AtomicBoolean(false)
+    private val incomingRebaseCommitted=AtomicBoolean(false)
+    private val outgoingRebaseCommitted=AtomicBoolean(false)
 
     // After the terminal frame, the source producer can change its bounds
     // AND its local root transform. Keep the mirror in the same destination
@@ -156,6 +162,18 @@ internal class StageLiveSurfaceExchange private constructor(
                     radiusSetter.invoke(transaction,mirror,(24f*density/fit.scale).coerceIn(0f,120f*density))
                 }
                 (if(incoming) incomingRebased else outgoingRebased).set(true)
+                // Observe the existing matched destination transaction once
+                // per card, with no new transaction, thread or frame query.
+                // Do not retry registration on every unrelated Shell commit.
+                if(coveredFlight && pairedRailPlan!=null && Build.VERSION.SDK_INT>=33) {
+                    val armed=if(incoming) incomingRebaseReceiptArmed else outgoingRebaseReceiptArmed
+                    val committed=if(incoming) incomingRebaseCommitted else outgoingRebaseCommitted
+                    if(armed.compareAndSet(false,true)) runCatching {
+                        transaction.addTransactionCommittedListener(Executor { it.run() }) {
+                            if(!finished.get() && !hostDetached) committed.set(true)
+                        }
+                    }
+                }
             }.onFailure { endpointWriteFailed.set(true) }
         }
         if(TaskSurfaceCompat.registerHeldMirrorWriter(writer)) heldWriter=writer
@@ -976,8 +994,21 @@ internal class StageLiveSurfaceExchange private constructor(
                             SystemClock.uptimeMillis(),deadline))
                     StageConcurrentNativeTrialPolicy.HandoffAction.READY -> {
                         trace("handoff_target_ready@${now-startedAtMs}ms")
-                        if (endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {
-                            revealReadyDestination(liveReady,canRelease)
+                        val gapReveal=endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted
+                        // Identical outer boxes can still hide a crop/content
+                        // discontinuity at the adaptive endpoint. Only blend
+                        // when both matching target-transform receipts exist.
+                        // Unsupported OEM receipts never cause extra waiting.
+                        val adaptiveBlend=StageConcurrentNativeTrialPolicy.adaptiveHandoffBlend(
+                            concurrentHandoff && coveredFlight && pairedRailPlan!=null,
+                            firstTransactionCommitted,incomingRebaseCommitted.get(),
+                            outgoingRebaseCommitted.get(),endpointWriteFailed.get(),
+                            deadline-now,ValueAnimator.getDurationScale())
+                        if (gapReveal || adaptiveBlend) {
+                            val duration=if(gapReveal) READY_REVEAL_MS
+                                else StageConcurrentNativeTrialPolicy.ADAPTIVE_HANDOFF_REVEAL_MS
+                            trace(if(gapReveal) "handoff_reveal_gap" else "handoff_reveal_adaptive_zero_gap")
+                            revealReadyDestination(liveReady,canRelease,duration)
                         } else {
                             handoffReady=true
                             stop()
@@ -1002,7 +1033,8 @@ internal class StageLiveSurfaceExchange private constructor(
     // without stretching/cropping. Once the real task is confirmed ready,
     // reveal it over a short bounded GPU-only handoff rather than a hard cut.
     // No new surfaces, screenshots, task resizes or work while idle.
-    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean) {
+    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean,
+                                       durationMs:Long) {
         if (!isRunning || revealAnimator != null) return
         // Ready at the preceding main-loop check is not evidence that the
         // reveal itself has completed. Do not mark an aborted fade as success.
@@ -1028,12 +1060,19 @@ internal class StageLiveSurfaceExchange private constructor(
         }
         trace("endpoint_reveal_start gap=${endpointGap.toInt()}px")
         val reveal = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = READY_REVEAL_MS
+            duration = durationMs
             interpolator = PathInterpolator(.2f, 0f, .2f, 1f)
             addUpdateListener {
                 if (!isRunning) return@addUpdateListener
                 if(hostDetached || !host.isAttachedToWindow){stop();return@addUpdateListener}
                 if(requireCommit && finalAlphaSubmitted)return@addUpdateListener
+                // A task/viewport may change during the reveal itself. Do not
+                // submit another alpha frame over a stale destination owner.
+                if(!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {
+                    trace("endpoint_reveal_target_lost")
+                    stop()
+                    return@addUpdateListener
+                }
                 val alpha = StageLiveSurfaceFlightGeometry.handoffReveal(it.animatedValue as Float)
                 runCatching {
                     val tx = frameTransaction ?: error("Handoff transaction unavailable")
@@ -1130,6 +1169,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(nativeFrameCount>0) trace("gpu_unchanged_skipped=$unchangedFrameSkips")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
+                if(concurrentHandoff && coveredFlight && pairedRailPlan!=null)
+                    trace("endpoint_rebase_receipts up="+incomingRebaseCommitted.get()+
+                        " down="+outgoingRebaseCommitted.get()+" pixels_not_proven")
                 NeXtepLog.info("native_swap",
                     "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
                     "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")

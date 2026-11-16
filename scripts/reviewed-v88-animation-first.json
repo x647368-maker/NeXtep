@@ -304,9 +304,13 @@
         {
           "before": "    // A terminal geometry submission is explicit; never rely solely on\n    // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI.",
           "after": "    // A committed initial frame or previously submitted identical progress\n    // already owns this exact transform. Keep live producer updates and all\n    // distinct motion; never skip an explicit terminal receipt transaction.\n    fun unchangedFlightFrame(concurrent:Boolean, firstCommitted:Boolean, terminal:Boolean,\n                             last:Float, next:Float):Boolean =\n        concurrent && firstCommitted && !terminal && last.isFinite() &&\n            next.isFinite() && last == next\n\n    // A terminal geometry submission is explicit; never rely solely on\n    // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI."
+        },
+        {
+          "before": "    fun nextHandoffCheck(nowMs: Long, deadlineMs: Long): Long =\n        minOf(nowMs + 16L, deadlineMs)",
+          "after": "    fun nextHandoffCheck(nowMs: Long, deadlineMs: Long): Long =\n        minOf(nowMs + 16L, deadlineMs)\n\n    // A covered adaptive flight can have zero edge gap but different source\n    // crop/reflow. The short cover-first blend is optional, never a wait for\n    // a missing vendor receipt and never evidence of newly presented pixels.\n    const val ADAPTIVE_HANDOFF_REVEAL_MS=48L\n\n    fun adaptiveHandoffBlend(adaptiveCovered:Boolean, firstCommitted:Boolean,\n                             incomingCommitted:Boolean, outgoingCommitted:Boolean,\n                             endpointFailed:Boolean, remainingMs:Long,\n                             animatorScale:Float):Boolean =\n        adaptiveCovered && firstCommitted && incomingCommitted && outgoingCommitted &&\n            !endpointFailed && animatorScale.isFinite() && animatorScale>0f &&\n            (ADAPTIVE_HANDOFF_REVEAL_MS.toDouble()*animatorScale.toDouble()+\n                TERMINAL_COMMIT_BUDGET_MS) <= remainingMs.toDouble()"
         }
       ],
-      "reviewed_blob_sha1": "bd114aa06a647952da69fd4977093e6b7e407867"
+      "reviewed_blob_sha1": "f790f57029bd06551f4d16729ed51030ee3e6b91"
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicyTest.kt": {
       "previous_blob_sha1": "a3352b04384b04666ad3fb3847ab39a0503c2077",
@@ -318,9 +322,13 @@
         {
           "before": "    @Test fun terminalFrameDoesNotNeedAnimatorEndAndCannotBePremature() {",
           "after": "    @Test fun onlyCommittedIdenticalNonterminalProgressIsRedundant() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(concurrent in listOf(false,true))\n            for(first in listOf(false,true))\n                for(terminal in listOf(false,true)) {\n                    val expected=concurrent && first && !terminal\n                    assertEquals(expected,p.unchangedFlightFrame(concurrent,first,terminal,0f,0f))\n                    assertEquals(expected,p.unchangedFlightFrame(concurrent,first,terminal,.25f,.25f))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,.25f,.250001f))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,0f,.000001f))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,Float.NaN,Float.NaN))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY))\n                }\n    }\n\n    @Test fun terminalFrameDoesNotNeedAnimatorEndAndCannotBePremature() {"
+        },
+        {
+          "before": "    @Test fun transientMirrorReadinessDoesNotDisableTheSession() {",
+          "after": "    @Test fun adaptiveZeroGapBlendRequiresBothTargetTransactionReceiptsAndBudget() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(mask in 0..31) {\n            val adaptive=mask and 1!=0\n            val first=mask and 2!=0\n            val incoming=mask and 4!=0\n            val outgoing=mask and 8!=0\n            val failed=mask and 16!=0\n            assertEquals(mask==15,p.adaptiveHandoffBlend(adaptive,first,incoming,outgoing,\n                failed,200L,1f))\n        }\n        val budget=p.ADAPTIVE_HANDOFF_REVEAL_MS+p.TERMINAL_COMMIT_BUDGET_MS\n        assertTrue(p.adaptiveHandoffBlend(true,true,true,true,false,budget,1f))\n        assertFalse(p.adaptiveHandoffBlend(true,true,true,true,false,budget-1L,1f))\n        assertFalse(p.adaptiveHandoffBlend(true,true,true,true,false,budget,2f))\n        assertTrue(p.adaptiveHandoffBlend(true,true,true,true,false,budget,.5f))\n        for(scale in listOf(0f,-1f,Float.NaN,Float.POSITIVE_INFINITY))\n            assertFalse(p.adaptiveHandoffBlend(true,true,true,true,false,1000L,scale))\n    }\n\n    @Test fun transientMirrorReadinessDoesNotDisableTheSession() {"
         }
       ],
-      "reviewed_blob_sha1": "e31aaf575ec1672113c687665bd4c449fa94cd8a"
+      "reviewed_blob_sha1": "bcbf1faf3f4a8ecbfb9fd43a345a6d423d5bc47d"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
       "previous_blob_sha1": "bd8569f0fd711d87da1443016063d39bf2e98ad8",
@@ -444,9 +452,33 @@
         {
           "before": "        if(finished.get() || isRunning || coveredFlight)return false\n        // Exercise the same default geometric admission as the production\n        // factory; the separate test clock is intentionally not a phone budget.\n        pairedRailPlan=StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n            outgoingGeometryCrop,screen,obstacles,oldCovered=false)",
           "after": "        if(finished.get() || isRunning)return false\n        // The covered fixture must reproduce the old rejection and admit only\n        // the actual adaptive route. No production gate or task identity is bypassed.\n        pairedRailPlan=if(coveredFlight) {\n            if(!StageLiveSurfaceFlightGeometry.canUseCoveredFlight(slotStart,mainStart,\n                    incomingGeometryCrop,outgoingGeometryCrop,obstacles))return false\n            if(StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n                    outgoingGeometryCrop,screen,obstacles,oldCovered=true)!=null)return false\n            StageAdaptiveCoveredRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n                outgoingGeometryCrop,screen,obstacles)\n        } else StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,\n            outgoingGeometryCrop,screen,obstacles,oldCovered=false)"
+        },
+        {
+          "before": "    private val endpointWriteFailed=AtomicBoolean(false)\n\n    // After the terminal frame",
+          "after": "    private val endpointWriteFailed=AtomicBoolean(false)\n    // The first matching destination rebase receipt is stronger than a local\n    // frame write, but is NOT a fresh producer buffer or visible-pixel proof.\n    private val incomingRebaseReceiptArmed=AtomicBoolean(false)\n    private val outgoingRebaseReceiptArmed=AtomicBoolean(false)\n    private val incomingRebaseCommitted=AtomicBoolean(false)\n    private val outgoingRebaseCommitted=AtomicBoolean(false)\n\n    // After the terminal frame"
+        },
+        {
+          "before": "                (if(incoming) incomingRebased else outgoingRebased).set(true)\n            }.onFailure { endpointWriteFailed.set(true) }",
+          "after": "                (if(incoming) incomingRebased else outgoingRebased).set(true)\n                // Observe the existing matched destination transaction once\n                // per card, with no new transaction, thread or frame query.\n                // Do not retry registration on every unrelated Shell commit.\n                if(coveredFlight && pairedRailPlan!=null && Build.VERSION.SDK_INT>=33) {\n                    val armed=if(incoming) incomingRebaseReceiptArmed else outgoingRebaseReceiptArmed\n                    val committed=if(incoming) incomingRebaseCommitted else outgoingRebaseCommitted\n                    if(armed.compareAndSet(false,true)) runCatching {\n                        transaction.addTransactionCommittedListener(Executor { it.run() }) {\n                            if(!finished.get() && !hostDetached) committed.set(true)\n                        }\n                    }\n                }\n            }.onFailure { endpointWriteFailed.set(true) }"
+        },
+        {
+          "before": "                        if (endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted) {\n                            revealReadyDestination(liveReady,canRelease)\n                        } else {",
+          "after": "                        val gapReveal=endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted\n                        // Identical outer boxes can still hide a crop/content\n                        // discontinuity at the adaptive endpoint. Only blend\n                        // when both matching target-transform receipts exist.\n                        // Unsupported OEM receipts never cause extra waiting.\n                        val adaptiveBlend=StageConcurrentNativeTrialPolicy.adaptiveHandoffBlend(\n                            concurrentHandoff && coveredFlight && pairedRailPlan!=null,\n                            firstTransactionCommitted,incomingRebaseCommitted.get(),\n                            outgoingRebaseCommitted.get(),endpointWriteFailed.get(),\n                            deadline-now,ValueAnimator.getDurationScale())\n                        if (gapReveal || adaptiveBlend) {\n                            val duration=if(gapReveal) READY_REVEAL_MS\n                                else StageConcurrentNativeTrialPolicy.ADAPTIVE_HANDOFF_REVEAL_MS\n                            trace(if(gapReveal) \"handoff_reveal_gap\" else \"handoff_reveal_adaptive_zero_gap\")\n                            revealReadyDestination(liveReady,canRelease,duration)\n                        } else {"
+        },
+        {
+          "before": "    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean) {",
+          "after": "    private fun revealReadyDestination(liveReady: () -> Boolean, canRelease: () -> Boolean,\n                                       durationMs:Long) {"
+        },
+        {
+          "before": "            duration = READY_REVEAL_MS\n            interpolator = PathInterpolator(.2f, 0f, .2f, 1f)\n            addUpdateListener {\n                if (!isRunning) return@addUpdateListener\n                if(hostDetached || !host.isAttachedToWindow){stop();return@addUpdateListener}\n                if(requireCommit && finalAlphaSubmitted)return@addUpdateListener\n                val alpha",
+          "after": "            duration = durationMs\n            interpolator = PathInterpolator(.2f, 0f, .2f, 1f)\n            addUpdateListener {\n                if (!isRunning) return@addUpdateListener\n                if(hostDetached || !host.isAttachedToWindow){stop();return@addUpdateListener}\n                if(requireCommit && finalAlphaSubmitted)return@addUpdateListener\n                // A task/viewport may change during the reveal itself. Do not\n                // submit another alpha frame over a stale destination owner.\n                if(!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {\n                    trace(\"endpoint_reveal_target_lost\")\n                    stop()\n                    return@addUpdateListener\n                }\n                val alpha"
+        },
+        {
+          "before": "                    \" down=\"+outgoingRebased.get()+\" fail=\"+endpointWriteFailed.get())\n                NeXtepLog.info",
+          "after": "                    \" down=\"+outgoingRebased.get()+\" fail=\"+endpointWriteFailed.get())\n                if(concurrentHandoff && coveredFlight && pairedRailPlan!=null)\n                    trace(\"endpoint_rebase_receipts up=\"+incomingRebaseCommitted.get()+\n                        \" down=\"+outgoingRebaseCommitted.get()+\" pixels_not_proven\")\n                NeXtepLog.info"
         }
       ],
-      "reviewed_blob_sha1": "4cb0c87a4fe84f7e2dbaa82208266b838f09e23f"
+      "reviewed_blob_sha1": "30d8db68142e767bef72d71641ea5cb012aadafa"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",

@@ -183,6 +183,20 @@ internal object StageConcurrentNativeTrialPolicy {
     fun nextHandoffCheck(nowMs: Long, deadlineMs: Long): Long =
         minOf(nowMs + 16L, deadlineMs)
 
+    // A covered adaptive flight can have zero edge gap but different source
+    // crop/reflow. The short cover-first blend is optional, never a wait for
+    // a missing vendor receipt and never evidence of newly presented pixels.
+    const val ADAPTIVE_HANDOFF_REVEAL_MS=48L
+
+    fun adaptiveHandoffBlend(adaptiveCovered:Boolean, firstCommitted:Boolean,
+                             incomingCommitted:Boolean, outgoingCommitted:Boolean,
+                             endpointFailed:Boolean, remainingMs:Long,
+                             animatorScale:Float):Boolean =
+        adaptiveCovered && firstCommitted && incomingCommitted && outgoingCommitted &&
+            !endpointFailed && animatorScale.isFinite() && animatorScale>0f &&
+            (ADAPTIVE_HANDOFF_REVEAL_MS.toDouble()*animatorScale.toDouble()+
+                TERMINAL_COMMIT_BUDGET_MS) <= remainingMs.toDouble()
+
     /** A failed vendor release must not strand the remaining compositor
      * resources or prevent completion of the real exchange. Only on teardown. */
     fun cleanupSteps(vararg steps:()->Unit, onFailure:(Throwable)->Unit) {

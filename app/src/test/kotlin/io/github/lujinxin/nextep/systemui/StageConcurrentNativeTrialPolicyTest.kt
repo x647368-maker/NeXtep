@@ -222,6 +222,26 @@ class StageConcurrentNativeTrialPolicyTest {
         assertEquals(580L,p.nextHandoffCheck(578,580))
     }
 
+    @Test fun adaptiveZeroGapBlendRequiresBothTargetTransactionReceiptsAndBudget() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(mask in 0..31) {
+            val adaptive=mask and 1!=0
+            val first=mask and 2!=0
+            val incoming=mask and 4!=0
+            val outgoing=mask and 8!=0
+            val failed=mask and 16!=0
+            assertEquals(mask==15,p.adaptiveHandoffBlend(adaptive,first,incoming,outgoing,
+                failed,200L,1f))
+        }
+        val budget=p.ADAPTIVE_HANDOFF_REVEAL_MS+p.TERMINAL_COMMIT_BUDGET_MS
+        assertTrue(p.adaptiveHandoffBlend(true,true,true,true,false,budget,1f))
+        assertFalse(p.adaptiveHandoffBlend(true,true,true,true,false,budget-1L,1f))
+        assertFalse(p.adaptiveHandoffBlend(true,true,true,true,false,budget,2f))
+        assertTrue(p.adaptiveHandoffBlend(true,true,true,true,false,budget,.5f))
+        for(scale in listOf(0f,-1f,Float.NaN,Float.POSITIVE_INFINITY))
+            assertFalse(p.adaptiveHandoffBlend(true,true,true,true,false,1000L,scale))
+    }
+
     @Test fun transientMirrorReadinessDoesNotDisableTheSession() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         for (reason in listOf("fallback:detached_or_software",
