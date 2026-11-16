@@ -469,6 +469,28 @@
           "after": "                val selectedGlass=if(dualBounds!=null && parent===categories)\n                    android.graphics.drawable.StateListDrawable().apply {\n                        addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(\n                            GradientDrawable.Orientation.TL_BR,\n                            if(dark) intArrayOf(Color.argb(76,124,187,255),Color.argb(44,64,133,232)) else\n                                intArrayOf(Color.argb(78,105,174,255),Color.argb(48,66,128,230))\n                        ).apply {\n                            cornerRadius=dp(12).toFloat()\n                            setStroke(dp(1),if(dark)Color.argb(166,184,222,255) else Color.argb(210,247,252,255))\n                        })\n                        addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))\n                    } else null\n                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),selectedGlass,\n                    GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})"
         }
       ]
+    },
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt": {
+      "previous_blob_sha1": "68fd624e9b8d9ee81cc8807e863f121a97c18990",
+      "reviewed_blob_sha1": "0fcbc2d849cc712fe2421a7929c0cda31b1dec94",
+      "patches": [
+        {
+          "before": "    private var pairedFlightOnly = false\n",
+          "after": "    private var pairedFlightOnly = false\n    private var requireDefaultAnimation = false\n"
+        },
+        {
+          "before": "        pairedFlightOnly = arguments?.getString(\"pairedFlightOnly\") == \"true\"\n",
+          "after": "        pairedFlightOnly = arguments?.getString(\"pairedFlightOnly\") == \"true\"\n        requireDefaultAnimation = arguments?.getString(\"requireDefaultAnimation\") == \"true\"\n"
+        },
+        {
+          "before": "            if (nativeFlightOnly || pairedFlightOnly) {\n                val destination=",
+          "after": "            if (nativeFlightOnly || pairedFlightOnly) {\n                val productionGateEvidence=if(requireDefaultAnimation) {\n                    check(nativeFlightOnly) { \"Default animation contract must run in the normal flight\" }\n                    // Read the INSTALLED target APK fields, not constants inlined\n                    // into the test APK. Also exercise the actual compiled gate.\n                    val config=targetContext.classLoader.loadClass(targetContext.packageName+\".BuildConfig\")\n                    check(config.getField(\"ATOMIC_NATIVE_SURFACE_TRIAL\").getBoolean(null)) {\n                        \"Installable development APK has live GPU animation disabled\"\n                    }\n                    check(!config.getField(\"ATOMIC_PAIRED_RAIL_TRIAL\").getBoolean(null)) {\n                        \"Experimental paired rail unexpectedly enabled in default APK\"\n                    }\n                    check(io.github.x647368maker.atomicworkbench.systemui.StagePrivateDualTaskFlightGate.enabled()) {\n                        \"Compiled production GPU entry gate does not match build configuration\"\n                    }\n                    check(io.github.x647368maker.atomicworkbench.systemui.StageTransientTapPolicy.snapshotFallbackEnabled()) {\n                        \"Required animation fallback is disabled\"\n                    }\n                    \"PRODUCTION_ANIMATION_GATE_PASS\\n\"\n                } else \"\"\n                val destination="
+        },
+        {
+          "before": "                result.putString(\"stream\",status+\"\\n\"+marker+\"\\n\")",
+          "after": "                result.putString(\"stream\",status+\"\\n\"+productionGateEvidence+marker+\"\\n\")"
+        }
+      ]
     }
   }
 }
