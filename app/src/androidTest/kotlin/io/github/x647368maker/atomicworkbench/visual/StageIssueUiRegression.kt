@@ -464,9 +464,8 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             }
             Thread.sleep(350)
             phase("HOME scroll after y=${ui{homeScroller.scrollY}} max=${ui{(homeScroller.getChildAt(0)?.height?:0)-homeScroller.height}} about=${visibleText("关于与使用帮助")} credit=${visibleText("ZMW小武 × GPT")} origin=${visibleText("基于 NeXtep 二次开发")}")
-            screenshot(out,"ui-home-phone-bottom-debug.png",activity)
             await("home bottom rows and original attribution fully visible"){
-                visibleText("关于与使用帮助") && visibleText("ZMW小武 × GPT") &&
+                visibleText("关于与使用帮助") && visibleText("二次开发：ZMW小武 × GPT") &&
                     visibleText("基于 NeXtep 二次开发")
             }
             screenshot(out,"ui-home-phone-bottom.png",activity)
