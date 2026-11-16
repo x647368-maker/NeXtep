@@ -4,10 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageTransientTapPolicyTest {
-    @Test fun nativeTrialAndSnapshotRoutesAreMutuallyExclusive() {
+    @Test fun liveGpuPrimaryDoesNotDisableRenderThreadSnapshotFallback() {
         val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL
         assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())
-        assertEquals(!requested,StageTransientTapPolicy.privateTrialEnabled())
+        assertTrue("A failed or unsupported live mirror must retain the bounded RenderThread fallback",
+            StageTransientTapPolicy.snapshotFallbackEnabled())
     }
     @Test fun onlyCommittedValidFirstFrameMayStartRealMove() {
         val p=StageTransientTapPolicy
