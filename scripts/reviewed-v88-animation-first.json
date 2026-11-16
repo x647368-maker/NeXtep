@@ -375,6 +375,20 @@
         }
       ],
       "reviewed_blob_sha1": "c46912e3bef39a4c137c9694ba499730c85a2a9a"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
+      "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
+      "reviewed_blob_sha1": "3652a7172b675f6b1327a40c80abbfbbc0302f2c",
+      "patches": [
+        {
+          "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
+          "after": "        if (dualBounds!=null) {\n            // Static translucent glass in the dual pane only. Retain the tested\n            // compact palette and never capture/blur the task underneath.\n            glass.colors=if(dark)\n                intArrayOf(Color.argb(230,62,76,96),Color.argb(222,39,52,73)) else\n                intArrayOf(Color.argb(236,250,253,255),Color.argb(226,221,232,245))\n            content.addView(ScrollView(context).apply { addView(categories) },"
+        },
+        {
+          "before": "                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),null,\n                    GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})",
+          "after": "                val selectedGlass=if(dualBounds!=null && parent===categories)\n                    android.graphics.drawable.StateListDrawable().apply {\n                        addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(\n                            GradientDrawable.Orientation.TL_BR,\n                            if(dark) intArrayOf(Color.argb(76,124,187,255),Color.argb(44,64,133,232)) else\n                                intArrayOf(Color.argb(78,105,174,255),Color.argb(48,66,128,230))\n                        ).apply {\n                            cornerRadius=dp(12).toFloat()\n                            setStroke(dp(1),if(dark)Color.argb(166,184,222,255) else Color.argb(210,247,252,255))\n                        })\n                        addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))\n                    } else null\n                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),selectedGlass,\n                    GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})"
+        }
+      ]
     }
   }
 }

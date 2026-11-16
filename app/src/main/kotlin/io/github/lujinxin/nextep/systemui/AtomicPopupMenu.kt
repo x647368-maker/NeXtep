@@ -102,6 +102,11 @@ internal object AtomicPopupMenu {
             setPadding(dp(6),dp(6),dp(6),dp(6))
         }
         if (dualBounds!=null) {
+            // Static translucent glass in the dual pane only. Retain the tested
+            // compact palette and never capture/blur the task underneath.
+            glass.colors=if(dark)
+                intArrayOf(Color.argb(230,62,76,96),Color.argb(222,39,52,73)) else
+                intArrayOf(Color.argb(236,250,253,255),Color.argb(226,221,232,245))
             content.addView(ScrollView(context).apply { addView(categories) },
                 LinearLayout.LayoutParams(categoryWidth,-1))
             content.addView(View(context).apply {
@@ -156,7 +161,19 @@ internal object AtomicPopupMenu {
                 text=label;contentDescription=label;textSize=15f;minHeight=dp(48)
                 setTextColor(ink);gravity=Gravity.CENTER_VERTICAL or Gravity.START
                 setPadding(dp(12),dp(6),dp(12),dp(6));isClickable=true;isFocusable=true
-                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),null,
+                val selectedGlass=if(dualBounds!=null && parent===categories)
+                    android.graphics.drawable.StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(
+                            GradientDrawable.Orientation.TL_BR,
+                            if(dark) intArrayOf(Color.argb(76,124,187,255),Color.argb(44,64,133,232)) else
+                                intArrayOf(Color.argb(78,105,174,255),Color.argb(48,66,128,230))
+                        ).apply {
+                            cornerRadius=dp(12).toFloat()
+                            setStroke(dp(1),if(dark)Color.argb(166,184,222,255) else Color.argb(210,247,252,255))
+                        })
+                        addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+                    } else null
+                background=RippleDrawable(ColorStateList.valueOf(if(dark)Color.argb(40,235,245,255) else Color.argb(25,30,70,110)),selectedGlass,
                     GradientDrawable().apply{setColor(Color.WHITE);cornerRadius=dp(12).toFloat()})
                 setOnClickListener{click()}
             }

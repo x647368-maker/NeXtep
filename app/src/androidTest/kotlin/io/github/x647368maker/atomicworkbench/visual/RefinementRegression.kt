@@ -186,20 +186,31 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             fired.set(-1)
             ui { AtomicPopupMenu.show(menuContext,anchor,actions,listOf(protected)) }
             settle()
-            fun visibleWideRow(label:String):Rect {
+            fun visibleWideNode(label:String):android.view.accessibility.AccessibilityNodeInfo {
                 val active=checkNotNull(inst.uiAutomation.rootInActiveWindow)
-                val row=active.findAccessibilityNodeInfosByText(label)
-                    .firstOrNull{it.text?.toString()==label && it.isVisibleToUser}
-                return Rect().also(checkNotNull(row)::getBoundsInScreen)
+                return checkNotNull(active.findAccessibilityNodeInfosByText(label)
+                    .firstOrNull{it.text?.toString()==label && it.isVisibleToUser})
             }
-            StageMenuPolicy.groups.forEach { visibleWideRow(it) }
+            fun visibleWideRow(label:String):Rect = Rect().also(visibleWideNode(label)::getBoundsInScreen)
+            fun verifySelectedCategory(selected:String) {
+                check(StageMenuPolicy.groups.all { label->visibleWideNode(label).isSelected==(label==selected) }) {
+                    "Wrong selected category in $viewport"
+                }
+            }
+            verifySelectedCategory(StageMenuPolicy.groups.first())
             click("窗口管理")
-            StageMenuPolicy.groups.forEach { visibleWideRow(it) }
+            verifySelectedCategory("窗口管理")
             val category=visibleWideRow("窗口管理")
             val action=visibleWideRow("添加小窗")
             check(category.right<=action.left) { "Categories and actions are not side by side" }
             val popupBounds=Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen)
             check(!Rect.intersects(popupBounds,protected)) { "Grouped menu covers protected content" }
+            val preview=checkNotNull(inst.uiAutomation.takeScreenshot()) { "Missing $viewport menu pixels" }
+            try {
+                File(out,"menu-${viewport.replace(' ','-')}-selected-glass.png").outputStream().use {
+                    check(preview.compress(Bitmap.CompressFormat.PNG,100,it))
+                }
+            } finally { preview.recycle() }
             click("添加小窗")
             val deadline=SystemClock.uptimeMillis()+2000L
             while(fired.get()!=commands.indexOf("添加小窗") && SystemClock.uptimeMillis()<deadline) Thread.sleep(25)
