@@ -242,44 +242,60 @@ class SlotTaskCoordinator(
     }
 
     private fun parkTasksBeforeExit() {
+        // Capture every task that currently belongs to each slot before issuing
+        // any WCT. A display is not releasable until every captured identity has
+        // been observed on the default display.
         val tasks = taskRepository.runningTasks()
         val saved = mutableSetOf<Int>()
+        val displays = slots.mapNotNull { it.displayId() }.toSet()
         slots.forEachIndexed { index, slot ->
             val record = slotRecords[index]
             record.exitTask = null
-            val task = tasks.firstOrNull { it.displayId == slot.displayId() }
             record.retainedTaskId = null
-            if (task == null || !saved.add(task.taskId)) return@forEachIndexed
+            val displayId = slot.displayId() ?: return@forEachIndexed
+            val slotTasks = tasks.filter { it.displayId == displayId && saved.add(it.taskId) }
+            val primary = slotTasks.firstOrNull() ?: return@forEachIndexed
             runCatching {
-                val layout = record.originalLayout ?: defaultMainLayout(task.resizeMode)
+                val layout = record.originalLayout ?: defaultMainLayout(primary.resizeMode)
                 WindowContainerTransactionCompat.parkInDefaultDisplay(
-                    checkNotNull(task.token), layout.defaultDisplayBounds(), layout.densityDpi, layout.windowingMode,
+                    checkNotNull(primary.token), layout.defaultDisplayBounds(), layout.densityDpi, layout.windowingMode,
                 ).getOrThrow()
-                check(taskRepository.findTask(task.taskId)?.displayId == Display.DEFAULT_DISPLAY) {
-                    "Task ${task.taskId} did not return to the default display"
+                val parked = waitForTaskOnDisplay(primary, Display.DEFAULT_DISPLAY)
+                check(sameTaskIdentity(primary, parked) && parked?.displayId == Display.DEFAULT_DISPLAY) {
+                    "Task ${primary.taskId} identity/destination was not confirmed before workspace exit"
                 }
-                layout.resizeMode?.let { ActivityTaskManagerCompat.setTaskResizeable(task.taskId, it).getOrThrow() }
-                val recent = taskRepository.recentTasks(checkNotNull(task.userId)).getOrThrow()
-                    .firstOrNull { it.taskId == task.taskId }
+                layout.resizeMode?.let {
+                    ActivityTaskManagerCompat.setTaskResizeable(primary.taskId, it).getOrThrow()
+                }
+                val userId = checkNotNull(primary.userId)
+                val recent = taskRepository.recentTasks(userId).getOrThrow()
+                    .firstOrNull {
+                        it.taskId == primary.taskId && it.userId == userId &&
+                            it.baseComponent.packageName == primary.component.packageName
+                    }
                 record.exitTask = recent
                 record.retainedTaskId = recent?.taskId
                 NeXtepLog.info("slot_retention", "Parked slot=$index task=${recent?.taskId}")
             }.onFailure {
-                NeXtepLog.warn("slot_retention", "Could not retain slot=$index task=${task.taskId}", it)
+                NeXtepLog.warn("slot_retention", "Could not retain slot=$index task=${primary.taskId}", it)
             }
-            // Some apps open secondary tasks on the same display. Preserve those in recents
-            // too, while only the top task owns this slot's restore reservation.
-            tasks.filter { it.displayId == slot.displayId() && it.taskId != task.taskId }
-                .forEach { secondary ->
-                    val layout = defaultMainLayout(secondary.resizeMode)
-                    WindowContainerTransactionCompat.parkInDefaultDisplay(
-                        checkNotNull(secondary.token), layout.defaultDisplayBounds(), layout.densityDpi, layout.windowingMode,
-                    ).getOrThrow()
+            // Some apps open secondary tasks on the same display. Preserve those
+            // in Recents too, but never release the display before each exact
+            // task identity has been observed on display 0.
+            slotTasks.drop(1).forEach { secondary ->
+                val layout = defaultMainLayout(secondary.resizeMode)
+                WindowContainerTransactionCompat.parkInDefaultDisplay(
+                    checkNotNull(secondary.token), layout.defaultDisplayBounds(), layout.densityDpi, layout.windowingMode,
+                ).getOrThrow()
+                val parked = waitForTaskOnDisplay(secondary, Display.DEFAULT_DISPLAY)
+                check(sameTaskIdentity(secondary, parked) && parked?.displayId == Display.DEFAULT_DISPLAY) {
+                    "Secondary task ${secondary.taskId} identity/destination was not confirmed before workspace exit"
                 }
+            }
         }
-        val displays = slots.mapNotNull { it.displayId() }.toSet()
-        check(taskRepository.runningTasks().none { it.displayId in displays }) {
-            "Slot tasks are still attached; refusing to destroy their displays"
+        val remaining = taskRepository.runningTasks().filter { it.displayId in displays }
+        check(remaining.isEmpty()) {
+            "Slot tasks are still attached; refusing to destroy their displays: ${remaining.map { it.taskId to it.displayId }}"
         }
     }
 
@@ -1230,18 +1246,26 @@ class SlotTaskCoordinator(
 
     private fun waitForSlotDismissDisplay(
         expected: TaskRepository.TaskSnapshot,
+    ): TaskRepository.TaskSnapshot? = waitForTaskOnDisplay(expected, Display.DEFAULT_DISPLAY)
+
+    /** Observe the same task identity on its destination; a WCT/Binder reply is not an ACK. */
+    private fun waitForTaskOnDisplay(
+        expected: TaskRepository.TaskSnapshot,
+        destinationDisplayId: Int,
     ): TaskRepository.TaskSnapshot? {
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
         var observed = taskRepository.findTask(expected.taskId)
-        while ((!sameTaskIdentity(expected, observed) ||
-                observed?.displayId != Display.DEFAULT_DISPLAY) &&
-            SystemClock.uptimeMillis() < deadline
-        ) {
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (observed != null && !sameTaskIdentity(expected, observed)) return null
+            if (sameTaskIdentity(expected, observed) && observed?.displayId == destinationDisplayId) {
+                return observed
+            }
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
             observed = taskRepository.findTask(expected.taskId)
         }
+        if (observed != null && !sameTaskIdentity(expected, observed)) return null
         return observed?.takeIf {
-            sameTaskIdentity(expected, it) && it.displayId == Display.DEFAULT_DISPLAY
+            sameTaskIdentity(expected, it) && it.displayId == destinationDisplayId
         }
     }
 
