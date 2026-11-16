@@ -230,9 +230,9 @@ jobs:
             virtual-display-log.txt
             /tmp/emulator.log
 
-  # Private PR49 only: validate the new API37 AttachedSurfaceControl.createMirror
-  # on a real Android 17 SurfaceFlinger/HWUI emulator. This remains separate
-  # from the established Android15 regression, and is NOT a ColorOS device test.
+  # v88 animation gate: validate API37 SurfaceFlinger mirrors and the complete
+  # production dual-card/paired GPU flight on Android 17. This is compositor
+  # evidence only, NOT a ColorOS/OEM task-handoff or real-device acceptance test.
   native-api37-mirror:
     if: ${{ always() && !cancelled() && needs.development.result == 'success' }}
     needs: development
