@@ -2183,33 +2183,41 @@ class NeXtepWindowController(
         onFinished: () -> Unit,
     ): Boolean {
         val traceId=StageExchangeTelemetry.currentNativeTapId()
-        if (!StageConcurrentNativeTrialPolicy.allowed(
-                workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
-                android.animation.ValueAnimator.areAnimatorsEnabled(),
-                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true)) {
-            StageExchangeTelemetry.nativeEvent(
-                "fallback:gate_" + StageConcurrentNativeTrialPolicy.gateReason(
-                    workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
-                    android.animation.ValueAnimator.areAnimatorsEnabled(),
-                    context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true))
+        val visible=workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked
+        val animators=android.animation.ValueAnimator.areAnimatorsEnabled()
+        val powerSave=context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true
+        if (!StageConcurrentNativeTrialPolicy.allowed(visible,animators,powerSave)) {
+            val reason=StageConcurrentNativeTrialPolicy.gateReason(visible,animators,powerSave)
+            StageExchangeTelemetry.nativeEvent("live_gpu_skip:$reason",traceId)
+            StageExchangeTelemetry.nativeEvent("fallback:gate_$reason",traceId)
             return false
         }
         val g=geometry()
         val task=mainTaskPresenter.currentTaskId() ?: run {
-            StageExchangeTelemetry.nativeEvent("fallback:no_main_task")
+            StageExchangeTelemetry.nativeEvent("live_gpu_skip:main_task_missing",traceId)
             return false
         }
-        val slot=slotWindows.getOrNull(slotIndex) ?: return false
+        val slot=slotWindows.getOrNull(slotIndex) ?: run {
+            StageExchangeTelemetry.nativeEvent("live_gpu_skip:slot_view_missing",traceId)
+            return false
+        }
         val state=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied
-            ?: return false
+            ?: run {
+                StageExchangeTelemetry.nativeEvent("live_gpu_skip:slot_not_occupied",traceId)
+                return false
+            }
         val host=records.firstOrNull { it.title=="NeXtepContentPanel" }?.view as? FrameLayout
-            ?: return false
+            ?: run {
+                StageExchangeTelemetry.nativeEvent("live_gpu_skip:content_panel_missing",traceId)
+                return false
+            }
         val point=IntArray(2)
         host.rootView.getLocationOnScreen(point)
         if (!StageConcurrentNativeTrialPolicy.fullScreenHost(
                 point[0],point[1],host.rootView.width,host.rootView.height,
                 g.screenWidth,g.screenHeight)) {
-            StageExchangeTelemetry.nativeEvent("fallback:host_bounds")
+            StageExchangeTelemetry.nativeEvent("live_gpu_skip:host_bounds",traceId)
+            StageExchangeTelemetry.nativeEvent("fallback:host_bounds",traceId)
             NeXtepLog.warn("native_swap", "PR55 fallback: host bounds " +
                 "origin=(${point[0]},${point[1]}) view=${host.rootView.width}x${host.rootView.height} " +
                 "display=${g.screenWidth}x${g.screenHeight}")
@@ -2217,7 +2225,8 @@ class NeXtepWindowController(
         }
         val source=Rect()
         if (!slot.view.getScreenVisibleRect(source)) {
-            StageExchangeTelemetry.nativeEvent("fallback:slot_bounds_missing")
+            StageExchangeTelemetry.nativeEvent("live_gpu_skip:slot_bounds_missing",traceId)
+            StageExchangeTelemetry.nativeEvent("fallback:slot_bounds_missing",traceId)
             return false
         }
         val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
@@ -2241,7 +2250,8 @@ class NeXtepWindowController(
             backdrop=null,
         ) ?: run {
             val reason=StageLiveSurfaceExchange.lastOutcome()
-            StageExchangeTelemetry.nativeEvent("fallback:mirror:$reason")
+            StageExchangeTelemetry.nativeEvent("live_gpu_skip:mirror_$reason",traceId)
+            StageExchangeTelemetry.nativeEvent("fallback:mirror:$reason",traceId)
             NeXtepLog.warn("native_swap", "PR59 mirror rejected on current tap reason=$reason")
             if (StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason)) {
                 // This task's owned leash or card bounds can become ready next tap.
