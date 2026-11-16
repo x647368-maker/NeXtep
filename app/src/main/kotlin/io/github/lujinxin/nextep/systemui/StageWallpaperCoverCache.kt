@@ -25,6 +25,17 @@ internal class StageWallpaperCoverCache<T:AutoCloseable> {
         }
     }
     private var entry:Entry<T>?=null
+    private var recoveryGeneration:Int?=null
+    // Called only after a real user-triggered native flight retires. One
+    // missing-cover recovery per backdrop generation, not per tap or timer.
+    fun claimMissingRecovery(key:Key,generation:Int):Boolean {
+        if(entry?.let{!it.retired && it.key==key}==true || recoveryGeneration==generation)return false
+        recoveryGeneration=generation
+        return true
+    }
+    // A genuine saver-entry invalidation permits one recovery after a later
+    // user swap. Leaving saver alone never initiates any preparation.
+    fun invalidateRecovery() { recoveryGeneration=null }
     fun replace(key:Key,resource:T) {
         clear()
         entry=Entry(key,resource)

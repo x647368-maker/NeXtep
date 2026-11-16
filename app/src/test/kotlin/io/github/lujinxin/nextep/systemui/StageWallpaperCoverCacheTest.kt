@@ -9,6 +9,22 @@ class StageWallpaperCoverCacheTest {
         override fun close(){closes++}
     }
     private val key=StageWallpaperCoverCache.Key(1272,2772,0)
+    @Test fun missingCoverRecoveryIsOncePerGenerationAndNeverWhenReady() {
+        val cache=StageWallpaperCoverCache<Resource>()
+        assertTrue(cache.claimMissingRecovery(key,10))
+        assertFalse(cache.claimMissingRecovery(key,10))
+        assertFalse(cache.claimMissingRecovery(key.copy(rotation=1),10))
+        val resource=Resource()
+        cache.replace(key,resource)
+        assertFalse(cache.claimMissingRecovery(key,11))
+        cache.clear()
+        assertEquals(1,resource.closes)
+        assertTrue(cache.claimMissingRecovery(key,11))
+        assertFalse(cache.claimMissingRecovery(key,11))
+        cache.invalidateRecovery()
+        assertTrue(cache.claimMissingRecovery(key,11))
+        assertFalse(cache.claimMissingRecovery(key,11))
+    }
     @Test fun retireWhileBorrowedClosesOnlyAfterLastRelease() {
         val cache=StageWallpaperCoverCache<Resource>()
         val old=Resource();val next=Resource()

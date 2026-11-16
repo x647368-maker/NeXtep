@@ -263,6 +263,7 @@ class NeXtepWindowController(
                     if(context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false) {
                         gpuWallpaperEpoch.incrementAndGet()
                         gpuWallpaper.clear()
+                        gpuWallpaper.invalidateRecovery()
                     }
                     // No recapture, timer, or automatic GPU warmup on exit.
                     return
@@ -2444,6 +2445,7 @@ class NeXtepWindowController(
         }
         val main=Rect(g.contentLeft,g.contentTop,g.contentRight,g.contentBottom)
         val before=android.os.SystemClock.uptimeMillis()
+        var coverWasMissing=false
         val native=StageLiveSurfaceExchange.create(
             host=host,sourceSlotView=slot.view,
             sourceTaskId=state.taskId,sourceDisplayId=state.displayId,
@@ -2461,7 +2463,7 @@ class NeXtepWindowController(
             },
             fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
             backdrop=null,
-            wallpaperCoverFactory={acquireWallpaperCover(g)},
+            wallpaperCoverFactory={acquireWallpaperCover(g).also { coverWasMissing=it==null }},
         ) ?: run {
             val reason=StageLiveSurfaceExchange.lastOutcome()
             StageExchangeTelemetry.nativeEvent("live_gpu_skip:mirror_$reason",traceId)
@@ -2553,6 +2555,7 @@ class NeXtepWindowController(
                 if(flush && workspaceVisible && !suspended) scheduleWindowRefresh()
                 onFinished()
                 if(workspaceVisible && !suspended) scheduleStageFocus()
+                if(coverWasMissing && !flush) recoverMissingWallpaperAfterNativeFlight()
             },
             onVisualUnavailable={ reason ->
                 // The native engine has already hidden/released its uncommitted
@@ -3752,6 +3755,29 @@ class NeXtepWindowController(
                 if(current)gpuWallpaper.replace(key,textured) else textured.close()
             })textured.close()
         }
+    }
+
+    // Restore only a missing optional GPU cover after a user-triggered native
+    // attempt retires. Reuse the current exact wallpaper frame, not a screen
+    // capture. A busy, hidden, rotated, locked or saver workspace does nothing.
+    // If a new exchange invalidates this preparation, there is no retry loop.
+    private fun recoverMissingWallpaperAfterNativeFlight() {
+        if(!workspaceVisible || suspended || isExchangePending() ||
+            activeSwapViewport!=null || previewCapturePending || liveSurfaceExchange!=null ||
+            !StagePrivateDualTaskFlightGate.enabled() ||
+            !WorkspaceWallpaperBackdrop.canCapture(context) ||
+            !StageConcurrentNativeTrialPolicy.allowed(true,
+                android.animation.ValueAnimator.areAnimatorsEnabled(),
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))return
+        val g=geometry()
+        val key=wallpaperKey(g)
+        val frame=matchingWallpaperFrame(g)?:return
+        if(frame.width!=key.width || frame.height!=key.height)return
+        val generation=backdropGeneration.get()
+        if(!gpuWallpaper.claimMissingRecovery(key,generation))return
+        // attempt=1 disables the existing one-time renderer retry for this
+        // optional recovery. Normal capture publication retains its policy.
+        queueWallpaperTexture(g,generation,gpuWallpaperEpoch.get(),frame,attempt=1)
     }
 
     private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? =

@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "ed87ede8d60e63e490c785099b6bae3e00f7b937",
+      "reviewed_blob_sha1": "e265cc961b14eecc0f574deab0db97954c74191e",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -325,6 +325,26 @@
         {
           "before": "                protectedBounds = if(sharedMotion!=null) protectedBounds else emptyList(),",
           "after": "                protectedBounds = if(protectedGeometryComplete) protectedBounds else emptyList(),"
+        },
+        {
+          "before": "                        gpuWallpaperEpoch.incrementAndGet()\n                        gpuWallpaper.clear()\n                    }\n                    // No recapture, timer, or automatic GPU warmup on exit.",
+          "after": "                        gpuWallpaperEpoch.incrementAndGet()\n                        gpuWallpaper.clear()\n                        gpuWallpaper.invalidateRecovery()\n                    }\n                    // No recapture, timer, or automatic GPU warmup on exit."
+        },
+        {
+          "before": "        val before=android.os.SystemClock.uptimeMillis()\n        val native=StageLiveSurfaceExchange.create(\n            host=host,sourceSlotView=slot.view,",
+          "after": "        val before=android.os.SystemClock.uptimeMillis()\n        var coverWasMissing=false\n        val native=StageLiveSurfaceExchange.create(\n            host=host,sourceSlotView=slot.view,"
+        },
+        {
+          "before": "            wallpaperCoverFactory={acquireWallpaperCover(g)},",
+          "after": "            wallpaperCoverFactory={acquireWallpaperCover(g).also { coverWasMissing=it==null }},"
+        },
+        {
+          "before": "                if(flush && workspaceVisible && !suspended) scheduleWindowRefresh()\n                onFinished()\n                if(workspaceVisible && !suspended) scheduleStageFocus()\n            },\n            onVisualUnavailable={ reason ->",
+          "after": "                if(flush && workspaceVisible && !suspended) scheduleWindowRefresh()\n                onFinished()\n                if(workspaceVisible && !suspended) scheduleStageFocus()\n                if(coverWasMissing && !flush) recoverMissingWallpaperAfterNativeFlight()\n            },\n            onVisualUnavailable={ reason ->"
+        },
+        {
+          "before": "    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? =",
+          "after": "    // Restore only a missing optional GPU cover after a user-triggered native\n    // attempt retires. Reuse the current exact wallpaper frame, not a screen\n    // capture. A busy, hidden, rotated, locked or saver workspace does nothing.\n    // If a new exchange invalidates this preparation, there is no retry loop.\n    private fun recoverMissingWallpaperAfterNativeFlight() {\n        if(!workspaceVisible || suspended || isExchangePending() ||\n            activeSwapViewport!=null || previewCapturePending || liveSurfaceExchange!=null ||\n            !StagePrivateDualTaskFlightGate.enabled() ||\n            !WorkspaceWallpaperBackdrop.canCapture(context) ||\n            !StageConcurrentNativeTrialPolicy.allowed(true,\n                android.animation.ValueAnimator.areAnimatorsEnabled(),\n                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false))return\n        val g=geometry()\n        val key=wallpaperKey(g)\n        val frame=matchingWallpaperFrame(g)?:return\n        if(frame.width!=key.width || frame.height!=key.height)return\n        val generation=backdropGeneration.get()\n        if(!gpuWallpaper.claimMissingRecovery(key,generation))return\n        // attempt=1 disables the existing one-time renderer retry for this\n        // optional recovery. Normal capture publication retains its policy.\n        queueWallpaperTexture(g,generation,gpuWallpaperEpoch.get(),frame,attempt=1)\n    }\n\n    private fun matchingWallpaperFrame(geometry: WorkspaceGeometry): android.graphics.Bitmap? ="
         }
       ]
     },
@@ -1747,6 +1767,26 @@
         {
           "before": "    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){",
           "after": "    @Test fun snapshotRoundnessMatchesBothPhysicalEndpointPolicies(){\n        val small=b(0f,0f,282f,557f)\n        val main=b(304f,0f,1258f,2079f)\n        val density=3.5f\n        for((w,h) in listOf(1272 to 2772,2772 to 1272,1440 to 1440)){\n            val up=checkNotNull(StageSnapshotMotion.flight(small,main,w,h))\n            val down=checkNotNull(StageSnapshotMotion.flight(main,small,w,h))\n            for((flight,smallFirst) in listOf(up to true,down to false)){\n                val corners=StageSnapshotMotion.cornerTrack(flight,smallFirst,density)\n                val liveSmall=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.previewRadius(small.w,small.h,density)\n                val liveMain=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(main.w,main.h,density)\n                fun expected(whichSmall:Boolean,scale:Float)=minOf(if(whichSmall)liveSmall else liveMain,minOf(w,h)*scale*.5f)\n                assertEquals(expected(smallFirst,flight.start.scale),corners.sourceRadius(0f,flight.start.scale)*flight.start.scale,.001f)\n                assertEquals(expected(!smallFirst,flight.end.scale),corners.sourceRadius(1f,flight.end.scale)*flight.end.scale,.001f)\n                var last=corners.visibleRadius(0f,flight.start.scale)\n                for(i in 1..120){\n                    val p=i/120f\n                    val scale=flight.pose(p).scale\n                    val visible=corners.sourceRadius(p,scale)*scale\n                    assertTrue(visible.isFinite() && visible>=0f && visible<=minOf(w,h)*scale*.5f+.001f)\n                    assertEquals(corners.visibleRadius(p,scale),visible,.001f)\n                    assertTrue(abs(visible-last)<5f)\n                    last=visible\n                }\n            }\n        }\n    }\n    @Test fun equalAxisUsesSubpixelNotUnitScaleJump(){"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageWallpaperCoverCache.kt": {
+      "reviewed_blob_sha1": "967bd496f2b3f1a8e40e2df3141897129621f29b",
+      "previous_blob_sha1": "8a7d4108ee7cac1d035c913d5fb86a8eee418c4e",
+      "patches": [
+        {
+          "before": "    private var entry:Entry<T>?=null\n    fun replace",
+          "after": "    private var entry:Entry<T>?=null\n    private var recoveryGeneration:Int?=null\n    // Called only after a real user-triggered native flight retires. One\n    // missing-cover recovery per backdrop generation, not per tap or timer.\n    fun claimMissingRecovery(key:Key,generation:Int):Boolean {\n        if(entry?.let{!it.retired && it.key==key}==true || recoveryGeneration==generation)return false\n        recoveryGeneration=generation\n        return true\n    }\n    // A genuine saver-entry invalidation permits one recovery after a later\n    // user swap. Leaving saver alone never initiates any preparation.\n    fun invalidateRecovery() { recoveryGeneration=null }\n    fun replace"
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageWallpaperCoverCacheTest.kt": {
+      "reviewed_blob_sha1": "b642e09a1e6db1bab665732c7558924d75075904",
+      "previous_blob_sha1": "96077865eb4f8b1c70ae30ae5240374ec2940b9c",
+      "patches": [
+        {
+          "before": "    @Test fun retireWhileBorrowedClosesOnlyAfterLastRelease() {",
+          "after": "    @Test fun missingCoverRecoveryIsOncePerGenerationAndNeverWhenReady() {\n        val cache=StageWallpaperCoverCache<Resource>()\n        assertTrue(cache.claimMissingRecovery(key,10))\n        assertFalse(cache.claimMissingRecovery(key,10))\n        assertFalse(cache.claimMissingRecovery(key.copy(rotation=1),10))\n        val resource=Resource()\n        cache.replace(key,resource)\n        assertFalse(cache.claimMissingRecovery(key,11))\n        cache.clear()\n        assertEquals(1,resource.closes)\n        assertTrue(cache.claimMissingRecovery(key,11))\n        assertFalse(cache.claimMissingRecovery(key,11))\n        cache.invalidateRecovery()\n        assertTrue(cache.claimMissingRecovery(key,11))\n        assertFalse(cache.claimMissingRecovery(key,11))\n    }\n    @Test fun retireWhileBorrowedClosesOnlyAfterLastRelease() {"
         }
       ]
     }
