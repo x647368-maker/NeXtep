@@ -9,6 +9,7 @@ import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.SystemClock
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.SurfaceControl
 import android.view.View
@@ -197,6 +198,31 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 awaitReleased(rapidA,"rapid-a")
                 awaitReleased(rapidB,"rapid-b")
             }
+            // Screen capture can block until after the terminal frame on a
+            // busy emulator. Cancel an independent flight from its frame clock
+            // so the race with a screenshot cannot invalidate teardown proof.
+            val cancellation=begin()
+            val submitted=cls.getDeclaredField("nativeFrameCount").apply { isAccessible=true }
+            val terminal=cls.getDeclaredField("frameComplete").apply { isAccessible=true }
+            val cancelledAtFrame=AtomicInteger(0)
+            inst.runOnMainSync {
+                val clock=Choreographer.getInstance()
+                clock.postFrameCallback(object : Choreographer.FrameCallback {
+                    override fun doFrame(frameTimeNanos:Long) {
+                        if(!cancellation.flight.isRunning || terminal.getBoolean(cancellation.flight))return
+                        val frames=submitted.getInt(cancellation.flight)
+                        if(frames>=2) {
+                            cancelledAtFrame.set(frames)
+                            cancellation.flight.stop()
+                            cancellation.flight.stop()
+                        } else clock.postFrameCallback(this)
+                    }
+                })
+            }
+            awaitReleased(cancellation,"mid")
+            check(cancelledAtFrame.get()>=2) { "No cancellation during submitted live frames" }
+            evidence.add("mid cancellation: live flight active after ${cancelledAtFrame.get()} submitted frames")
+
             // Prepare the full-resolution sampling region and the unchanged
             // 12px lattice BEFORE the flight starts. Source exclusion is
             // based on measured physical root bounds, never expected offsets.
@@ -210,8 +236,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 }
             }
             val sampleOffsets=positions.toIntArray()
-            // Recreate immediately after cleanup, observe physical moving pixels,
-            // and cancel the active flight. Repeat with stale task preflight.
+            // Recreate immediately after cleanup and observe physical moving
+            // pixels. Repeat to verify stale task preflight at the endpoint.
             for(label in listOf("mid","stale")) {
                 val attempt=begin()
                 try {
@@ -283,10 +309,6 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             evidence.add("$label sample=$samples requested=${requested-start}ms captured=${captured-start}ms read=${readAt-captured}ms analysis=${SystemClock.uptimeMillis()-readAt}ms blue=$up orange=$down movedBlue=$movedUp movedOrange=$movedDown")
                         }
                     }
-                    if(moving && label=="mid") inst.runOnMainSync {
-                        check(attempt.flight.isRunning) { "Moving pixels sampled, but flight ended before the mid-flight cancellation" }
-                        attempt.flight.stop();attempt.flight.stop()
-                    }
                     } finally {
                         try {
                             firstMoving?.let { save(it,"native-flight-first-moving-$label.png") }
@@ -300,7 +322,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     check(moving) {
                         "No two moving real GPU card pixel regions during $label; samples=$samples distinct=$distinctMoving bothOutside=$outsideBoth; inspect native-flight-runtime.txt and native-flight-trace.txt"
                     }
-                    awaitReleased(attempt,label)
+                    awaitReleased(attempt,if(label=="mid") "movement" else label)
                     if(label=="stale") inst.runOnMainSync {
                         // Read-only test inspection: ensure the real animator
                         // reached its terminal transaction, not just watchdog
