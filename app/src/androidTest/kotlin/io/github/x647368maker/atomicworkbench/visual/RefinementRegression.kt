@@ -218,6 +218,23 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             verifySelectedCategory(StageMenuPolicy.groups.first())
             check(visibleWideNode("左侧排列").isSelected)
             check(!visibleWideNode("顶部横排").isSelected)
+            fun saveCategory(index:Int) {
+                val label=StageMenuPolicy.groups[index]
+                verifySelectedCategory(label)
+                val popupBounds=Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen)
+                check(!Rect.intersects(popupBounds,protected)) { "Category $label covers protected content in $viewport" }
+                val preview=checkNotNull(inst.uiAutomation.takeScreenshot()) { "Missing $viewport $label pixels" }
+                try {
+                    File(out,"menu-${viewport.replace(' ','-')}-category-${index+1}.png").outputStream().use {
+                        check(preview.compress(Bitmap.CompressFormat.PNG,100,it))
+                    }
+                } finally { preview.recycle() }
+            }
+            saveCategory(0)
+            for(index in 1..3) {
+                click(StageMenuPolicy.groups[index])
+                saveCategory(index)
+            }
             click("窗口管理")
             verifySelectedCategory("窗口管理")
             val category=visibleWideRow("窗口管理")
@@ -240,6 +257,43 @@ internal class RefinementRegression(private val inst:Instrumentation) {
         }
         verifyDualMenu(wideContext,Rect(m.widthPixels/2,0,m.widthPixels,m.heightPixels),"wide")
         verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),"phone portrait")
+        // Exercise the real popup action/dismiss/reopen path used by the
+        // production submenus. Callbacks are fixture counters, not task moves.
+        val submenuCalls=java.util.concurrent.atomic.AtomicInteger(0)
+        val leafCalls=java.util.concurrent.atomic.AtomicInteger(0)
+        val submenuActions=listOf<Pair<String,()->Unit>>("固定应用" to {
+            leafCalls.incrementAndGet();Unit
+        })
+        val chainActions=listOf<Pair<String,()->Unit>>("快捷栏样式" to {
+            submenuCalls.incrementAndGet()
+            AtomicPopupMenu.show(activity,anchor,submenuActions)
+        })
+        fun awaitMenuLabel(label:String) {
+            val until=SystemClock.uptimeMillis()+2000L
+            while(SystemClock.uptimeMillis()<until) {
+                if(inst.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(label)
+                    ?.any { it.text?.toString()==label && it.isVisibleToUser }==true)return
+                Thread.sleep(25L)
+            }
+            error("Chained popup label unavailable: $label")
+        }
+        ui { AtomicPopupMenu.show(activity,anchor,chainActions) };settle()
+        click("快捷栏样式")
+        awaitMenuLabel("固定应用")
+        check(submenuCalls.get()==1 && leafCalls.get()==0)
+        click("固定应用")
+        val chainDeadline=SystemClock.uptimeMillis()+2000L
+        while(leafCalls.get()==0 && SystemClock.uptimeMillis()<chainDeadline)Thread.sleep(25L)
+        check(submenuCalls.get()==1 && leafCalls.get()==1)
+        ui { check(!AtomicPopupMenu.isShowing()) }
+        ui { AtomicPopupMenu.show(activity,anchor,chainActions) };settle()
+        click("快捷栏样式")
+        awaitMenuLabel("固定应用")
+        ui { AtomicPopupMenu.dismissAll() };settle()
+        check(submenuCalls.get()==2 && leafCalls.get()==1)
+        ui { check(!AtomicPopupMenu.isShowing()) }
+        check(textures.toSet()==initial && destroyed==0)
+        record("PASS real popup chaining: open, exactly-once leaf dispatch, dismiss without leaf dispatch; producer identities retained")
         // Same emulator, same four live producers. Real screenshot API is the blocking
         // workload; this measures scheduling only, NOT native task migration or PMS110 FPS.
         val beatTimes=mutableListOf<Long>();var tracing=true
