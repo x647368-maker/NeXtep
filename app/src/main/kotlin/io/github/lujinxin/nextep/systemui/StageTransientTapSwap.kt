@@ -49,11 +49,12 @@ internal class StageTransientTapSwap(private val context:Context) {
               valid:()->Boolean,moveAsync:((Boolean)->Unit)->Unit,
               liveReady:()->Boolean,trace:(String)->Unit,onFinished:()->Unit,
               onVisualStart:()->Unit={},onVisualEnd:()->Unit={},
-              mainReady:()->Boolean={false},mainBackdrop:Drawable?=null):Boolean {
+              mainReady:()->Boolean={false},mainBackdrop:Drawable?=null,
+              onVisualUnavailable:((String)->Boolean)?=null):Boolean {
         if(active!=null || !host.isAttachedToWindow || !host.isHardwareAccelerated ||
             slot.isEmpty || main.isEmpty || slotCrop.isEmpty || mainCrop.isEmpty) return false
         val a=Attempt(host,Rect(slot),Rect(main),otherSlots.map(::Rect),incoming,outgoing,
-            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady,mainBackdrop)
+            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady,mainBackdrop,onVisualUnavailable)
         active=a
         a.begin()
         return true
@@ -66,7 +67,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         val valid:()->Boolean,val moveAsync:((Boolean)->Unit)->Unit,
         val liveReady:()->Boolean,val trace:(String)->Unit,val onFinished:()->Unit,
         val onVisualStart:()->Unit,val onVisualEnd:()->Unit,val mainReady:()->Boolean,
-        val mainBackdrop:Drawable?,
+        val mainBackdrop:Drawable?,val onVisualUnavailable:((String)->Boolean)?,
     ) {
         private val viewport=Rect(0,0,host.width,host.height)
         @Volatile private var waitingCapture=true
@@ -382,6 +383,26 @@ internal class StageTransientTapSwap(private val context:Context) {
         }
         private fun direct(why:String){
             if(!current() || moveStarted)return
+            // A visual failure before migration is not automatically a reason
+            // to cut directly to the real-task swap. Retire this attempt and
+            // let the established workspace animator take over on the same tap.
+            if (StageTransientTapPolicy.canFallbackToWorkspacePreview(
+                    current(),moveStarted,stillValid()) && onVisualUnavailable!=null) {
+                waitingCapture=false
+                waitingCommit=false
+                host.removeOnAttachStateChangeListener(attachmentListener)
+                ui.removeCallbacks(captureTimeout)
+                ui.removeCallbacks(commitTimeout)
+                ui.removeCallbacks(lifetime)
+                host.removeCallbacks(checkHandoff)
+                removeVisual()
+                trace("snapshot_workspace_preview_fallback:"+why)
+                val accepted=runCatching { onVisualUnavailable.invoke(why) }.getOrDefault(false)
+                if(accepted) {
+                    active=null
+                    return
+                }
+            }
             trace("snapshot_fallback:"+why)
             removeVisual()
             fallback=true
