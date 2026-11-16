@@ -495,9 +495,10 @@ def undo_pr79(path,data):
 for reviewed_path in pr79_review:
  undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))
 _pr79_controller=(k/'systemui/NeXtepWindowController.kt').read_text()
-assert 'if (StageTransientTapPolicy.privateTrialEnabled()) {' in _pr79_controller
-assert 'if (tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return' in _pr79_controller
-assert '} else if (StagePrivateDualTaskFlightGate.enabled() &&' in _pr79_controller
+assert 'if (StagePrivateDualTaskFlightGate.enabled() &&' in _pr79_controller
+assert 'if (StageTransientTapPolicy.snapshotFallbackEnabled() &&' in _pr79_controller
+assert 'tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return' in _pr79_controller
+assert 'tap_animation_fallback:workspace_preview' in _pr79_controller
 assert 'transientTapSwap.cancel()' in _pr79_controller
 _pr79_owned=(k/'framework/TaskSurfaceCompat.kt').read_text().split('internal fun captureObservedSwapPreview(',1)[1].split('/** Ownership of the result',1)[0]
 assert 'mirrorSourceStamp(stamp.taskId,stamp.displayId)' in _pr79_owned
