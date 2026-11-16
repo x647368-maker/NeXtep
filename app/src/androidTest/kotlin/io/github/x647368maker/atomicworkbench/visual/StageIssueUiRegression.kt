@@ -496,7 +496,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
             }
             screenshot(out,"ui-diagnostic-center-landing.png",activity)
             val comprehensive=awaitActivity(StageIssueDiagnosticActivity::class.java,"visual-only comprehensive diagnostic"){
-                clickLabel(activity,"立即诊断")
+                click(activity,"立即诊断")
             }
             try{
                 await("comprehensive diagnostic original layout"){
