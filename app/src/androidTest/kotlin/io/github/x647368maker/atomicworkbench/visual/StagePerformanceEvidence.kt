@@ -217,7 +217,18 @@ internal class StagePerformanceEvidence(private val inst: Instrumentation) {
                 Choreographer.getInstance().postFrameCallback(beat)
                 change?.invoke()
             }
-            completed=latch.await(60,TimeUnit.SECONDS)
+            // One shared 60s budget: frame count AND all four real producers must
+            // advance. A fast HWUI marker can reach its count before a slow
+            // canvas producer reaches slot 0. Preserve every collected row.
+            val deadline=SystemClock.uptimeMillis()+60_000L
+            completed=latch.await((deadline-SystemClock.uptimeMillis()).coerceAtLeast(0L),TimeUnit.MILLISECONDS)
+            if(completed) {
+                while(SystemClock.uptimeMillis()<deadline && workerFailure.get()==null &&
+                    !updates.indices.all { updates[it].get()>beforeUpdates[it] && posts[it].get()>beforePosts[it] }) {
+                    Thread.sleep(25)
+                }
+                completed=updates.indices.all { updates[it].get()>beforeUpdates[it] && posts[it].get()>beforePosts[it] }
+            }
         } finally {
             ui {
                 end=System.nanoTime();cpuEnd=Debug.threadCpuTimeNanos()

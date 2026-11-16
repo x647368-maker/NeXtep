@@ -51,3 +51,13 @@ Ace7Pro 主基准 20次交换+20次取消/关闭、10轮锁屏唤醒、屏幕录
 资源：metadata destroyed=4, worker_failure=null；logcat 00:43:56.537–.547 四个 AW-Migration display device removed 均实有。即时 SurfaceFlinger list 仍含四 RequestedLayerState Display 2–5 项，不能确认 compositor 已完全移除，也不能据单次列表定性泄漏。前后 power 均 Awake，Wake Locks 10→22，快照条目未含本App包名或UID10230，主要系统/Google相关后台任务；不能证明零WakeLock、零CPU唤醒、无息屏耗电。新增两次采样外快照用于区分暂态残留；OEM锁屏与功耗仍需真机。
 
 原始证据 https://github.com/x647368-maker/NeXtep/actions/runs/43781494430/artifacts/14187759564 。上述数字属于首轮b602911，不冒充独立入口778384e或后续修正已经全通过。
+
+### 首轮 API35 同runner实测（b602911, artifact 14188054049）
+
+|版本|top有效 n / p50/p95 ms|side有效 n / p50/p95 ms|move wall p50/max ms|queue p50 ms|Binder p50 ms|
+|---|---|---|---|---:|---:|
+|R9|361 / 163.218/233.547|361 / 159.981/222.351|158.266/569.923|61.557|35.907|
+|R10|363 / 155.574/223.087|361 / 156.170/210.667|203.238/487.779|144.836|20.937|
+|R11|仅首轮预热31有效|未到达|未到达|—|—|
+
+R9/R10各16次真实迁移、8次fresh buffer以及6稳定阶段通过，外围同样缺失raw result code。R10侧栏有1次listener drop如实保留。R11首轮top预热墙钟1723.662ms、31有效帧/32回调，updates及posts均[0,1,1,1]，原始测试真实抛Missing live buffer update；不能声称R11 API35通过或三版本同条件完整比较。第一张producer在固定帧计数停表前未更新，worker_failure=null；不确证生产回归。测试纠正为同一60秒预算内等待有效帧计数和四producer均实际更新/提交（仪器线程25ms有限等待、非生产；保留所有采样，仍检查真实身份、最低有效帧数、超时）。不重试掩盖首轮失败、不降低断言。R9/R10/11下一次完整对比须使用同一新test代码，旧数据不拼接为通过。证据 https://github.com/x647368-maker/NeXtep/actions/runs/43781494430/artifacts/14188054049 。
