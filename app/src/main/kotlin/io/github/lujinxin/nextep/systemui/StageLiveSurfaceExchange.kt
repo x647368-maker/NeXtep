@@ -430,6 +430,7 @@ internal class StageLiveSurfaceExchange private constructor(
         canRelease: () -> Boolean,
         onFinished: () -> Unit,
         immediateMove: Boolean = false,
+        onVisualUnavailable: ((String) -> Boolean)? = null,
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
@@ -531,6 +532,57 @@ internal class StageLiveSurfaceExchange private constructor(
             return false
         }
 
+        fun sourceIdentityReadyNow():Boolean = runCatching {
+            StageConcurrentNativeTrialPolicy.sourceIdentityReady(
+                host.isAttachedToWindow && !hostDetached,
+                sourceMirror.isValid && mainMirror.isValid,
+                { incomingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
+                    incomingStamp.taskId,incomingStamp.displayId)) },
+                { outgoingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
+                    outgoingStamp.taskId,outgoingStamp.displayId)) })
+        }.getOrElse {
+            runCatching { NeXtepLog.warn("native_swap","Source preflight failed",it) }
+            false
+        }
+
+        fun fallbackBeforeFirstFrame(reason:String):Boolean {
+            if(onVisualUnavailable==null)return false
+            val eligible=StageConcurrentNativeTrialPolicy.canFallbackBeforeFirstGpuFrame(
+                isRunning,host.isAttachedToWindow && !hostDetached,
+                sourceIdentityReadyNow(),sentMove || moveComplete,nativeFrameCount)
+            if(!eligible)return false
+            val finish=terminate(false,"fallback:$reason") ?: return false
+            trace("native_visual_fallback:$reason")
+            val accepted=runCatching { onVisualUnavailable.invoke(reason) }.getOrDefault(false)
+            if(accepted)return true
+            // No visual backend accepted the still-owned tap. Keep the existing
+            // coordinator as the sole migration owner and finish after its ACK.
+            val claimed=AtomicBoolean(false)
+            val deadline=Runnable {
+                if(claimed.compareAndSet(false,true)) runCatching { finish() }
+            }
+            if(moveAsync!=null) {
+                ui.postDelayed(deadline,MAX_LIFETIME_MS)
+                runCatching {
+                    moveAsync { _ ->
+                        if(claimed.compareAndSet(false,true)) ui.post {
+                            ui.removeCallbacks(deadline)
+                            runCatching { finish() }
+                        }
+                    }
+                }.onFailure {
+                    if(claimed.compareAndSet(false,true)) {
+                        ui.removeCallbacks(deadline)
+                        runCatching { finish() }
+                    }
+                }
+            } else {
+                runCatching(move)
+                runCatching { finish() }
+            }
+            return true
+        }
+
         fun commitMove() {
             if (!isRunning || sentMove) return
             if(hostDetached || !host.isAttachedToWindow){stop();return}
@@ -538,18 +590,7 @@ internal class StageLiveSurfaceExchange private constructor(
             // task stamps use local cached state, not a synchronous task query.
             // A rejected preflight leaves task rollback/reconciliation to the
             // existing exchange coordinator and runs normal visual cleanup.
-            val sourceReady=runCatching {
-                StageConcurrentNativeTrialPolicy.sourceIdentityReady(
-                    host.isAttachedToWindow && !hostDetached,
-                    sourceMirror.isValid && mainMirror.isValid,
-                    { incomingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
-                        incomingStamp.taskId,incomingStamp.displayId)) },
-                    { outgoingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
-                        outgoingStamp.taskId,outgoingStamp.displayId)) })
-            }.getOrElse {
-                runCatching { NeXtepLog.warn("native_swap","Source preflight failed",it) }
-                false
-            }
+            val sourceReady=sourceIdentityReadyNow()
             if (!sourceReady) {
                 trace("native_move_rejected:source_changed_or_detached")
                 stop()
@@ -651,7 +692,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 true
             }.getOrElse { error ->
                 NeXtepLog.warn("native_swap","Real dual-layer frame failed",error)
-                stop()
+                if(!fallbackBeforeFirstFrame("frame_submit_failed")) {
+                    if(isRunning && !sentMove) commitMove() else stop()
+                }
                 false
             }
         }
@@ -732,11 +775,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 }
             }
             if(concurrentHandoff && !firstTransactionCommitted) {
-                trace("native_first_commit_timeout:unmasked_move")
-                // Do not submit a jumped endpoint or hold unconfirmed masks.
-                // commitMove performs the existing source preflight and hides
-                // both roots atomically before the ordinary task migration.
-                commitMove()
+                trace("native_first_commit_timeout:visual_fallback_then_unmasked_move")
+                if(!fallbackBeforeFirstFrame("first_commit_timeout")) commitMove()
                 return@Runnable
             }
             flightDeadline=deadline
@@ -744,7 +784,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 flightDuration,ValueAnimator.getDurationScale()))
             runCatching { flightAnimator.start() }.onFailure {
                 runCatching { NeXtepLog.warn("native_swap","Animation clock start failed",it) }
-                stop()
+                if(!fallbackBeforeFirstFrame("animator_start_failed")) {
+                    if(isRunning && !sentMove) commitMove() else stop()
+                }
             }
         }
         // PR58: ColorOS can replace a mirrored producer's content as soon as
@@ -961,7 +1003,13 @@ internal class StageLiveSurfaceExchange private constructor(
     }
 
     fun stop() {
-        if (finished.getAndSet(true)) return
+        terminate(notifyFinished=true)
+    }
+
+    /** Retire compositor resources either normally or while transferring the
+     * same tap to a safer visual backend. The latter must not finish the owner. */
+    private fun terminate(notifyFinished:Boolean,outcomeOverride:String?=null): (() -> Unit)? {
+        if (finished.getAndSet(true)) return null
         val callback=finishCallback
         finishCallback=null
         ui.removeCallbacks(lifetimeWatchdog)
@@ -975,7 +1023,7 @@ internal class StageLiveSurfaceExchange private constructor(
         deferredMove=null
         revealCommitDeadline?.let { ui.removeCallbacks(it) }
         revealCommitDeadline=null
-        lastOutcome=if(!unmaskedMove && firstTransactionCommitted && nativeFrameCount>1 &&
+        lastOutcome=outcomeOverride ?: if(!unmaskedMove && firstTransactionCommitted && nativeFrameCount>1 &&
             moveComplete && handoffReady)
             "completed:gpu_transactions_and_live_handoff_pixels_not_proven"
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
@@ -989,7 +1037,7 @@ internal class StageLiveSurfaceExchange private constructor(
             { disarmHeldEndpointWriter() },
             {
                 trace("gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
-                    " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
+                    " gaps_over24ms=$gapsOver24ms handoff=$handoffReady timeout=$handoffTimedOut")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
                 NeXtepLog.info("native_swap",
@@ -1001,9 +1049,10 @@ internal class StageLiveSurfaceExchange private constructor(
             { reveal?.removeAllListeners(); reveal?.removeAllUpdateListeners() },
             { reveal?.cancel() },
             { cleanupWithoutCallback() },
-            { callback?.invoke() },
+            { if(notifyFinished) callback?.invoke() },
             onFailure={ NeXtepLog.warn("native_swap","Native animation teardown step failed",it) },
         )
+        return callback
     }
 
     private fun cleanupWithoutCallback() {
