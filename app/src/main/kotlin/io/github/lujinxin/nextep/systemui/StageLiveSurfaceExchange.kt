@@ -178,6 +178,11 @@ internal class StageLiveSurfaceExchange private constructor(
     private var maxSubmitNanos = 0L
     private var submitOver120HzBudget = 0
     private var submitOver60HzBudget = 0
+    // Flight-local scalar counters; no per-frame trace strings or extra work queues.
+    private var maxPrepareNanos = 0L
+    private var maxApplyNanos = 0L
+    private var prepareOver120HzBudget = 0
+    private var applyOver120HzBudget = 0
     private var startedAtMs = 0L
     // Optional SystemUI-only API, resolved ONCE rather than per animation frame.
     private var cornersSupported = true
@@ -683,8 +688,18 @@ internal class StageLiveSurfaceExchange private constructor(
                         }
                     }.onFailure { trace("native_terminal_commit_callback_unavailable") }
                 }
+                // Separate geometry/transaction setters (and terminal listener setup)
+                // from apply() itself. Neither duration implies that pixels were presented.
+                val applyStarted=SystemClock.elapsedRealtimeNanos()
                 frame.apply()
-                val submitNanos=SystemClock.elapsedRealtimeNanos()-submitStarted
+                val submittedAt=SystemClock.elapsedRealtimeNanos()
+                val submitNanos=submittedAt-submitStarted
+                val prepareNanos=applyStarted-submitStarted
+                val applyNanos=submittedAt-applyStarted
+                if(prepareNanos>maxPrepareNanos)maxPrepareNanos=prepareNanos
+                if(applyNanos>maxApplyNanos)maxApplyNanos=applyNanos
+                if(prepareNanos>8_333_333L)prepareOver120HzBudget++
+                if(applyNanos>8_333_333L)applyOver120HzBudget++
                 if(submitNanos>maxSubmitNanos)maxSubmitNanos=submitNanos
                 if(submitNanos>8_333_333L)submitOver120HzBudget++
                 if(submitNanos>16_666_667L)submitOver60HzBudget++
@@ -1049,6 +1064,10 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(nativeFrameCount>0) trace(
                     "gpu_submit frames=$nativeFrameCount max_us=${maxSubmitNanos / 1000}"+
                         " over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget")
+                if(nativeFrameCount>0) trace(
+                    "gpu_parts n=$nativeFrameCount prep_us=${maxPrepareNanos / 1000}"+
+                        " apply_us=${maxApplyNanos / 1000} prep8=$prepareOver120HzBudget"+
+                        " apply8=$applyOver120HzBudget")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
                 NeXtepLog.info("native_swap",

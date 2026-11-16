@@ -99,4 +99,22 @@ test -s visual-results/native-flight-moving-mid.png
 test -s visual-results/native-flight-clean-mid.png
 test -s visual-results/paired-flight/native-flight-first-moving-mid.png
 test -s visual-results/paired-flight/native-flight-clean-host-detach.png
+# Export bounded aggregated timing rows into CI logs as well as the raw artifacts.
+# This is evidence availability, not a synthetic performance threshold.
+python3 - <<'PY'
+import re
+from pathlib import Path
+for folder in (Path("visual-results"), Path("visual-results/paired-flight")):
+    trace = (folder / "native-flight-trace.txt").read_text()
+    totals = re.findall(r"gpu_submit frames=(\d+) max_us=(\d+) over_8333us=(\d+) over_16667us=(\d+)", trace)
+    split = re.findall(r"gpu_parts n=(\d+) prep_us=(\d+) apply_us=(\d+) prep8=(\d+) apply8=(\d+)", trace)
+    assert totals and len(totals) == len(split), f"Missing matching submission timing rows in {folder}"
+    for total, parts in zip(totals, split):
+        n, peak, over120, over60 = map(int, total)
+        count, prep, apply, prep_over, apply_over = map(int, parts)
+        assert n > 0 and count == n and 0 <= over60 <= over120 <= n, (total, parts)
+        assert 0 <= prep <= peak and 0 <= apply <= peak, (total, parts)
+        assert 0 <= prep_over <= over120 and 0 <= apply_over <= over120, (total, parts)
+        print(f"GPU submit {folder}: frames={n} max_us={peak} prepare_max_us={prep} apply_max_us={apply} over_8333us={over120} prepare_over8333={prep_over} apply_over8333={apply_over}")
+PY
 echo 'PASS API37 production live GPU flight, paired flight, mid-flight cancellation, stale-owner terminal cleanup and host-detach cleanup'

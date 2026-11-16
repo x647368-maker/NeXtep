@@ -292,9 +292,21 @@
         {
           "before": "                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+",
           "after": "                if(nativeFrameCount>0) trace(\n                    \"gpu_submit frames=$nativeFrameCount max_us=${maxSubmitNanos / 1000}\"+\n                        \" over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+"
+        },
+        {
+          "before": "    private var submitOver60HzBudget = 0\n    private var startedAtMs = 0L",
+          "after": "    private var submitOver60HzBudget = 0\n    // Flight-local scalar counters; no per-frame trace strings or extra work queues.\n    private var maxPrepareNanos = 0L\n    private var maxApplyNanos = 0L\n    private var prepareOver120HzBudget = 0\n    private var applyOver120HzBudget = 0\n    private var startedAtMs = 0L"
+        },
+        {
+          "before": "                frame.apply()\n                val submitNanos=SystemClock.elapsedRealtimeNanos()-submitStarted\n                if(submitNanos>maxSubmitNanos)maxSubmitNanos=submitNanos",
+          "after": "                // Separate geometry/transaction setters (and terminal listener setup)\n                // from apply() itself. Neither duration implies that pixels were presented.\n                val applyStarted=SystemClock.elapsedRealtimeNanos()\n                frame.apply()\n                val submittedAt=SystemClock.elapsedRealtimeNanos()\n                val submitNanos=submittedAt-submitStarted\n                val prepareNanos=applyStarted-submitStarted\n                val applyNanos=submittedAt-applyStarted\n                if(prepareNanos>maxPrepareNanos)maxPrepareNanos=prepareNanos\n                if(applyNanos>maxApplyNanos)maxApplyNanos=applyNanos\n                if(prepareNanos>8_333_333L)prepareOver120HzBudget++\n                if(applyNanos>8_333_333L)applyOver120HzBudget++\n                if(submitNanos>maxSubmitNanos)maxSubmitNanos=submitNanos"
+        },
+        {
+          "before": "                        \" over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+",
+          "after": "                        \" over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget\")\n                if(nativeFrameCount>0) trace(\n                    \"gpu_parts n=$nativeFrameCount prep_us=${maxPrepareNanos / 1000}\"+\n                        \" apply_us=${maxApplyNanos / 1000} prep8=$prepareOver120HzBudget\"+\n                        \" apply8=$applyOver120HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+"
         }
       ],
-      "reviewed_blob_sha1": "ef12cab82604db20aa6d9e41b470979ca7748acb"
+      "reviewed_blob_sha1": "f097f114044e1c2f065f8f05a840984b7653595c"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",
