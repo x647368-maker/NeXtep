@@ -43,6 +43,14 @@ class StageTransientTapPolicyTest {
         assertEquals(StageTransientTapPolicy.MoveRequest.IGNORE,
             p.decideMoveRequest(true,true){error("duplicate validity probe")})
     }
+    @Test fun workspacePreviewFallbackIsAllowedOnlyBeforeMoveWithCurrentIdentity() {
+        val p=StageTransientTapPolicy
+        for(current in listOf(false,true)) for(started in listOf(false,true))
+            for(valid in listOf(false,true)) {
+                assertEquals(current && !started && valid,
+                    p.canFallbackToWorkspacePreview(current,started,valid))
+            }
+    }
     @Test fun flightAndActualOwnershipAckMustBothComplete() {
         val p=StageTransientTapPolicy
         assertFalse(p.canHandoff(false,false))
