@@ -42,9 +42,10 @@ adb shell input keyevent 82
 } > "$out/runner-device.txt"
 adb shell dumpsys power > "$out/power-before.txt"
 adb shell dumpsys SurfaceFlinger --list > "$out/surfaces-before.txt"
+adb shell dumpsys display > "$out/displays-before.txt"
 adb logcat -c
 set +e
-timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -w "$pkg.test/io.github.x647368maker.atomicworkbench.visual.PerformanceEvidenceInstrumentation" 2>&1 | tee "$out/instrumentation.txt"
+timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -r -w "$pkg.test/io.github.x647368maker.atomicworkbench.visual.PerformanceEvidenceInstrumentation" 2>&1 | tee "$out/instrumentation.txt"
 status=$?
 set -e
 # Always preserve real partial results, even with timeout or failed assertion.
@@ -56,6 +57,15 @@ fi
 adb shell dumpsys power > "$out/power-after.txt" || true
 adb shell dumpsys SurfaceFlinger --list > "$out/surfaces-after.txt" || true
 adb shell dumpsys meminfo "$pkg" > "$out/memory-after.txt" || true
+adb shell dumpsys display > "$out/displays-after.txt" || true
+# Outside all timed sampling: retain delayed teardown evidence, not a leak assertion.
+sleep 2
+adb shell dumpsys SurfaceFlinger --list > "$out/surfaces-after-2s.txt" || true
+adb shell dumpsys display > "$out/displays-after-2s.txt" || true
+sleep 8
+adb shell dumpsys SurfaceFlinger --list > "$out/surfaces-after-10s.txt" || true
+adb shell dumpsys display > "$out/displays-after-10s.txt" || true
+adb shell dumpsys power > "$out/power-after-10s.txt" || true
 adb logcat -d > "$out/logcat.txt" || true
 cat /proc/loadavg > "$out/runner-load-after.txt"
 printf '%s\n' "$status" > "$out/instrumentation-exit.txt"

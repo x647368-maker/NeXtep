@@ -34,3 +34,20 @@ SystemUiRuntime 119–160: active含Suspended，单链remove旧lockStateObserver
 ## 真机最终验收（对照同原签名版本，测试员无需命令）
 
 Ace7Pro 主基准 20次交换+20次取消/关闭、10轮锁屏唤醒、屏幕录制短段；重点首次响应/视觉方向与轨迹/黑屏/变形/输入。N5/N3 外内屏↔顶部/左右/主窗优先、小红书页面、白竖条恢复，Y700横竖/微信/游戏冷启动，普通手机API35+、一加13补充。跨设备暂停不恢复播放、播放不被擅自修改、页面进度不被工作台无故重建，保持全部冻结功能。N3优先以诊断30/60min三组关闭/0窗/4窗断电同条件重复、夜间独立2–4h同环境系统电池记录；记录实际间隔/电量/温度/整机CPU同boot PID/slot帧/查询/截取，异常热或掉电立刻停止，勿用亮屏实时监控污染锁屏试验。此处不设置伪造的耗电阈值，也不替OEM验收。原签名87候选、开关配置与发包由总窗口统一。
+
+## 首轮实际运行补证（b602911，API37，run 43781494430 / artifact 14187759564）
+
+仪器成功标记 PERFORMANCE_EVIDENCE_PASS，instrumentation exit 0，summary.json errors=[]。job 红色是外围命令未用 -r 导致无 INSTRUMENTATION_CODE 输出；并非仪器断言失败。本次测试脚本修正为 -r -w，保留退出码、成功标记和 Android RESULT_OK 三重检查，另在采样结束后追加两次有限延迟 SurfaceFlinger/display/power 快照。修正后的独立入口与采样代码另需运行验收。
+
+|布局|有效帧|p50 ms|p90 ms|p95 ms|max ms|deadline missed|
+|---|---:|---:|---:|---:|---:|---:|
+|顶部四窗|361|148.972|200.142|212.200|434.154|336/361|
+|侧栏四窗|362|120.783|169.571|183.485|247.804|333/362|
+
+三轮分别顶部 120/120/121、侧栏 121/120/121，listener drops=0；reflow 30有效帧。模拟器60Hz、SwiftShader；实际producer更新约3–4Hz而非目标30Hz。UI线程CPU仅约0.66%/0.75%采样墙钟；不等同全进程CPU、GPU或真实机流畅度，也不是FPS保证。
+
+16次真实migration、8次fresh-buffer检查均通过。wall p50 409.232/max823.485ms；queue p50 165.338/max708.070，Binder p50 89.230/max624.125，main CPU p50 2.171/max4.099ms；最大wall样本 task10 display3 = queue692.690 + main124.702 + return6.092ms（舍入）；不是旧272ms同一事件。旧历史artifact完整logcat补证（各16次）：R9/R10/R11内部telemetry p50 19.2/18.2/21.6、max50.5/50.3/45.8ms。R11第6次272.0148ms对应内部16.7（Binder8.6、观察8.0），外层残余255.3148ms不可全归因排队。原logcat R11 line51202；同时间段relaunch/draw/requestLayout可见但不建立唯一因果。
+
+资源：metadata destroyed=4, worker_failure=null；logcat 00:43:56.537–.547 四个 AW-Migration display device removed 均实有。即时 SurfaceFlinger list 仍含四 RequestedLayerState Display 2–5 项，不能确认 compositor 已完全移除，也不能据单次列表定性泄漏。前后 power 均 Awake，Wake Locks 10→22，快照条目未含本App包名或UID10230，主要系统/Google相关后台任务；不能证明零WakeLock、零CPU唤醒、无息屏耗电。新增两次采样外快照用于区分暂态残留；OEM锁屏与功耗仍需真机。
+
+原始证据 https://github.com/x647368-maker/NeXtep/actions/runs/43781494430/artifacts/14187759564 。上述数字属于首轮b602911，不冒充独立入口778384e或后续修正已经全通过。
