@@ -72,26 +72,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-      - name: Restore fixed development signing key
-        env:
-          ATOMIC_KEYSTORE_BASE64: ${{ secrets.ATOMIC_KEYSTORE_BASE64 }}
-          ATOMIC_KEYSTORE_PASSWORD: ${{ secrets.ATOMIC_KEYSTORE_PASSWORD }}
-          ATOMIC_KEY_PASSWORD: ${{ secrets.ATOMIC_KEY_PASSWORD }}
-        shell: bash
-        run: |
-          if [ -z "$ATOMIC_KEYSTORE_BASE64" ]; then
-            echo '::notice::Signing secret not configured: compiling an UNSIGNED APK for verification only. No installable release will be published.'
-            echo 'ATOMIC_SIGNING_READY=false' >> "$GITHUB_ENV"
-            exit 0
-          fi
-          mkdir -p "$GITHUB_WORKSPACE/.atomic-signing"
-          printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
-          chmod 600 "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
-          test -s "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
-          test -n "$ATOMIC_KEYSTORE_PASSWORD" && test -n "$ATOMIC_KEY_PASSWORD"
-          echo "ATOMIC_KEYSTORE_PASSWORD=$ATOMIC_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "ATOMIC_KEY_PASSWORD=$ATOMIC_KEY_PASSWORD" >> "$GITHUB_ENV"
-          echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
       - name: Verify rekeyed signing identity consistency (public fingerprint only)
         run: python3 scripts/test-rekey-contract.py
       - name: Verify candidate update/signature release contract
@@ -122,6 +102,26 @@ jobs:
         with:
           name: atomic-api101-unit-results
           path: api101-unit-results/
+      - name: Restore fixed development signing key
+        env:
+          ATOMIC_KEYSTORE_BASE64: ${{ secrets.ATOMIC_KEYSTORE_BASE64 }}
+          ATOMIC_KEYSTORE_PASSWORD: ${{ secrets.ATOMIC_KEYSTORE_PASSWORD }}
+          ATOMIC_KEY_PASSWORD: ${{ secrets.ATOMIC_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$ATOMIC_KEYSTORE_BASE64" ]; then
+            echo '::notice::Signing secret not configured: compiling an UNSIGNED APK for verification only. No installable release will be published.'
+            echo 'ATOMIC_SIGNING_READY=false' >> "$GITHUB_ENV"
+            exit 0
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/.atomic-signing"
+          printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          chmod 600 "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          test -s "$GITHUB_WORKSPACE/.atomic-signing/atomic-development.p12"
+          test -n "$ATOMIC_KEYSTORE_PASSWORD" && test -n "$ATOMIC_KEY_PASSWORD"
+          echo "ATOMIC_KEYSTORE_PASSWORD=$ATOMIC_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ATOMIC_KEY_PASSWORD=$ATOMIC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
       - name: Build and test; retry only transient dependency downloads
         run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
       - name: Verify offline release notes are embedded unchanged

@@ -33,6 +33,13 @@ class SigningRotationContract(unittest.TestCase):
   policy=(ROOT/PATHS[0]).read_text()
   self.assertIn('require(archiveSigners == installedSigners && archiveSigners == setOf(CERT))',policy)
   self.assertIn('require(versionCode > 0 && size in 1..MAX_APK && applicationId == APP && certificate == CERT)',policy)
+ def test_source_key_audit_precedes_private_key_restore(self):
+  workflow=(ROOT/'.github/workflows/atomic-android.yml').read_text()
+  audit='run: python3 scripts/test-rekey-contract.py'
+  restore='- name: Restore fixed development signing key'
+  build='- name: Build and test; retry only transient dependency downloads'
+  self.assertLess(workflow.index(audit),workflow.index(restore))
+  self.assertLess(workflow.index(restore),workflow.index(build))
  def test_private_key_is_never_in_repository(self):
   self.assertFalse(any(ROOT.rglob('*.p12')))
   self.assertFalse(any(ROOT.rglob('*.pfx')))
