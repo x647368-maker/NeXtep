@@ -16,8 +16,13 @@ class StageSharedSnapshotRouteTest {
             assertTrue(actual.usesSharedClock)
             val plan=checkNotNull(actual.up.sharedPlan)
             for((flight,from,to) in listOf(Triple(actual.up,small,main),Triple(actual.down,main,small))){
-                assertEquals(checkNotNull(StageSnapshotMotion.flight(from,to,flight.width,flight.height)).start,flight.start)
-                assertEquals(checkNotNull(StageSnapshotMotion.flight(from,to,flight.width,flight.height)).end,flight.end)
+                val legacy=checkNotNull(StageSnapshotMotion.flight(from,to,flight.width,flight.height))
+                for((expected,actualPose) in listOf(legacy.start to flight.start,legacy.end to flight.end)){
+                    assertEquals(expected.cx,actualPose.cx,.001f)
+                    assertEquals(expected.cy,actualPose.cy,.001f)
+                    // Float cancellation at the old end can differ by one ULP.
+                    assertEquals(expected.scale,actualPose.scale,.000001f)
+                }
             }
             for(i in 1..999){
                 val t=i/1000f;val frame=plan.at(t)
