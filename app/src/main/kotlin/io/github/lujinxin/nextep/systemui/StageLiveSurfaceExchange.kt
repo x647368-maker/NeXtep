@@ -303,6 +303,7 @@ internal class StageLiveSurfaceExchange private constructor(
             fullScreenWidth: Int,
             fullScreenHeight: Int,
             backdrop: Drawable?,
+            wallpaperCoverFactory:(()->StageGpuMirrorOcclusion?)?=null,
         ): StageLiveSurfaceExchange? {
             val setupStarted=SystemClock.elapsedRealtimeNanos()
             if (Build.VERSION.SDK_INT < 31 || !host.isAttachedToWindow ||
@@ -433,8 +434,14 @@ internal class StageLiveSurfaceExchange private constructor(
                 if (stableIncoming==null || stableOutgoing==null) {
                     return markUnavailable("mirror_source_changed")
                 }
-                val masks = StageGpuMirrorOcclusion.create()
+                // Borrow the texture only after every source/geometry gate.
+                // If a ready cache is absent or the vendor refuses a layer,
+                // retain the original opaque safety cover; never expose duplicates.
+                val textured=runCatching { wallpaperCoverFactory?.invoke() }.getOrNull()
+                val masks = textured ?: StageGpuMirrorOcclusion.create()
                     ?: return markUnavailable("atomic_occlusion_unavailable")
+                StageExchangeTelemetry.nativeEvent("mirror_cover="+
+                    if(textured!=null)"cached_wallpaper" else "solid_safe")
                 ownedMasks=masks
                 val exchange=StageLiveSurfaceExchange(
                     host, incoming, outgoing, localCrop,

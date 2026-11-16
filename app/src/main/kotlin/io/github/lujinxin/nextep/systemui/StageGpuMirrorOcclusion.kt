@@ -1,6 +1,7 @@
 package io.github.x647368maker.atomicworkbench.systemui
 
 import android.graphics.Rect
+import android.hardware.HardwareBuffer
 import android.view.AttachedSurfaceControl
 import android.view.SurfaceControl
 
@@ -34,7 +35,11 @@ internal object StageGpuCoverPolicy {
 internal class StageGpuMirrorOcclusion private constructor(
     private val sourceCover: SurfaceControl,
     private val mainCover: SurfaceControl,
+    // Borrowed, immutable, already rendered. The caller owns its lifetime.
+    private val wallpaper: HardwareBuffer? = null,
+    private val onReleased:(()->Unit)?=null,
 ) {
+    private val released=java.util.concurrent.atomic.AtomicBoolean(false)
     companion object {
         private val colorLayerMethod by lazy {
             SurfaceControl.Builder::class.java.getDeclaredMethod("setColorLayer")
@@ -46,12 +51,22 @@ internal class StageGpuMirrorOcclusion private constructor(
             ).apply { isAccessible = true }
         }
 
-        fun create(): StageGpuMirrorOcclusion? {
+        fun create(): StageGpuMirrorOcclusion? = createInternal(null)
+
+        // Explicit experimental entry; production retains create() until the
+        // real pixel/lifetime gate and wallpaper cache integration are proven.
+        fun createTextured(buffer:HardwareBuffer,onReleased:(()->Unit)?=null):StageGpuMirrorOcclusion? {
+            if(!StageGpuWallpaperBuffer.usable(buffer))return null
+            return createInternal(buffer,onReleased)
+        }
+
+        private fun createInternal(wallpaper:HardwareBuffer?,onReleased:(()->Unit)?=null):StageGpuMirrorOcclusion? {
             var first: SurfaceControl? = null
             return runCatching {
                 fun layer(name: String): SurfaceControl {
                     val builder = SurfaceControl.Builder().setName(name)
-                    colorLayerMethod.invoke(builder)
+                    if(wallpaper==null) colorLayerMethod.invoke(builder)
+                    else builder.setBufferSize(wallpaper.width,wallpaper.height)
                     val control=builder.build()
                     if (!control.isValid) {
                         runCatching { control.release() }
@@ -61,7 +76,7 @@ internal class StageGpuMirrorOcclusion private constructor(
                 }
                 first = layer("AtomicSwapOriginalSlotCover")
                 val second = layer("AtomicSwapOriginalMainCover")
-                StageGpuMirrorOcclusion(checkNotNull(first), second)
+                StageGpuMirrorOcclusion(checkNotNull(first), second,wallpaper,onReleased)
             }.getOrElse {
                 runCatching { first?.release() }
                 null
@@ -84,16 +99,31 @@ internal class StageGpuMirrorOcclusion private constructor(
             main.left, main.top, main.right, main.bottom, screenWidth, screenHeight
         )) { "Occlusion bounds must be physical display rects" }
 
+        val texture=wallpaper
+        // No stretch/rotation or stale cached dimensions; both covers use
+        // the original screen coordinates and the very same ready buffer.
+        require(texture==null || (StageGpuWallpaperBuffer.usable(texture) &&
+            texture.width==screenWidth && texture.height==screenHeight)) {
+            "Wallpaper texture must match the physical viewport"
+        }
         for (cover in arrayOf(sourceCover, mainCover)) {
             val reparent = attached.buildReparentTransaction(cover)
                 ?: error("No compositor reparent transaction for original card cover")
             try { transaction.merge(reparent) } finally { reparent.close() }
         }
         fun configure(control: SurfaceControl, rect: Rect, layer: Int) {
-            // A color layer uses RGB values; no buffer is allocated or captured.
-            setColorMethod.invoke(transaction, control, floatArrayOf(.047f, .055f, .083f))
-            transaction.setCrop(control, Rect(0, 0, rect.width(), rect.height()))
-            transaction.setPosition(control, rect.left.toFloat(), rect.top.toFloat())
+            if(texture==null) {
+                // Preserve the established opaque color-layer path.
+                setColorMethod.invoke(transaction, control, floatArrayOf(.047f, .055f, .083f))
+                transaction.setCrop(control, Rect(0, 0, rect.width(), rect.height()))
+                transaction.setPosition(control, rect.left.toFloat(), rect.top.toFloat())
+            } else {
+                // One shared opaque wallpaper texture, two disjoint crops.
+                // Submit with the same atomic parent/layer transaction.
+                transaction.setBuffer(control,texture)
+                transaction.setCrop(control,Rect(rect))
+                transaction.setPosition(control,0f,0f)
+            }
             transaction.setLayer(control, layer)
             transaction.setVisibility(control, true)
         }
@@ -112,11 +142,13 @@ internal class StageGpuMirrorOcclusion private constructor(
     }
 
     fun release() {
-        // Even if one vendor handle throws, the other cover must be released.
+        // Both local handles must be retired before returning a cache lease.
+        // SurfaceFlinger retains its own buffer reference for submitted frames.
+        if(!released.compareAndSet(false,true))return
         try {
             sourceCover.release()
         } finally {
-            mainCover.release()
+            try { mainCover.release() } finally { onReleased?.invoke() }
         }
     }
 }

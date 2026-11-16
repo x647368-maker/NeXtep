@@ -104,6 +104,8 @@ class LivePreviewInstrumentation : Instrumentation() {
             if (nativeMirrorOnly) {
                 // The API37 job tests the actual compositor primitive, NOT
                 // the full legacy API35 suite. SKIP is a failure in this mode.
+                val wallpaperEvidence = StageWallpaperCoverRuntimeRegression(this).run(activity,root,out)
+                checks.add(wallpaperEvidence)
                 val status = StageLiveMirrorPrimitiveRegression(this).run(activity,root,out)
                 check(status.startsWith("PASS API37 SurfaceFlinger live dual-root mirror")) {
                     "API37 live two-surface exchange not verified: $status"

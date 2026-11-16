@@ -215,6 +215,19 @@ class NeXtepWindowController(
         { contentHighlightView?.parent as? FrameLayout }, { blocked -> setGroupInputBlocked(blocked) })
     private var wallpaperBitmap: android.graphics.Bitmap? = null
     private var wallpaperRotation = 0
+    // One ready texture for the visible workspace, borrowed only by an
+    // admitted native swap. All cache operations run on the main lane.
+    private val gpuWallpaper=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()
+    private fun wallpaperKey(g:WorkspaceGeometry)=StageWallpaperCoverCache.Key(
+        g.screenWidth,g.screenHeight,g.displayRotation)
+    private fun acquireWallpaperCover(g:WorkspaceGeometry):StageGpuMirrorOcclusion? {
+        val lease=gpuWallpaper.acquire(wallpaperKey(g))?:return null
+        val cover=runCatching {
+            StageGpuMirrorOcclusion.createTextured(lease.resource,lease::close)
+        }.getOrNull()
+        if(cover==null)lease.close()
+        return cover
+    }
     private var homePreview: Bitmap? = null
     private var homePreviewBounds = Rect()
     private val homePreviewGeneration = java.util.concurrent.atomic.AtomicInteger()
@@ -235,6 +248,7 @@ class NeXtepWindowController(
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 Intent.ACTION_WALLPAPER_CHANGED -> {
+                    gpuWallpaper.clear()
                     clearHomePreview()
                     // Retain the displayed frame while the new wallpaper starts rendering.
                     // OEM live services may change content without changing component/id.
@@ -289,6 +303,7 @@ class NeXtepWindowController(
         cancelPendingResumeContent()
         suspended = true
         cancelDragVisuals()
+        gpuWallpaper.clear()
         clearHomePreview()
         backdropGeneration.incrementAndGet()
         slotCoordinator?.setSuspended(true)
@@ -472,6 +487,7 @@ class NeXtepWindowController(
         cancelPendingResumeContent()
         workspaceVisible = false
         cancelDragVisuals()
+        gpuWallpaper.clear()
         clearHomePreview()
         suspended = false
         backdropGeneration.incrementAndGet()
@@ -633,6 +649,7 @@ class NeXtepWindowController(
             cinemaPolicy.leave(); cinemaSlot = null; viewport.cinema = false
         }
         val geometry = geometry()
+        gpuWallpaper.clearIfMismatched(wallpaperKey(geometry))
         SystemServerWorkspaceBridge.publishLayout(context, viewport.layout())
         applyWindowGeometry(geometry, refreshControls = !rotationOnly)
         if (rotationOnly && !geometry.railAtTop &&
@@ -2251,6 +2268,7 @@ class NeXtepWindowController(
             },
             fullScreenWidth=g.screenWidth,fullScreenHeight=g.screenHeight,
             backdrop=null,
+            wallpaperCoverFactory={acquireWallpaperCover(g)},
         ) ?: run {
             val reason=StageLiveSurfaceExchange.lastOutcome()
             StageExchangeTelemetry.nativeEvent("live_gpu_skip:mirror_$reason",traceId)
@@ -3385,6 +3403,7 @@ class NeXtepWindowController(
         // wallpaper creates visible seams after physical rotation.
         if (io.github.x647368maker.atomicworkbench.workspace.StageTabletWallpaperPolicy
                 .useLiveSystemWallpaper(geometry)) {
+            gpuWallpaper.clear()
             backdropGeneration.incrementAndGet()
             applyWallpaperBackdrop(geometry)
             return
@@ -3393,6 +3412,14 @@ class NeXtepWindowController(
         applyWallpaperBackdrop(geometry)
         val previous = wallpaperBitmap
         val generation = backdropGeneration.incrementAndGet()
+        // Reuse the existing capture worker, only on the settled capture.
+        // No conversion on the first two refreshes, no timer or tap-time upload.
+        val prepareTexture=attempt>=BACKDROP_SETTLE_REFRESHES &&
+            StagePrivateDualTaskFlightGate.enabled() &&
+            StageConcurrentNativeTrialPolicy.allowed(workspaceVisible && !suspended,
+                android.animation.ValueAnimator.areAnimatorsEnabled(),
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false) &&
+            !isExchangePending()
         backdropWorker.execute {
             if (generation != backdropGeneration.get()) return@execute
             val identity = WorkspaceWallpaperBackdrop.identity(context)
@@ -3416,8 +3443,16 @@ class NeXtepWindowController(
                         .wideTablet(geometry.screenWidth, geometry.screenHeight)) null
                 else WorkspaceWallpaperBackdrop.fit(previous, geometry.screenWidth, geometry.screenHeight)
             } else null
+            // Only a newly captured, exact-resolution physical frame is
+            // admissible. Do not prepare a fitted stale/rotated cache.
+            val textured=if(prepareTexture && generation==backdropGeneration.get() &&
+                bitmap!=null && bitmap.width==geometry.screenWidth && bitmap.height==geometry.screenHeight &&
+                WorkspaceWallpaperBackdrop.canCapture(context) &&
+                context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false)
+                runCatching { StageGpuWallpaperBuffer.prepare(bitmap) }.getOrNull() else null
             backdropHandler.post {
                 if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {
+                    textured?.close()
                     bitmap?.recycle()
                     fitted?.recycle()
                     return@post
@@ -3425,7 +3460,17 @@ class NeXtepWindowController(
                 if (bitmap != null) {
                     wallpaperBitmap = bitmap
                     wallpaperRotation = geometry.displayRotation
+                    val current=this@NeXtepWindowController.geometry()
+                    if(textured!=null && workspaceVisible && !suspended &&
+                        wallpaperKey(current)==wallpaperKey(geometry) &&
+                        context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false) {
+                        gpuWallpaper.replace(wallpaperKey(geometry),textured)
+                    } else {
+                        textured?.close()
+                        gpuWallpaper.clear()
+                    }
                 } else if (fitted != null) {
+                    gpuWallpaper.clear()
                     wallpaperBitmap = fitted
                     wallpaperRotation = geometry.displayRotation
                 }
