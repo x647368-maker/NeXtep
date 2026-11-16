@@ -1,0 +1,112 @@
+name: V87 isolated performance evidence
+on:
+  push:
+    branches: ['atomic-workbench/v87-r11-performance-evidence']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v87-perf-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  evidence:
+    if: github.ref == 'refs/heads/atomic-workbench/v87-r11-performance-evidence'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 37]
+    env:
+      ATOMIC_SIGNING_READY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build exact candidate workloads (unchanged production)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+          mkdir -p "$RUNNER_TEMP/perf-builds" perf-evidence
+          echo "R11 production parent 27f7845e5f9419359170dcf9e15c5fccfbcffcae" > perf-evidence/source-identity.txt
+          git rev-parse HEAD >> perf-evidence/source-identity.txt
+          # Check this evidence commit is only test/analysis/docs.
+          git diff --exit-code 27f7845e5f9419359170dcf9e15c5fccfbcffcae HEAD -- app/src/main app/build.gradle.kts gradle gradle.properties
+          build_one() {
+            local label="$1" checkout="$2"
+            mkdir -p "perf-evidence/$label"
+            (cd "$checkout"; git rev-parse HEAD; git diff --stat; bash scripts/ci-android-build.sh :app:assembleDebug :app:assembleDebugAndroidTest) 2>&1 | tee "perf-evidence/$label/build.txt"
+            cp -R "$checkout/app/build/outputs/apk" "$RUNNER_TEMP/perf-builds/$label"
+          }
+          build_one R11 "$GITHUB_WORKSPACE"
+          if [ "${{ matrix.api }}" = 35 ]; then
+            for pair in R9:0575dadd5cae53a3cde70eb864cff50ac1840d08 R10:3cafd357ff8e5a800d9d0afebce9df40abc3ad4e; do
+              label="${pair%%:*}"; sha="${pair#*:}"
+              checkout="$RUNNER_TEMP/worktree-$label"
+              git worktree add --detach "$checkout" "$sha"
+              python3 scripts/v87-perf-overlay.py "$GITHUB_WORKSPACE" "$checkout"
+              git -C "$checkout" diff --exit-code -- app/src/main app/build.gradle.kts gradle gradle.properties
+              build_one "$label" "$checkout"
+            done
+          fi
+      - name: Start same-config API emulator
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo chmod 666 /dev/kvm
+          if [ "${{ matrix.api }}" = 35 ]; then
+            image='system-images;android-35;google_apis;x86_64'
+            sdkmanager 'emulator' "$image"
+          else
+            sdkmanager --channel=3 --list > /tmp/perf-sdk37-list.txt
+            mapfile -t candidates < <(grep -E '^[[:space:]]+system-images;android-37([.][0-9]+)?;[^;[:space:]]+;x86_64' /tmp/perf-sdk37-list.txt | awk '{print $1}' | sort -rV)
+            image=''
+            for candidate in "${candidates[@]}"; do
+              if sdkmanager --channel=3 'emulator' "$candidate"; then image="$candidate"; break; fi
+            done
+            test -n "$image"
+          fi
+          export ANDROID_USER_HOME="$RUNNER_TEMP/perf-android-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name atomic-perf --path "$ANDROID_AVD_HOME/atomic-perf.avd" --package "$image" --device pixel_7
+          actual_target="$(printf '%s' "$image" | cut -d';' -f2)"
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=%s\n' "$ANDROID_AVD_HOME/atomic-perf.avd" "$actual_target" > "$ANDROID_AVD_HOME/atomic-perf.ini"
+          echo "$image" > perf-evidence/system-image.txt
+          "$ANDROID_HOME/emulator/emulator" -avd atomic-perf -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 4096 -cores 2 -gpu swiftshader_indirect > "$RUNNER_TEMP/perf-emulator.log" 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = "${{ matrix.api }}"
+      - name: Measure live HWUI and real task migration (no screenshots during frame sampling)
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          # Same API35 runner and emulator, fresh app installs and identical test instrumentation.
+          # Fixed order is disclosed; emulator/system cache state is not reset between candidates.
+          labels=(R11)
+          if [ "${{ matrix.api }}" = 35 ]; then labels=(R9 R10 R11); fi
+          for label in "${labels[@]}"; do
+            echo "RUN $label on API ${{ matrix.api }}" | tee -a perf-evidence/order.txt
+            bash scripts/run-v87-perf-evidence.sh "$label" "$RUNNER_TEMP/perf-builds/$label" "perf-evidence/$label" || failed=1
+          done
+          python3 scripts/analyze-v87-perf-evidence.py perf-evidence || failed=1
+          cp "$RUNNER_TEMP/perf-emulator.log" perf-evidence/emulator.log || true
+          exit "$failed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v87-performance-api${{ matrix.api }}
+          path: perf-evidence/
+          if-no-files-found: error

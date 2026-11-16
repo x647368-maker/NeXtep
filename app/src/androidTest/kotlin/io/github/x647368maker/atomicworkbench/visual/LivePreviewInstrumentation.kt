@@ -25,12 +25,14 @@ import java.util.concurrent.TimeUnit
 
 /** Real Android HWUI + live Surface producer. No root, third-party apps or task mocks. */
 class LivePreviewInstrumentation : Instrumentation() {
+    private var performanceOnly = false
     private var nativeMirrorOnly = false
     private var diagnosticOnly = false
     private var nativeFlightOnly = false
     private var pairedFlightOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        performanceOnly = arguments?.getString("performanceOnly") == "true"
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
         diagnosticOnly = arguments?.getString("diagnosticOnly") == "true"
         nativeFlightOnly = arguments?.getString("nativeFlightOnly") == "true"
@@ -40,7 +42,15 @@ class LivePreviewInstrumentation : Instrumentation() {
     override fun onStart() {
         val result=Bundle()
         try {
-            check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
+            check(listOf(performanceOnly, nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
+            if (performanceOnly) {
+                val out=File(targetContext.filesDir,"performance-evidence").apply { mkdirs() }
+                val status=StagePerformanceEvidence(this).run(out)
+                check(status.startsWith("PERFORMANCE_EVIDENCE_PASS:"))
+                result.putString("stream",status+"\n")
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             if (diagnosticOnly) {
                 val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
                 val status=StageIssueUiRegression(this).run(out)
