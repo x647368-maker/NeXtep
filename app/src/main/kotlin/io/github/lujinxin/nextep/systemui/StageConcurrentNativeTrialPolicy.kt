@@ -121,6 +121,12 @@ internal object StageConcurrentNativeTrialPolicy {
     // the real tasks once, without claiming an animated handoff.
     const val TERMINAL_COMMIT_BUDGET_MS=64L
     enum class MovePresentation { ANIMATED, UNMASKED }
+    /** Only a pristine, still-owned GPU attempt may hand off before its first submitted frame. */
+    fun canFallbackBeforeFirstGpuFrame(current:Boolean,hostAttached:Boolean,
+                                        sourceReady:Boolean,moveStarted:Boolean,
+                                        submittedFrames:Int):Boolean =
+        current && hostAttached && sourceReady && !moveStarted && submittedFrames==0
+
     fun movePresentation(firstCommitted:Boolean,terminalRequired:Boolean,
                          terminalCommitted:Boolean):MovePresentation =
         if(firstCommitted && (!terminalRequired || terminalCommitted))
