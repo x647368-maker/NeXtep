@@ -92,13 +92,23 @@ internal object AtomicPopupMenu {
         val anchorBox=StageMenuPlacement.Box(xy[0],xy[1],xy[0]+anchor.width,xy[1]+anchor.height)
         val blocked=avoid.map{it.box()}
         val compactWidth=safe.width()<dp(600)
-        val categoryWidth=dp(if(compactWidth)120 else 128)
         val fullWidth=dp(if(compactWidth)304 else 340)
-        val minDualWidth=dp(if(compactWidth)282 else 304)
+        // Measure the longest real title in its selected bold font, including
+        // the user's SP scaling. Keep every character plus icon and chevron.
+        val categoryPaint=TextView(context).apply {
+            textSize=13f
+            setTypeface(null,android.graphics.Typeface.BOLD)
+        }.paint
+        val titleWidth=ceil(StageMenuPolicy.groups.maxOf(categoryPaint::measureText)).toInt()
+        val categoryInsets=dp(4)*2+dp(5)*2+dp(14)+dp(8)+dp(4)*2+dp(2)
+        val categoryWidth=maxOf(dp(if(compactWidth)132 else 140),titleWidth+categoryInsets)
+        val minDualWidth=maxOf(dp(if(compactWidth)282 else 304),categoryWidth+dp(3)+dp(147))
+        val metrics=categoryPaint.fontMetricsInt
+        val categoryHeight=maxOf(dp(48),metrics.bottom-metrics.top+dp(8))*StageMenuPolicy.groups.size+dp(12)
         val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())
         val dualBounds=if(grouped) StageMenuPlacement.dualGlass(
             safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,
-            dp(204),blocked,dp(8)) else null
+            categoryHeight,blocked,dp(8)) else null
         val categories=LinearLayout(context).apply{
             orientation=LinearLayout.VERTICAL
             setPadding(dp(6),dp(6),dp(6),dp(6))
@@ -119,9 +129,13 @@ internal object AtomicPopupMenu {
             content.addView(ScrollView(context).apply {
                 background=pane();clipToOutline=true;isVerticalScrollBarEnabled=false
                 addView(categories)
-            },LinearLayout.LayoutParams(categoryWidth,-1).apply {rightMargin=dp(3)})
+            },LinearLayout.LayoutParams(categoryWidth,-2).apply {
+                rightMargin=dp(3);gravity=Gravity.TOP
+            })
             scroll.background=pane();scroll.clipToOutline=true
-            content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+            // Each glass card follows its own contents under the same bounded
+            // popup viewport, instead of painting an empty matching column.
+            content.addView(scroll,LinearLayout.LayoutParams(0,-2,1f).apply {gravity=Gravity.TOP})
         } else content.addView(scroll,LinearLayout.LayoutParams(-1,-1))
         val popup=PopupWindow(content,1,1,true).apply {
             isOutsideTouchable=true;setTouchModal(false)

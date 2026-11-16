@@ -746,7 +746,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "e04e76a3fb0be3d034e842223983c3c21bcdabdd",
+      "reviewed_blob_sha1": "f344267b759218a449b0d4630e30d1f75ab25fbb",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -795,6 +795,14 @@
         {
           "before": "                    val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)\n                        else StageMenuPolicy.group(label)\n                    val size=dp(14)\n                    val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}\n                    val arrow=if(categoryRow)StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)} else null\n                    setCompoundDrawables(glyph,null,arrow,null)",
           "after": "                    val kind=if(categoryRow)StageMenuPolicy.groups.indexOf(label).coerceAtLeast(0)\n                        else StageMenuPolicy.actionGlyph(label)\n                    val size=dp(14)\n                    val glyph=StageMenuLineGlyph(kind,if(categoryRow) 0 else 1).apply {setBounds(0,0,size,size)}\n                    val selected=!categoryRow && StageMenuPolicy.isSelected(label,selectedLabels)\n                    val choice=!categoryRow && StageMenuPolicy.isLayoutChoice(label)\n                    if(choice) {\n                        // Keep the complete original command in the accessibility\n                        // label while displaying its selection as a right hand mark.\n                        text=label.removePrefix(\"✓ \")\n                        isSelected=selected\n                    }\n                    val marker=when {\n                        categoryRow->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}\n                        choice->StageMenuLineGlyph(0,if(selected)3 else 4).apply {setBounds(0,0,size,size)}\n                        else->null\n                    }\n                    setCompoundDrawables(glyph,null,marker,null)"
+        },
+        {
+          "before": "        val categoryWidth=dp(if(compactWidth)120 else 128)\n        val fullWidth=dp(if(compactWidth)304 else 340)\n        val minDualWidth=dp(if(compactWidth)282 else 304)\n        val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())\n        val dualBounds=if(grouped) StageMenuPlacement.dualGlass(\n            safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,\n            dp(204),blocked,dp(8)) else null",
+          "after": "        val fullWidth=dp(if(compactWidth)304 else 340)\n        // Measure the longest real title in its selected bold font, including\n        // the user's SP scaling. Keep every character plus icon and chevron.\n        val categoryPaint=TextView(context).apply {\n            textSize=13f\n            setTypeface(null,android.graphics.Typeface.BOLD)\n        }.paint\n        val titleWidth=ceil(StageMenuPolicy.groups.maxOf(categoryPaint::measureText)).toInt()\n        val categoryInsets=dp(4)*2+dp(5)*2+dp(14)+dp(8)+dp(4)*2+dp(2)\n        val categoryWidth=maxOf(dp(if(compactWidth)132 else 140),titleWidth+categoryInsets)\n        val minDualWidth=maxOf(dp(if(compactWidth)282 else 304),categoryWidth+dp(3)+dp(147))\n        val metrics=categoryPaint.fontMetricsInt\n        val categoryHeight=maxOf(dp(48),metrics.bottom-metrics.top+dp(8))*StageMenuPolicy.groups.size+dp(12)\n        val dualHeight=minOf(dp(252),(safe.height()*.38f).toInt())\n        val dualBounds=if(grouped) StageMenuPlacement.dualGlass(\n            safe.box(),anchorBox,fullWidth,dualHeight,minDualWidth,\n            categoryHeight,blocked,dp(8)) else null"
+        },
+        {
+          "before": "            },LinearLayout.LayoutParams(categoryWidth,-1).apply {rightMargin=dp(3)})\n            scroll.background=pane();scroll.clipToOutline=true\n            content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))",
+          "after": "            },LinearLayout.LayoutParams(categoryWidth,-2).apply {\n                rightMargin=dp(3);gravity=Gravity.TOP\n            })\n            scroll.background=pane();scroll.clipToOutline=true\n            // Each glass card follows its own contents under the same bounded\n            // popup viewport, instead of painting an empty matching column.\n            content.addView(scroll,LinearLayout.LayoutParams(0,-2,1f).apply {gravity=Gravity.TOP})"
         }
       ]
     },
