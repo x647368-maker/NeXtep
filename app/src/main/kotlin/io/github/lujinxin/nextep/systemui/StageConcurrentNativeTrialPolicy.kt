@@ -50,6 +50,11 @@ internal object StageConcurrentNativeTrialPolicy {
         x==0 && y==0 && physicalW>1 && physicalH>1 &&
             width>=physicalW && height>=physicalH
 
+    // Deliberately narrower than native fullScreenHost admission: buffer
+    // cropping uses physical pixels and cannot fit a mismatched viewport.
+    fun wallpaperHostMatches(width:Int,height:Int,physicalW:Int,physicalH:Int):Boolean =
+        physicalW>1 && physicalH>1 && width==physicalW && height==physicalH
+
     fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {
         lastPrepareMs=ms
         if (disabled || nowMs<retryAtMs || ms < 0L) return false

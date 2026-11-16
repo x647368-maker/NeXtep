@@ -437,7 +437,15 @@ internal class StageLiveSurfaceExchange private constructor(
                 // Borrow the texture only after every source/geometry gate.
                 // If a ready cache is absent or the vendor refuses a layer,
                 // retain the original opaque safety cover; never expose duplicates.
-                val textured=runCatching { wallpaperCoverFactory?.invoke() }.getOrNull()
+                // A full-screen root may be larger than the physical
+                // display. append() crops against the actual host dimensions,
+                // so only borrow a physical texture when they match exactly.
+                val textureFits=StageConcurrentNativeTrialPolicy.wallpaperHostMatches(
+                    host.width,host.height,fullScreenWidth,fullScreenHeight)
+                val textured=if(textureFits)
+                    runCatching { wallpaperCoverFactory?.invoke() }.getOrNull() else null
+                if(!textureFits && wallpaperCoverFactory!=null)
+                    StageExchangeTelemetry.nativeEvent("wallpaper_cover_host_mismatch")
                 val masks = textured ?: StageGpuMirrorOcclusion.create()
                     ?: return markUnavailable("atomic_occlusion_unavailable")
                 StageExchangeTelemetry.nativeEvent("mirror_cover="+

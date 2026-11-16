@@ -84,6 +84,22 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(StageConcurrentNativeTrialPolicy.fullScreenHost(0,85,1080,2300,1080,2400))
         assertFalse(StageConcurrentNativeTrialPolicy.fullScreenHost(0,0,900,2400,1080,2400))
     }
+    @Test fun wallpaperCoverRequiresExactPhysicalHostButNativeGateIsUnchanged() {
+        val p=StageConcurrentNativeTrialPolicy
+        for((w,h) in listOf(1272 to 2772,2772 to 1272,2248 to 2480,
+                2480 to 2248,2560 to 1600,1600 to 2560)) {
+            assertTrue(p.wallpaperHostMatches(w,h,w,h))
+            assertFalse(p.wallpaperHostMatches(w+1,h,w,h))
+            assertFalse(p.wallpaperHostMatches(w,h+1,w,h))
+            assertFalse(p.wallpaperHostMatches(w-1,h,w,h))
+            assertFalse(p.wallpaperHostMatches(w,h-1,w,h))
+            assertFalse(p.wallpaperHostMatches(h,w,w,h))
+            assertTrue(p.fullScreenHost(0,0,w+1,h+1,w,h))
+        }
+        assertFalse(p.wallpaperHostMatches(0,0,0,0))
+        assertFalse(p.wallpaperHostMatches(1,1,1,1))
+    }
+
     @Test fun trialAlwaysGatedByVisibilityAndSaver() {
         StageConcurrentNativeTrialPolicy.resetForTests()
         assertEquals(360L, StageConcurrentNativeTrialPolicy.DURATION_MS)

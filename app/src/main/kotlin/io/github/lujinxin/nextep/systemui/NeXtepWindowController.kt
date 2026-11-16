@@ -218,6 +218,10 @@ class NeXtepWindowController(
     // One ready texture for the visible workspace, borrowed only by an
     // admitted native swap. All cache operations run on the main lane.
     private val gpuWallpaper=StageWallpaperCoverCache<android.hardware.HardwareBuffer>()
+    // Power changes invalidate only the optional texture, not the ordinary
+    // wallpaper capture. A worker from before saver entry cannot republish
+    // its buffer if saver is switched off again before delivery.
+    private val gpuWallpaperEpoch=java.util.concurrent.atomic.AtomicInteger()
     private fun wallpaperKey(g:WorkspaceGeometry)=StageWallpaperCoverCache.Key(
         g.screenWidth,g.screenHeight,g.displayRotation)
     private fun acquireWallpaperCover(g:WorkspaceGeometry):StageGpuMirrorOcclusion? {
@@ -254,6 +258,15 @@ class NeXtepWindowController(
                     // OEM live services may change content without changing component/id.
                     backdropGeneration.incrementAndGet()
                 }
+                android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                    // Observe the real service state, not broadcast extras.
+                    if(context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode!=false) {
+                        gpuWallpaperEpoch.incrementAndGet()
+                        gpuWallpaper.clear()
+                    }
+                    // No recapture, timer, or automatic GPU warmup on exit.
+                    return
+                }
                 Intent.ACTION_USER_PRESENT -> Unit
                 else -> return
             }
@@ -270,6 +283,7 @@ class NeXtepWindowController(
                 IntentFilter().apply {
                     addAction(Intent.ACTION_WALLPAPER_CHANGED)
                     addAction(Intent.ACTION_USER_PRESENT)
+                    addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
                 },
                 Context.RECEIVER_EXPORTED,
             )
@@ -3414,6 +3428,7 @@ class NeXtepWindowController(
         val generation = backdropGeneration.incrementAndGet()
         // Reuse the existing capture worker, only on the settled capture.
         // No conversion on the first two refreshes, no timer or tap-time upload.
+        val textureEpoch=gpuWallpaperEpoch.get()
         val prepareTexture=attempt>=BACKDROP_SETTLE_REFRESHES &&
             StagePrivateDualTaskFlightGate.enabled() &&
             StageConcurrentNativeTrialPolicy.allowed(workspaceVisible && !suspended,
@@ -3446,10 +3461,15 @@ class NeXtepWindowController(
             // Only a newly captured, exact-resolution physical frame is
             // admissible. Do not prepare a fitted stale/rotated cache.
             val textured=if(prepareTexture && generation==backdropGeneration.get() &&
+                textureEpoch==gpuWallpaperEpoch.get() &&
                 bitmap!=null && bitmap.width==geometry.screenWidth && bitmap.height==geometry.screenHeight &&
                 WorkspaceWallpaperBackdrop.canCapture(context) &&
                 context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false)
-                runCatching { StageGpuWallpaperBuffer.prepare(bitmap) }.getOrNull() else null
+                runCatching {
+                    StageGpuWallpaperBuffer.prepare(bitmap) { outcome ->
+                        NeXtepLog.info("wallpaper_backdrop","GPU cover preparation: "+outcome)
+                    }
+                }.getOrNull() else null
             backdropHandler.post {
                 if (generation != backdropGeneration.get() || !WorkspaceWallpaperBackdrop.canCapture(context)) {
                     textured?.close()
@@ -3462,6 +3482,7 @@ class NeXtepWindowController(
                     wallpaperRotation = geometry.displayRotation
                     val current=this@NeXtepWindowController.geometry()
                     if(textured!=null && workspaceVisible && !suspended &&
+                        textureEpoch==gpuWallpaperEpoch.get() &&
                         wallpaperKey(current)==wallpaperKey(geometry) &&
                         context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode==false) {
                         gpuWallpaper.replace(wallpaperKey(geometry),textured)
