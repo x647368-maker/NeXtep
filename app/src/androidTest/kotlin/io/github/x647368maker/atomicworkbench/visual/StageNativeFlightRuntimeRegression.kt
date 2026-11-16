@@ -201,27 +201,40 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             // Screen capture can block until after the terminal frame on a
             // busy emulator. Cancel an independent flight from its frame clock
             // so the race with a screenshot cannot invalidate teardown proof.
-            val cancellation=begin()
             val submitted=cls.getDeclaredField("nativeFrameCount").apply { isAccessible=true }
             val terminal=cls.getDeclaredField("frameComplete").apply { isAccessible=true }
-            val cancelledAtFrame=AtomicInteger(0)
-            inst.runOnMainSync {
-                val clock=Choreographer.getInstance()
-                clock.postFrameCallback(object : Choreographer.FrameCallback {
-                    override fun doFrame(frameTimeNanos:Long) {
-                        if(!cancellation.flight.isRunning || terminal.getBoolean(cancellation.flight))return
-                        val frames=submitted.getInt(cancellation.flight)
-                        if(frames>=2) {
-                            cancelledAtFrame.set(frames)
-                            cancellation.flight.stop()
-                            cancellation.flight.stop()
-                        } else clock.postFrameCallback(this)
+            val firstCommitted=cls.getDeclaredField("firstTransactionCommitted").apply { isAccessible=true }
+            var cancelledAtFrame=0
+            for (trial in 1..3) {
+                val cancellation=begin()
+                val cancelled=AtomicInteger(0)
+                inst.runOnMainSync {
+                    val clock=Choreographer.getInstance()
+                    clock.postFrameCallback(object : Choreographer.FrameCallback {
+                        override fun doFrame(frameTimeNanos:Long) {
+                            if(!cancellation.flight.isRunning || terminal.getBoolean(cancellation.flight))return
+                            val frames=submitted.getInt(cancellation.flight)
+                            if(frames>=2) {
+                                cancelled.set(frames)
+                                cancellation.flight.stop()
+                                cancellation.flight.stop()
+                            } else clock.postFrameCallback(this)
+                        }
+                    })
+                }
+                awaitHandlesReleased(cancellation,"mid-$trial")
+                awaitReleased(cancellation,if(cancelled.get()>=2) "mid" else "mid-attempt-$trial")
+                cancelledAtFrame=cancelled.get()
+                if(cancelledAtFrame>=2)break
+                inst.runOnMainSync {
+                    check(!firstCommitted.getBoolean(cancellation.flight) && submitted.getInt(cancellation.flight)==0) {
+                        "Admitted GPU flight did not reach frame-clock cancellation"
                     }
-                })
+                }
+                evidence.add("mid attempt $trial: first transaction missed budget; no frames or move; handles and pixels restored")
             }
-            awaitReleased(cancellation,"mid")
-            check(cancelledAtFrame.get()>=2) { "No cancellation during submitted live frames" }
-            evidence.add("mid cancellation: live flight active after ${cancelledAtFrame.get()} submitted frames")
+            check(cancelledAtFrame>=2) { "No cancellation during submitted live frames" }
+            evidence.add("mid cancellation: live flight active after ${cancelledAtFrame} submitted frames")
 
             // Prepare the full-resolution sampling region and the unchanged
             // 12px lattice BEFORE the flight starts. Source exclusion is
