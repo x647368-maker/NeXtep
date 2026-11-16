@@ -1037,7 +1037,7 @@ internal class StageLiveSurfaceExchange private constructor(
             { disarmHeldEndpointWriter() },
             {
                 trace("gpu_end frames=$nativeFrameCount max_callback_gap=${biggestFrameGapMs}ms" +
-                    " gaps_over24ms=$gapsOver24ms handoff=$handoffReady timeout=$handoffTimedOut")
+                    " gaps_over24ms=$gapsOver24Ms handoff=$handoffReady timeout=$handoffTimedOut")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
                 NeXtepLog.info("native_swap",

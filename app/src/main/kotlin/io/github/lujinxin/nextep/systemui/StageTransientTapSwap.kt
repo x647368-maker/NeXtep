@@ -386,20 +386,21 @@ internal class StageTransientTapSwap(private val context:Context) {
             // A visual failure before migration is not automatically a reason
             // to cut directly to the real-task swap. Retire this attempt and
             // let the established workspace animator take over on the same tap.
+            val visualFallback = onVisualUnavailable
             if (StageTransientTapPolicy.canFallbackToWorkspacePreview(
-                    current(),moveStarted,stillValid()) && onVisualUnavailable!=null) {
+                    current(),moveStarted,stillValid()) && visualFallback!=null) {
                 waitingCapture=false
                 waitingCommit=false
-                host.removeOnAttachStateChangeListener(attachmentListener)
                 ui.removeCallbacks(captureTimeout)
                 ui.removeCallbacks(commitTimeout)
-                ui.removeCallbacks(lifetime)
                 host.removeCallbacks(checkHandoff)
                 removeVisual()
                 trace("snapshot_workspace_preview_fallback:"+why)
-                val accepted=runCatching { onVisualUnavailable.invoke(why) }.getOrDefault(false)
+                val accepted=runCatching { visualFallback(why) }.getOrDefault(false)
                 if(accepted) {
-                    active=null
+                    host.removeOnAttachStateChangeListener(attachmentListener)
+                    ui.removeCallbacks(lifetime)
+                    if (current()) active=null
                     return
                 }
             }
