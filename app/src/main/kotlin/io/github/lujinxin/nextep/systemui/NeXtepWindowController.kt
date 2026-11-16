@@ -1657,7 +1657,6 @@ class NeXtepWindowController(
         if (!workspaceVisible || suspended || groupInputBlocked || workgroups.isSwitching()) return
         val anchor = records.firstOrNull { it.title == "StageMainHandle" }?.view ?: return
         AtomicPopupMenu.show(context, anchor, listOf(
-            "切换全屏（保留工作区）" to { onExitRequested() },
             "顶部横排" to { changeStageLayout(true) },
             "左侧排列" to { changeStageLayout(false,SidebarSide.LEFT) },
             "右侧排列" to { changeStageLayout(false,SidebarSide.RIGHT) },

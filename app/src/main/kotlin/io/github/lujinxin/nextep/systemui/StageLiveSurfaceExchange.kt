@@ -689,6 +689,14 @@ internal class StageLiveSurfaceExchange private constructor(
             if (!isRunning || sentMove) return
             confirmTerminalReceipt()
             if(hostDetached || !host.isAttachedToWindow){stop();return}
+            // A visible concurrent flight must reach a confirmed endpoint before
+            // either producer can be reparented. Retire the attempt through the
+            // coordinator's existing rollback instead of exposing a naked move.
+            if(concurrentHandoff && firstTransactionCommitted && !terminalTransactionCommitted) {
+                trace("native_move_rejected:terminal_unconfirmed")
+                stop()
+                return
+            }
             // Recheck once immediately before the real migration. Observed
             // task stamps use local cached state, not a synchronous task query.
             // A rejected preflight leaves task rollback/reconciliation to the
