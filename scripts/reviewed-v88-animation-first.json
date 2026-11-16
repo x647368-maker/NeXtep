@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "d75b792251b3a049fd72abe1983953824aea056a",
+      "reviewed_blob_sha1": "1f7ed98073099b2d69a047a2705dc2a4dc9ced09",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -145,6 +145,14 @@
         {
           "before": "        val previewSlots = listOfNotNull(sourceSlot, targetSlot)\n        val y700NativeHandoff =",
           "after": "        tracePreview(when {\n            drag!=null -> \"workspace_preview_selected:drag\"\n            !animateTap -> \"workspace_preview_selected:fixed\"\n            targetPreview==null -> \"workspace_preview_selected:source_only\"\n            else -> \"workspace_preview_selected:dual\"\n        })\n        val previewSlots = listOfNotNull(sourceSlot, targetSlot)\n        val y700NativeHandoff ="
+        },
+        {
+          "before": "        val previewSlots = listOfNotNull(sourceSlot, targetSlot)\n        val y700NativeHandoff =",
+          "after": "        // Final fallback gets one bounded opportunity to reuse the same\n        // certified dual-card geometry; never plan again during a draw.\n        // Missing bounds, source-only, drag, HOME, or a budget miss leave\n        // the previous safe fallback untouched. No extra capture or worker.\n        val sharedDeadline=System.nanoTime()+2_000_000L\n        val protectedBounds=mutableListOf<RectF>()\n        var protectedGeometryComplete=true\n        val sharedMotion=if(animateTap && targetIndex==null && targetPreview!=null &&\n            previewHost.width==geometry.screenWidth && previewHost.height==geometry.screenHeight) {\n            val rootOrigin=IntArray(2)\n            previewHost.getLocationOnScreen(rootOrigin)\n            if(rootOrigin[0]!=0 || rootOrigin[1]!=0) null else {\n                slotWindows.forEachIndexed { index, other ->\n                    if(index!=sourceIndex && states.getOrNull(index) is SlotState.Occupied) {\n                        val bounds=Rect()\n                        if(other.view.getScreenVisibleRect(bounds)) protectedBounds.add(RectF(bounds))\n                        else protectedGeometryComplete=false\n                    }\n                }\n                fun box(bounds:RectF)=StageSnapshotMotion.Box(bounds.left,bounds.top,bounds.right,bounds.bottom)\n                if(!protectedGeometryComplete || System.nanoTime()>=sharedDeadline)null\n                else runCatching {\n                    StageSnapshotMotion.sharedFlights(box(from),box(to),\n                        sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,\n                        StageSnapshotMotion.Box(0f,0f,geometry.screenWidth.toFloat(),geometry.screenHeight.toFloat()),\n                        protectedBounds.map(::box)) { System.nanoTime()<sharedDeadline }\n                }.getOrNull()\n            }\n        } else null\n        if(sharedMotion?.usesSharedClock==true)tracePreview(\"workspace_preview_shared_certified_route\")\n        val previewSlots = listOfNotNull(sourceSlot, targetSlot)\n        val y700NativeHandoff ="
+        },
+        {
+          "before": "                freezeGeometry = drag == null && !animateTap,\n                uniformTapMorph = animateTap,\n                move = {",
+          "after": "                freezeGeometry = drag == null && !animateTap,\n                uniformTapMorph = animateTap,\n                sharedMotion = sharedMotion,\n                protectedBounds = if(sharedMotion!=null) protectedBounds else emptyList(),\n                move = {"
         }
       ]
     },
@@ -771,6 +779,36 @@
         }
       ],
       "reviewed_blob_sha1": "6f3940e489b8db82db24f008def34e3ec58bcb0f"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
+      "reviewed_blob_sha1": "6fef55085237ff0c6209c72b113ece1e59805f58",
+      "previous_blob_sha1": "00feec10aa9bdf0666b650f3878fd2bd0b078ee7",
+      "patches": [
+        {
+          "before": "        uniformTapMorph: Boolean = false,\n        onFinished: () -> Unit,",
+          "after": "        uniformTapMorph: Boolean = false,\n        sharedMotion: StageSnapshotMotion.PairFlight? = null,\n        protectedBounds: List<RectF> = emptyList(),\n        onFinished: () -> Unit,"
+        },
+        {
+          "before": "        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,\n            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph)",
+          "after": "        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,\n            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,\n            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null && it.usesSharedClock },\n            protectedBounds)"
+        },
+        {
+          "before": "            interpolator = PathInterpolator(0.22f, 0f, 0.12f, 1f)\n            addUpdateListener {\n                preview.progress = it.animatedValue as Float",
+          "after": "            // The certified paired route already owns easing. Do not ease\n            // its clock a second time in the final preview renderer.\n            interpolator = if(preview.usesSharedRoute) android.animation.TimeInterpolator { it }\n                else PathInterpolator(0.22f, 0f, 0.12f, 1f)\n            addUpdateListener {\n                preview.progress = it.animatedValue as Float"
+        },
+        {
+          "before": "    private val uniformTapMorph: Boolean,\n) : View(context) {\n    var progress = 0f",
+          "after": "    private val uniformTapMorph: Boolean,\n    private val sharedMotion: StageSnapshotMotion.PairFlight?,\n    protectedBounds: List<RectF>,\n) : View(context) {\n    private val protectedCards=protectedBounds.map { RectF(it) }\n    val usesSharedRoute get()=sharedMotion?.usesSharedClock==true\n    var progress = 0f"
+        },
+        {
+          "before": "        if (uniformTapMorph) {\n            // All supported form factors use the same two-way movement, but",
+          "after": "        if (uniformTapMorph) {\n            val pair=sharedMotion\n            if(pair!=null && target!=null && pair.usesSharedClock) {\n                // The certified path is shared with the GPU/RenderThread\n                // backends; preserve full-size source bitmaps and uniform\n                // contain, and clip any protected stationary rail cards.\n                val sharedSave=canvas.save()\n                protectedCards.forEach { canvas.clipOutRect(it) }\n                drawSharedMotionFrame(canvas,target,pair.down)\n                drawSharedMotionFrame(canvas,source,pair.up)\n                canvas.restoreToCount(sharedSave)\n                return\n            }\n            // All supported form factors use the same two-way movement, but"
+        },
+        {
+          "before": "    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {",
+          "after": "    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight) {\n        val pose=flight.pose(progress)\n        if(!pose.cx.isFinite() || !pose.cy.isFinite() || !pose.scale.isFinite() || pose.scale<=0f)return\n        val halfW=bitmap.width*pose.scale*.5f\n        val halfH=bitmap.height*pose.scale*.5f\n        destination.set(pose.cx-halfW,pose.cy-halfH,pose.cx+halfW,pose.cy+halfH)\n        val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n            destination.width(),destination.height(),resources.displayMetrics.density)\n        outline.reset()\n        outline.addRoundRect(destination,radius,radius,Path.Direction.CW)\n        val save=canvas.save()\n        canvas.clipPath(outline)\n        canvas.drawBitmap(bitmap,null,destination,bitmapPaint)\n        canvas.restoreToCount(save)\n    }\n\n    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {"
+        }
+      ]
     }
   }
 }

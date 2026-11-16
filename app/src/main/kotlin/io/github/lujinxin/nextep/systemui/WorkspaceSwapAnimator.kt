@@ -49,6 +49,8 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         canRelease: () -> Boolean = { true },
         freezeGeometry: Boolean = false,
         uniformTapMorph: Boolean = false,
+        sharedMotion: StageSnapshotMotion.PairFlight? = null,
+        protectedBounds: List<RectF> = emptyList(),
         onFinished: () -> Unit,
     ) {
         cancel()
@@ -68,7 +70,9 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val token = ++generation
         handoff=StageStableHandoff()
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
-            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph)
+            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,
+            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null && it.usesSharedClock },
+            protectedBounds)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -149,7 +153,10 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
             duration = if (uniformTapMorph && !returningHome)
                 StageParallelTapMotionPolicy.durationMs(durationMs)
                 else StageSwapTimingPolicy.previewDurationMs(durationMs, freezeGeometry, returningHome)
-            interpolator = PathInterpolator(0.22f, 0f, 0.12f, 1f)
+            // The certified paired route already owns easing. Do not ease
+            // its clock a second time in the final preview renderer.
+            interpolator = if(preview.usesSharedRoute) android.animation.TimeInterpolator { it }
+                else PathInterpolator(0.22f, 0f, 0.12f, 1f)
             addUpdateListener {
                 preview.progress = it.animatedValue as Float
                 preview.invalidate()
@@ -275,7 +282,11 @@ private class SwapPreviewView(
     private val targetQuad: FloatArray?,
     private val freezeGeometry: Boolean,
     private val uniformTapMorph: Boolean,
+    private val sharedMotion: StageSnapshotMotion.PairFlight?,
+    protectedBounds: List<RectF>,
 ) : View(context) {
+    private val protectedCards=protectedBounds.map { RectF(it) }
+    val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
     var progress = 0f
     var tapAccentProgress = 0f
     private val tapAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -328,6 +339,18 @@ private class SwapPreviewView(
             return
         }
         if (uniformTapMorph) {
+            val pair=sharedMotion
+            if(pair!=null && target!=null && pair.usesSharedClock) {
+                // The certified path is shared with the GPU/RenderThread
+                // backends; preserve full-size source bitmaps and uniform
+                // contain, and clip any protected stationary rail cards.
+                val sharedSave=canvas.save()
+                protectedCards.forEach { canvas.clipOutRect(it) }
+                drawSharedMotionFrame(canvas,target,pair.down)
+                drawSharedMotionFrame(canvas,source,pair.up)
+                canvas.restoreToCount(sharedSave)
+                return
+            }
             // All supported form factors use the same two-way movement, but
             // never map the bitmap corners onto a changing quadrilateral.
             // A uniform fit and letterbox protects text/video proportions
@@ -338,6 +361,22 @@ private class SwapPreviewView(
         }
         if (target != null) drawFrame(canvas, target, targetBounds, sourceBounds, targetQuad, sourceQuad)
         drawFrame(canvas, source, start, targetBounds, sourceQuad, targetQuad)
+    }
+
+    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight) {
+        val pose=flight.pose(progress)
+        if(!pose.cx.isFinite() || !pose.cy.isFinite() || !pose.scale.isFinite() || pose.scale<=0f)return
+        val halfW=bitmap.width*pose.scale*.5f
+        val halfH=bitmap.height*pose.scale*.5f
+        destination.set(pose.cx-halfW,pose.cy-halfH,pose.cx+halfW,pose.cy+halfH)
+        val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(
+            destination.width(),destination.height(),resources.displayMetrics.density)
+        outline.reset()
+        outline.addRoundRect(destination,radius,radius,Path.Direction.CW)
+        val save=canvas.save()
+        canvas.clipPath(outline)
+        canvas.drawBitmap(bitmap,null,destination,bitmapPaint)
+        canvas.restoreToCount(save)
     }
 
     private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {

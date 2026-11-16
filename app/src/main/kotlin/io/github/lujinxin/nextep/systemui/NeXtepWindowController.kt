@@ -2952,6 +2952,36 @@ class NeXtepWindowController(
             targetPreview==null -> "workspace_preview_selected:source_only"
             else -> "workspace_preview_selected:dual"
         })
+        // Final fallback gets one bounded opportunity to reuse the same
+        // certified dual-card geometry; never plan again during a draw.
+        // Missing bounds, source-only, drag, HOME, or a budget miss leave
+        // the previous safe fallback untouched. No extra capture or worker.
+        val sharedDeadline=System.nanoTime()+2_000_000L
+        val protectedBounds=mutableListOf<RectF>()
+        var protectedGeometryComplete=true
+        val sharedMotion=if(animateTap && targetIndex==null && targetPreview!=null &&
+            previewHost.width==geometry.screenWidth && previewHost.height==geometry.screenHeight) {
+            val rootOrigin=IntArray(2)
+            previewHost.getLocationOnScreen(rootOrigin)
+            if(rootOrigin[0]!=0 || rootOrigin[1]!=0) null else {
+                slotWindows.forEachIndexed { index, other ->
+                    if(index!=sourceIndex && states.getOrNull(index) is SlotState.Occupied) {
+                        val bounds=Rect()
+                        if(other.view.getScreenVisibleRect(bounds)) protectedBounds.add(RectF(bounds))
+                        else protectedGeometryComplete=false
+                    }
+                }
+                fun box(bounds:RectF)=StageSnapshotMotion.Box(bounds.left,bounds.top,bounds.right,bounds.bottom)
+                if(!protectedGeometryComplete || System.nanoTime()>=sharedDeadline)null
+                else runCatching {
+                    StageSnapshotMotion.sharedFlights(box(from),box(to),
+                        sourcePreview.width,sourcePreview.height,targetPreview.width,targetPreview.height,
+                        StageSnapshotMotion.Box(0f,0f,geometry.screenWidth.toFloat(),geometry.screenHeight.toFloat()),
+                        protectedBounds.map(::box)) { System.nanoTime()<sharedDeadline }
+                }.getOrNull()
+            }
+        } else null
+        if(sharedMotion?.usesSharedClock==true)tracePreview("workspace_preview_shared_certified_route")
         val previewSlots = listOfNotNull(sourceSlot, targetSlot)
         val y700NativeHandoff =
             io.github.x647368maker.atomicworkbench.workspace.StageDisplayPolicy
@@ -2989,6 +3019,8 @@ class NeXtepWindowController(
                 // managed by the existing real display coordinator.
                 freezeGeometry = drag == null && !animateTap,
                 uniformTapMorph = animateTap,
+                sharedMotion = sharedMotion,
+                protectedBounds = if(sharedMotion!=null) protectedBounds else emptyList(),
                 move = {
                     // Ignore frames produced while the old tasks were still in
                     // place. Handoff needs a buffer after the logical exchange.
