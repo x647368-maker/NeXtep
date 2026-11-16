@@ -1378,10 +1378,16 @@ class SlotTaskCoordinator(
         }
         val targetDisplayId = slots[slotIndex].displayId()
             ?: return Result.failure(IllegalStateException("Slot $slotIndex display is pending"))
-        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
+        val preferredTask = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
             it.component.packageName == component.packageName &&
                 it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
-        } ?: findLaunchTask(component, normalized.targetUser())
+        }
+        if (preferredTaskIdentity != null && !sameTaskIdentity(preferredTaskIdentity, preferredTask)) {
+            return Result.failure(IllegalStateException("原任务身份已变化，拒绝将其他任务作为替换回滚"))
+        }
+        val existing = preferredTask ?: if (preferredTaskIdentity == null) {
+            findLaunchTask(component, normalized.targetUser())
+        } else null
         val occupied = slotRecords[slotIndex].state as? SlotState.Occupied
 
         // The ported Y700 ROM may own a WeChat task as a native dual-pane
