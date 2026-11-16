@@ -1,48 +1,54 @@
 package io.github.x647368maker.atomicworkbench.display
 
 /**
- * Main-thread lifecycle lease for synchronous close/replace operations.
- * A reentrant workspace exit is deferred until the outermost mutation settles.
- * No task/display ACK is synthesized by this gate.
+ * Exclusive main-thread ownership for synchronous close/replace operations.
+ * A reentrant workspace exit is deferred until the current owner has completed
+ * its real task move and any replacement rollback. No task/display ACK is made here.
  */
 internal class StageSlotLifecycleGate {
-    private var mutationDepth = 0
-    private var exitPending = false
+    internal class Lease internal constructor(internal val id: Long)
+
+    private var nextId = 0L
+    private var owner: Lease? = null
+    private var exitRequested = false
     private var exitPostScheduled = false
 
-    fun beginMutation(): Boolean {
-        if (exitPending && mutationDepth == 0) return false
-        mutationDepth += 1
-        return true
+    fun acquire(): Lease? {
+        if (owner != null || exitRequested) return null
+        return Lease(++nextId).also { owner = it }
     }
 
-    fun endMutation(): Boolean {
-        check(mutationDepth > 0) { "Unbalanced slot lifecycle mutation" }
-        mutationDepth -= 1
-        if (mutationDepth == 0 && exitPending && !exitPostScheduled) {
+    fun release(lease: Lease): Boolean {
+        check(owner === lease) { "Stale or duplicate slot lifecycle lease release" }
+        owner = null
+        if (exitRequested && !exitPostScheduled) {
             exitPostScheduled = true
             return true
         }
         return false
     }
 
-    fun deferExitIfMutating(): Boolean {
-        if (mutationDepth == 0) return false
-        exitPending = true
+    fun requestExitIfOwned(): Boolean {
+        if (owner == null) return false
+        exitRequested = true
         return true
     }
 
     fun beginExit() {
-        check(mutationDepth == 0) { "Cannot exit while slot ownership is mutating" }
-        exitPending = true
+        check(owner == null) { "Cannot exit while a slot lifecycle owner is active" }
+        exitRequested = true
         exitPostScheduled = false
     }
 
     fun finishExit() {
-        check(mutationDepth == 0) { "Cannot finish exit while slot ownership is mutating" }
-        exitPending = false
+        check(owner == null) { "Cannot finish exit while a slot lifecycle owner is active" }
+        exitRequested = false
         exitPostScheduled = false
     }
 
-    fun allowsMutation(): Boolean = mutationDepth > 0 || !exitPending
+    fun allowsMutation(lease: Lease? = null): Boolean =
+        if (owner == null) lease == null && !exitRequested else owner === lease
+
+    val isExitPending: Boolean
+        get() = exitRequested
 }

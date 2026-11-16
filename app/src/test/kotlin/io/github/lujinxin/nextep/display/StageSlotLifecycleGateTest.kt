@@ -4,39 +4,50 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageSlotLifecycleGateTest {
-    @Test fun reentrantExitWaitsForOutermostReplaceLease() {
-        val gate=StageSlotLifecycleGate()
-        assertTrue(gate.beginMutation()) // replace
-        assertTrue(gate.beginMutation()) // nested close
-        assertTrue(gate.deferExitIfMutating())
-        assertTrue(gate.allowsMutation()) // outer replace must finish or rollback
-        assertFalse(gate.endMutation())
-        assertTrue(gate.endMutation()) // exactly one exit callback is scheduled
+    @Test fun oneOwnerExcludesEveryOtherMutation() {
+        val gate = StageSlotLifecycleGate()
+        val owner = checkNotNull(gate.acquire())
+        assertTrue(gate.allowsMutation(owner))
         assertFalse(gate.allowsMutation())
-        assertFalse(gate.beginMutation())
+        assertNull(gate.acquire())
+        assertFalse(gate.release(owner))
+        assertTrue(gate.allowsMutation())
+        val next = checkNotNull(gate.acquire())
+        assertFalse(gate.release(next))
+    }
+
+    @Test fun exitRequestBlocksNewWorkButAllowsCurrentOwnerToRollback() {
+        val gate = StageSlotLifecycleGate()
+        val owner = checkNotNull(gate.acquire())
+        assertTrue(gate.requestExitIfOwned())
+        assertTrue(gate.allowsMutation(owner))
+        assertFalse(gate.allowsMutation())
+        assertNull(gate.acquire())
+        assertTrue(gate.release(owner))
+        assertTrue(gate.isExitPending)
+        assertFalse(gate.allowsMutation())
+        assertNull(gate.acquire())
         gate.beginExit()
         gate.finishExit()
+        assertFalse(gate.isExitPending)
         assertTrue(gate.allowsMutation())
     }
 
-    @Test fun failedCloseStillReleasesLeaseAndSchedulesExitOnce() {
-        val gate=StageSlotLifecycleGate()
-        assertTrue(gate.beginMutation())
-        assertTrue(gate.deferExitIfMutating())
-        assertTrue(gate.endMutation())
-        assertFalse(gate.endMutationIfUnbalancedForTest())
-        assertFalse(gate.allowsMutation())
-    }
-
-    @Test fun ordinaryCloseDoesNotCreateExitOrBlockNextMutation() {
-        val gate=StageSlotLifecycleGate()
-        assertTrue(gate.beginMutation())
-        assertFalse(gate.endMutation())
+    @Test fun ordinaryCloseReleasesWithoutSchedulingExit() {
+        val gate = StageSlotLifecycleGate()
+        val owner = checkNotNull(gate.acquire())
+        assertFalse(gate.release(owner))
+        assertFalse(gate.isExitPending)
         assertTrue(gate.allowsMutation())
-        assertTrue(gate.beginMutation())
-        assertFalse(gate.endMutation())
+        assertNotNull(gate.acquire())
     }
 
-    private fun StageSlotLifecycleGate.endMutationIfUnbalancedForTest(): Boolean =
-        runCatching { endMutation() }.isSuccess
+    @Test fun staleAndDuplicateReleaseCannotStealOwnership() {
+        val gate = StageSlotLifecycleGate()
+        val owner = checkNotNull(gate.acquire())
+        val other = StageSlotLifecycleGate.Lease(999L)
+        assertTrue(runCatching { gate.release(other) }.isFailure)
+        assertTrue(gate.allowsMutation(owner))
+        assertTrue(runCatching { gate.release(owner); gate.release(owner) }.isFailure)
+    }
 }

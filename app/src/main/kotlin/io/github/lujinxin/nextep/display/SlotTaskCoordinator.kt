@@ -94,6 +94,7 @@ class SlotTaskCoordinator(
     }
 
     private val slotLifecycleGate = StageSlotLifecycleGate()
+    private var waitingForPendingLaunchExit = false
     private var active = false
     private var suspended = false
     private var transitionInProgress = false
@@ -180,8 +181,19 @@ class SlotTaskCoordinator(
         if (!active) return
         // Reentrant exit must wait for the outer close/replace owner to finish
         // its real task move and any rollback before virtual displays are released.
-        if (slotLifecycleGate.deferExitIfMutating()) return
+        if (slotLifecycleGate.requestExitIfOwned()) {
+            slots.forEach { it.view.setBusy(true) }
+            return
+        }
         slotLifecycleGate.beginExit()
+        if (slotRecords.any { it.pendingComponent != null }) {
+            waitingForPendingLaunchExit = true
+            slots.forEach { it.view.setBusy(true) }
+            NeXtepLog.info("slot_lifecycle",
+                "Workspace exit deferred until pending task launch reaches observed or timeout state")
+            return
+        }
+        waitingForPendingLaunchExit = false
         if (deferUntilExchangeSettled { deactivate() }) {
             suspended = true
             return
@@ -190,6 +202,7 @@ class SlotTaskCoordinator(
         try {
             parkTasksBeforeExit()
         } catch (error: Throwable) {
+            waitingForPendingLaunchExit = false
             slotLifecycleGate.finishExit();
             slots.forEachIndexed { index, slot ->
                 if (slotRecords[index].exitTask != null) {
@@ -198,6 +211,7 @@ class SlotTaskCoordinator(
             }
             throw error
         }
+        waitingForPendingLaunchExit = false
         active = false
         io.github.x647368maker.atomicworkbench.systemui.StageTabletColdLaunchBridge.reset()
         cancelPendingAdd("工作区已退出")
@@ -419,34 +433,45 @@ class SlotTaskCoordinator(
 
     fun closeWindow(index: Int): Result<Unit> {
         ensureMainThread()
-        if (!slotLifecycleGate.beginMutation())
-            return Result.failure(IllegalStateException("工作区正在退出"))
+        val lease = slotLifecycleGate.acquire()
+            ?: return Result.failure(IllegalStateException("工作区正在退出或处理其他窗口操作"))
         return try {
-            runCatching {
-                check(isGroupRestoreReady()) { "工作区正在切换" }
-                val state = slotRecords.getOrNull(index)?.state as? SlotState.Occupied ?: error("窗口已关闭")
-                val drag = SlotTaskDrag(index, state.taskId, state.displayId)
-                check(onSlotDragStarting(drag)) { "窗口忙碌或系统任务状态已变化" }
-                try {
-                    dismissDraggedSlotResult(drag).getOrThrow()
-                } finally {
-                    onSlotDragEnded()
-                }
-                // Clear recovery metadata only after the real task left its virtual display.
-                clearSlotAssignment(index)
-                slotRecords[index].exitTask = null
-            }
+            closeWindowOwned(index, lease)
         } finally {
-            if (slotLifecycleGate.endMutation()) handler.post { deactivate() }
+            finishLifecycleMutation(lease)
+        }
+    }
+
+    private fun closeWindowOwned(
+        index: Int,
+        lifecycleLease: StageSlotLifecycleGate.Lease,
+    ): Result<Unit> = runCatching {
+        check(isGroupRestoreReady(lifecycleLease)) { "工作区正在切换" }
+        val state = slotRecords.getOrNull(index)?.state as? SlotState.Occupied ?: error("窗口已关闭")
+        val drag = SlotTaskDrag(index, state.taskId, state.displayId)
+        check(onSlotDragStarting(drag, lifecycleLease)) { "窗口忙碌或系统任务状态已变化" }
+        try {
+            dismissDraggedSlotResult(drag, lifecycleLease).getOrThrow()
+        } finally {
+            onSlotDragEnded()
+        }
+        // Clear recovery metadata only after the real task left its virtual display.
+        clearSlotAssignment(index)
+        slotRecords[index].exitTask = null
+    }
+
+    private fun finishLifecycleMutation(lifecycleLease: StageSlotLifecycleGate.Lease) {
+        if (slotLifecycleGate.release(lifecycleLease)) {
+            handler.post { deactivate() }
         }
     }
 
     fun replaceWindow(index: Int, intent: Intent): Result<Unit> {
         ensureMainThread()
-        if (!slotLifecycleGate.beginMutation())
-            return Result.failure(IllegalStateException("工作区正在退出"))
+        val lease = slotLifecycleGate.acquire()
+            ?: return Result.failure(IllegalStateException("工作区正在退出或处理其他窗口操作"))
         return try {
-            if (!isGroupRestoreReady() || index !in slotRecords.indices)
+            if (!isGroupRestoreReady(lease) || index !in slotRecords.indices)
                 return Result.failure(IllegalStateException("工作区忙碌"))
             val normalized = normalizeLaunchIntent(intent)
                 ?: return Result.failure(IllegalArgumentException("应用不可用"))
@@ -455,29 +480,36 @@ class SlotTaskCoordinator(
                 val current = taskRepository.findTask(previous.taskId)
                 val target = findLaunchTask(checkNotNull(normalized.component), normalized.targetUser())
                 if (target?.taskId == previous.taskId) return Result.success(Unit)
-                // One lease covers park -> replacement -> rollback; exit cannot tear down the display between them.
-                val closed = closeWindow(index)
+                // One lease owns the old-task park, new launch request and any synchronous rollback.
+                val closed = closeWindowOwned(index, lease)
                 if (closed.isFailure) return closed
-                val assigned = assignIntent(index, normalized)
+                val assigned = assignIntent(index, normalized, lifecycleLease = lease)
                 if (assigned.isFailure && current?.userId != null) {
                     val rollback = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                         .setComponent(previous.component).putExtra(TriggerBroadcastContract.EXTRA_TARGET_USER,
                             android.os.UserHandle::class.java.getMethod("of", Int::class.javaPrimitiveType)
                                 .invoke(null, current.userId) as android.os.UserHandle)
-                    assignIntent(index, rollback, previous.taskId)
+                    assignIntent(index, rollback, previous.taskId, lease)
                 }
                 assigned
-            } else assignIntent(index, normalized)
+            } else assignIntent(index, normalized, lifecycleLease = lease)
         } finally {
-            if (slotLifecycleGate.endMutation()) handler.post { deactivate() }
+            finishLifecycleMutation(lease)
         }
     }
 
-    fun isGroupRestoreReady(): Boolean = active && !suspended && slotLifecycleGate.allowsMutation() &&
+    fun isGroupRestoreReady(): Boolean = isGroupRestoreReady(null)
+
+    private fun isGroupRestoreReady(
+        lifecycleLease: StageSlotLifecycleGate.Lease?,
+    ): Boolean = active && !suspended && slotLifecycleGate.allowsMutation(lifecycleLease) &&
         !transitionInProgress && !recentSelectionPending && slotRecords.none { it.pendingComponent != null }
 
     fun openInMain(sourceIntent: Intent, autoMinimizeCurrent: Boolean = false, preferredTaskId: Int? = null): Result<Unit> {
         ensureMainThread()
+        if (!slotLifecycleGate.allowsMutation()) {
+            return Result.failure(IllegalStateException("工作区正在退出或处理窗口操作"))
+        }
         if (!active || suspended) {
             return Result.failure(IllegalStateException("Workspace transition is busy"))
         }
@@ -1028,8 +1060,15 @@ class SlotTaskCoordinator(
         return assignIntent(slotIndex, intent).isSuccess
     }
 
-    override fun onSlotDragStarting(drag: SlotTaskDrag): Boolean {
-        if (!active || suspended || transitionInProgress || recentSelectionPending || activeDrag != null ||
+    override fun onSlotDragStarting(drag: SlotTaskDrag): Boolean =
+        onSlotDragStarting(drag, null)
+
+    private fun onSlotDragStarting(
+        drag: SlotTaskDrag,
+        lifecycleLease: StageSlotLifecycleGate.Lease?,
+    ): Boolean {
+        if (!slotLifecycleGate.allowsMutation(lifecycleLease) ||
+            !active || suspended || transitionInProgress || recentSelectionPending || activeDrag != null ||
             !matchesDrag(drag)
         ) return false
         activeDrag = drag
@@ -1055,11 +1094,19 @@ class SlotTaskCoordinator(
      * A WCT reparent is asynchronous on ColorOS and must not be judged by an
      * immediate getRunningTasks() snapshot.
      */
-    private fun dismissDraggedSlotResult(drag: SlotTaskDrag): Result<Unit> {
-        if (activeDrag != drag || !matchesDrag(drag) || !active || suspended || recentSelectionPending) {
+    private fun dismissDraggedSlotResult(
+        drag: SlotTaskDrag,
+        lifecycleLease: StageSlotLifecycleGate.Lease? = null,
+    ): Result<Unit> {
+        if (!slotLifecycleGate.allowsMutation(lifecycleLease) ||
+            activeDrag != drag || !matchesDrag(drag) || !active || suspended || recentSelectionPending
+        ) {
             return Result.failure(IllegalStateException("小窗任务发生变化或正在切换，请重试"))
         }
-        return runTransition("background slot=${drag.slotIndex} task=${drag.taskId}") {
+        return runTransition(
+            "background slot=${drag.slotIndex} task=${drag.taskId}",
+            lifecycleLease = lifecycleLease,
+        ) {
             val task = checkNotNull(taskRepository.findTask(drag.taskId))
             val record = slotRecords[drag.slotIndex]
             val layout = record.originalLayout ?: defaultMainLayout(task.resizeMode)
@@ -1254,8 +1301,13 @@ class SlotTaskCoordinator(
         setState(index, state, "drag exchange")
     }
 
-    private fun assignIntent(slotIndex: Int, sourceIntent: Intent, preferredTaskId: Int? = null): Result<Unit> {
-        if (!validActiveSlot(slotIndex)) {
+    private fun assignIntent(
+        slotIndex: Int,
+        sourceIntent: Intent,
+        preferredTaskId: Int? = null,
+        lifecycleLease: StageSlotLifecycleGate.Lease? = null,
+    ): Result<Unit> {
+        if (!validActiveSlot(slotIndex, lifecycleLease)) {
             return Result.failure(IllegalStateException("Slot $slotIndex is unavailable"))
         }
         val normalized = normalizeLaunchIntent(sourceIntent)
@@ -1303,7 +1355,11 @@ class SlotTaskCoordinator(
         if (occupied != null) {
             val foreground = taskRepository.foregroundTask()
             if (existing != null && foreground?.taskId == existing.taskId) {
-                return runTransition("drop main into occupied slot=$slotIndex", mainSlotIndex = slotIndex) {
+                return runTransition(
+                    "drop main into occupied slot=$slotIndex",
+                    mainSlotIndex = slotIndex,
+                    lifecycleLease = lifecycleLease,
+                ) {
                     swapWithMain(slotIndex, occupied)
                 }
             }
@@ -1312,7 +1368,10 @@ class SlotTaskCoordinator(
         }
 
         if (existing != null) {
-            return runTransition("move dropped taskId=${existing.taskId} slot=$slotIndex") {
+            return runTransition(
+                "move dropped taskId=${existing.taskId} slot=$slotIndex",
+                lifecycleLease = lifecycleLease,
+            ) {
                 val wasPresented = mainTaskPresenter.currentTaskId() == existing.taskId
                 val sourceSlot = slotRecords.indexOfFirst { record ->
                     (record.state as? SlotState.Occupied)?.taskId == existing.taskId
@@ -1380,7 +1439,10 @@ class SlotTaskCoordinator(
         slotRecords[slotIndex].pendingComponent = component
         slotRecords[slotIndex].pendingAttempts = 0
         slots[slotIndex].view.showWaiting()
-        return runTransition("launch component=$component slot=$slotIndex") {
+        return runTransition(
+            "launch component=$component slot=$slotIndex",
+            lifecycleLease = lifecycleLease,
+        ) {
             try {
                 slots[slotIndex].launch(normalized).getOrThrow()
                 handler.postDelayed({ reconcile("launch requested") }, SETTLE_DELAY_MS)
@@ -1668,7 +1730,9 @@ class SlotTaskCoordinator(
             exchangeSession = null
             visualTransitionPending = false
             transitionInProgress = false
-            slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
+            slots.forEach { it.view.setBusy(
+                suspended || recentSelectionPending || slotLifecycleGate.isExitPending
+            ) }
             val actions = exchangeEndActions.toList()
             exchangeEndActions.clear()
             actions.forEach { exchangeHandler.post(it) }
@@ -2092,13 +2156,22 @@ class SlotTaskCoordinator(
         label: String,
         animation: Pair<SlotTaskDrag, Int?>? = null,
         mainSlotIndex: Int? = null,
+        lifecycleLease: StageSlotLifecycleGate.Lease? = null,
         operation: () -> Unit,
     ): Result<Unit> {
+        if (!slotLifecycleGate.allowsMutation(lifecycleLease)) {
+            return Result.failure(IllegalStateException("工作区正在退出或处理窗口操作"))
+        }
         if (transitionInProgress || recentSelectionPending) {
             NeXtepLog.warn("slot_coordinator", "Ignored concurrent transition $label")
             return Result.failure(IllegalStateException("Another slot transition is settling"))
         }
         // Reject busy requests before any synchronous foreground Binder read.
+        if (lifecycleLease != null && mainSlotIndex != null) {
+            return Result.failure(IllegalStateException(
+                "Lifecycle-owned replacement cannot enter an asynchronous main-slot exchange"
+            ))
+        }
         if (mainSlotIndex != null && slotRecords[mainSlotIndex].state is SlotState.Occupied &&
             onPhasedMainSlotAnimation != null) {
             val main = taskRepository.foregroundTask()
@@ -2128,7 +2201,9 @@ class SlotTaskCoordinator(
             }
             movePerformed = true
             val result = runCatching {
-                check(active && !suspended) { "Workspace is no longer interactive" }
+                check(active && !suspended && slotLifecycleGate.allowsMutation(lifecycleLease)) {
+                    "Workspace is no longer interactive or lifecycle ownership was lost"
+                }
                 if (mainSlotIndex != null) {
                     check(slotRecords[mainSlotIndex].state == expectedSlotState &&
                         taskRepository.foregroundTask()?.taskId == expectedMainTaskId
@@ -2187,7 +2262,9 @@ class SlotTaskCoordinator(
 
     private fun dispatchPendingSelection() {
         handler.post {
-            if (!active || suspended || transitionInProgress || recentSelectionPending) return@post
+            if (!slotLifecycleGate.allowsMutation() ||
+                !active || suspended || transitionInProgress || recentSelectionPending
+            ) return@post
             val selected = pendingSelection ?: return@post
             pendingSelection = null
             selected()
@@ -2209,7 +2286,20 @@ class SlotTaskCoordinator(
                 }
             }
             val displayId = slot.displayId() ?: run {
-                if (slotRecords[index].state !is SlotState.Failed) setState(index, SlotState.Empty, "$reason: no display")
+                val record = slotRecords[index]
+                if (record.pendingComponent != null) {
+                    record.pendingAttempts += 1
+                    if (record.pendingAttempts >= MAX_PENDING_POLLS) {
+                        record.pendingComponent = null
+                        record.pendingAttempts = 0
+                        setState(index, SlotState.Failed("launch timed out"),
+                            "$reason: display unavailable while launch was pending")
+                    } else {
+                        slot.view.showWaiting()
+                    }
+                } else if (record.state !is SlotState.Failed) {
+                    setState(index, SlotState.Empty, "$reason: no display")
+                }
                 return@forEachIndexed
             }
             val displayTasks = tasks.filter { it.displayId == displayId }
@@ -2239,6 +2329,14 @@ class SlotTaskCoordinator(
                     try {
                         ensureSlotLayout(index, displayTask)
                     } catch (error: Throwable) {
+                        // A real task is already observed on this display. Stop
+                        // waiting for its launch ACK, but retain its task identity
+                        // so workspace exit still parks it before releasing the VD.
+                        if (record.pendingComponent != null) {
+                            record.retainedTaskId = displayTask.taskId
+                            record.pendingComponent = null
+                            record.pendingAttempts = 0
+                        }
                         setState(
                             index,
                             SlotState.Failed("layout rejected"),
@@ -2366,6 +2464,14 @@ class SlotTaskCoordinator(
                     error,
                 )
             }
+        if (waitingForPendingLaunchExit && slotRecords.none { it.pendingComponent != null }) {
+            waitingForPendingLaunchExit = false
+            NeXtepLog.info("slot_lifecycle",
+                "Pending launch reached an observed terminal state; resuming workspace exit")
+            handler.post {
+                if (active && slotLifecycleGate.isExitPending) deactivate()
+            }
+        }
     }
 
     private fun shouldRecoverMigratedTask(record: SlotRecord): Boolean =
@@ -3100,8 +3206,11 @@ class SlotTaskCoordinator(
         }
     }
 
-    private fun validActiveSlot(index: Int): Boolean =
-        active && !suspended && slotLifecycleGate.allowsMutation() &&
+    private fun validActiveSlot(
+        index: Int,
+        lifecycleLease: StageSlotLifecycleGate.Lease? = null,
+    ): Boolean =
+        active && !suspended && slotLifecycleGate.allowsMutation(lifecycleLease) &&
             index in slots.indices && !transitionInProgress
 
     private fun retainedTaskDescription(): String =
