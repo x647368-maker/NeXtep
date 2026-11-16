@@ -1683,7 +1683,7 @@ class NeXtepWindowController(
         ), avoidBounds = menuAvoidBounds(), selectedLabels = setOf(
             if(viewport.isTopRail()) "顶部横排" else if(sidebarSide==SidebarSide.LEFT) "左侧排列" else "右侧排列",
             if(core.mainPriority) "主窗口优先布局" else "完整显示布局",
-        ))
+        ), submenuLabels = setOf("常用应用管理","快捷栏样式","显示与动画","主窗口与小窗交换","窗口顺序调整"))
     }
 
     // Menu actions must recheck the real workspace owner after dismissal.
@@ -1714,7 +1714,8 @@ class NeXtepWindowController(
                 else showStageMessage("固定应用已变化，请重新选择")
             }
         }
-        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds())
+        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds(),
+            submenuLabels=items.map{it.first}.filter{it.startsWith("固定应用 ")}.toSet())
     }
 
     private fun showPinnedQuickActions(anchor:View,key:String) {
@@ -1782,7 +1783,8 @@ class NeXtepWindowController(
                 if(menuQuickOrDisplayReady())smartRail.setPinned(!smartRail.pinned)
             },
             "打开完整设置" to { if(menuQuickOrDisplayReady())onSettingsRequested() },
-        ),avoidBounds=menuAvoidBounds())
+        ),avoidBounds=menuAvoidBounds(),submenuLabels=setOf(
+            "影音布局与自动模式","侧栏自动收起时间（${smartRail.idleSeconds}秒）"))
     }
 
     // These entries reuse the existing task exchange, visual reorder and
@@ -1851,7 +1853,9 @@ class NeXtepWindowController(
                     else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())
                 }
             }
-        },avoidBounds=menuAvoidBounds())
+        },avoidBounds=menuAvoidBounds(),submenuLabels=entries.mapIndexed { position,(_,state)->
+            "选择小窗 ${position+1}：${state.component.packageName}"
+        }.toSet())
     }
 
     private fun toggleRailFromMenu() {

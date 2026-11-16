@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "e2c5848b44361c6cf9f6bcfef1ccf1da069384e1",
+      "reviewed_blob_sha1": "346741144a09bb656b7e6a50bb1d280ab559015e",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -293,6 +293,22 @@
         {
           "before": "            \"切换全屏（保留工作区）\" to { onExitRequested() },\n            \"顶部横排\" to { changeStageLayout(true) },",
           "after": "            \"顶部横排\" to { changeStageLayout(true) },"
+        },
+        {
+          "before": "            if(core.mainPriority) \"主窗口优先布局\" else \"完整显示布局\",\n        ))\n    }\n\n    // Menu actions",
+          "after": "            if(core.mainPriority) \"主窗口优先布局\" else \"完整显示布局\",\n        ), submenuLabels = setOf(\"常用应用管理\",\"快捷栏样式\",\"显示与动画\",\"主窗口与小窗交换\",\"窗口顺序调整\"))\n    }\n\n    // Menu actions"
+        },
+        {
+          "before": "        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds())\n    }\n\n    private fun showPinnedQuickActions",
+          "after": "        AtomicPopupMenu.show(context,anchor,items,avoidBounds=menuAvoidBounds(),\n            submenuLabels=items.map{it.first}.filter{it.startsWith(\"固定应用 \")}.toSet())\n    }\n\n    private fun showPinnedQuickActions"
+        },
+        {
+          "before": "            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },\n        ),avoidBounds=menuAvoidBounds())\n    }",
+          "after": "            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },\n        ),avoidBounds=menuAvoidBounds(),submenuLabels=setOf(\n            \"影音布局与自动模式\",\"侧栏自动收起时间（${smartRail.idleSeconds}秒）\"))\n    }"
+        },
+        {
+          "before": "                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())\n                }\n            }\n        },avoidBounds=menuAvoidBounds())\n    }",
+          "after": "                    else AtomicPopupMenu.show(context,anchor,targets,avoidBounds=menuAvoidBounds())\n                }\n            }\n        },avoidBounds=menuAvoidBounds(),submenuLabels=entries.mapIndexed { position,(_,state)->\n            \"选择小窗 ${position+1}：${state.component.packageName}\"\n        }.toSet())\n    }"
         }
       ]
     },
@@ -798,7 +814,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "f344267b759218a449b0d4630e30d1f75ab25fbb",
+      "reviewed_blob_sha1": "5dfce826d3b9fbc79ea9fceae18dbba726c46e06",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -855,6 +871,46 @@
         {
           "before": "            },LinearLayout.LayoutParams(categoryWidth,-1).apply {rightMargin=dp(3)})\n            scroll.background=pane();scroll.clipToOutline=true\n            content.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))",
           "after": "            },LinearLayout.LayoutParams(categoryWidth,-2).apply {\n                rightMargin=dp(3);gravity=Gravity.TOP\n            })\n            scroll.background=pane();scroll.clipToOutline=true\n            // Each glass card follows its own contents under the same bounded\n            // popup viewport, instead of painting an empty matching column.\n            content.addView(scroll,LinearLayout.LayoutParams(0,-2,1f).apply {gravity=Gravity.TOP})"
+        },
+        {
+          "before": "    private var active:PopupWindow?=null\n    private val handler=Handler(Looper.getMainLooper())",
+          "after": "    private var active:PopupWindow?=null\n    // Only explicitly declared navigation rows may synchronously open a\n    // child in the currently owned popup. Leaf actions keep dismiss/dispatch.\n    private data class InlineNavigation(\n        val context:Context,val anchor:View,\n        val open:(List<Pair<String,()->Unit>>,List<Rect>,Set<String>)->Unit,\n    )\n    private data class InlinePage(\n        val title:String,val items:List<Pair<String,()->Unit>>,val submenuLabels:Set<String>,\n    )\n    private var inlineNavigation:InlineNavigation?=null\n    private val handler=Handler(Looper.getMainLooper())"
+        },
+        {
+          "before": "        selectedLabels:Set<String> = emptySet()) {\n        StageRuntimeIdentity.install(context)\n        if(items.isEmpty())return\n        SystemUiPanelMonitor.refresh(context)",
+          "after": "        selectedLabels:Set<String> = emptySet(),submenuLabels:Set<String> = emptySet()) {\n        StageRuntimeIdentity.install(context)\n        if(items.isEmpty())return\n        inlineNavigation?.let { navigation ->\n            // A synchronous page build may not replace another anchor's popup\n            // or outlive an intervening native panel / workspace dismissal.\n            if(navigation.context===context && navigation.anchor===anchor &&\n                anchor.isAttachedToWindow &&\n                SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED)\n                navigation.open(items.toList(),avoidBounds.map{Rect(it)},submenuLabels.toSet())\n            return\n        }\n        SystemUiPanelMonitor.refresh(context)"
+        },
+        {
+          "before": "            {showClosed(context,anchor,items,avoidBounds.map{Rect(it)},selectedLabels.toSet())},",
+          "after": "            {showClosed(context,anchor,items,avoidBounds.map{Rect(it)},selectedLabels.toSet(),submenuLabels.toSet())},"
+        },
+        {
+          "before": "        selectedLabels:Set<String>) {\n        if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return",
+          "after": "        selectedLabels:Set<String>,submenuLabels:Set<String>) {\n        if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return"
+        },
+        {
+          "before": "        fun row(label:String,parent:LinearLayout=rows,click:()->Unit):TextView {",
+          "after": "        fun row(label:String,parent:LinearLayout=rows,navigation:Boolean=false,click:()->Unit):TextView {"
+        },
+        {
+          "before": "                        categoryRow->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}",
+          "after": "                        categoryRow || navigation->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}"
+        },
+        {
+          "before": "        fun action(label:String,run:()->Unit) = row(label) select@{\n            if(active!==popup || !popup.isShowing || pendingAction!=null)return@select",
+          "after": "        var selectedCategory:Int?=null\n        val childPages=mutableListOf<InlinePage>()\n        lateinit var renderRight:()->Unit\n        fun action(label:String,run:()->Unit,subpage:Boolean=false) = row(label,navigation=subpage) select@{\n            if(active!==popup || !popup.isShowing || pendingAction!=null || inlineNavigation!=null)return@select"
+        },
+        {
+          "before": "            io.github.x647368maker.atomicworkbench.logging.NeXtepLog.debug(\"workspace_menu\",\"selection accepted\")",
+          "after": "            if(dualBounds!=null && subpage) {\n                val navigation=InlineNavigation(context,anchor){ next,nextAvoid,nextSubmenus ->\n                    if(active===popup && popup.isShowing && anchor.isAttachedToWindow &&\n                        SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {\n                        // Geometry may change while an old menu is open. Never\n                        // reuse its placement if current protected bounds moved.\n                        if(nextAvoid.any{dualBounds.overlap(it.box())>0L})dismissActive()\n                        else {\n                            childPages.add(InlinePage(label,next,nextSubmenus))\n                            renderRight()\n                        }\n                    }\n                }\n                inlineNavigation=navigation\n                try {\n                    runCatching(run).onFailure {\n                        io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn(\"workspace_menu\",\"Subpage unavailable\",it)\n                        Toast.makeText(context,it.message ?: \"操作未完成，请稍后重试\",Toast.LENGTH_SHORT).show()\n                    }\n                } finally { if(inlineNavigation===navigation)inlineNavigation=null }\n                return@select\n            }\n            io.github.x647368maker.atomicworkbench.logging.NeXtepLog.debug(\"workspace_menu\",\"selection accepted\")"
+        },
+        {
+          "before": "        val categoryButtons=mutableMapOf<Int,TextView>()\n        lateinit var page:(Int?)->Unit",
+          "after": "        renderRight={\n            scroll.animate().cancel()\n            scroll.alpha=1f\n            rows.removeAllViews()\n            scroll.scrollTo(0,0)\n            val child=childPages.lastOrNull()\n            if(child!=null) {\n                row(\"‹  ${child.title}\"){\n                    if(active===popup && popup.isShowing && pendingAction==null &&\n                        anchor.isAttachedToWindow &&\n                        SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {\n                        childPages.removeAt(childPages.lastIndex)\n                        renderRight()\n                    } else dismissActive()\n                }\n                child.items.forEach { action(it.first,it.second,it.first in child.submenuLabels) }\n            } else {\n                items.filter{StageMenuPolicy.group(it.first)==selectedCategory}\n                    .forEach { action(it.first,it.second,it.first in submenuLabels) }\n            }\n        }\n        val categoryButtons=mutableMapOf<Int,TextView>()\n        lateinit var page:(Int?)->Unit"
+        },
+        {
+          "before": "                    items.filter { StageMenuPolicy.group(it.first)==category }.forEach { action(it.first,it.second) }",
+          "after": "                    selectedCategory=category\n                    childPages.clear()\n                    renderRight()"
         }
       ]
     },
@@ -1381,7 +1437,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "1401340df2f11d8bea61fee0793bbd2ff6297c83",
+      "reviewed_blob_sha1": "73c360d85819fde9fcdd7c07b5020b35e4333408",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1443,6 +1499,10 @@
         {
           "before": "        verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),\"phone portrait\")\n        // Same emulator, same four live producers.",
           "after": "        verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),\"phone portrait\")\n        // Exercise the real popup action/dismiss/reopen path used by the\n        // production submenus. Callbacks are fixture counters, not task moves.\n        val submenuCalls=java.util.concurrent.atomic.AtomicInteger(0)\n        val leafCalls=java.util.concurrent.atomic.AtomicInteger(0)\n        val submenuActions=listOf<Pair<String,()->Unit>>(\"固定应用\" to {\n            leafCalls.incrementAndGet();Unit\n        })\n        val chainActions=listOf<Pair<String,()->Unit>>(\"快捷栏样式\" to {\n            submenuCalls.incrementAndGet()\n            AtomicPopupMenu.show(activity,anchor,submenuActions)\n        })\n        fun awaitMenuLabel(label:String) {\n            val until=SystemClock.uptimeMillis()+2000L\n            while(SystemClock.uptimeMillis()<until) {\n                if(inst.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(label)\n                    ?.any { it.text?.toString()==label && it.isVisibleToUser }==true)return\n                Thread.sleep(25L)\n            }\n            error(\"Chained popup label unavailable: $label\")\n        }\n        ui { AtomicPopupMenu.show(activity,anchor,chainActions) };settle()\n        click(\"快捷栏样式\")\n        awaitMenuLabel(\"固定应用\")\n        check(submenuCalls.get()==1 && leafCalls.get()==0)\n        click(\"固定应用\")\n        val chainDeadline=SystemClock.uptimeMillis()+2000L\n        while(leafCalls.get()==0 && SystemClock.uptimeMillis()<chainDeadline)Thread.sleep(25L)\n        check(submenuCalls.get()==1 && leafCalls.get()==1)\n        ui { check(!AtomicPopupMenu.isShowing()) }\n        ui { AtomicPopupMenu.show(activity,anchor,chainActions) };settle()\n        click(\"快捷栏样式\")\n        awaitMenuLabel(\"固定应用\")\n        ui { AtomicPopupMenu.dismissAll() };settle()\n        check(submenuCalls.get()==2 && leafCalls.get()==1)\n        ui { check(!AtomicPopupMenu.isShowing()) }\n        check(textures.toSet()==initial && destroyed==0)\n        record(\"PASS real popup chaining: open, exactly-once leaf dispatch, dismiss without leaf dispatch; producer identities retained\")\n        // Same emulator, same four live producers."
+        },
+        {
+          "before": "            record(\"PASS $viewport grouped menu: persistent categories physically beside actions and clear of protected content\")",
+          "after": "            record(\"PASS $viewport grouped menu: persistent categories physically beside actions and clear of protected content\")\n\n            // The original root and two child levels must share one physical\n            // popup window. Opening/back/category switching are not leaf actions.\n            val accepted=java.util.concurrent.atomic.AtomicInteger(0)\n            val leaf=java.util.concurrent.atomic.AtomicInteger(0)\n            val nested=listOf<Pair<String,()->Unit>>(\"固定应用\" to {leaf.incrementAndGet();Unit})\n            val sub=listOf<Pair<String,()->Unit>>(\"固定应用管理\" to {\n                AtomicPopupMenu.show(menuContext,anchor,nested,listOf(protected))\n            })\n            val inlineActions=actions.map{entry->\n                if(entry.first==\"快捷栏样式\")entry.first to {\n                    accepted.incrementAndGet()\n                    AtomicPopupMenu.show(menuContext,anchor,sub,listOf(protected),\n                        submenuLabels=setOf(\"固定应用管理\"))\n                } else entry\n            }\n            ui { AtomicPopupMenu.show(menuContext,anchor,inlineActions,listOf(protected),\n                submenuLabels=setOf(\"快捷栏样式\")) };settle()\n            click(\"快捷栏与显示\")\n            val windowId=checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId\n            val before=visibleWideRow(\"快捷栏与显示\")\n            fun verifyInline(label:String) {\n                check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==windowId)\n                verifySelectedCategory(\"快捷栏与显示\")\n                check(visibleWideRow(\"快捷栏与显示\")==before)\n                check(visibleWideRow(label).left>=before.right)\n                check(!Rect.intersects(Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen),protected))\n            }\n            click(\"快捷栏样式\");verifyInline(\"固定应用管理\")\n            click(\"固定应用管理\");verifyInline(\"固定应用\")\n            click(\"‹  固定应用管理\");verifyInline(\"固定应用管理\")\n            click(\"‹  快捷栏样式\");verifyInline(\"快捷栏样式\")\n            check(accepted.get()==1 && leaf.get()==0)\n            click(\"快捷栏样式\");click(\"固定应用管理\");verifyInline(\"固定应用\")\n            click(\"窗口布局\");verifySelectedCategory(\"窗口布局\")\n            click(\"快捷栏与显示\");verifyInline(\"快捷栏样式\")\n            click(\"快捷栏样式\");click(\"固定应用管理\");click(\"固定应用\")\n            val inlineDeadline=SystemClock.uptimeMillis()+2000L\n            while(leaf.get()==0 && SystemClock.uptimeMillis()<inlineDeadline)Thread.sleep(25L)\n            check(accepted.get()==3 && leaf.get()==1 && !AtomicPopupMenu.isShowing())\n            ui { AtomicPopupMenu.show(menuContext,anchor,inlineActions,listOf(protected),\n                submenuLabels=setOf(\"快捷栏样式\")) };settle()\n            click(\"快捷栏与显示\");click(\"快捷栏样式\");click(\"固定应用管理\")\n            ui { AtomicPopupMenu.dismissAll() };settle()\n            check(accepted.get()==4 && leaf.get()==1 && !AtomicPopupMenu.isShowing())\n            check(textures.toSet()==initial && destroyed==0)\n            record(\"PASS $viewport inline submenu: same window and left-column bounds, nested back/category reset, exactly-once leaf and cancel; protected content and producers unchanged\")"
         }
       ]
     },

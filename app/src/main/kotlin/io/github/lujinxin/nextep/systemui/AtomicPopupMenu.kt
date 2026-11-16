@@ -17,6 +17,16 @@ import kotlin.math.ceil
 /** A bounded native popup. Local translucent glass fallback; no global dim or blur. */
 internal object AtomicPopupMenu {
     private var active:PopupWindow?=null
+    // Only explicitly declared navigation rows may synchronously open a
+    // child in the currently owned popup. Leaf actions keep dismiss/dispatch.
+    private data class InlineNavigation(
+        val context:Context,val anchor:View,
+        val open:(List<Pair<String,()->Unit>>,List<Rect>,Set<String>)->Unit,
+    )
+    private data class InlinePage(
+        val title:String,val items:List<Pair<String,()->Unit>>,val submenuLabels:Set<String>,
+    )
+    private var inlineNavigation:InlineNavigation?=null
     private val handler=Handler(Looper.getMainLooper())
     private val gate=StagePanelMenuGate({SystemUiPanelMonitor.state()},{SystemClock.uptimeMillis()},
         {delay,action->handler.postDelayed({action()},delay)},::dismissActive)
@@ -53,16 +63,25 @@ internal object AtomicPopupMenu {
     internal fun isShowing()=active?.isShowing==true
     fun onPanelChanged(){gate.panelChanged()}
     fun show(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoidBounds:List<Rect> = emptyList(),
-        selectedLabels:Set<String> = emptySet()) {
+        selectedLabels:Set<String> = emptySet(),submenuLabels:Set<String> = emptySet()) {
         StageRuntimeIdentity.install(context)
         if(items.isEmpty())return
+        inlineNavigation?.let { navigation ->
+            // A synchronous page build may not replace another anchor's popup
+            // or outlive an intervening native panel / workspace dismissal.
+            if(navigation.context===context && navigation.anchor===anchor &&
+                anchor.isAttachedToWindow &&
+                SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED)
+                navigation.open(items.toList(),avoidBounds.map{Rect(it)},submenuLabels.toSet())
+            return
+        }
         SystemUiPanelMonitor.refresh(context)
         gate.request({anchor.isAttachedToWindow},{SystemUiPanelCollapser.tryCollapse(context)},
-            {showClosed(context,anchor,items,avoidBounds.map{Rect(it)},selectedLabels.toSet())},
+            {showClosed(context,anchor,items,avoidBounds.map{Rect(it)},selectedLabels.toSet(),submenuLabels.toSet())},
             {Toast.makeText(context,"请先收起系统通知栏或控制中心，再打开菜单",Toast.LENGTH_SHORT).show()})
     }
     private fun showClosed(context:Context,anchor:View,items:List<Pair<String,()->Unit>>,avoid:List<Rect>,
-        selectedLabels:Set<String>) {
+        selectedLabels:Set<String>,submenuLabels:Set<String>) {
         if(SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED)return
         val density=context.resources.displayMetrics.density
         fun dp(n:Int)=ceil(n*density).toInt()
@@ -178,7 +197,7 @@ internal object AtomicPopupMenu {
                 popup.showAtLocation(anchor,Gravity.TOP or Gravity.LEFT,pos.l,pos.t);initialized=true
             }
         }
-        fun row(label:String,parent:LinearLayout=rows,click:()->Unit):TextView {
+        fun row(label:String,parent:LinearLayout=rows,navigation:Boolean=false,click:()->Unit):TextView {
             val button=TextView(context).apply {
                 text=label;contentDescription=label;textSize=15f;minHeight=dp(48)
                 setTextColor(ink);gravity=Gravity.CENTER_VERTICAL or Gravity.START
@@ -202,7 +221,7 @@ internal object AtomicPopupMenu {
                         isSelected=selected
                     }
                     val marker=when {
-                        categoryRow->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}
+                        categoryRow || navigation->StageMenuLineGlyph(0,2).apply {setBounds(0,0,dp(8),size)}
                         choice->StageMenuLineGlyph(0,if(selected)3 else 4).apply {setBounds(0,0,size,size)}
                         else->null
                     }
@@ -227,11 +246,36 @@ internal object AtomicPopupMenu {
             parent.addView(button,LinearLayout.LayoutParams(-1,-2))
             return button
         }
-        fun action(label:String,run:()->Unit) = row(label) select@{
-            if(active!==popup || !popup.isShowing || pendingAction!=null)return@select
+        var selectedCategory:Int?=null
+        val childPages=mutableListOf<InlinePage>()
+        lateinit var renderRight:()->Unit
+        fun action(label:String,run:()->Unit,subpage:Boolean=false) = row(label,navigation=subpage) select@{
+            if(active!==popup || !popup.isShowing || pendingAction!=null || inlineNavigation!=null)return@select
             if(!anchor.isAttachedToWindow ||
                 SystemUiPanelMonitor.refresh(context)!=StagePanelMenuGate.State.CLOSED) {
                 dismissActive()
+                return@select
+            }
+            if(dualBounds!=null && subpage) {
+                val navigation=InlineNavigation(context,anchor){ next,nextAvoid,nextSubmenus ->
+                    if(active===popup && popup.isShowing && anchor.isAttachedToWindow &&
+                        SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
+                        // Geometry may change while an old menu is open. Never
+                        // reuse its placement if current protected bounds moved.
+                        if(nextAvoid.any{dualBounds.overlap(it.box())>0L})dismissActive()
+                        else {
+                            childPages.add(InlinePage(label,next,nextSubmenus))
+                            renderRight()
+                        }
+                    }
+                }
+                inlineNavigation=navigation
+                try {
+                    runCatching(run).onFailure {
+                        io.github.x647368maker.atomicworkbench.logging.NeXtepLog.warn("workspace_menu","Subpage unavailable",it)
+                        Toast.makeText(context,it.message ?: "操作未完成，请稍后重试",Toast.LENGTH_SHORT).show()
+                    }
+                } finally { if(inlineNavigation===navigation)inlineNavigation=null }
                 return@select
             }
             io.github.x647368maker.atomicworkbench.logging.NeXtepLog.debug("workspace_menu","selection accepted")
@@ -266,6 +310,27 @@ internal object AtomicPopupMenu {
                 }
             })dismissActive()
         }
+        renderRight={
+            scroll.animate().cancel()
+            scroll.alpha=1f
+            rows.removeAllViews()
+            scroll.scrollTo(0,0)
+            val child=childPages.lastOrNull()
+            if(child!=null) {
+                row("‹  ${child.title}"){
+                    if(active===popup && popup.isShowing && pendingAction==null &&
+                        anchor.isAttachedToWindow &&
+                        SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
+                        childPages.removeAt(childPages.lastIndex)
+                        renderRight()
+                    } else dismissActive()
+                }
+                child.items.forEach { action(it.first,it.second,it.first in child.submenuLabels) }
+            } else {
+                items.filter{StageMenuPolicy.group(it.first)==selectedCategory}
+                    .forEach { action(it.first,it.second,it.first in submenuLabels) }
+            }
+        }
         val categoryButtons=mutableMapOf<Int,TextView>()
         lateinit var page:(Int?)->Unit
         page=pageChange@{ category ->
@@ -279,7 +344,9 @@ internal object AtomicPopupMenu {
                         button.setTypeface(null,if(selected)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                         button.setTextColor(Color.WHITE)
                     }
-                    items.filter { StageMenuPolicy.group(it.first)==category }.forEach { action(it.first,it.second) }
+                    selectedCategory=category
+                    childPages.clear()
+                    renderRight()
                 } else if(grouped && category==null) {
                     StageMenuPolicy.groups.forEachIndexed {index,title->
                         if(items.any{StageMenuPolicy.group(it.first)==index})row("$title  ›"){page(index)}

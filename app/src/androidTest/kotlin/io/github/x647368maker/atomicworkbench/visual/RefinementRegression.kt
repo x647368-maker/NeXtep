@@ -254,6 +254,53 @@ internal class RefinementRegression(private val inst:Instrumentation) {
             check(fired.get()==commands.indexOf("添加小窗") && !AtomicPopupMenu.isShowing())
             record("PASS $viewport grouped menu: persistent categories physically beside actions and clear of protected content")
 
+            // The original root and two child levels must share one physical
+            // popup window. Opening/back/category switching are not leaf actions.
+            val accepted=java.util.concurrent.atomic.AtomicInteger(0)
+            val leaf=java.util.concurrent.atomic.AtomicInteger(0)
+            val nested=listOf<Pair<String,()->Unit>>("固定应用" to {leaf.incrementAndGet();Unit})
+            val sub=listOf<Pair<String,()->Unit>>("固定应用管理" to {
+                AtomicPopupMenu.show(menuContext,anchor,nested,listOf(protected))
+            })
+            val inlineActions=actions.map{entry->
+                if(entry.first=="快捷栏样式")entry.first to {
+                    accepted.incrementAndGet()
+                    AtomicPopupMenu.show(menuContext,anchor,sub,listOf(protected),
+                        submenuLabels=setOf("固定应用管理"))
+                } else entry
+            }
+            ui { AtomicPopupMenu.show(menuContext,anchor,inlineActions,listOf(protected),
+                submenuLabels=setOf("快捷栏样式")) };settle()
+            click("快捷栏与显示")
+            val windowId=checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId
+            val before=visibleWideRow("快捷栏与显示")
+            fun verifyInline(label:String) {
+                check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==windowId)
+                verifySelectedCategory("快捷栏与显示")
+                check(visibleWideRow("快捷栏与显示")==before)
+                check(visibleWideRow(label).left>=before.right)
+                check(!Rect.intersects(Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen),protected))
+            }
+            click("快捷栏样式");verifyInline("固定应用管理")
+            click("固定应用管理");verifyInline("固定应用")
+            click("‹  固定应用管理");verifyInline("固定应用管理")
+            click("‹  快捷栏样式");verifyInline("快捷栏样式")
+            check(accepted.get()==1 && leaf.get()==0)
+            click("快捷栏样式");click("固定应用管理");verifyInline("固定应用")
+            click("窗口布局");verifySelectedCategory("窗口布局")
+            click("快捷栏与显示");verifyInline("快捷栏样式")
+            click("快捷栏样式");click("固定应用管理");click("固定应用")
+            val inlineDeadline=SystemClock.uptimeMillis()+2000L
+            while(leaf.get()==0 && SystemClock.uptimeMillis()<inlineDeadline)Thread.sleep(25L)
+            check(accepted.get()==3 && leaf.get()==1 && !AtomicPopupMenu.isShowing())
+            ui { AtomicPopupMenu.show(menuContext,anchor,inlineActions,listOf(protected),
+                submenuLabels=setOf("快捷栏样式")) };settle()
+            click("快捷栏与显示");click("快捷栏样式");click("固定应用管理")
+            ui { AtomicPopupMenu.dismissAll() };settle()
+            check(accepted.get()==4 && leaf.get()==1 && !AtomicPopupMenu.isShowing())
+            check(textures.toSet()==initial && destroyed==0)
+            record("PASS $viewport inline submenu: same window and left-column bounds, nested back/category reset, exactly-once leaf and cancel; protected content and producers unchanged")
+
         }
         verifyDualMenu(wideContext,Rect(m.widthPixels/2,0,m.widthPixels,m.heightPixels),"wide")
         verifyDualMenu(activity,Rect(0,m.heightPixels/2,m.widthPixels,m.heightPixels),"phone portrait")
