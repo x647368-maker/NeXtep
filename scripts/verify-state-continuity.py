@@ -218,9 +218,9 @@ def undo_v86_crossing(path,data):
  assert blob(prior)==spec['previous_blob_sha1'],path
  return prior
 for reviewed_path in v86_crossing_review:
- undo_v86_crossing(reviewed_path,(root/reviewed_path).read_bytes())
+ undo_v86_crossing(reviewed_path,undo_v88(reviewed_path,(root/reviewed_path).read_bytes()))
 def undo_pr87_smooth(path,data):
- data=undo_pr88(path,undo_v86_crossing(path,data))
+ data=undo_v86_crossing(path,undo_pr88(path,data))
  if path not in pr87_smooth_review:return data
  spec=pr87_smooth_review[path]
  source=data.decode('utf-8')
@@ -255,7 +255,7 @@ assert 'fractions[it].first+.001f<baseline[it].first' in _pr86_motion_current
 assert 'fractions[it].second+.001f<baseline[it].second' in _pr86_motion_current
 _pr87=undo_v86_crossing(
  'app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',
- _pr86_motion_current.encode('utf-8')
+ undo_v88('app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',_pr86_motion_current.encode('utf-8'))
 ).decode('utf-8')
 _pr87_swap=(k/'systemui/StageTransientTapSwap.kt').read_text()
 _pr87_controller=(k/'systemui/NeXtepWindowController.kt').read_text()

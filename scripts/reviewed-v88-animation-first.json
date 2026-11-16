@@ -207,7 +207,7 @@
       ]
     },
     "scripts/verify-state-continuity.py": {
-      "reviewed_blob_sha1": "95d0ab70e1c90b28bcd7102015b38923289bf047",
+      "reviewed_blob_sha1": "de2971ff335a4d94573718d71baa809fab7df3ac",
       "previous_blob_sha1": "08b2c78925177e4c05bda90d713e5184a7d3e7f9",
       "patches": [
         {
@@ -229,6 +229,18 @@
         {
           "before": " blob=hashlib.sha1(b'blob '+str(len(prior)).encode()+bytes([0])+prior).hexdigest()\n assert blob==spec['previous_blob_sha1'],path\n return prior\nassert set(final_finish_review)",
           "after": " assert blob(prior)==spec['previous_blob_sha1'],path\n return prior\nfor reviewed_path in v88_review:\n undo_v88(reviewed_path,(root/reviewed_path).read_bytes())\nassert set(final_finish_review)"
+        },
+        {
+          "before": " undo_v86_crossing(reviewed_path,(root/reviewed_path).read_bytes())",
+          "after": " undo_v86_crossing(reviewed_path,undo_v88(reviewed_path,(root/reviewed_path).read_bytes()))"
+        },
+        {
+          "before": " data=undo_pr88(path,undo_v86_crossing(path,data))",
+          "after": " data=undo_v86_crossing(path,undo_pr88(path,data))"
+        },
+        {
+          "before": " _pr86_motion_current.encode('utf-8')\n).decode('utf-8')",
+          "after": " undo_v88('app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageSnapshotMotion.kt',_pr86_motion_current.encode('utf-8'))\n).decode('utf-8')"
         }
       ]
     },
