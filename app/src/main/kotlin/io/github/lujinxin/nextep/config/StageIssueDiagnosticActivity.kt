@@ -191,9 +191,7 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
             segments.addView(button,LinearLayout.LayoutParams(0,dp(52),1f))
         }
         timing.addView(segments)
-        timingNote=line("到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。 · 报告保存在本机",12f).apply {
-            gravity=Gravity.CENTER
-        }
+        timingNote=line("到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。")
         timing.addView(timingNote,LinearLayout.LayoutParams(-1,-2))
         val controls=card()
         controlsHost=controls
@@ -482,6 +480,10 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         val noteParent=if(comprehensive) controlsHost else timingCard
         if(timingNote.parent!==noteParent) {
             (timingNote.parent as? android.view.ViewGroup)?.removeView(timingNote)
+            timingNote.text=if(comprehensive)
+                "到期自动结束 · 不唤醒手机\n报告保存在本机，系统休眠时可能延后生成。"
+            else "到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。"
+            timingNote.gravity=if(comprehensive) Gravity.CENTER else Gravity.START
             noteParent.addView(timingNote,LinearLayout.LayoutParams(-1,-2))
         }
     }
