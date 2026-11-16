@@ -338,6 +338,13 @@ class SlotTaskCoordinator(
             reconciliationAt = 0L
             refreshPolicy.onTaskChanged(SystemClock.uptimeMillis())
             scheduleReconciliation(0L)
+            // setSuspended(true) clears queued Handler callbacks. Preserve a
+            // deferred workspace exit across lock/screen-off and resume it here.
+            if (slotLifecycleGate.isExitPending) {
+                handler.post {
+                    if (active && !suspended && slotLifecycleGate.isExitPending) deactivate()
+                }
+            }
         }
     }
 
