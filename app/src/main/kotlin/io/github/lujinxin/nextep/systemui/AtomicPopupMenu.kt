@@ -4,7 +4,12 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Handler
@@ -17,6 +22,51 @@ import kotlin.math.ceil
 /** A bounded native popup. Local translucent glass fallback; no global dim or blur. */
 internal object AtomicPopupMenu {
     private var active:PopupWindow?=null
+
+    // A local, translucent material: the actual background remains visible.
+    // Optical rim shading is geometry-only, not true background refraction.
+    // No capture, additional window, render loop or full-screen blur.
+    internal fun dualGlassPane(density:Float):GradientDrawable=GlassPane(density)
+
+    private class GlassPane(private val density:Float):GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,intArrayOf(Color.argb(135,81,103,122),
+            Color.argb(170,28,43,59),Color.argb(142,61,83,104))) {
+        private val edge=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE}
+        private val inner=RectF()
+        private val outer=RectF()
+        private val radius=16f*density
+        init { cornerRadius=radius }
+
+        override fun onBoundsChange(bounds:Rect) {
+            super.onBoundsChange(bounds)
+            outer.set(bounds)
+            outer.inset(.55f*density,.55f*density)
+            inner.set(bounds)
+            inner.inset(2.5f*density,2.5f*density)
+            edge.shader=if(bounds.width()>0 && bounds.height()>0)LinearGradient(
+                bounds.left.toFloat(),bounds.top.toFloat(),
+                bounds.right.toFloat(),bounds.bottom.toFloat(),
+                intArrayOf(Color.argb(214,244,252,255),Color.argb(32,214,234,247),
+                    Color.argb(42,210,231,248),Color.argb(197,242,250,255)),
+                floatArrayOf(0f,.32f,.67f,1f),Shader.TileMode.CLAMP) else null
+        }
+
+        override fun draw(canvas:Canvas) {
+            super.draw(canvas)
+            if(outer.isEmpty || edge.shader==null)return
+            // Two soft, directionally lit bevel bands; both lie inside the
+            // existing pane outline. The shader is rebuilt only on bounds change.
+            edge.strokeWidth=3f*density
+            edge.alpha=(alpha*.18f).toInt()
+            if(!inner.isEmpty)canvas.drawRoundRect(inner,(radius-2.5f*density).coerceAtLeast(0f),
+                (radius-2.5f*density).coerceAtLeast(0f),edge)
+            edge.strokeWidth=1.1f*density
+            edge.alpha=alpha
+            canvas.drawRoundRect(outer,(radius-.55f*density).coerceAtLeast(0f),
+                (radius-.55f*density).coerceAtLeast(0f),edge)
+        }
+    }
+
     // Only explicitly declared navigation rows may synchronously open a
     // child in the currently owned popup. Leaf actions keep dismiss/dispatch.
     private data class InlineNavigation(
@@ -135,12 +185,7 @@ internal object AtomicPopupMenu {
         if (dualBounds!=null) {
             // Two independently rounded, translucent panes with a visible
             // glass rim. No screenshot, global blur, or task-window change.
-            fun pane()=GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.argb(154,104,125,143),Color.argb(167,34,49,67),
-                    Color.argb(147,77,98,117))).apply {
-                cornerRadius=dp(16).toFloat()
-                setStroke(dp(1),Color.argb(145,235,248,255))
-            }
+            fun pane()=dualGlassPane(density)
             content.background=android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             content.clipToOutline=false
             categories.setPadding(dp(4),dp(6),dp(4),dp(6))
@@ -231,11 +276,12 @@ internal object AtomicPopupMenu {
                 val selectedGlass=if(dualBounds!=null && parent===categories)
                     android.graphics.drawable.StateListDrawable().apply {
                         addState(intArrayOf(android.R.attr.state_selected),GradientDrawable(
-                            GradientDrawable.Orientation.TL_BR,
-                            intArrayOf(Color.argb(224,37,151,239),Color.argb(205,17,99,201))
+                            GradientDrawable.Orientation.TOP_BOTTOM,
+                            intArrayOf(Color.argb(214,44,166,253),Color.argb(211,18,118,216),
+                                Color.argb(194,21,92,185))
                         ).apply {
                             cornerRadius=dp(12).toFloat()
-                            setStroke(dp(1),Color.argb(172,159,222,255))
+                            setStroke(dp(1),Color.argb(124,186,232,255))
                         })
                         addState(intArrayOf(),android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
                     } else null

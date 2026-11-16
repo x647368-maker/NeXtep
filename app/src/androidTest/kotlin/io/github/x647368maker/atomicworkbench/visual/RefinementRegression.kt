@@ -68,6 +68,22 @@ internal class RefinementRegression(private val inst:Instrumentation) {
     fun run(activity:Activity,root:FrameLayout,out:File):List<String> {
         val log=mutableListOf<String>()
         fun record(s:String){log.add(s);File(out,"refinement-results.txt").writeText(log.joinToString("\n")+"\n")}
+        // Rasterize the exact production material over a transparent bitmap.
+        // This is an alpha/rim contract, not a claim of live optical refraction.
+        ui {
+            val material=AtomicPopupMenu.dualGlassPane(2f)
+            val raster=Bitmap.createBitmap(240,400,Bitmap.Config.ARGB_8888)
+            try {
+                material.setBounds(0,0,raster.width,raster.height)
+                material.draw(Canvas(raster))
+                val center=Color.alpha(raster.getPixel(120,200))
+                check(center in 110..200){"Glass center must transmit underlying content: alpha=$center"}
+                check(Color.alpha(raster.getPixel(0,0))<=12){"Glass corners must remain transparent"}
+                val edge=(0..5).maxOf{y->Color.alpha(raster.getPixel(40,y))}
+                check(edge>center){"Directional rim must have a brighter local edge: $edge vs $center"}
+            } finally { raster.recycle() }
+        }
+        record("PASS production glass material alpha/transparent corners/directional rim raster contract")
         val cards=mutableListOf<TaskSwitcherView>();val surfaces=mutableListOf<Surface>();val textures=mutableListOf<SurfaceTexture>()
         val ready=CountDownLatch(4);var destroyed=0
         lateinit var anchor:TextView

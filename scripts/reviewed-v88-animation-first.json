@@ -862,7 +862,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "5dfce826d3b9fbc79ea9fceae18dbba726c46e06",
+      "reviewed_blob_sha1": "c51d5d0b83e47233ae0e3f94de235458d99efcf9",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -959,6 +959,26 @@
         {
           "before": "                    items.filter { StageMenuPolicy.group(it.first)==category }.forEach { action(it.first,it.second) }",
           "after": "                    selectedCategory=category\n                    childPages.clear()\n                    renderRight()"
+        },
+        {
+          "before": "import android.graphics.Color\nimport android.graphics.Rect",
+          "after": "import android.graphics.Color\nimport android.graphics.Canvas\nimport android.graphics.LinearGradient\nimport android.graphics.Paint\nimport android.graphics.Rect\nimport android.graphics.RectF\nimport android.graphics.Shader"
+        },
+        {
+          "before": "    private var active:PopupWindow?=null\n    // Only explicitly declared navigation rows",
+          "after": "    private var active:PopupWindow?=null\n\n    // A local, translucent material: the actual background remains visible.\n    // Optical rim shading is geometry-only, not true background refraction.\n    // No capture, additional window, render loop or full-screen blur.\n    internal fun dualGlassPane(density:Float):GradientDrawable=GlassPane(density)\n\n    private class GlassPane(private val density:Float):GradientDrawable(\n        Orientation.TL_BR,intArrayOf(Color.argb(135,81,103,122),\n            Color.argb(170,28,43,59),Color.argb(142,61,83,104))) {\n        private val edge=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE}\n        private val inner=RectF()\n        private val outer=RectF()\n        private val radius=16f*density\n        init { cornerRadius=radius }\n\n        override fun onBoundsChange(bounds:Rect) {\n            super.onBoundsChange(bounds)\n            outer.set(bounds)\n            outer.inset(.55f*density,.55f*density)\n            inner.set(bounds)\n            inner.inset(2.5f*density,2.5f*density)\n            edge.shader=if(bounds.width()>0 && bounds.height()>0)LinearGradient(\n                bounds.left.toFloat(),bounds.top.toFloat(),\n                bounds.right.toFloat(),bounds.bottom.toFloat(),\n                intArrayOf(Color.argb(214,244,252,255),Color.argb(32,214,234,247),\n                    Color.argb(42,210,231,248),Color.argb(197,242,250,255)),\n                floatArrayOf(0f,.32f,.67f,1f),Shader.TileMode.CLAMP) else null\n        }\n\n        override fun draw(canvas:Canvas) {\n            super.draw(canvas)\n            if(outer.isEmpty || edge.shader==null)return\n            // Two soft, directionally lit bevel bands; both lie inside the\n            // existing pane outline. The shader is rebuilt only on bounds change.\n            edge.strokeWidth=3f*density\n            edge.alpha=(alpha*.18f).toInt()\n            if(!inner.isEmpty)canvas.drawRoundRect(inner,(radius-2.5f*density).coerceAtLeast(0f),\n                (radius-2.5f*density).coerceAtLeast(0f),edge)\n            edge.strokeWidth=1.1f*density\n            edge.alpha=alpha\n            canvas.drawRoundRect(outer,(radius-.55f*density).coerceAtLeast(0f),\n                (radius-.55f*density).coerceAtLeast(0f),edge)\n        }\n    }\n\n    // Only explicitly declared navigation rows"
+        },
+        {
+          "before": "            fun pane()=GradientDrawable(GradientDrawable.Orientation.TL_BR,\n                intArrayOf(Color.argb(154,104,125,143),Color.argb(167,34,49,67),\n                    Color.argb(147,77,98,117))).apply {\n                cornerRadius=dp(16).toFloat()\n                setStroke(dp(1),Color.argb(145,235,248,255))\n            }",
+          "after": "            fun pane()=dualGlassPane(density)"
+        },
+        {
+          "before": "                            GradientDrawable.Orientation.TL_BR,\n                            intArrayOf(Color.argb(224,37,151,239),Color.argb(205,17,99,201))\n                        ).apply {\n                            cornerRadius=dp(12).toFloat()\n                            setStroke(dp(1),Color.argb(172,159,222,255))\n                        })",
+          "after": "                            GradientDrawable.Orientation.TOP_BOTTOM,\n                            intArrayOf(Color.argb(214,44,166,253),Color.argb(211,18,118,216),\n                                Color.argb(194,21,92,185))\n                        ).apply {\n                            cornerRadius=dp(12).toFloat()\n                            setStroke(dp(1),Color.argb(124,186,232,255))\n                        })"
+        },
+        {
+          "before": "        Orientation.TL_BR,intArrayOf(Color.argb(135,81,103,122),",
+          "after": "        GradientDrawable.Orientation.TL_BR,intArrayOf(Color.argb(135,81,103,122),"
         }
       ]
     },
@@ -1545,7 +1565,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "73c360d85819fde9fcdd7c07b5020b35e4333408",
+      "reviewed_blob_sha1": "b61580df9e1d8602c3752c0dc1bd23a2a9125343",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1611,6 +1631,10 @@
         {
           "before": "            record(\"PASS $viewport grouped menu: persistent categories physically beside actions and clear of protected content\")",
           "after": "            record(\"PASS $viewport grouped menu: persistent categories physically beside actions and clear of protected content\")\n\n            // The original root and two child levels must share one physical\n            // popup window. Opening/back/category switching are not leaf actions.\n            val accepted=java.util.concurrent.atomic.AtomicInteger(0)\n            val leaf=java.util.concurrent.atomic.AtomicInteger(0)\n            val nested=listOf<Pair<String,()->Unit>>(\"固定应用\" to {leaf.incrementAndGet();Unit})\n            val sub=listOf<Pair<String,()->Unit>>(\"固定应用管理\" to {\n                AtomicPopupMenu.show(menuContext,anchor,nested,listOf(protected))\n            })\n            val inlineActions=actions.map{entry->\n                if(entry.first==\"快捷栏样式\")entry.first to {\n                    accepted.incrementAndGet()\n                    AtomicPopupMenu.show(menuContext,anchor,sub,listOf(protected),\n                        submenuLabels=setOf(\"固定应用管理\"))\n                } else entry\n            }\n            ui { AtomicPopupMenu.show(menuContext,anchor,inlineActions,listOf(protected),\n                submenuLabels=setOf(\"快捷栏样式\")) };settle()\n            click(\"快捷栏与显示\")\n            val windowId=checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId\n            val before=visibleWideRow(\"快捷栏与显示\")\n            fun verifyInline(label:String) {\n                check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==windowId)\n                verifySelectedCategory(\"快捷栏与显示\")\n                check(visibleWideRow(\"快捷栏与显示\")==before)\n                check(visibleWideRow(label).left>=before.right)\n                check(!Rect.intersects(Rect().also(checkNotNull(inst.uiAutomation.rootInActiveWindow)::getBoundsInScreen),protected))\n            }\n            click(\"快捷栏样式\");verifyInline(\"固定应用管理\")\n            click(\"固定应用管理\");verifyInline(\"固定应用\")\n            click(\"‹  固定应用管理\");verifyInline(\"固定应用管理\")\n            click(\"‹  快捷栏样式\");verifyInline(\"快捷栏样式\")\n            check(accepted.get()==1 && leaf.get()==0)\n            click(\"快捷栏样式\");click(\"固定应用管理\");verifyInline(\"固定应用\")\n            click(\"窗口布局\");verifySelectedCategory(\"窗口布局\")\n            click(\"快捷栏与显示\");verifyInline(\"快捷栏样式\")\n            click(\"快捷栏样式\");click(\"固定应用管理\");click(\"固定应用\")\n            val inlineDeadline=SystemClock.uptimeMillis()+2000L\n            while(leaf.get()==0 && SystemClock.uptimeMillis()<inlineDeadline)Thread.sleep(25L)\n            check(accepted.get()==3 && leaf.get()==1 && !AtomicPopupMenu.isShowing())\n            ui { AtomicPopupMenu.show(menuContext,anchor,inlineActions,listOf(protected),\n                submenuLabels=setOf(\"快捷栏样式\")) };settle()\n            click(\"快捷栏与显示\");click(\"快捷栏样式\");click(\"固定应用管理\")\n            ui { AtomicPopupMenu.dismissAll() };settle()\n            check(accepted.get()==4 && leaf.get()==1 && !AtomicPopupMenu.isShowing())\n            check(textures.toSet()==initial && destroyed==0)\n            record(\"PASS $viewport inline submenu: same window and left-column bounds, nested back/category reset, exactly-once leaf and cancel; protected content and producers unchanged\")"
+        },
+        {
+          "before": "        fun record(s:String){log.add(s);File(out,\"refinement-results.txt\").writeText(log.joinToString(\"\\n\")+\"\\n\")}\n        val cards=mutableListOf<TaskSwitcherView>()",
+          "after": "        fun record(s:String){log.add(s);File(out,\"refinement-results.txt\").writeText(log.joinToString(\"\\n\")+\"\\n\")}\n        // Rasterize the exact production material over a transparent bitmap.\n        // This is an alpha/rim contract, not a claim of live optical refraction.\n        ui {\n            val material=AtomicPopupMenu.dualGlassPane(2f)\n            val raster=Bitmap.createBitmap(240,400,Bitmap.Config.ARGB_8888)\n            try {\n                material.setBounds(0,0,raster.width,raster.height)\n                material.draw(Canvas(raster))\n                val center=Color.alpha(raster.getPixel(120,200))\n                check(center in 110..200){\"Glass center must transmit underlying content: alpha=$center\"}\n                check(Color.alpha(raster.getPixel(0,0))<=12){\"Glass corners must remain transparent\"}\n                val edge=(0..5).maxOf{y->Color.alpha(raster.getPixel(40,y))}\n                check(edge>center){\"Directional rim must have a brighter local edge: $edge vs $center\"}\n            } finally { raster.recycle() }\n        }\n        record(\"PASS production glass material alpha/transparent corners/directional rim raster contract\")\n        val cards=mutableListOf<TaskSwitcherView>()"
         }
       ]
     },
