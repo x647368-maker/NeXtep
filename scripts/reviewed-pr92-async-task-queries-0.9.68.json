@@ -551,6 +551,18 @@
         {
           "before": "            row.addView(icon,LinearLayout.LayoutParams(dp(46),dp(46)).apply{marginEnd=dp(13)})",
           "after": "            row.addView(icon,LinearLayout.LayoutParams(dp(42),dp(42)).apply{marginEnd=dp(12)})"
+        },
+        {
+          "before": "    private lateinit var timingCard: LinearLayout\n    private var advancedExpanded",
+          "after": "    private lateinit var timingCard: LinearLayout\n    private lateinit var timingNote: TextView\n    private lateinit var controlsHost: LinearLayout\n    private var advancedExpanded"
+        },
+        {
+          "before": "        timing.addView(line(\"到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。\"))\n        val controls=card()\n        status=line(\"\")",
+          "after": "        timingNote=line(\"到期自动结束 · 不唤醒手机。系统休眠时报告可能延后生成。 · 报告保存在本机\",12f).apply {\n            gravity=Gravity.CENTER\n        }\n        timing.addView(timingNote,LinearLayout.LayoutParams(-1,-2))\n        val controls=card()\n        controlsHost=controls\n        status=line(\"\")"
+        },
+        {
+          "before": "    // Only reparent the existing duration controls when the visible mode changes.\n    // The selected value, callbacks, token and deadline are untouched.\n    private fun placeTiming(id:String?) {\n        if(!::timingCard.isInitialized || !::scopeHost.isInitialized)return\n        val comprehensive=StageIssueTestCatalog.find(id).id==\"all\"\n        val target=if(comprehensive) scopeHost else bodyHost\n        if(timingCard.parent===target)return\n        (timingCard.parent as? android.view.ViewGroup)?.removeView(timingCard)\n        val density=resources.displayMetrics.density\n        fun dp(n:Int)=(n*density).toInt()\n        val index=if(comprehensive) scopeHost.indexOfChild(scope) else bodyHost.indexOfChild(scopeHost)+1\n        timingCard.setPadding(dp(if(comprehensive) 0 else 16),dp(10),dp(if(comprehensive) 0 else 16),dp(10))\n        target.addView(timingCard,index.coerceIn(0,target.childCount),\n            LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(if(comprehensive) 0 else 10)})\n    }",
+          "after": "    // Only reparent existing view groups when the visible mode changes.\n    // Session, selection, callbacks, token, duration and deadline are untouched.\n    private fun placeTiming(id:String?) {\n        if(!::timingCard.isInitialized || !::scopeHost.isInitialized ||\n            !::controlsHost.isInitialized || !::timingNote.isInitialized)return\n        val comprehensive=StageIssueTestCatalog.find(id).id==\"all\"\n        val target=if(comprehensive) scopeHost else bodyHost\n        val density=resources.displayMetrics.density\n        fun dp(n:Int)=(n*density).toInt()\n        fun move(card:LinearLayout,index:Int) {\n            if(card.parent===target)return\n            (card.parent as? android.view.ViewGroup)?.removeView(card)\n            card.setPadding(dp(if(comprehensive) 0 else 16),dp(10),dp(if(comprehensive) 0 else 16),dp(10))\n            target.addView(card,index.coerceIn(0,target.childCount),\n                LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(if(comprehensive) 0 else 10)})\n        }\n        move(timingCard,if(comprehensive) scopeHost.indexOfChild(scope) else bodyHost.indexOfChild(scopeHost)+1)\n        move(controlsHost,if(comprehensive) scopeHost.indexOfChild(scope)+1 else bodyHost.indexOfChild(timingCard)+1)\n        val noteParent=if(comprehensive) controlsHost else timingCard\n        if(timingNote.parent!==noteParent) {\n            (timingNote.parent as? android.view.ViewGroup)?.removeView(timingNote)\n            noteParent.addView(timingNote,LinearLayout.LayoutParams(-1,-2))\n        }\n    }"
         }
       ]
     },
@@ -749,6 +761,18 @@
         {
           "before": "        identity.addView(label(\"二次开发：ZMW小武 × GPT\",11f,secondary))\n        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))",
           "after": "        identity.addView(label(\"二次开发：ZMW小武 × GPT\",11f,secondary))\n        identity.addView(label(\"基于 NeXtep 二次开发\",10f,secondary))\n        footer.addView(identity,LinearLayout.LayoutParams(0,-2,1f))"
+        },
+        {
+          "before": "    private fun surface() = GradientDrawable().apply { setColor(cardColor); cornerRadius = dp(if (page == \"home\") 20 else 24).toFloat() }",
+          "after": "    // Static glass-like palette, confined to the confirmed settings pages.\n    // No capture, blur, RenderEffect, animation or background rendering.\n    private fun frostedPage() = page == \"home\" || StageHomeLayout.sectionIndex(page) != null ||\n        page in setOf(\"windows\", \"core\", \"groups\", \"gestures\", \"tile\", \"issue_specialties\", \"feedback\", \"about\")\n    private fun settingsBackdrop() = GradientDrawable(\n        GradientDrawable.Orientation.TL_BR,\n        if (dark) intArrayOf(0xFF181A22.toInt(),0xFF20232E.toInt(),0xFF171920.toInt())\n        else intArrayOf(0xFFF2F3FA.toInt(),0xFFE4E7F2.toInt(),0xFFEEF0F8.toInt())\n    )\n    private fun surface() = GradientDrawable().apply {\n        setColor(if (!frostedPage()) cardColor else if (dark) 0xD92B2E38.toInt() else 0xCFFFFFFF.toInt())\n        cornerRadius = dp(if (page == \"home\") 20 else 24).toFloat()\n    }"
+        },
+        {
+          "before": "        } else {\n            view.setBackgroundColor(backgroundColor)\n            activity.window.statusBarColor = originalStatusBarColor",
+          "after": "        } else {\n            if (frostedPage()) view.background = settingsBackdrop() else view.setBackgroundColor(backgroundColor)\n            activity.window.statusBarColor = originalStatusBarColor"
+        },
+        {
+          "before": "        if (parent.childCount > 0) parent.addView(View(activity).apply { setBackgroundColor(dividerColor) },",
+          "after": "        if (parent.childCount > 0) parent.addView(View(activity).apply {\n            setBackgroundColor(if (frostedPage() && !dark) 0xCCDADDEA.toInt() else dividerColor)\n        },"
         }
       ]
     },

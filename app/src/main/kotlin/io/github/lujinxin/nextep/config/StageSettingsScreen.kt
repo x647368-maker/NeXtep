@@ -75,7 +75,19 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private fun label(s: String, size: Float = 16f, color: Int = ink) = TextView(activity).apply {
         text = s; textSize = size; setTextColor(color); includeFontPadding = false
     }
-    private fun surface() = GradientDrawable().apply { setColor(cardColor); cornerRadius = dp(if (page == "home") 20 else 24).toFloat() }
+    // Static glass-like palette, confined to the confirmed settings pages.
+    // No capture, blur, RenderEffect, animation or background rendering.
+    private fun frostedPage() = page == "home" || StageHomeLayout.sectionIndex(page) != null ||
+        page in setOf("windows", "core", "groups", "gestures", "tile", "issue_specialties", "feedback", "about")
+    private fun settingsBackdrop() = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        if (dark) intArrayOf(0xFF181A22.toInt(),0xFF20232E.toInt(),0xFF171920.toInt())
+        else intArrayOf(0xFFF2F3FA.toInt(),0xFFE4E7F2.toInt(),0xFFEEF0F8.toInt())
+    )
+    private fun surface() = GradientDrawable().apply {
+        setColor(if (!frostedPage()) cardColor else if (dark) 0xD92B2E38.toInt() else 0xCFFFFFFF.toInt())
+        cornerRadius = dp(if (page == "home") 20 else 24).toFloat()
+    }
     private fun toast(s: String) { if (!activity.isDestroyed) Toast.makeText(activity, s, Toast.LENGTH_LONG).show() }
     private fun hint(s: String) = label(s, 12f, secondary).apply {
         setLineSpacing(dp(3).toFloat(), 1f); setPadding(dp(16), dp(12), dp(16), dp(4))
@@ -86,7 +98,9 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     }
     private fun row(parent: LinearLayout, title: String, detail: String? = null, icon: String? = null,
         color: Int = blue, end: View? = null, action: (() -> Unit)? = null): View {
-        if (parent.childCount > 0) parent.addView(View(activity).apply { setBackgroundColor(dividerColor) },
+        if (parent.childCount > 0) parent.addView(View(activity).apply {
+            setBackgroundColor(if (frostedPage() && !dark) 0xCCDADDEA.toInt() else dividerColor)
+        },
             LinearLayout.LayoutParams(-1, dp(1).coerceAtLeast(1)).apply { marginStart = dp(if (icon != null) 56 else 18); marginEnd = dp(18) })
         return LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -141,7 +155,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             activity.window.decorView.systemUiVisibility = originalSystemUiFlags and
                 (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR).inv()
         } else {
-            view.setBackgroundColor(backgroundColor)
+            if (frostedPage()) view.background = settingsBackdrop() else view.setBackgroundColor(backgroundColor)
             activity.window.statusBarColor = originalStatusBarColor
             activity.window.navigationBarColor = originalNavigationBarColor
             activity.window.decorView.systemUiVisibility = originalSystemUiFlags

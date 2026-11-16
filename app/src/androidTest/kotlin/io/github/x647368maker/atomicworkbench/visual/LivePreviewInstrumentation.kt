@@ -27,12 +27,14 @@ import java.util.concurrent.TimeUnit
 class LivePreviewInstrumentation : Instrumentation() {
     private var nativeMirrorOnly = false
     private var diagnosticOnly = false
+    private var uiVisualOnly = false
     private var nativeFlightOnly = false
     private var pairedFlightOnly = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         nativeMirrorOnly = arguments?.getString("nativeMirrorOnly") == "true"
         diagnosticOnly = arguments?.getString("diagnosticOnly") == "true"
+        uiVisualOnly = arguments?.getString("uiVisualOnly") == "true"
         nativeFlightOnly = arguments?.getString("nativeFlightOnly") == "true"
         pairedFlightOnly = arguments?.getString("pairedFlightOnly") == "true"
         start()
@@ -40,7 +42,15 @@ class LivePreviewInstrumentation : Instrumentation() {
     override fun onStart() {
         val result=Bundle()
         try {
-            check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
+            check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly, uiVisualOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
+            if(uiVisualOnly) {
+                val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
+                val status=StageIssueUiRegression(this).runVisualEvidence(out)
+                check(status.startsWith("PASS actual Android UI visual evidence"))
+                result.putString("stream",status+"\nUI_VISUAL_EVIDENCE_PASS\n")
+                finish(Activity.RESULT_OK,result)
+                return
+            }
             if (diagnosticOnly) {
                 val out=File(targetContext.filesDir,"visual-regression").apply { mkdirs() }
                 val status=StageIssueUiRegression(this).run(out)
