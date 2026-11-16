@@ -480,7 +480,7 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                 "about" to "关于与使用帮助"
             )
             for((route,title) in pages){
-                ui{homeScroll().fullScroll(View.FOCUS_UP)}
+                ui{homeScroll().fullScroll(if(route=="feedback" || route=="about") View.FOCUS_DOWN else View.FOCUS_UP)}
                 await("home navigation target visible $title"){visibleText(title)}
                 clickLabel(activity,title)
                 await("real secondary page $route"){hasText(activity,title)}
