@@ -48,6 +48,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
     private var settingSwitch = false
     private var wideLayout = false
     private var navigationScroll: ScrollView? = null
+    private var detailScroll: ScrollView? = null
     private var navigationY = 0
     var page = "home"
         private set
@@ -142,6 +143,8 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         return true
     }
     fun open(target: String) {
+        val anchorY = detailScroll?.scrollY?.takeIf { target == page }
+        detailScroll = null
         navigationScroll?.let { navigationY = it.scrollY }
         navigationScroll = null
         body = null; stateText = null; master = null
@@ -249,6 +252,17 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
         val scroll = ScrollView(activity).apply {
             isVerticalScrollBarEnabled = false; clipToPadding = false; isFillViewport = true
             addView(columnHost, ViewGroup.LayoutParams(-1, -2))
+        }
+        detailScroll = scroll
+        if (anchorY != null && anchorY > 0) {
+            scroll.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(v: View, left: Int, top: Int, right: Int, bottom: Int,
+                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {
+                    if (bottom <= top || right <= left) return
+                    scroll.removeOnLayoutChangeListener(this)
+                    if (detailScroll === scroll) scroll.scrollTo(0, anchorY)
+                }
+            })
         }
         if (wideLayout) {
             val split = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
@@ -411,7 +425,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             "tile" to "控制中心开关、智能隐藏等",
             "issue_all" to "记录有效诊断事件",
             "issue_specialties" to "五大专项、历史报告与导出")
-        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,ink){
+        for(item in section.items) row(card,item.name,descriptions[item.page],item.icon,blue){
             if(item.page=="issue_all")launchIssue("all") else{
                 open(item.page)
                 if(item.page in listOf("core","windows","groups"))refresh()
@@ -450,7 +464,7 @@ internal class StageSettingsScreen(private val activity: AppCompatActivity, priv
             root.addView(heading)
             val card = group(root)
             for (item in section.items) {
-                val entry = row(card, item.name, icon = item.icon, color = if (wideLayout) blue else ink) {
+                val entry = row(card, item.name, icon = item.icon, color = blue) {
                 if (item.page == "issue_all") launchIssue("all") else {
                     open(item.page)
                     if (item.page in listOf("core", "windows", "groups")) refresh()

@@ -275,6 +275,32 @@
         }
       ],
       "reviewed_blob_sha1": "11a28f4148c79b9c36ff59cf445fea18ef5ace17"
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
+      "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",
+      "reviewed_blob_sha1": "6d01d733059dba4e4414376cbba268c909df84fc",
+      "patches": [
+        {
+          "before": "    private var navigationScroll: ScrollView? = null",
+          "after": "    private var navigationScroll: ScrollView? = null\n    private var detailScroll: ScrollView? = null"
+        },
+        {
+          "before": "        navigationScroll?.let { navigationY = it.scrollY }\n        navigationScroll = null",
+          "after": "        val anchorY = detailScroll?.scrollY?.takeIf { target == page }\n        detailScroll = null\n        navigationScroll?.let { navigationY = it.scrollY }\n        navigationScroll = null"
+        },
+        {
+          "before": "        if (wideLayout) {\n            val split = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }",
+          "after": "        detailScroll = scroll\n        if (anchorY != null && anchorY > 0) {\n            scroll.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {\n                override fun onLayoutChange(v: View, left: Int, top: Int, right: Int, bottom: Int,\n                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {\n                    if (bottom <= top || right <= left) return\n                    scroll.removeOnLayoutChangeListener(this)\n                    if (detailScroll === scroll) scroll.scrollTo(0, anchorY)\n                }\n            })\n        }\n        if (wideLayout) {\n            val split = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }"
+        },
+        {
+          "before": "row(card,item.name,descriptions[item.page],item.icon,ink)",
+          "after": "row(card,item.name,descriptions[item.page],item.icon,blue)"
+        },
+        {
+          "before": "color = if (wideLayout) blue else ink",
+          "after": "color = blue"
+        }
+      ]
     }
   }
 }
