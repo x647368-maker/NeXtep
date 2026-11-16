@@ -170,6 +170,21 @@ class StageConcurrentNativeTrialPolicyTest {
         assertTrue(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,43L))
     }
 
+    @Test fun onlyCommittedIdenticalNonterminalProgressIsRedundant() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(concurrent in listOf(false,true))
+            for(first in listOf(false,true))
+                for(terminal in listOf(false,true)) {
+                    val expected=concurrent && first && !terminal
+                    assertEquals(expected,p.unchangedFlightFrame(concurrent,first,terminal,0f,0f))
+                    assertEquals(expected,p.unchangedFlightFrame(concurrent,first,terminal,.25f,.25f))
+                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,.25f,.250001f))
+                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,0f,.000001f))
+                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,Float.NaN,Float.NaN))
+                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY))
+                }
+    }
+
     @Test fun terminalFrameDoesNotNeedAnimatorEndAndCannotBePremature() {
         val p=StageConcurrentNativeTrialPolicy
         assertFalse(p.terminalFrameDue(300,360,.98f,true,45))

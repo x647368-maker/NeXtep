@@ -228,9 +228,13 @@
         {
           "before": "    fun movePresentation(firstCommitted:Boolean,terminalRequired:Boolean,\n                         terminalCommitted:Boolean):MovePresentation =\n        if(firstCommitted && (!terminalRequired || terminalCommitted))\n            MovePresentation.ANIMATED else MovePresentation.UNMASKED",
           "after": "    /** Only a pristine, still-owned GPU attempt may hand off before its first submitted frame. */\n    fun canFallbackBeforeFirstGpuFrame(current:Boolean,hostAttached:Boolean,\n                                        sourceReady:Boolean,moveStarted:Boolean,\n                                        submittedFrames:Int):Boolean =\n        current && hostAttached && sourceReady && !moveStarted && submittedFrames==0\n\n    fun movePresentation(firstCommitted:Boolean,terminalRequired:Boolean,\n                         terminalCommitted:Boolean):MovePresentation =\n        if(firstCommitted && (!terminalRequired || terminalCommitted))\n            MovePresentation.ANIMATED else MovePresentation.UNMASKED"
+        },
+        {
+          "before": "    // A terminal geometry submission is explicit; never rely solely on\n    // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI.",
+          "after": "    // A committed initial frame or previously submitted identical progress\n    // already owns this exact transform. Keep live producer updates and all\n    // distinct motion; never skip an explicit terminal receipt transaction.\n    fun unchangedFlightFrame(concurrent:Boolean, firstCommitted:Boolean, terminal:Boolean,\n                             last:Float, next:Float):Boolean =\n        concurrent && firstCommitted && !terminal && last.isFinite() &&\n            next.isFinite() && last == next\n\n    // A terminal geometry submission is explicit; never rely solely on\n    // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI."
         }
       ],
-      "reviewed_blob_sha1": "5005ac28bee96caeafb18c91f1eddf04a401e9a9"
+      "reviewed_blob_sha1": "bd114aa06a647952da69fd4977093e6b7e407867"
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicyTest.kt": {
       "previous_blob_sha1": "a3352b04384b04666ad3fb3847ab39a0503c2077",
@@ -238,9 +242,13 @@
         {
           "before": "    @Test fun maskedHandoffRequiresCompositorAcknowledgement() {",
           "after": "    @Test fun firstGpuCommitFailureCanFallbackOnlyBeforeAnyFrameOrTaskMove() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(current in listOf(false,true))\n            for(attached in listOf(false,true))\n                for(source in listOf(false,true))\n                    for(moved in listOf(false,true))\n                        for(frames in listOf(-1,0,1)) {\n                            val expected=current && attached && source && !moved && frames==0\n                            assertEquals(expected,p.canFallbackBeforeFirstGpuFrame(\n                                current,attached,source,moved,frames))\n                        }\n    }\n    @Test fun maskedHandoffRequiresCompositorAcknowledgement() {"
+        },
+        {
+          "before": "    @Test fun terminalFrameDoesNotNeedAnimatorEndAndCannotBePremature() {",
+          "after": "    @Test fun onlyCommittedIdenticalNonterminalProgressIsRedundant() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(concurrent in listOf(false,true))\n            for(first in listOf(false,true))\n                for(terminal in listOf(false,true)) {\n                    val expected=concurrent && first && !terminal\n                    assertEquals(expected,p.unchangedFlightFrame(concurrent,first,terminal,0f,0f))\n                    assertEquals(expected,p.unchangedFlightFrame(concurrent,first,terminal,.25f,.25f))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,.25f,.250001f))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,0f,.000001f))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,Float.NaN,Float.NaN))\n                    assertFalse(p.unchangedFlightFrame(concurrent,first,terminal,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY))\n                }\n    }\n\n    @Test fun terminalFrameDoesNotNeedAnimatorEndAndCannotBePremature() {"
         }
       ],
-      "reviewed_blob_sha1": "d226c72c8f5559678c1fccfcc74d708b7dc59e44"
+      "reviewed_blob_sha1": "e31aaf575ec1672113c687665bd4c449fa94cd8a"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
       "previous_blob_sha1": "bd8569f0fd711d87da1443016063d39bf2e98ad8",
@@ -304,9 +312,21 @@
         {
           "before": "                        \" over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+",
           "after": "                        \" over_8333us=$submitOver120HzBudget over_16667us=$submitOver60HzBudget\")\n                if(nativeFrameCount>0) trace(\n                    \"gpu_parts n=$nativeFrameCount prep_us=${maxPrepareNanos / 1000}\"+\n                        \" apply_us=${maxApplyNanos / 1000} prep8=$prepareOver120HzBudget\"+\n                        \" apply8=$applyOver120HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+"
+        },
+        {
+          "before": "    private var lastProgress = 0f\n    private var nativeFrameCount = 0",
+          "after": "    private var lastProgress = 0f\n    private var unchangedFrameSkips = 0\n    private var nativeFrameCount = 0"
+        },
+        {
+          "before": "        fun submitFlightFrame(fraction: Float,terminal:Boolean=false): Boolean {\n            if (!isRunning) return false\n            if(hostDetached || !host.isAttachedToWindow){stop();return false}\n            return runCatching {",
+          "after": "        fun submitFlightFrame(fraction: Float,terminal:Boolean=false): Boolean {\n            if (!isRunning) return false\n            if(hostDetached || !host.isAttachedToWindow){stop();return false}\n            if(StageConcurrentNativeTrialPolicy.unchangedFlightFrame(\n                    concurrentHandoff,firstTransactionCommitted,terminal,lastProgress,fraction)) {\n                // The initial transaction has already committed progress 0.\n                // Later exact duplicates also need no new compositor submit.\n                // Do not count skipped callbacks as actual transaction frames.\n                unchangedFrameSkips++\n                return true\n            }\n            return runCatching {"
+        },
+        {
+          "before": "                        \" apply8=$applyOver120HzBudget\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+",
+          "after": "                        \" apply8=$applyOver120HzBudget\")\n                if(nativeFrameCount>0) trace(\"gpu_unchanged_skipped=$unchangedFrameSkips\")\n                if(concurrentHandoff) trace(\"endpoint_rebase up=\"+incomingRebased.get()+"
         }
       ],
-      "reviewed_blob_sha1": "f097f114044e1c2f065f8f05a840984b7653595c"
+      "reviewed_blob_sha1": "a4c28d249833d15236328a7dd74108a650368bac"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",

@@ -132,6 +132,14 @@ internal object StageConcurrentNativeTrialPolicy {
         if(firstCommitted && (!terminalRequired || terminalCommitted))
             MovePresentation.ANIMATED else MovePresentation.UNMASKED
 
+    // A committed initial frame or previously submitted identical progress
+    // already owns this exact transform. Keep live producer updates and all
+    // distinct motion; never skip an explicit terminal receipt transaction.
+    fun unchangedFlightFrame(concurrent:Boolean, firstCommitted:Boolean, terminal:Boolean,
+                             last:Float, next:Float):Boolean =
+        concurrent && firstCommitted && !terminal && last.isFinite() &&
+            next.isFinite() && last == next
+
     // A terminal geometry submission is explicit; never rely solely on
     // AnimatorListenerAdapter.onAnimationEnd on vendor SystemUI.
     fun terminalFrameDue(playTimeMs: Long, durationMs: Long, fraction: Float,

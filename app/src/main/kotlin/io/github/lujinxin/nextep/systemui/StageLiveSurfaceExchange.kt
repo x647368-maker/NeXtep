@@ -168,6 +168,7 @@ internal class StageLiveSurfaceExchange private constructor(
     private var concurrentHandoff = false
     private var finishCallback: (() -> Unit)? = null
     private var lastProgress = 0f
+    private var unchangedFrameSkips = 0
     private var nativeFrameCount = 0
     private var firstTransactionCommitted = false
     private var terminalTransactionCommitted = false
@@ -668,6 +669,14 @@ internal class StageLiveSurfaceExchange private constructor(
         fun submitFlightFrame(fraction: Float,terminal:Boolean=false): Boolean {
             if (!isRunning) return false
             if(hostDetached || !host.isAttachedToWindow){stop();return false}
+            if(StageConcurrentNativeTrialPolicy.unchangedFlightFrame(
+                    concurrentHandoff,firstTransactionCommitted,terminal,lastProgress,fraction)) {
+                // The initial transaction has already committed progress 0.
+                // Later exact duplicates also need no new compositor submit.
+                // Do not count skipped callbacks as actual transaction frames.
+                unchangedFrameSkips++
+                return true
+            }
             return runCatching {
                 val submitStarted=SystemClock.elapsedRealtimeNanos()
                 val frame=frameTransaction ?: error("Flight transaction is unavailable")
@@ -1068,6 +1077,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     "gpu_parts n=$nativeFrameCount prep_us=${maxPrepareNanos / 1000}"+
                         " apply_us=${maxApplyNanos / 1000} prep8=$prepareOver120HzBudget"+
                         " apply8=$applyOver120HzBudget")
+                if(nativeFrameCount>0) trace("gpu_unchanged_skipped=$unchangedFrameSkips")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
                 NeXtepLog.info("native_swap",
