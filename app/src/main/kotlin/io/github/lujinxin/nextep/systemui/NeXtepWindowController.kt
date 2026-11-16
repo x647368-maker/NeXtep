@@ -2181,6 +2181,7 @@ class NeXtepWindowController(
         moveAsync: ((Boolean) -> Unit) -> Unit,
         canRelease: () -> Boolean,
         onFinished: () -> Unit,
+        onVisualUnavailable: ((String) -> Boolean)? = null,
     ): Boolean {
         val traceId=StageExchangeTelemetry.currentNativeTapId()
         val visible=workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked
@@ -2339,6 +2340,20 @@ class NeXtepWindowController(
                 if(flush && workspaceVisible && !suspended) scheduleWindowRefresh()
                 onFinished()
                 if(workspaceVisible && !suspended) scheduleStageFocus()
+            },
+            onVisualUnavailable={ reason ->
+                // The native engine has already hidden/released its uncommitted
+                // mirrors without finishing the coordinator. Transfer this same
+                // tap to the next backend; never run two visual owners together.
+                liveSurfaceExchange=null
+                slot.view.endExchangePreview()
+                activeSwapViewport=g
+                previewCapturePending=false
+                val accepted=runCatching { onVisualUnavailable?.invoke(reason) ?: false }
+                    .getOrDefault(false)
+                if(!accepted) StageExchangeTelemetry.nativeEvent(
+                    "live_gpu_visual_fallback_rejected:$reason",traceId)
+                accepted
             }
         )
         if (!started) {
@@ -2563,19 +2578,34 @@ class NeXtepWindowController(
             // The real task coordinator remains the sole owner of migration,
             // identity checks and rollback. A rejected visual backend must not
             // turn a successful task swap into an abrupt no-animation fallback.
+            val workspacePreviewFallback: (String) -> Boolean = { reason ->
+                StageExchangeTelemetry.nativeEvent(
+                    "tap_workspace_preview_fallback:$reason",tapTraceId)
+                runCatching {
+                    previewCapturePending=false
+                    activeSwapViewport=geometry()
+                    animateSwapPrepared(sourceIndex,targetIndex,drag,move,
+                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)
+                    true
+                }.getOrDefault(false)
+            }
+            val renderThreadFallback: (String) -> Boolean = { reason ->
+                StageExchangeTelemetry.nativeEvent(
+                    "tap_renderthread_fallback:$reason",tapTraceId)
+                val accepted=tryTransientTapSwap(sourceIndex,phasedMove,canRelease,
+                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)
+                if(!accepted) {
+                    previewCapturePending=false
+                    activeSwapViewport=geometry()
+                    workspacePreviewFallback(reason)
+                } else true
+            }
             if (StagePrivateDualTaskFlightGate.enabled() &&
-                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return
+                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished,
+                    onVisualUnavailable=renderThreadFallback)) return
             if (StageTransientTapPolicy.snapshotFallbackEnabled() &&
-                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished,
-                    onVisualUnavailable={ reason ->
-                        StageExchangeTelemetry.nativeEvent(
-                            "tap_workspace_preview_fallback:$reason",tapTraceId)
-                        runCatching {
-                            animateSwapPrepared(sourceIndex,targetIndex,drag,move,
-                                tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)
-                            true
-                        }.getOrDefault(false)
-                    })) return
+                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,
+                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)) return
 
             StageExchangeTelemetry.nativeEvent("tap_animation_fallback:workspace_preview",tapTraceId)
             NeXtepLog.warn("swap_latency",
