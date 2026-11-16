@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "c3cfea9ebec0f192dd7372d3d9da351644a4b28c",
+      "reviewed_blob_sha1": "ccb75458177a9d39ec3d3fd0b4f217ef8f0cb9e4",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -85,6 +85,14 @@
         {
           "before": "            if (StagePrivateDualTaskFlightGate.enabled() &&\n                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished)) return\n            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&\n                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished,\n                    onVisualUnavailable={ reason ->\n                        StageExchangeTelemetry.nativeEvent(\n                            \"tap_workspace_preview_fallback:$reason\",tapTraceId)\n                        runCatching {\n                            animateSwapPrepared(sourceIndex,targetIndex,drag,move,\n                                tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)\n                            true\n                        }.getOrDefault(false)\n                    })) return",
           "after": "            val workspacePreviewFallback: (String) -> Boolean = { reason ->\n                StageExchangeTelemetry.nativeEvent(\n                    \"tap_workspace_preview_fallback:$reason\",tapTraceId)\n                runCatching {\n                    previewCapturePending=false\n                    activeSwapViewport=geometry()\n                    animateSwapPrepared(sourceIndex,targetIndex,drag,move,\n                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)\n                    true\n                }.getOrDefault(false)\n            }\n            val renderThreadFallback: (String) -> Boolean = { reason ->\n                StageExchangeTelemetry.nativeEvent(\n                    \"tap_renderthread_fallback:$reason\",tapTraceId)\n                val accepted=tryTransientTapSwap(sourceIndex,phasedMove,canRelease,\n                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)\n                if(!accepted) {\n                    previewCapturePending=false\n                    activeSwapViewport=geometry()\n                    workspacePreviewFallback(reason)\n                } else true\n            }\n            if (StagePrivateDualTaskFlightGate.enabled() &&\n                tryConcurrentLiveSwap(sourceIndex,phasedMove,canRelease,onFinished,\n                    onVisualUnavailable=renderThreadFallback)) return\n            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&\n                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,\n                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)) return"
+        },
+        {
+          "before": "                val accepted=tryTransientTapSwap(sourceIndex,phasedMove,canRelease,\n                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)\n                if(!accepted) {",
+          "after": "                val accepted=tryTransientTapSwap(sourceIndex,phasedMove,canRelease,\n                    onFinished,workspacePreviewFallback)\n                if(!accepted) {"
+        },
+        {
+          "before": "            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&\n                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,\n                    tapFallbackFinish ?: onFinished,workspacePreviewFallback)) return",
+          "after": "            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&\n                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,\n                    onFinished,workspacePreviewFallback)) return"
         }
       ]
     },
