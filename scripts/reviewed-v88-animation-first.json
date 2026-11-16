@@ -331,12 +331,16 @@
       ]
     },
     "app/src/main/resources/META-INF/xposed/module.prop": {
-      "reviewed_blob_sha1": "eb0b5665a3c587a8e476bc570e1c0fa3750c8815",
+      "reviewed_blob_sha1": "6cc185847f34857f2726c8faa37661147cd8ec5d",
       "previous_blob_sha1": "fc8fbe686aa99024f25b82177a4323b07cdf871a",
       "patches": [
         {
           "before": "id=atomic_workbench\nname=台前调度\nversion=0.9.72-dev\nversionCode=87\nauthor=x647368-maker; based on lujinxin/NeXtep\ndescription=Experimental four-slot Android workspace; device validation pending\nminApiVersion=101\ntargetApiVersion=102",
           "after": "id=atomic_workbench\nname=台前调度\nversion=0.9.73-dev\nversionCode=88\nauthor=x647368-maker; based on lujinxin/NeXtep\ndescription=Experimental four-slot Android workspace; animation-first v88 development\nminApiVersion=101\ntargetApiVersion=102"
+        },
+        {
+          "before": "version=0.9.73-dev\nversionCode=88\nauthor=x647368-maker; based on lujinxin/NeXtep\ndescription=Experimental four-slot Android workspace; animation-first v88 development",
+          "after": "version=0.9.74-dev\nversionCode=89\nauthor=x647368-maker; based on lujinxin/NeXtep\ndescription=Experimental four-slot Android workspace; animation and glass menu v89 test candidate"
         }
       ]
     },
