@@ -28,7 +28,7 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
 }
 
 // Explicit private debug-build A/B switch; normal and release builds retain
-// the existing snapshot path. Release identity is declared in defaultConfig.
+// the existing snapshot path. No version or signing change.
 val atomicNativeSurfaceTrial = providers.gradleProperty("atomicNativeSurfaceTrial")
     .map { it == "true" }.getOrElse(false)
 val atomicPairedRailTrial = providers.gradleProperty("atomicPairedRailTrial")

@@ -593,6 +593,10 @@
         {
           "before": "\n    buildTypes {\n        getByName(\"debug\") {\n            // Missing private key permits compile/test validation, never a temporary signature.\n            signingConfig = if (System.getenv(\"ATOMIC_SIGNING_READY\") == \"true\") signingConfigs.getByName(\"debug\") else null\n        }",
           "after": "\n    buildTypes {\n        getByName(\"debug\") {\n            buildConfigField(\"boolean\", \"ATOMIC_NATIVE_SURFACE_TRIAL\", atomicNativeSurfaceTrial.toString())\n            buildConfigField(\"boolean\", \"ATOMIC_PAIRED_RAIL_TRIAL\", atomicPairedRailTrial.toString())\n            // Missing private key permits compile/test validation, never a temporary signature.\n            signingConfig = if (System.getenv(\"ATOMIC_SIGNING_READY\") == \"true\") signingConfigs.getByName(\"debug\") else null\n        }"
+        },
+        {
+          "before": "        versionCode = 86\n        versionName = \"0.9.71-dev\"",
+          "after": "        versionCode = 87\n        versionName = \"0.9.72-dev\""
         }
       ]
     },
