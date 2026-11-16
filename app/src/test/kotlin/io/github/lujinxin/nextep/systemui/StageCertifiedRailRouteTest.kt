@@ -61,4 +61,72 @@ class StageCertifiedRailRouteTest {
         assertNull(StageCertifiedRailRoute.choose(small,main,incoming,outgoing,screen,
             listOf(Box(0f,0f,1272f,2772f),Box(190f,0f,410f,2772f)),false))
     }
+
+    /** Representative geometry matrix, not physical device certification.
+     * Rejected optional routes MUST leave the previously admitted path intact. */
+    @Test fun certifiedRoutesAcrossThreeRailsAndSixFormFactors() {
+        val canvases=listOf(1272 to 2772,2772 to 1272,2248 to 2480,2480 to 2248,
+            2560 to 1600,1600 to 2560)
+        var attempts=0
+        var admitted=0
+        for((width,height) in canvases) for(rail in listOf("left","right","top"))
+            for(n in 1..4) for(selected in 0 until n) for(mode in 0..1) {
+                val w=width.toFloat();val h=height.toFloat()
+                val inset=16f;val gap=12f
+                val sw=if(rail=="top")
+                    kotlin.math.floor((w-2*inset-(n-1)*gap)/n).coerceAtMost(kotlin.math.floor(w*.25f))
+                    else kotlin.math.floor(w*.20f)
+                val sh=if(rail=="top")kotlin.math.floor(h*.21f)
+                    else kotlin.math.floor((h-2*inset-(n-1)*gap)/n).coerceAtMost(kotlin.math.floor(h*.245f))
+                val total=if(rail=="top")n*sw+(n-1)*gap else n*sh+(n-1)*gap
+                val slots=(0 until n).map { i ->
+                    if(rail=="top") {
+                        val x=kotlin.math.floor((w-total)/2)+i*(sw+gap)
+                        Box(x,inset,x+sw,inset+sh)
+                    } else {
+                        val y=kotlin.math.floor((h-total)/2)+i*(sh+gap)
+                        val x=if(rail=="left")inset else w-inset-sw
+                        Box(x,y,x+sw,y+sh)
+                    }
+                }
+                val large=when(rail) {
+                    "top"->Box(inset,inset+sh+gap,w-inset,h-inset)
+                    "left"->Box(inset+sw+gap,inset,w-inset,h-inset)
+                    else->Box(inset,inset,w-inset-sw-gap,h-inset)
+                }
+                val selectedBox=slots[selected]
+                val obstacles=slots.filterIndexed { i,_ -> i!=selected }
+                val a=Crop(0,0,selectedBox.width.toInt(),selectedBox.height.toInt())
+                val b=if(mode==0)Crop(0,0,large.width.toInt(),large.height.toInt())
+                    else Crop(0,0,width,height)
+                attempts++
+                if(!g.corridorAvoidsOtherSlots(selectedBox,large,a.right,a.bottom,obstacles,
+                        mainCropWidth=b.right,mainCropHeight=b.bottom))continue
+                val covered=g.canUseCoveredFlight(selectedBox,large,a,b,obstacles)
+                val plan=StageCertifiedRailRoute.choose(selectedBox,large,a,b,Box(0f,0f,w,h),
+                    obstacles,covered)?:continue
+                admitted++
+                assertTrue(plan.bound<=.35)
+                val first=plan.at(0f);val last=plan.at(1f)
+                assertTrue(g.endpointGapPx(first.incoming,g.mirrorFrame(selectedBox,large,a,0f,covered)!!.box)<=2f)
+                assertTrue(g.endpointGapPx(first.outgoing,g.mirrorFrame(large,selectedBox,b,0f,covered)!!.box)<=2f)
+                assertTrue(g.endpointGapPx(last.incoming,g.mirrorFrame(selectedBox,large,a,1f,covered)!!.box)<=2f)
+                assertTrue(g.endpointGapPx(last.outgoing,g.mirrorFrame(large,selectedBox,b,1f,covered)!!.box)<=2f)
+                for(i in 0..1000) {
+                    val k=plan.at(i/1000f)
+                    assertTrue(StageCertifiedRailRoute.overlapFraction(k.incoming,k.outgoing)<=.3501)
+                    for((card,root,ratio) in listOf(
+                        Triple(k.incoming,first.incoming,a.right.toFloat()/a.bottom),
+                        Triple(k.outgoing,first.outgoing,b.right.toFloat()/b.bottom))) {
+                        assertTrue(card.left>=-.01f && card.top>=-.01f && card.right<=w+.01f && card.bottom<=h+.01f)
+                        assertEquals(ratio,card.width/card.height,.0005f)
+                        for(o in obstacles)assertTrue(g.peakSweptOverlap(card,card,o)<=g.peakSweptOverlap(root,root,o)+1.05)
+                    }
+                }
+            }
+        assertEquals(360,attempts)
+        // Prevent a future always-reject implementation from making the
+        // safety tests vacuously green; don't require unsafe admission.
+        assertTrue(admitted>=150)
+    }
 }

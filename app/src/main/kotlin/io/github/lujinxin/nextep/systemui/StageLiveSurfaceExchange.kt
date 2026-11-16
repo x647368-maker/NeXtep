@@ -68,8 +68,10 @@ internal class StageLiveSurfaceExchange private constructor(
         obstacles:List<StageLiveSurfaceFlightGeometry.Box>,
     ):Boolean {
         if(finished.get() || isRunning || coveredFlight)return false
-        pairedRailPlan=planPairedRail(slotStart,mainStart,incomingGeometryCrop,
-            outgoingGeometryCrop,screen,obstacles)
+        // Exercise the same default geometric admission as the production
+        // factory; the separate test clock is intentionally not a phone budget.
+        pairedRailPlan=StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
+            outgoingGeometryCrop,screen,obstacles,oldCovered=false)
         return pairedRailPlan!=null
     }
     private val ui = Handler(Looper.getMainLooper())
@@ -365,9 +367,13 @@ internal class StageLiveSurfaceExchange private constructor(
                     // retain margin for source identity/occlusion and the
                     // existing outer 28ms total preparation admission.
                     val deadline=minOf(setupStarted+20_000_000L,began+4_000_000L)
-                    StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,
-                        StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),
-                        obstacles,oldCovered) { SystemClock.elapsedRealtimeNanos()<deadline }.also { plan ->
+                    runCatching {
+                        StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,
+                            StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat()),
+                            obstacles,oldCovered) { SystemClock.elapsedRealtimeNanos()<deadline }
+                    }.onFailure {
+                        StageExchangeTelemetry.nativeEvent("certified_pair_planner_rejected")
+                    }.getOrNull().also { plan ->
                         StageExchangeTelemetry.nativeEvent("certified_pair_us="+
                             (SystemClock.elapsedRealtimeNanos()-began)/1000L+" accepted="+(plan!=null))
                     }
