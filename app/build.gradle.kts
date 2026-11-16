@@ -27,10 +27,11 @@ tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.con
     dependsOn(embedCurrentReleaseNotes, embedReleaseHistory)
 }
 
-// Explicit private debug-build A/B switch; normal and release builds retain
-// the existing snapshot path. No version or signing change.
+// v88 development builds try the live dual-task Surface flight first.
+// Its runtime capability, first-commit, preparation-time and power gates remain
+// authoritative. Release variants keep the defaultConfig flag set to false.
 val atomicNativeSurfaceTrial = providers.gradleProperty("atomicNativeSurfaceTrial")
-    .map { it == "true" }.getOrElse(false)
+    .map { it == "true" }.getOrElse(true)
 val atomicPairedRailTrial = providers.gradleProperty("atomicPairedRailTrial")
     .map { it == "true" }.getOrElse(false) && atomicNativeSurfaceTrial
 
