@@ -15,7 +15,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "67595d2e5209f16b09874553bbeadaf8ae0c2ae3",
+      "reviewed_blob_sha1": "cdb1c9dd3492e47f20854b6aadc9cb1c52bb3db9",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -61,6 +61,18 @@
         {
           "before": "                deferredSwapGeometryRefresh = false\n                if (flush) scheduleWindowRefresh()\n                onFinished()\n            },\n        )",
           "after": "                deferredSwapGeometryRefresh = false\n                if (flush) scheduleWindowRefresh()\n                effectiveOnFinished()\n            },\n        )"
+        },
+        {
+          "before": "    private fun tryTransientTapSwap(\n        slotIndex:Int, moveAsync:((Boolean)->Unit)->Unit,\n        canRelease:()->Boolean, onFinished:()->Unit,\n    ):Boolean {",
+          "after": "    private fun tryTransientTapSwap(\n        slotIndex:Int, moveAsync:((Boolean)->Unit)->Unit,\n        canRelease:()->Boolean, onFinished:()->Unit,\n        onVisualUnavailable:((String)->Boolean)?=null,\n    ):Boolean {"
+        },
+        {
+          "before": "            mainBackdrop=matchingWallpaperFrame(g)?.let {\n                WorkspaceWallpaperBackdrop.crop(it,0,0,0,wallpaperRotation,g.displayRotation)\n            },\n            onFinished={",
+          "after": "            mainBackdrop=matchingWallpaperFrame(g)?.let {\n                WorkspaceWallpaperBackdrop.crop(it,0,0,0,wallpaperRotation,g.displayRotation)\n            },\n            onVisualUnavailable={ reason ->\n                previewCapturePending=false\n                activeSwapViewport=g\n                val accepted=runCatching { onVisualUnavailable?.invoke(reason) ?: false }\n                    .getOrDefault(false)\n                if(!accepted) StageExchangeTelemetry.nativeEvent(\n                    \"snapshot_workspace_preview_rejected:$reason\",traceId)\n                accepted\n            },\n            onFinished={"
+        },
+        {
+          "before": "            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&\n                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return",
+          "after": "            if (StageTransientTapPolicy.snapshotFallbackEnabled() &&\n                tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished,\n                    onVisualUnavailable={ reason ->\n                        StageExchangeTelemetry.nativeEvent(\n                            \"tap_workspace_preview_fallback:$reason\",tapTraceId)\n                        runCatching {\n                            animateSwapPrepared(sourceIndex,targetIndex,drag,move,\n                                tapFallbackFinish ?: onFinished,null,asyncMove,canRelease)\n                            true\n                        }.getOrDefault(false)\n                    })) return"
         }
       ]
     },
@@ -85,12 +97,16 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt": {
-      "reviewed_blob_sha1": "5697233c959bc42d547852a55579f8c20731ecd5",
+      "reviewed_blob_sha1": "396b1fdba1db10b5dc99df58145d7a118fc224b1",
       "previous_blob_sha1": "5041ec241992b3bb3a88f1661855d05704e3add1",
       "patches": [
         {
           "before": "package io.github.x647368maker.atomicworkbench.systemui\n\n/** Per-tap only. No background capture, refresh or repeating idle timer. */\ninternal object StageTransientTapPolicy {\n    // Mutually exclusive backends: ordinary builds retain snapshots.\n    fun privateTrialEnabled():Boolean=!StagePrivateDualTaskFlightGate.enabled()\n    const val CAPTURE_BUDGET_MS=160L\n    const val FIRST_COMMIT_BUDGET_MS=110L",
           "after": "package io.github.x647368maker.atomicworkbench.systemui\n\n/**\n * Per-tap only. No background capture, refresh or repeating idle timer.\n *\n * v88 route order is live SurfaceControl flight -> short-lived RenderThread\n * snapshot flight -> existing WorkspaceSwapAnimator preview. The snapshot\n * renderer remains a bounded fallback even when the live GPU route is enabled.\n */\ninternal object StageTransientTapPolicy {\n    fun snapshotFallbackEnabled(): Boolean = true\n    const val CAPTURE_BUDGET_MS=160L\n    const val FIRST_COMMIT_BUDGET_MS=110L"
+        },
+        {
+          "before": "    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged",
+          "after": "    /** A failed preview may hand back to the established workspace animator only\n     * while this attempt still owns the tap and before any real task move starts. */\n    fun canFallbackToWorkspacePreview(current:Boolean,moveStarted:Boolean,valid:Boolean):Boolean =\n        current && !moveStarted && valid\n\n    fun canHandoff(flightDone:Boolean,moveAcknowledged:Boolean):Boolean=flightDone && moveAcknowledged"
         }
       ]
     },
@@ -105,12 +121,16 @@
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicyTest.kt": {
-      "reviewed_blob_sha1": "39cdf73dab8b0a4fda02abb2a942c3d9ff9cc973",
+      "reviewed_blob_sha1": "1e79c704777cade1558fc0a2573efaf4590244c2",
       "previous_blob_sha1": "df51ba28dd1d32b13066eaf05af523df643d20b9",
       "patches": [
         {
           "before": "\nclass StageTransientTapPolicyTest {\n    @Test fun nativeTrialAndSnapshotRoutesAreMutuallyExclusive() {\n        val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL\n        assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())\n        assertEquals(!requested,StageTransientTapPolicy.privateTrialEnabled())\n    }\n    @Test fun onlyCommittedValidFirstFrameMayStartRealMove() {",
           "after": "\nclass StageTransientTapPolicyTest {\n    @Test fun liveGpuPrimaryDoesNotDisableRenderThreadSnapshotFallback() {\n        val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL\n        assertTrue(\"v88 debug APK must exercise the live GPU path by default\",requested)\n        assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())\n        assertTrue(\"A failed or unsupported live mirror must retain the bounded RenderThread fallback\",\n            StageTransientTapPolicy.snapshotFallbackEnabled())\n    }\n    @Test fun onlyCommittedValidFirstFrameMayStartRealMove() {"
+        },
+        {
+          "before": "    @Test fun flightAndActualOwnershipAckMustBothComplete() {",
+          "after": "    @Test fun workspacePreviewFallbackIsAllowedOnlyBeforeMoveWithCurrentIdentity() {\n        val p=StageTransientTapPolicy\n        for(current in listOf(false,true)) for(started in listOf(false,true))\n            for(valid in listOf(false,true)) {\n                assertEquals(current && !started && valid,\n                    p.canFallbackToWorkspacePreview(current,started,valid))\n            }\n    }\n    @Test fun flightAndActualOwnershipAckMustBothComplete() {"
         }
       ]
     },
@@ -127,6 +147,28 @@
           "after": " undo_pr79(reviewed_path,undo_pr80(reviewed_path,undo_pr81(reviewed_path,undo_pr82(reviewed_path,undo_pr83(reviewed_path,undo_pr84(reviewed_path,undo_pr85(reviewed_path,(root/reviewed_path).read_bytes())))))))\n_pr79_controller=(k/'systemui/NeXtepWindowController.kt').read_text()\nassert 'if (StagePrivateDualTaskFlightGate.enabled() &&' in _pr79_controller\nassert 'if (StageTransientTapPolicy.snapshotFallbackEnabled() &&' in _pr79_controller\nassert 'tryTransientTapSwap(sourceIndex,phasedMove,canRelease,onFinished)) return' in _pr79_controller\nassert 'tap_animation_fallback:workspace_preview' in _pr79_controller\nassert 'transientTapSwap.cancel()' in _pr79_controller\n_pr79_owned=(k/'framework/TaskSurfaceCompat.kt').read_text().split('internal fun captureObservedSwapPreview(',1)[1].split('/** Ownership of the result',1)[0]"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapSwap.kt": {
+      "previous_blob_sha1": "7e9489d8aedeedea5beea0f653ce5a68f5006908",
+      "patches": [
+        {
+          "before": "              mainReady:()->Boolean={false},mainBackdrop:Drawable?=null):Boolean {",
+          "after": "              mainReady:()->Boolean={false},mainBackdrop:Drawable?=null,\n              onVisualUnavailable:((String)->Boolean)?=null):Boolean {"
+        },
+        {
+          "before": "            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady,mainBackdrop)",
+          "after": "            Rect(slotCrop),Rect(mainCrop),backdrop,valid,moveAsync,liveReady,trace,onFinished,onVisualStart,onVisualEnd,mainReady,mainBackdrop,onVisualUnavailable)"
+        },
+        {
+          "before": "        val mainBackdrop:Drawable?,\n    ) {",
+          "after": "        val mainBackdrop:Drawable?,val onVisualUnavailable:((String)->Boolean)?,\n    ) {"
+        },
+        {
+          "before": "        private fun direct(why:String){\n            if(!current() || moveStarted)return\n            trace(\"snapshot_fallback:\"+why)\n            removeVisual()\n            fallback=true\n            flightDone=true\n            requestMove()\n        }",
+          "after": "        private fun direct(why:String){\n            if(!current() || moveStarted)return\n            // A visual failure before migration is not automatically a reason\n            // to cut directly to the real-task swap. Retire this attempt and\n            // let the established workspace animator take over on the same tap.\n            if (StageTransientTapPolicy.canFallbackToWorkspacePreview(\n                    current(),moveStarted,stillValid()) && onVisualUnavailable!=null) {\n                waitingCapture=false\n                waitingCommit=false\n                host.removeOnAttachStateChangeListener(attachmentListener)\n                ui.removeCallbacks(captureTimeout)\n                ui.removeCallbacks(commitTimeout)\n                ui.removeCallbacks(lifetime)\n                host.removeCallbacks(checkHandoff)\n                removeVisual()\n                trace(\"snapshot_workspace_preview_fallback:\"+why)\n                val accepted=runCatching { onVisualUnavailable.invoke(why) }.getOrDefault(false)\n                if(accepted) {\n                    active=null\n                    return\n                }\n            }\n            trace(\"snapshot_fallback:\"+why)\n            removeVisual()\n            fallback=true\n            flightDone=true\n            requestMove()\n        }"
+        }
+      ],
+      "reviewed_blob_sha1": "757a29bbe41d4486b1a5b3b844bbf12393d32316"
     }
   }
 }
