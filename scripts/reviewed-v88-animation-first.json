@@ -1,5 +1,19 @@
 {
   "files": {
+    "app/build.gradle.kts": {
+      "reviewed_blob_sha1": "846d2b053517a767ab894dbba277c03e9846f8f5",
+      "previous_blob_sha1": "6bd058b2dccb8a11f9cde1b51dd4551f95549e4b",
+      "patches": [
+        {
+          "before": "}\n\n// Explicit private debug-build A/B switch; normal and release builds retain\n// the existing snapshot path. No version or signing change.\nval atomicNativeSurfaceTrial = providers.gradleProperty(\"atomicNativeSurfaceTrial\")\n    .map { it == \"true\" }.getOrElse(false)\nval atomicPairedRailTrial = providers.gradleProperty(\"atomicPairedRailTrial\")\n    .map { it == \"true\" }.getOrElse(false) && atomicNativeSurfaceTrial",
+          "after": "}\n\n// v88 development builds try the live dual-task Surface flight first.\n// Its runtime capability, first-commit, preparation-time and power gates remain\n// authoritative. Release variants keep the defaultConfig flag set to false.\nval atomicNativeSurfaceTrial = providers.gradleProperty(\"atomicNativeSurfaceTrial\")\n    .map { it == \"true\" }.getOrElse(true)\nval atomicPairedRailTrial = providers.gradleProperty(\"atomicPairedRailTrial\")\n    .map { it == \"true\" }.getOrElse(false) && atomicNativeSurfaceTrial"
+        },
+        {
+          "before": "        buildConfigField(\"boolean\", \"ATOMIC_NATIVE_SURFACE_TRIAL\", \"false\")\n        buildConfigField(\"boolean\", \"ATOMIC_PAIRED_RAIL_TRIAL\", \"false\")\n        versionCode = 87\n        versionName = \"0.9.72-dev\"\n        testInstrumentationRunner = \"io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation\"\n",
+          "after": "        buildConfigField(\"boolean\", \"ATOMIC_NATIVE_SURFACE_TRIAL\", \"false\")\n        buildConfigField(\"boolean\", \"ATOMIC_PAIRED_RAIL_TRIAL\", \"false\")\n        versionCode = 88\n        versionName = \"0.9.73-dev\"\n        testInstrumentationRunner = \"io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation\"\n"
+        }
+      ]
+    },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
       "reviewed_blob_sha1": "67595d2e5209f16b09874553bbeadaf8ae0c2ae3",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
@@ -47,6 +61,56 @@
         {
           "before": "                deferredSwapGeometryRefresh = false\n                if (flush) scheduleWindowRefresh()\n                onFinished()\n            },\n        )",
           "after": "                deferredSwapGeometryRefresh = false\n                if (flush) scheduleWindowRefresh()\n                effectiveOnFinished()\n            },\n        )"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePrivateDualTaskFlightGate.kt": {
+      "reviewed_blob_sha1": "b565d1b72aad05f636b07bd5268aa8d01d94be4b",
+      "previous_blob_sha1": "65d5ad2064c711ae3fba16e8762dce3c97fa94d8",
+      "patches": [
+        {
+          "before": "\n/**\n * Private, explicit debug build A/B. Ordinary builds keep the existing\n * transient preview path; release variants cannot enable this experiment.\n * The legacy full-screen native gate remains independently disabled.\n */",
+          "after": "\n/**\n * v88 development builds enable the live dual-task Surface flight as the\n * primary tap animation. Gradle keeps the release BuildConfig flag false.\n * Runtime visibility, animator, power, mirror, first-commit and preparation\n * budgets remain authoritative; snapshot RenderThread motion is still fallback.\n * The legacy full-screen native gate remains independently disabled.\n */"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt": {
+      "reviewed_blob_sha1": "47a11afa49c54bfd74637b80186df1b1592e204e",
+      "previous_blob_sha1": "800279847aa044557674ff97ad990dd9baf161d2",
+      "patches": [
+        {
+          "before": "/** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */\ninternal object StageRuntimeIdentity {\n    const val BUILD = \"0.9.72-dev/87\"\n    const val ACTION = \"io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_30\"\n    const val AUDIT_ACTION=\"io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1\"",
+          "after": "/** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */\ninternal object StageRuntimeIdentity {\n    const val BUILD = \"0.9.73-dev/88\"\n    const val ACTION = \"io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_30\"\n    const val AUDIT_ACTION=\"io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1\""
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicy.kt": {
+      "reviewed_blob_sha1": "5697233c959bc42d547852a55579f8c20731ecd5",
+      "previous_blob_sha1": "5041ec241992b3bb3a88f1661855d05704e3add1",
+      "patches": [
+        {
+          "before": "package io.github.x647368maker.atomicworkbench.systemui\n\n/** Per-tap only. No background capture, refresh or repeating idle timer. */\ninternal object StageTransientTapPolicy {\n    // Mutually exclusive backends: ordinary builds retain snapshots.\n    fun privateTrialEnabled():Boolean=!StagePrivateDualTaskFlightGate.enabled()\n    const val CAPTURE_BUDGET_MS=160L\n    const val FIRST_COMMIT_BUDGET_MS=110L",
+          "after": "package io.github.x647368maker.atomicworkbench.systemui\n\n/**\n * Per-tap only. No background capture, refresh or repeating idle timer.\n *\n * v88 route order is live SurfaceControl flight -> short-lived RenderThread\n * snapshot flight -> existing WorkspaceSwapAnimator preview. The snapshot\n * renderer remains a bounded fallback even when the live GPU route is enabled.\n */\ninternal object StageTransientTapPolicy {\n    fun snapshotFallbackEnabled(): Boolean = true\n    const val CAPTURE_BUDGET_MS=160L\n    const val FIRST_COMMIT_BUDGET_MS=110L"
+        }
+      ]
+    },
+    "app/src/main/resources/META-INF/xposed/module.prop": {
+      "reviewed_blob_sha1": "eb0b5665a3c587a8e476bc570e1c0fa3750c8815",
+      "previous_blob_sha1": "fc8fbe686aa99024f25b82177a4323b07cdf871a",
+      "patches": [
+        {
+          "before": "id=atomic_workbench\nname=台前调度\nversion=0.9.72-dev\nversionCode=87\nauthor=x647368-maker; based on lujinxin/NeXtep\ndescription=Experimental four-slot Android workspace; device validation pending\nminApiVersion=101\ntargetApiVersion=102",
+          "after": "id=atomic_workbench\nname=台前调度\nversion=0.9.73-dev\nversionCode=88\nauthor=x647368-maker; based on lujinxin/NeXtep\ndescription=Experimental four-slot Android workspace; animation-first v88 development\nminApiVersion=101\ntargetApiVersion=102"
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageTransientTapPolicyTest.kt": {
+      "reviewed_blob_sha1": "39cdf73dab8b0a4fda02abb2a942c3d9ff9cc973",
+      "previous_blob_sha1": "df51ba28dd1d32b13066eaf05af523df643d20b9",
+      "patches": [
+        {
+          "before": "\nclass StageTransientTapPolicyTest {\n    @Test fun nativeTrialAndSnapshotRoutesAreMutuallyExclusive() {\n        val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL\n        assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())\n        assertEquals(!requested,StageTransientTapPolicy.privateTrialEnabled())\n    }\n    @Test fun onlyCommittedValidFirstFrameMayStartRealMove() {",
+          "after": "\nclass StageTransientTapPolicyTest {\n    @Test fun liveGpuPrimaryDoesNotDisableRenderThreadSnapshotFallback() {\n        val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL\n        assertTrue(\"v88 debug APK must exercise the live GPU path by default\",requested)\n        assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())\n        assertTrue(\"A failed or unsupported live mirror must retain the bounded RenderThread fallback\",\n            StageTransientTapPolicy.snapshotFallbackEnabled())\n    }\n    @Test fun onlyCommittedValidFirstFrameMayStartRealMove() {"
         }
       ]
     },
