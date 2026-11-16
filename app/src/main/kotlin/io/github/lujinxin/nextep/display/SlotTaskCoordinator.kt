@@ -496,7 +496,9 @@ class SlotTaskCoordinator(
                         .setComponent(previous.component).putExtra(TriggerBroadcastContract.EXTRA_TARGET_USER,
                             android.os.UserHandle::class.java.getMethod("of", Int::class.javaPrimitiveType)
                                 .invoke(null, current.userId) as android.os.UserHandle)
-                    assignIntent(index, rollback, previous.taskId, lease)
+                    assignIntent(
+                        index, rollback, previous.taskId, lease, preferredTaskIdentity = current,
+                    )
                 }
                 assigned
             } else assignIntent(index, normalized, lifecycleLease = lease)
@@ -528,10 +530,16 @@ class SlotTaskCoordinator(
         val normalized = normalizeLaunchIntent(sourceIntent)
             ?: return Result.failure(IllegalArgumentException("App does not resolve to a launcher Activity"))
         val component = checkNotNull(normalized.component)
-        val existing = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
+        val preferredTask = preferredTaskId?.let(taskRepository::findTask)?.takeIf {
             it.component.packageName == component.packageName &&
                 it.userId == normalized.targetUser()?.let(io.github.x647368maker.atomicworkbench.framework.TaskInfoCompat::userIdentifier)
-        } ?: findLaunchTask(component, normalized.targetUser())
+        }
+        if (preferredTaskIdentity != null && !sameTaskIdentity(preferredTaskIdentity, preferredTask)) {
+            return Result.failure(IllegalStateException("原任务身份已变化，拒绝将其他任务作为替换回滚"))
+        }
+        val existing = preferredTask ?: if (preferredTaskIdentity == null) {
+            findLaunchTask(component, normalized.targetUser())
+        } else null
 
         return runTransition("open main component=$component") {
             val currentMain = taskRepository.foregroundTask()
@@ -1357,6 +1365,7 @@ class SlotTaskCoordinator(
         sourceIntent: Intent,
         preferredTaskId: Int? = null,
         lifecycleLease: StageSlotLifecycleGate.Lease? = null,
+        preferredTaskIdentity: TaskRepository.TaskSnapshot? = null,
     ): Result<Unit> {
         if (!validActiveSlot(slotIndex, lifecycleLease)) {
             return Result.failure(IllegalStateException("Slot $slotIndex is unavailable"))
@@ -1431,10 +1440,12 @@ class SlotTaskCoordinator(
                 var originalLayout = sourceSlot.takeIf { it >= 0 }
                     ?.let { slotRecords[it].originalLayout }
                     ?: defaultMainLayout(existing.resizeMode)
-                var moved = false
                 try {
                     mainTaskPresenter.restoreForMove(existing.taskId).getOrThrow()
                     restoredTask = taskRepository.findTask(existing.taskId) ?: existing
+                    check(sameTaskIdentity(existing, restoredTask)) {
+                        "Task identity changed before slot assignment task=${existing.taskId}"
+                    }
                     originalLayout = if (sourceSlot >= 0) {
                         slotRecords[sourceSlot].originalLayout
                     } else {
@@ -1444,17 +1455,20 @@ class SlotTaskCoordinator(
                         existing.taskId,
                         TASK_RESIZE_MODE_RESIZEABLE,
                     ).getOrThrow()
-                    moveTaskToDisplayAndWait(existing.taskId, targetDisplayId)
-                    moved = true
+                    moveTaskToDisplayAndWait(
+                        existing.taskId, targetDisplayId, expectedIdentity = restoredTask,
+                    )
                     slotRecords[slotIndex].originalLayout = originalLayout
                     ensureSlotLayout(slotIndex, restoredTask, originalLayout)
                 } catch (error: Throwable) {
                     slotRecords[slotIndex].originalLayout = null
-                    if (moved) {
+                    val observedAfterFailure = taskRepository.findTask(existing.taskId)
+                    if (sameTaskIdentity(restoredTask, observedAfterFailure) &&
+                        observedAfterFailure?.displayId != existing.displayId
+                    ) {
                         runCatching {
                             moveTaskToDisplayAndWait(
-                                existing.taskId,
-                                existing.displayId,
+                                existing.taskId, existing.displayId, expectedIdentity = restoredTask,
                             )
                             if (sourceSlot >= 0) {
                                 ensureSlotLayout(sourceSlot, restoredTask, originalLayout)
