@@ -1122,23 +1122,41 @@ class SlotTaskCoordinator(
                 if (park.isFailure) {
                     NeXtepLog.warn("slot_close", "WCT parking unavailable task=${task.taskId}; trying native move",park.exceptionOrNull())
                 }
-                // Native Shell WCT is async. Avoid the old immediate-check race.
-                val settled = if (park.isSuccess) waitForSlotDismissDisplay(task.taskId) else false
-                if (SlotDismissDecisionPolicy.nativeFallbackRequired(
-                        settled, taskRepository.findTask(task.taskId)?.displayId)) {
-                    // On some ColorOS/Vector builds the default TaskDisplayArea
-                    // hook is unavailable. A real task move is the safe fallback:
-                    // NEVER removeTask(), kill the app, or fake a preview frame.
-                    usedBinderFallback = true
-                    moveTaskToDisplayAndWait(task.taskId, Display.DEFAULT_DISPLAY)
-                    check(SlotDismissDecisionPolicy.mayPublishVacantSlot(
-                        taskRepository.findTask(task.taskId)?.displayId)) {
-                        "系统未能将应用移回后台（task=${task.taskId}）"
+                // A WCT reply is not a task handoff. Require the same task identity
+                // (task id + user + token, or package when token is unavailable)
+                // to be observed on display 0 before publishing this slot as vacant.
+                var confirmedTask = if (park.isSuccess) waitForSlotDismissDisplay(task) else null
+                val afterPark = taskRepository.findTask(task.taskId)
+                if (afterPark != null) {
+                    check(sameTaskIdentity(task, afterPark)) {
+                        "Task identity changed while closing task=${task.taskId}"
+                    }
+                    if (confirmedTask != null) {
+                        check(afterPark.displayId == Display.DEFAULT_DISPLAY) {
+                            "Task left the default display after close confirmation"
+                        }
+                    } else if (afterPark.displayId == Display.DEFAULT_DISPLAY) {
+                        confirmedTask = afterPark
                     }
                 }
-                check(SlotDismissDecisionPolicy.mayPublishVacantSlot(
-                    taskRepository.findTask(task.taskId)?.displayId)) {
-                    "关闭等待结束但应用仍留在小窗（task=${task.taskId}）"
+                if (confirmedTask == null &&
+                    SlotDismissDecisionPolicy.nativeFallbackRequired(false, afterPark?.displayId)
+                ) {
+                    // On some ColorOS/Vector builds the default TaskDisplayArea
+                    // hook is unavailable. Move only the exact task originally dragged.
+                    val fallbackSource = checkNotNull(afterPark) {
+                        "Task disappeared before its destination could be confirmed"
+                    }
+                    check(sameTaskIdentity(task, fallbackSource))
+                    usedBinderFallback = true
+                    confirmedTask = moveTaskToDisplayAndWait(
+                        task.taskId, Display.DEFAULT_DISPLAY, expectedIdentity = task,
+                    )
+                }
+                check(sameTaskIdentity(task, confirmedTask) &&
+                    SlotDismissDecisionPolicy.mayPublishVacantSlot(confirmedTask?.displayId)
+                ) {
+                    "关闭等待结束但原任务未在默认显示上得到确认（task=${task.taskId}）"
                 }
                 // Binder fallback may temporarily raise the moved task; place
                 // the original real main task back on top without relaunching.
@@ -1163,8 +1181,10 @@ class SlotTaskCoordinator(
             } catch (error: Throwable) {
                 // If Shell actually completed the move, never bounce a real
                 // task back to a mini-window just because a post-check failed.
-                if (SlotDismissDecisionPolicy.mayPublishVacantSlot(
-                        taskRepository.findTask(task.taskId)?.displayId)) {
+                val observedAfterFailure = taskRepository.findTask(task.taskId)
+                if (sameTaskIdentity(task, observedAfterFailure) &&
+                    SlotDismissDecisionPolicy.mayPublishVacantSlot(observedAfterFailure?.displayId)
+                ) {
                     if (SlotDismissDecisionPolicy.shouldRestoreMain(
                             usedBinderFallback, foreground?.taskId, task.taskId,
                             foreground?.let { taskRepository.findTask(it.taskId)?.displayId })) {
@@ -1177,24 +1197,43 @@ class SlotTaskCoordinator(
                     updateDraggedSlot(drag.slotIndex, SlotState.Ready(drag.displayId), null)
                     return@runTransition
                 }
-                runCatching {
-                    moveTaskToDisplayAndWait(task.taskId, drag.displayId)
-                    ensureSlotLayout(drag.slotIndex, task, layout)
-                }.onFailure(error::addSuppressed)
+                // Never rollback a task id that now belongs to another user/token.
+                if (sameTaskIdentity(task, observedAfterFailure)) {
+                    runCatching {
+                        moveTaskToDisplayAndWait(
+                            task.taskId, drag.displayId, expectedIdentity = task,
+                        )
+                        ensureSlotLayout(drag.slotIndex, task, layout)
+                    }.onFailure(error::addSuppressed)
+                }
                 throw error
             }
         }
     }
 
-    private fun waitForSlotDismissDisplay(taskId: Int): Boolean {
+    private fun sameTaskIdentity(
+        expected: TaskRepository.TaskSnapshot,
+        observed: TaskRepository.TaskSnapshot?,
+    ): Boolean = StageTaskIdentityPolicy.matches(
+        expected.taskId, expected.userId, expected.component.packageName, expected.token,
+        observed?.taskId, observed?.userId, observed?.component?.packageName, observed?.token,
+    )
+
+    private fun waitForSlotDismissDisplay(
+        expected: TaskRepository.TaskSnapshot,
+    ): TaskRepository.TaskSnapshot? {
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
-        var displayId = taskRepository.findTask(taskId)?.displayId
-        while (displayId != Display.DEFAULT_DISPLAY &&
-            SystemClock.uptimeMillis() < deadline) {
+        var observed = taskRepository.findTask(expected.taskId)
+        while ((!sameTaskIdentity(expected, observed) ||
+                observed?.displayId != Display.DEFAULT_DISPLAY) &&
+            SystemClock.uptimeMillis() < deadline
+        ) {
             SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
-            displayId = taskRepository.findTask(taskId)?.displayId
+            observed = taskRepository.findTask(expected.taskId)
         }
-        return displayId == Display.DEFAULT_DISPLAY
+        return observed?.takeIf {
+            sameTaskIdentity(expected, it) && it.displayId == Display.DEFAULT_DISPLAY
+        }
     }
 
     override fun onSlotDropped(slotIndex: Int, drag: SlotTaskDrag): Boolean {
@@ -1301,6 +1340,11 @@ class SlotTaskCoordinator(
         setState(index, state, "drag exchange")
     }
 
+    /**
+     * A cold-launch success only means ActivityManager accepted the start request.
+     * The slot remains pending until reconcile observes the real task on this display;
+     * neither this Result nor the launch Binder reply is a visual-frame ACK.
+     */
     private fun assignIntent(
         slotIndex: Int,
         sourceIntent: Intent,
@@ -3110,12 +3154,21 @@ class SlotTaskCoordinator(
         started.exceptionOrNull()?.let { done(Result.failure(it)) }
     }
 
-    private fun moveTaskToDisplayAndWait(taskId: Int, displayId: Int) {
-        // One task snapshot suffices for both the move decision and diagnostics.
+    private fun moveTaskToDisplayAndWait(
+        taskId: Int,
+        displayId: Int,
+        expectedIdentity: TaskRepository.TaskSnapshot? = null,
+    ): TaskRepository.TaskSnapshot {
+        // Capture one real source identity before issuing the Binder mutation.
         val before = taskRepository.findTask(taskId)
-        if (!TaskContinuityPolicy.shouldMove(before?.displayId, displayId)) return
+            ?: error("Task $taskId is unavailable before display move")
+        val identity = expectedIdentity ?: before
+        check(sameTaskIdentity(identity, before)) {
+            "Task identity changed before display move task=$taskId"
+        }
+        if (!TaskContinuityPolicy.shouldMove(before.displayId, displayId)) return before
         StageExchangeTelemetry.phasedEvent("display_${displayId}_begin")
-        NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before?.userId} display=${before?.displayId}->$displayId activity=${before?.component?.className} bounds=${before?.bounds} dpi=${before?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
+        NeXtepLog.info("task_continuity", "move_begin task=$taskId user=${before.userId} display=${before.displayId}->${displayId} activity=${before.component.className} bounds=${before.bounds} dpi=${before.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
         TaskSurfaceCompat.markDisplayExchange(taskId, displayId)
         if (displayId == Display.DEFAULT_DISPLAY) {
             timed("promotion_prepare") { TaskSurfaceCompat.preparePromotion(taskId, geometryProvider()) }.onFailure {
@@ -3136,20 +3189,27 @@ class SlotTaskCoordinator(
         val deadline = SystemClock.uptimeMillis() + DISPLAY_MOVE_TIMEOUT_MS
         var observedTask = taskRepository.findTask(taskId)
         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.measure("display_observation") {
-        while (observedTask?.displayId != displayId && SystemClock.uptimeMillis() < deadline) {
-            SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
-            observedTask = taskRepository.findTask(taskId)
+            while ((!sameTaskIdentity(identity, observedTask) || observedTask?.displayId != displayId) &&
+                SystemClock.uptimeMillis() < deadline
+            ) {
+                if (observedTask != null && !sameTaskIdentity(identity, observedTask)) {
+                    TaskSurfaceCompat.cancelDisplayExchange(taskId)
+                    error("Task identity changed during display move task=$taskId")
+                }
+                SystemClock.sleep(DISPLAY_MOVE_POLL_MS)
+                observedTask = taskRepository.findTask(taskId)
+            }
         }
+        if (!sameTaskIdentity(identity, observedTask)) {
+            TaskSurfaceCompat.cancelDisplayExchange(taskId)
+            error("Task identity was not confirmed after display move task=$taskId")
         }
-        // Reuse the last verified observation for diagnostics and final check.
-        val after = observedTask
-        val observedDisplayId = observedTask?.displayId
+        check(observedTask?.displayId == displayId) {
+            "Task $taskId display move did not settle: expected=$displayId actual=${observedTask?.displayId}"
+        }
         StageExchangeTelemetry.phasedEvent("display_${displayId}_observed")
-        NeXtepLog.info("task_continuity", "move_end task=$taskId found=${after != null} display=${after?.displayId} activity=${after?.component?.className} bounds=${after?.bounds} dpi=${after?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
-        check(observedDisplayId == displayId) {
-            "Task $taskId display move did not settle: expected=$displayId " +
-                "actual=$observedDisplayId"
-        }
+        NeXtepLog.info("task_continuity", "move_end task=$taskId found=true display=${observedTask?.displayId} activity=${observedTask?.component?.className} bounds=${observedTask?.bounds} dpi=${observedTask?.densityDpi} launch_requested=false lifecycle_callbacks=not_observable")
+        return checkNotNull(observedTask)
     }
 
     private fun waitForTaskLayout(

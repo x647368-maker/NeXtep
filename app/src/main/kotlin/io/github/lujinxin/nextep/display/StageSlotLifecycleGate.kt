@@ -52,3 +52,22 @@ internal class StageSlotLifecycleGate {
     val isExitPending: Boolean
         get() = exitRequested
 }
+
+
+/** Strict task-identity check used around asynchronous WindowManager task moves. */
+internal object StageTaskIdentityPolicy {
+    fun matches(
+        expectedTaskId: Int,
+        expectedUserId: Int?,
+        expectedPackageName: String,
+        expectedToken: Any?,
+        observedTaskId: Int?,
+        observedUserId: Int?,
+        observedPackageName: String?,
+        observedToken: Any?,
+    ): Boolean {
+        if (observedTaskId != expectedTaskId || observedUserId != expectedUserId) return false
+        return if (expectedToken != null) expectedToken == observedToken
+        else expectedPackageName == observedPackageName
+    }
+}

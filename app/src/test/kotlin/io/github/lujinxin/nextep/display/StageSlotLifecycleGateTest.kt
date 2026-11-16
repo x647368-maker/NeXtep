@@ -42,6 +42,36 @@ class StageSlotLifecycleGateTest {
         assertNotNull(gate.acquire())
     }
 
+    @Test fun taskMoveRequiresSameTaskIdUserAndStableToken() {
+        assertTrue(StageTaskIdentityPolicy.matches(
+            17, 10, "com.example.app", "token-a",
+            17, 10, "com.example.otheractivity", "token-a",
+        ))
+        assertFalse(StageTaskIdentityPolicy.matches(
+            17, 10, "com.example.app", "token-a",
+            17, 10, "com.example.app", "token-b",
+        ))
+        assertFalse(StageTaskIdentityPolicy.matches(
+            17, 10, "com.example.app", "token-a",
+            17, 11, "com.example.app", "token-a",
+        ))
+        assertFalse(StageTaskIdentityPolicy.matches(
+            17, 10, "com.example.app", "token-a",
+            null, 10, "com.example.app", "token-a",
+        ))
+    }
+
+    @Test fun missingTokenFallsBackToSameUserAndPackageOnly() {
+        assertTrue(StageTaskIdentityPolicy.matches(
+            21, 0, "com.example.app", null,
+            21, 0, "com.example.app", null,
+        ))
+        assertFalse(StageTaskIdentityPolicy.matches(
+            21, 0, "com.example.app", null,
+            21, 0, "com.example.other", null,
+        ))
+    }
+
     @Test fun staleAndDuplicateReleaseCannotStealOwnership() {
         val gate = StageSlotLifecycleGate()
         val owner = checkNotNull(gate.acquire())
