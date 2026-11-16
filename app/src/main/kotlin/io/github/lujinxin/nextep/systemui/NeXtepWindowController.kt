@@ -1063,6 +1063,8 @@ class NeXtepWindowController(
                 else if (geometry.sidebarSide == SidebarSide.LEFT) "›\n展开" else "‹\n展开"
             textSize = if (sidebarCollapsed) 13f else 14f
             contentDescription = if (sidebarCollapsed || smartRail.hidden) "展开小窗" else "收起小窗"
+            (background as? android.graphics.drawable.GradientDrawable)
+                ?.setColor(if (smartRail.hidden) Color.TRANSPARENT else Color.argb(210, 28, 43, 53))
             if (smartRail.hidden) {
                 text = if (io.github.x647368maker.atomicworkbench.workspace.StageSmartRailGeometry.horizontal(geometry)) "━" else "│"
                 textSize = 18f

@@ -23,7 +23,7 @@ internal object StageSmartRailGeometry {
 
     fun handle(g: WorkspaceGeometry, density: Float): StageTopLayoutMetrics.Box {
         val isHorizontal = horizontal(g)
-        val length = (72 * density).roundToInt().coerceAtLeast(1)
+        val length = (96 * density).roundToInt().coerceAtLeast(1)
         val reserve = if (g.railAtTop)
             g.sidebarWidth - minOf(g.mainTopOverlap, g.sidebarWidth - 1)
         else g.sidebarWidth
