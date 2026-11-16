@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "773559256b0836ee627b0bb86733b30d83c2fc10",
+      "reviewed_blob_sha1": "e2c5848b44361c6cf9f6bcfef1ccf1da069384e1",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -289,6 +289,10 @@
         {
           "before": "            \"影音布局与自动模式\" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },\n            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },",
           "after": "            \"影音布局与自动模式\" to { if(menuQuickOrDisplayReady())showCinemaMenu(anchor) },\n            (if (smartRail.enabled) \"关闭智能侧栏\" else \"开启智能侧栏（静置收起）\") to {\n                if(menuQuickOrDisplayReady()) {\n                    smartRail.setEnabled(!smartRail.enabled)\n                    showStageMessage(if (smartRail.enabled) \"智能侧栏已开启：顶部或侧栏静置后收起，点击恢复条重新展开；保留真实任务\" else \"已恢复原有侧栏行为\")\n                }\n            },\n            \"侧栏自动收起时间（${smartRail.idleSeconds}秒）\" to {\n                if(menuQuickOrDisplayReady())showSmartRailDelayMenu(anchor)\n            },\n            (if(smartRail.pinned) \"取消固定侧栏\" else \"固定侧栏\") to {\n                if(menuQuickOrDisplayReady())smartRail.setPinned(!smartRail.pinned)\n            },\n            \"打开完整设置\" to { if(menuQuickOrDisplayReady())onSettingsRequested() },"
+        },
+        {
+          "before": "            \"切换全屏（保留工作区）\" to { onExitRequested() },\n            \"顶部横排\" to { changeStageLayout(true) },",
+          "after": "            \"顶部横排\" to { changeStageLayout(true) },"
         }
       ]
     },
@@ -476,9 +480,13 @@
         {
           "before": "    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {",
           "after": "    // Only a missing callback is recoverable in this optional, off-input\n    // preparation path. Each attempt retains its original deadline.\n    fun retryWallpaperPreparation(attempt:Int,outcome:String):Boolean =\n        attempt==0 && outcome.startsWith(\"callback_wait:TimeoutException \")\n\n    fun acceptPrepareTime(ms:Long, nowMs:Long=monotonicMs()):Boolean {"
+        },
+        {
+          "before": "    fun terminalReceiptWithinBudget(submittedMs:Long,receivedMs:Long):Boolean =",
+          "after": "    // Once visible GPU motion is admitted, missing terminal confirmation\n    // must not expose a naked migration. Pre-admission and nonconcurrent\n    // paths retain their existing behavior.\n    fun rejectUnconfirmedVisibleMove(concurrent:Boolean,firstCommitted:Boolean,terminalCommitted:Boolean):Boolean =\n        concurrent && firstCommitted && !terminalCommitted\n\n    fun terminalReceiptWithinBudget(submittedMs:Long,receivedMs:Long):Boolean ="
         }
       ],
-      "reviewed_blob_sha1": "93dbf35d05efdc7ffeba622e8a4120c6c5d64462"
+      "reviewed_blob_sha1": "342f7d0d7c896d59116b6713dcce42b610f32d4e"
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageConcurrentNativeTrialPolicyTest.kt": {
       "previous_blob_sha1": "a3352b04384b04666ad3fb3847ab39a0503c2077",
@@ -510,9 +518,13 @@
         {
           "before": "    @Test fun trialAlwaysGatedByVisibilityAndSaver() {",
           "after": "    @Test fun wallpaperRecoveryIsBoundedAndOnlyForCallbackTimeout() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(attempt in -1..3)for(reason in listOf(\"callback_wait:TimeoutException elapsed_ms=172\",\n            \"fence_timeout elapsed_ms=120\",\"unusable_buffer elapsed_ms=1\",\"ready elapsed_ms=30\",\n            \"ui_lane_denied elapsed_ms=0\",\"callback_wait:InterruptedException elapsed_ms=10\",\n            \"renderer_create:IllegalArgumentException elapsed_ms=2\",\"not_reported\")) {\n            assertEquals(attempt==0 && reason.startsWith(\"callback_wait:TimeoutException \"),\n                p.retryWallpaperPreparation(attempt,reason))\n        }\n    }\n\n    @Test fun trialAlwaysGatedByVisibilityAndSaver() {"
+        },
+        {
+          "before": "    @Test fun terminalReceiptUsesActualArrivalNotUiDispatch() {",
+          "after": "    @Test fun visibleConcurrentMoveRequiresTerminalReceipt() {\n        val p=StageConcurrentNativeTrialPolicy\n        for(concurrent in listOf(false,true))for(first in listOf(false,true))for(terminal in listOf(false,true)) {\n            assertEquals(concurrent && first && !terminal,\n                p.rejectUnconfirmedVisibleMove(concurrent,first,terminal))\n        }\n    }\n    @Test fun terminalReceiptUsesActualArrivalNotUiDispatch() {"
         }
       ],
-      "reviewed_blob_sha1": "9a9b615d3067f38700faed7028945f300e11e3a4"
+      "reviewed_blob_sha1": "9d7c8f3bfc7cb2dae41606db09842ec65a29a1cb"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceExchange.kt": {
       "previous_blob_sha1": "bd8569f0fd711d87da1443016063d39bf2e98ad8",
@@ -692,9 +704,17 @@
         {
           "before": "                val textured=runCatching { wallpaperCoverFactory?.invoke() }.getOrNull()\n                val masks = textured ?: StageGpuMirrorOcclusion.create()",
           "after": "                // A full-screen root may be larger than the physical\n                // display. append() crops against the actual host dimensions,\n                // so only borrow a physical texture when they match exactly.\n                val textureFits=StageConcurrentNativeTrialPolicy.wallpaperHostMatches(\n                    host.width,host.height,fullScreenWidth,fullScreenHeight)\n                val textured=if(textureFits)\n                    runCatching { wallpaperCoverFactory?.invoke() }.getOrNull() else null\n                if(!textureFits && wallpaperCoverFactory!=null)\n                    StageExchangeTelemetry.nativeEvent(\"wallpaper_cover_host_mismatch\")\n                val masks = textured ?: StageGpuMirrorOcclusion.create()"
+        },
+        {
+          "before": "            if(hostDetached || !host.isAttachedToWindow){stop();return}\n            // Recheck once immediately before the real migration.",
+          "after": "            if(hostDetached || !host.isAttachedToWindow){stop();return}\n            // A visible concurrent flight must reach a confirmed endpoint before\n            // either producer can be reparented. Retire the attempt through the\n            // coordinator's existing rollback instead of exposing a naked move.\n            if(concurrentHandoff && firstTransactionCommitted && !terminalTransactionCommitted) {\n                trace(\"native_move_rejected:terminal_unconfirmed\")\n                stop()\n                return\n            }\n            // Recheck once immediately before the real migration."
+        },
+        {
+          "before": "if(concurrentHandoff && firstTransactionCommitted && !terminalTransactionCommitted) {",
+          "after": "if(StageConcurrentNativeTrialPolicy.rejectUnconfirmedVisibleMove(concurrentHandoff,\n                    firstTransactionCommitted,terminalTransactionCommitted)) {"
         }
       ],
-      "reviewed_blob_sha1": "8c98bdbf889f86ae2162e6862014bf72b11f8680"
+      "reviewed_blob_sha1": "feedc6c6c0c289f0fc271eec23c899b11736b157"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/config/StageSettingsScreen.kt": {
       "previous_blob_sha1": "8b7cc75f30eaf2b8a262ce7031e0a61cdc5970b1",

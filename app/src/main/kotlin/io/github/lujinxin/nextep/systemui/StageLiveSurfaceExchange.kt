@@ -692,7 +692,8 @@ internal class StageLiveSurfaceExchange private constructor(
             // A visible concurrent flight must reach a confirmed endpoint before
             // either producer can be reparented. Retire the attempt through the
             // coordinator's existing rollback instead of exposing a naked move.
-            if(concurrentHandoff && firstTransactionCommitted && !terminalTransactionCommitted) {
+            if(StageConcurrentNativeTrialPolicy.rejectUnconfirmedVisibleMove(concurrentHandoff,
+                    firstTransactionCommitted,terminalTransactionCommitted)) {
                 trace("native_move_rejected:terminal_unconfirmed")
                 stop()
                 return

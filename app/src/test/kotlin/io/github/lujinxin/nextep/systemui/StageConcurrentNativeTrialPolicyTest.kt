@@ -232,6 +232,13 @@ class StageConcurrentNativeTrialPolicyTest {
         assertFalse(p.terminalFrameDue(0,0,1f,true,45))
     }
 
+    @Test fun visibleConcurrentMoveRequiresTerminalReceipt() {
+        val p=StageConcurrentNativeTrialPolicy
+        for(concurrent in listOf(false,true))for(first in listOf(false,true))for(terminal in listOf(false,true)) {
+            assertEquals(concurrent && first && !terminal,
+                p.rejectUnconfirmedVisibleMove(concurrent,first,terminal))
+        }
+    }
     @Test fun terminalReceiptUsesActualArrivalNotUiDispatch() {
         val p=StageConcurrentNativeTrialPolicy
         assertFalse(p.terminalReceiptWithinBudget(-1,100))
