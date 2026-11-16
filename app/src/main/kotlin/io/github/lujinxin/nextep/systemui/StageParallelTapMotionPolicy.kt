@@ -15,6 +15,10 @@ internal object StageParallelTapMotionPolicy {
     fun durationMs(configuredMs: Int): Long =
         WorkspaceConfigContract.normalizeSwapAnimationDurationMs(configuredMs).toLong()
             .coerceIn(MIN_VISIBLE_MS, MAX_VISUAL_MS)
+    // Accept only the first completion from the currently owning attempt.
+    // All callers serialize delivery to the UI lane.
+    fun acceptMoveResult(current:Boolean,requested:Boolean,received:Boolean):Boolean =
+        current && requested && !received
     fun canHandoff(animationComplete: Boolean, realMoveComplete: Boolean): Boolean =
         animationComplete && realMoveComplete
 }

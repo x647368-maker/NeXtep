@@ -13,7 +13,10 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract
@@ -31,6 +34,19 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
     private var cancelRequested = false
     private var generation = 0
     private var handoff=StageStableHandoff()
+    private val ui=Handler(Looper.getMainLooper())
+    private var moveObserver:ViewTreeObserver?=null
+    private var moveCommit:Runnable?=null
+    private var moveDeadline:Runnable?=null
+    private var detachListener:View.OnAttachStateChangeListener?=null
+
+    private fun clearMoveAdmission(){
+        moveCommit?.let { cb ->
+            runCatching { moveObserver?.let { if(it.isAlive)it.unregisterFrameCommitCallback(cb) } }
+        }
+        moveDeadline?.let { ui.removeCallbacks(it) }
+        moveObserver=null;moveCommit=null;moveDeadline=null
+    }
 
     val isRunning: Boolean get() = overlay != null
 
@@ -90,9 +106,21 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         overlay = preview
         completion = onFinished
+        val attachment=object:View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v:View)=Unit
+            override fun onViewDetachedFromWindow(v:View) {
+                // A detached View no longer owns a frame clock. Do not
+                // remove children inside framework detach dispatch. If a
+                // real migration is pending, cancel() keeps its release gate.
+                ui.post { if(generation==token && overlay===preview)cancel() }
+            }
+        }
+        detachListener=attachment
+        preview.addOnAttachStateChangeListener(attachment)
         val concurrentTap = StageParallelTapMotionPolicy.concurrent(
             uniformTapMorph, returningHome, ValueAnimator.areAnimatorsEnabled(), moveAsync != null)
         var moveRequested = false
+        var moveResultReceived = false
         var movedAt = -1L
         var animationDone = false
         var handoffStarted = false
@@ -104,15 +132,27 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
             awaitLiveFrame(preview, token, movedAt, delay, isLiveReady)
         }
         fun completed(moved: Boolean) {
-            if (generation != token) return
+            if(!StageParallelTapMotionPolicy.acceptMoveResult(
+                    generation==token && overlay===preview,moveRequested,moveResultReceived))return
+            moveResultReceived=true
             if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }
             movedAt = SystemClock.uptimeMillis()
             enterHandoffIfReady()
         }
+        fun receiveMoveResult(moved:Boolean){
+            if(Looper.myLooper()==ui.looper)completed(moved)
+            else ui.post { completed(moved) }
+        }
         fun commitMove() {
             if (generation != token || moveRequested) return
+            clearMoveAdmission()
+            if(!preview.isAttachedToWindow){cancel();return}
             moveRequested = true
-            if (moveAsync != null) moveAsync(::completed)
+            if (moveAsync != null) runCatching { moveAsync(::receiveMoveResult) }.onFailure {
+                NeXtepLog.warn("workspace_swap","Async exchange submission failed",it)
+                // A synchronous successful first ACK cannot be retracted.
+                receiveMoveResult(false)
+            }
             else completed(runCatching(move).onFailure {
                 NeXtepLog.warn("workspace_swap", "Exchange callback failed", it)
             }.getOrDefault(false))
@@ -120,12 +160,19 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         fun scheduleMove() {
             // First rendered preview frame commits before the Binder task move.
             // Full two-way visual movement continues while live buffers migrate.
+            if(generation!=token || moveRequested || moveDeadline!=null)return
+            val callback=Runnable { ui.post { commitMove() } }
+            val deadline=Runnable { commitMove() }
+            moveCommit=callback
+            moveDeadline=deadline
             runCatching {
-                preview.viewTreeObserver.registerFrameCommitCallback {
-                    preview.post { commitMove() }
-                }
+                val observer=preview.viewTreeObserver
+                moveObserver=observer
+                observer.registerFrameCommitCallback(callback)
             }.onFailure { NeXtepLog.warn("workspace_swap", "Frame commit callback unavailable", it) }
-            preview.postDelayed({ commitMove() }, 160L)
+            // The deadline belongs to the UI looper, not a detached View.
+            // Cancellation unregisters the observer and removes this one shot.
+            ui.postDelayed(deadline,160L)
             preview.invalidate()
         }
         // No double effects: this short outline only runs for a fixed
@@ -185,6 +232,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         isLiveReady: () -> Boolean,
     ) {
         if (generation != token) return
+        if(!preview.isAttachedToWindow){cancel();return}
         val elapsed = SystemClock.uptimeMillis() - movedAt
         val ready = elapsed >= minimumDelayMs && runCatching(isLiveReady).getOrDefault(false)
         val decision=handoff.decide(ready,elapsed >= MAX_HANDOFF_DELAY_MS)
@@ -209,6 +257,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         releaseAllowed = { true }
         generation += 1
+        clearMoveAdmission()
         tapAccentAnimator?.cancel()
         tapAccentAnimator = null
         animator?.cancel()
@@ -217,6 +266,9 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val finished = completion
         overlay = null
         completion = null
+        val attachment=detachListener
+        detachListener=null
+        if(attachment!=null)previous?.removeOnAttachStateChangeListener(attachment)
         if (previous != null) {
             val host = previous.parent as? FrameLayout
             runCatching { host?.removeView(previous) }

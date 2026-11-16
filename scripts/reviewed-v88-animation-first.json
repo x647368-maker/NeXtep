@@ -793,7 +793,7 @@
       "reviewed_blob_sha1": "6f3940e489b8db82db24f008def34e3ec58bcb0f"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
-      "reviewed_blob_sha1": "6fef55085237ff0c6209c72b113ece1e59805f58",
+      "reviewed_blob_sha1": "62bba009150b6c38c45d8478fb5e3db532364608",
       "previous_blob_sha1": "00feec10aa9bdf0666b650f3878fd2bd0b078ee7",
       "patches": [
         {
@@ -819,6 +819,46 @@
         {
           "before": "    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {",
           "after": "    private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight) {\n        val pose=flight.pose(progress)\n        if(!pose.cx.isFinite() || !pose.cy.isFinite() || !pose.scale.isFinite() || pose.scale<=0f)return\n        val halfW=bitmap.width*pose.scale*.5f\n        val halfH=bitmap.height*pose.scale*.5f\n        destination.set(pose.cx-halfW,pose.cy-halfH,pose.cx+halfW,pose.cy+halfH)\n        val radius=io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.radius(\n            destination.width(),destination.height(),resources.displayMetrics.density)\n        outline.reset()\n        outline.addRoundRect(destination,radius,radius,Path.Direction.CW)\n        val save=canvas.save()\n        canvas.clipPath(outline)\n        canvas.drawBitmap(bitmap,null,destination,bitmapPaint)\n        canvas.restoreToCount(save)\n    }\n\n    private fun drawUniformMotionFrame(canvas: Canvas, bitmap: Bitmap, from: RectF, to: RectF) {"
+        },
+        {
+          "before": "import android.os.SystemClock\nimport android.view.View",
+          "after": "import android.os.SystemClock\nimport android.os.Handler\nimport android.os.Looper\nimport android.view.View\nimport android.view.ViewTreeObserver"
+        },
+        {
+          "before": "    private var handoff=StageStableHandoff()\n\n    val isRunning",
+          "after": "    private var handoff=StageStableHandoff()\n    private val ui=Handler(Looper.getMainLooper())\n    private var moveObserver:ViewTreeObserver?=null\n    private var moveCommit:Runnable?=null\n    private var moveDeadline:Runnable?=null\n    private var detachListener:View.OnAttachStateChangeListener?=null\n\n    private fun clearMoveAdmission(){\n        moveCommit?.let { cb ->\n            runCatching { moveObserver?.let { if(it.isAlive)it.unregisterFrameCommitCallback(cb) } }\n        }\n        moveDeadline?.let { ui.removeCallbacks(it) }\n        moveObserver=null;moveCommit=null;moveDeadline=null\n    }\n\n    val isRunning"
+        },
+        {
+          "before": "        overlay = preview\n        completion = onFinished\n        val concurrentTap",
+          "after": "        overlay = preview\n        completion = onFinished\n        val attachment=object:View.OnAttachStateChangeListener {\n            override fun onViewAttachedToWindow(v:View)=Unit\n            override fun onViewDetachedFromWindow(v:View) {\n                // A detached View no longer owns a frame clock. Do not\n                // remove children inside framework detach dispatch. If a\n                // real migration is pending, cancel() keeps its release gate.\n                ui.post { if(generation==token && overlay===preview)cancel() }\n            }\n        }\n        detachListener=attachment\n        preview.addOnAttachStateChangeListener(attachment)\n        val concurrentTap"
+        },
+        {
+          "before": "        var moveRequested = false\n        var movedAt = -1L",
+          "after": "        var moveRequested = false\n        var moveResultReceived = false\n        var movedAt = -1L"
+        },
+        {
+          "before": "            if (generation != token) return\n            if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }",
+          "after": "            if(!StageParallelTapMotionPolicy.acceptMoveResult(\n                    generation==token && overlay===preview,moveRequested,moveResultReceived))return\n            moveResultReceived=true\n            if (!moved || cancelRequested) { this@WorkspaceSwapAnimator.cancel(); return }"
+        },
+        {
+          "before": "        fun commitMove() {\n            if (generation != token || moveRequested) return\n            moveRequested = true\n            if (moveAsync != null) moveAsync(::completed)\n            else completed(runCatching(move).onFailure {",
+          "after": "        fun receiveMoveResult(moved:Boolean){\n            if(Looper.myLooper()==ui.looper)completed(moved)\n            else ui.post { completed(moved) }\n        }\n        fun commitMove() {\n            if (generation != token || moveRequested) return\n            clearMoveAdmission()\n            if(!preview.isAttachedToWindow){cancel();return}\n            moveRequested = true\n            if (moveAsync != null) runCatching { moveAsync(::receiveMoveResult) }.onFailure {\n                NeXtepLog.warn(\"workspace_swap\",\"Async exchange submission failed\",it)\n                // A synchronous successful first ACK cannot be retracted.\n                receiveMoveResult(false)\n            }\n            else completed(runCatching(move).onFailure {"
+        },
+        {
+          "before": "            runCatching {\n                preview.viewTreeObserver.registerFrameCommitCallback {\n                    preview.post { commitMove() }\n                }\n            }.onFailure { NeXtepLog.warn(\"workspace_swap\", \"Frame commit callback unavailable\", it) }\n            preview.postDelayed({ commitMove() }, 160L)\n            preview.invalidate()",
+          "after": "            if(generation!=token || moveRequested || moveDeadline!=null)return\n            val callback=Runnable { ui.post { commitMove() } }\n            val deadline=Runnable { commitMove() }\n            moveCommit=callback\n            moveDeadline=deadline\n            runCatching {\n                val observer=preview.viewTreeObserver\n                moveObserver=observer\n                observer.registerFrameCommitCallback(callback)\n            }.onFailure { NeXtepLog.warn(\"workspace_swap\", \"Frame commit callback unavailable\", it) }\n            // The deadline belongs to the UI looper, not a detached View.\n            // Cancellation unregisters the observer and removes this one shot.\n            ui.postDelayed(deadline,160L)\n            preview.invalidate()"
+        },
+        {
+          "before": "        if (generation != token) return\n        val elapsed = SystemClock.uptimeMillis() - movedAt",
+          "after": "        if (generation != token) return\n        if(!preview.isAttachedToWindow){cancel();return}\n        val elapsed = SystemClock.uptimeMillis() - movedAt"
+        },
+        {
+          "before": "        generation += 1\n        tapAccentAnimator?.cancel()",
+          "after": "        generation += 1\n        clearMoveAdmission()\n        tapAccentAnimator?.cancel()"
+        },
+        {
+          "before": "        overlay = null\n        completion = null\n        if (previous != null) {",
+          "after": "        overlay = null\n        completion = null\n        val attachment=detachListener\n        detachListener=null\n        if(attachment!=null)previous?.removeOnAttachStateChangeListener(attachment)\n        if (previous != null) {"
         }
       ]
     },
@@ -843,6 +883,26 @@
         {
           "before": "                for(i in 0..1000) {\n                    val k=plan.at(i/1000f)\n                    assertTrue(StageCertifiedRailRoute.overlapFraction(k.incoming,k.outgoing)<=.3501)",
           "after": "                var prior=plan.at(0f)\n                val horizontal=rail!=\"top\"\n                val sign=if(rail==\"right\")-1f else 1f\n                fun axis(b:Box)=if(horizontal)b.cx else b.cy\n                for(i in 0..1000) {\n                    val k=plan.at(i/1000f)\n                    assertTrue(\"incoming rail reversal $rail $width/$height $selected $i\",\n                        (axis(k.incoming)-axis(prior.incoming))*sign>=-.005f)\n                    assertTrue(\"outgoing rail reversal $rail $width/$height $selected $i\",\n                        (axis(prior.outgoing)-axis(k.outgoing))*sign>=-.005f)\n                    prior=k\n                    assertTrue(StageCertifiedRailRoute.overlapFraction(k.incoming,k.outgoing)<=.3501)"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageParallelTapMotionPolicy.kt": {
+      "reviewed_blob_sha1": "48b1a454b9fa95075143d0407e8df991ebf592fc",
+      "previous_blob_sha1": "d99ab4395ab64b624a0f384f6404777c7b84893b",
+      "patches": [
+        {
+          "before": "    fun canHandoff(animationComplete: Boolean, realMoveComplete: Boolean): Boolean =",
+          "after": "    // Accept only the first completion from the currently owning attempt.\n    // All callers serialize delivery to the UI lane.\n    fun acceptMoveResult(current:Boolean,requested:Boolean,received:Boolean):Boolean =\n        current && requested && !received\n    fun canHandoff(animationComplete: Boolean, realMoveComplete: Boolean): Boolean ="
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageParallelTapMotionPolicyTest.kt": {
+      "reviewed_blob_sha1": "b16df169639c5b418ac072f5e7ea57a661dd98d6",
+      "previous_blob_sha1": "772aed25c531fc461595e0c6b993b7ba16fa85ff",
+      "patches": [
+        {
+          "before": "    @Test fun handoffWaitsForBothButNeverDelaysStartingTheMove() {",
+          "after": "    @Test fun onlyFirstCurrentRequestedMoveResultIsAccepted() {\n        for(current in listOf(false,true)) for(requested in listOf(false,true))\n            for(received in listOf(false,true))\n                assertEquals(current && requested && !received,\n                    StageParallelTapMotionPolicy.acceptMoveResult(current,requested,received))\n        assertTrue(StageParallelTapMotionPolicy.acceptMoveResult(true,true,false))\n        assertFalse(StageParallelTapMotionPolicy.acceptMoveResult(true,true,true))\n        assertFalse(StageParallelTapMotionPolicy.acceptMoveResult(false,true,false))\n    }\n    @Test fun handoffWaitsForBothButNeverDelaysStartingTheMove() {"
         }
       ]
     }
