@@ -14,6 +14,11 @@ target="$(find "$apk_root/debug" -name '*.apk' -print -quit)"
 tests="$(find "$apk_root/androidTest/debug" -name '*.apk' -print -quit)"
 test -s "$target" && test -s "$tests"
 sha256sum "$target" "$tests" > "$out/input-apks.sha256"
+aapt="$ANDROID_HOME/build-tools/36.0.0/aapt"
+"$aapt" dump xmltree "$target" AndroidManifest.xml > "$out/target-manifest.txt"
+"$aapt" dump xmltree "$tests" AndroidManifest.xml > "$out/test-manifest.txt"
+component="$pkg.test/io.github.x647368maker.atomicworkbench.visual.PerformanceEvidenceInstrumentation"
+adb logcat -c
 adb uninstall "$pkg.test" >/dev/null 2>&1 || true
 adb uninstall "$pkg" >/dev/null 2>&1 || true
 for pair in "$target:target" "$tests:tests"; do
@@ -43,13 +48,21 @@ adb shell input keyevent 82
 adb shell dumpsys power > "$out/power-before.txt"
 adb shell dumpsys SurfaceFlinger --list > "$out/surfaces-before.txt"
 adb shell dumpsys display > "$out/displays-before.txt"
-adb logcat -c
+adb shell pm list instrumentation > "$out/registered-instrumentation.txt"
+adb shell dumpsys package "$pkg.test" > "$out/test-package.txt"
 set +e
-timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -r -w "$pkg.test/io.github.x647368maker.atomicworkbench.visual.PerformanceEvidenceInstrumentation" 2>&1 | tee "$out/instrumentation.txt"
-status=$?
+if grep -Fq "instrumentation:$component (target=$pkg)" "$out/registered-instrumentation.txt"; then
+  timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -r -w "$component" 2>&1 | tee "$out/instrumentation.txt"
+  statuses=("${PIPESTATUS[@]}")
+  status="${statuses[0]}"
+  if [ "${statuses[1]}" != 0 ]; then status="${statuses[1]}"; fi
+else
+  echo "REGISTERED_INSTRUMENTATION_MISSING: $component" | tee "$out/instrumentation.txt"
+  status=99
+fi
 set -e
 # Always preserve real partial results, even with timeout or failed assertion.
-if adb exec-out run-as "$pkg" tar -C files/performance-evidence -cf - . > "$tmp/raw.tar"; then
+if adb exec-out run-as "$pkg" tar -C files/performance-evidence -cf - . > "$tmp/raw.tar" && tar -tf "$tmp/raw.tar" >/dev/null 2>&1; then
   tar -xf "$tmp/raw.tar" -C "$out"
 else
   echo "Runtime did not create a readable evidence directory" > "$out/missing-runtime-data.txt"

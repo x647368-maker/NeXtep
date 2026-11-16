@@ -45,8 +45,27 @@ jobs:
           build_one() {
             local label="$1" checkout="$2"
             mkdir -p "perf-evidence/$label"
-            (cd "$checkout"; git rev-parse HEAD; git diff --stat; bash scripts/ci-android-build.sh :app:assembleDebug :app:assembleDebugAndroidTest) 2>&1 | tee "perf-evidence/$label/build.txt"
-            cp -R "$checkout/app/build/outputs/apk" "$RUNNER_TEMP/perf-builds/$label"
+            local dest="$RUNNER_TEMP/perf-builds/$label"
+            mkdir -p "$dest"
+            (
+              cd "$checkout"
+              git rev-parse HEAD
+              git diff --stat
+              # Build the target before any test-only runner selection.
+              bash scripts/ci-android-build.sh :app:assembleDebug
+              cp -R app/build/outputs/apk/debug "$dest/debug"
+              cfg=app/build.gradle.kts
+              backup="$(mktemp)"
+              cp "$cfg" "$backup"
+              trap 'cp "$backup" "$cfg"; rm -f "$backup"' EXIT
+              # AGP generates a single configured instrumentation declaration.
+              # Select it only in this disposable checkout, not the committed DSL.
+              python3 -c 'from pathlib import Path; p=Path("app/build.gradle.kts"); s=p.read_text(); a="testInstrumentationRunner = \"io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation\""; b=a.replace("LivePreviewInstrumentation","PerformanceEvidenceInstrumentation"); assert s.count(a)==1; p.write_text(s.replace(a,b))'
+              bash scripts/ci-android-build.sh :app:assembleDebugAndroidTest
+              mkdir -p "$dest/androidTest"
+              cp -R app/build/outputs/apk/androidTest/debug "$dest/androidTest/debug"
+            ) 2>&1 | tee "perf-evidence/$label/build.txt"
+            git -C "$checkout" diff --exit-code -- app/src/main app/build.gradle.kts gradle gradle.properties
           }
           build_one R11 "$GITHUB_WORKSPACE"
           if [ "${{ matrix.api }}" = 35 ]; then
