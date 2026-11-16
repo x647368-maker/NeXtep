@@ -373,14 +373,24 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                         "No two moving real GPU card pixel regions during $label; samples=$samples distinct=$distinctMoving bothOutside=$outsideBoth; inspect native-flight-runtime.txt and native-flight-trace.txt"
                     }
                     awaitReleased(attempt,if(label=="mid") "movement" else label)
-                    if(label=="stale") inst.runOnMainSync {
-                        // Read-only test inspection: ensure the real animator
-                        // reached its terminal transaction, not just watchdog
-                        // teardown, before rejecting these non-owned roots.
+                    if(label=="stale") {
+                        // The main lane only reads the state. Throwing a test
+                        // assertion on that lane kills the instrumentation
+                        // process before the finally block saves its evidence.
+                        // Both original terminal conditions remain mandatory.
                         val complete=cls.getDeclaredField("frameComplete").apply { isAccessible=true }
                         val terminal=cls.getDeclaredField("terminalTransactionCommitted").apply { isAccessible=true }
-                        check(complete.getBoolean(attempt.flight) && terminal.getBoolean(attempt.flight)) {
-                            "Stale task test did not reach committed terminal geometry"
+                        val flags=BooleanArray(2)
+                        var outcome=""
+                        inst.runOnMainSync {
+                            flags[0]=complete.getBoolean(attempt.flight)
+                            flags[1]=terminal.getBoolean(attempt.flight)
+                            outcome=StageLiveSurfaceExchange.lastOutcome()
+                        }
+                        evidence.add("stale terminal frame="+flags[0]+" committed="+flags[1]+" outcome="+outcome)
+                        check(flags[0] && flags[1]) {
+                            "Stale task test did not reach committed terminal geometry: frame="+flags[0]+
+                                " committed="+flags[1]+" outcome="+outcome
                         }
                     }
                     observed=true

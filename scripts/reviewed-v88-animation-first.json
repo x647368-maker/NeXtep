@@ -690,7 +690,7 @@
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt": {
       "previous_blob_sha1": "a4b089745d0c4ace7f15fba4a2ab96d8a7be0341",
-      "reviewed_blob_sha1": "782c9e57649abe150a33ecf34b2b0cce56523364",
+      "reviewed_blob_sha1": "c018702549212ce82bbb656aac225597af08ed50",
       "patches": [
         {
           "before": "fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false):String {",
@@ -739,6 +739,10 @@
         {
           "before": "            return if(pairedRail) \"PASS paired contain trial:",
           "after": "            return if(adaptiveCovered) \"PASS adaptive mixed-aspect covered flight: real moving pixels, protected slot, cancellation, stale-owner terminal and detach cleanup\"\n                else if(pairedRail) \"PASS paired contain trial:"
+        },
+        {
+          "before": "                    if(label==\"stale\") inst.runOnMainSync {\n                        // Read-only test inspection: ensure the real animator\n                        // reached its terminal transaction, not just watchdog\n                        // teardown, before rejecting these non-owned roots.\n                        val complete=cls.getDeclaredField(\"frameComplete\").apply { isAccessible=true }\n                        val terminal=cls.getDeclaredField(\"terminalTransactionCommitted\").apply { isAccessible=true }\n                        check(complete.getBoolean(attempt.flight) && terminal.getBoolean(attempt.flight)) {\n                            \"Stale task test did not reach committed terminal geometry\"\n                        }\n                    }",
+          "after": "                    if(label==\"stale\") {\n                        // The main lane only reads the state. Throwing a test\n                        // assertion on that lane kills the instrumentation\n                        // process before the finally block saves its evidence.\n                        // Both original terminal conditions remain mandatory.\n                        val complete=cls.getDeclaredField(\"frameComplete\").apply { isAccessible=true }\n                        val terminal=cls.getDeclaredField(\"terminalTransactionCommitted\").apply { isAccessible=true }\n                        val flags=BooleanArray(2)\n                        var outcome=\"\"\n                        inst.runOnMainSync {\n                            flags[0]=complete.getBoolean(attempt.flight)\n                            flags[1]=terminal.getBoolean(attempt.flight)\n                            outcome=StageLiveSurfaceExchange.lastOutcome()\n                        }\n                        evidence.add(\"stale terminal frame=\"+flags[0]+\" committed=\"+flags[1]+\" outcome=\"+outcome)\n                        check(flags[0] && flags[1]) {\n                            \"Stale task test did not reach committed terminal geometry: frame=\"+flags[0]+\n                                \" committed=\"+flags[1]+\" outcome=\"+outcome\n                        }\n                    }"
         }
       ]
     },
