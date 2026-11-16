@@ -495,9 +495,10 @@ internal class StageIssueUiRegression(private val inst: Instrumentation) {
                     listOf("性能与流畅度","窗口与布局体验","应用与内容状态","系统与兼容性","功能与服务","历史报告").all{hasText(activity,it)}
             }
             screenshot(out,"ui-diagnostic-center-landing.png",activity)
-            val comprehensive=awaitActivity(StageIssueDiagnosticActivity::class.java,"visual-only comprehensive diagnostic"){
-                click(activity,"立即诊断")
-            }
+            // The landing page itself is captured above. Open the same real
+            // comprehensive Activity through the existing isolated task helper;
+            // this visual-only suite deliberately does not start a session.
+            val comprehensive=page("all",activity)
             try{
                 await("comprehensive diagnostic original layout"){
                     hasText(comprehensive,"全面综合诊断") && hasText(comprehensive,"开始综合诊断")
