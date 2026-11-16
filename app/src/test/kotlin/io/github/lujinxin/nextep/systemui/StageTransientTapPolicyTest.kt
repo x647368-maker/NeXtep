@@ -6,6 +6,7 @@ import org.junit.Test
 class StageTransientTapPolicyTest {
     @Test fun liveGpuPrimaryDoesNotDisableRenderThreadSnapshotFallback() {
         val requested=io.github.x647368maker.atomicworkbench.BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL
+        assertTrue("v88 debug APK must exercise the live GPU path by default",requested)
         assertEquals(requested,StagePrivateDualTaskFlightGate.enabled())
         assertTrue("A failed or unsupported live mirror must retain the bounded RenderThread fallback",
             StageTransientTapPolicy.snapshotFallbackEnabled())
