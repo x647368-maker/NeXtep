@@ -44,3 +44,43 @@ grep -F 'NATIVE_MIRROR_PASS' native-mirror-instrumentation.txt
 grep -F 'PASS API37 SurfaceFlinger live dual-root mirror' native-mirror-instrumentation.txt
 test -s visual-results/native-api37-dual-live-surface-mirrors.png
 echo 'PASS dual real GPU mirror composition and live producer update'
+
+# Exercise the complete production dual-card flight engine, not only the
+# mirror primitive. These use synthetic non-task roots so migration must be
+# rejected; they prove real compositor pixels, terminal commits, interruption,
+# rapid successor isolation and handle/mask cleanup, NOT OEM task handoff.
+adb shell settings put global animator_duration_scale 3
+set +e
+timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e nativeFlightOnly true -w \
+  io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \
+  | tee native-flight-instrumentation.txt
+status=${PIPESTATUS[0]}
+set -e
+if [ "$status" -ne 0 ]; then
+  echo "::error::API37 live dual-card flight instrumentation failed (exit=$status)"
+  exit "$status"
+fi
+grep -F 'NATIVE_FLIGHT_PASS' native-flight-instrumentation.txt
+
+set +e
+timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e pairedFlightOnly true -w \
+  io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \
+  | tee paired-flight-instrumentation.txt
+status=${PIPESTATUS[0]}
+set -e
+if [ "$status" -ne 0 ]; then
+  echo "::error::API37 paired live flight instrumentation failed (exit=$status)"
+  exit "$status"
+fi
+grep -F 'PAIRED_FLIGHT_PASS' paired-flight-instrumentation.txt
+
+adb logcat -d > native-flight-logcat.txt
+adb exec-out run-as io.github.x647368maker.atomicworkbench \
+  tar -C files/visual-regression -cf - . > /tmp/atomic-native/all-flight-results.tar
+mkdir -p visual-results
+tar -xf /tmp/atomic-native/all-flight-results.tar -C visual-results
+test -s visual-results/native-flight-first-moving-mid.png
+test -s visual-results/native-flight-clean-mid.png
+test -s visual-results/paired-flight/native-flight-first-moving-mid.png
+test -s visual-results/paired-flight/native-flight-clean-host-detach.png
+echo 'PASS API37 production live GPU flight, paired flight, mid-flight cancellation, stale-owner terminal cleanup and host-detach cleanup'
