@@ -559,6 +559,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         private val pair=planned?:planFlight(incoming,outgoing,slot,main,excluded,viewport)
         // P0-2a: reuse the admitted route; construct the clock ONCE per tap.
         private val motionPlan=pair?.let(ExchangeMotionPlan::fromExistingPair)
+        internal fun sampleGeometryProgress(raw:Float):Float = motionPlan?.geometryProgress(raw) ?: raw
         private val up=pair?.up
         private val down=pair?.down
         val safe=up!=null && down!=null
@@ -587,7 +588,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         var progress=0f
             set(value){
                 field=value.coerceIn(0f,1f)
-                val frameProgress=motionPlan?.geometryProgress(field) ?: field
+                val frameProgress=sampleGeometryProgress(field)
                 up?.let {
                     val pose=it.pose(frameProgress)
                     upView.place(pose)
