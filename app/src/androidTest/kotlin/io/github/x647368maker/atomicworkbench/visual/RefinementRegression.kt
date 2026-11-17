@@ -353,6 +353,30 @@ internal class RefinementRegression(private val inst:Instrumentation) {
                 shot.recycle()
             }
         }
+        // #1477's raster screenshots showed partially cut final action rows;
+        // structure and callback assertions alone were insufficient.
+        click("窗口管理")
+        val managementRoot=checkNotNull(inst.uiAutomation.rootInActiveWindow)
+        val managementPopup=Rect().also(managementRoot::getBoundsInScreen)
+        val managementLast=Rect().also(crowdedNode("关闭主窗（移回后台）")::getBoundsInScreen)
+        check(managementLast.bottom<=managementPopup.bottom-(2*m.density).toInt()){
+            "Window management last row clipped: last=$managementLast popup=$managementPopup"}
+        check(managementRoot.findAccessibilityNodeInfosByText("窗口管理")
+            .count{it.text?.toString()=="窗口管理"}==1){"Original has no duplicate management header"}
+        click("快捷栏与显示")
+        val shortcutRoot=checkNotNull(inst.uiAutomation.rootInActiveWindow)
+        val shortcutPopup=Rect().also(shortcutRoot::getBoundsInScreen)
+        val shortcutLast=Rect().also(crowdedNode("固定侧栏")::getBoundsInScreen)
+        check(shortcutLast.bottom<=shortcutPopup.bottom-(2*m.density).toInt()){
+            "Shortcut last row clipped: last=$shortcutLast popup=$shortcutPopup"}
+        check(crowdedNode("‹  快捷栏与显示").isVisibleToUser)
+        click("‹  快捷栏与显示")
+        check(crowdedNode("窗口布局").isSelected)
+        click("其他功能")
+        check(crowdedNode("‹  其他功能").isVisibleToUser)
+        click("‹  其他功能")
+        check(crowdedNode("窗口布局").isSelected)
+        record("PASS actual menu viewport: final action rows fully drawn, no duplicate title, both original back headers work")
         click("快捷栏与显示");click("快捷栏样式")
         check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)
         check(crowdedNode("固定应用").isVisibleToUser)
