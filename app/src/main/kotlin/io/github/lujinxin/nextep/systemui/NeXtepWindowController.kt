@@ -2541,22 +2541,43 @@ class NeXtepWindowController(
         slot.view.beginExchangePreview()
         val started=native.start(
             durationMs=StageConcurrentNativeTrialPolicy.DURATION_MS.toInt(),
-            moveAsync={ complete -> moveAsync { ok ->
-                if (ok) {
-                    // Use the earlier verified ownership/layout checkpoint
-                    // only for exactly the same live output as the final ACK.
-                    val atAck=slot.outputFrameMark()
-                    val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
-                    outputAtConfirmedMove=earlier?.takeIf {
-                        atAck!=null && StageConcurrentNativeTrialPolicy.sameOutput(
-                            it.displayId,atAck.displayId,it.texture,atAck.texture,it.surface,atAck.surface)
-                    } ?: atAck
-                    StageExchangeTelemetry.nativeEvent(
-                        if (outputAtConfirmedMove!=null && outputAtConfirmedMove===earlier)
-                            "slot_buffer_baseline=verified_layout" else "slot_buffer_baseline=final_ack",traceId)
+            moveAsync={ complete ->
+                // Provider ACK may originate on a Binder/executor thread.
+                // Read TextureView/slot output and task ownership on the UI
+                // thread before releasing the native mirror handoff gate.
+                val ackClaimed=java.util.concurrent.atomic.AtomicBoolean(false)
+                moveAsync { ok ->
+                    if(ackClaimed.compareAndSet(false,true)) {
+                        val settle=Runnable {
+                            val safe=runCatching {
+                                if(ok) {
+                                    val atAck=slot.outputFrameMark()
+                                    val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
+                                    outputAtConfirmedMove=earlier?.takeIf {
+                                        atAck!=null && StageConcurrentNativeTrialPolicy.sameOutput(
+                                            it.displayId,atAck.displayId,it.texture,atAck.texture,it.surface,atAck.surface)
+                                    } ?: atAck
+                                    StageExchangeTelemetry.nativeEvent(
+                                        if(outputAtConfirmedMove!=null && outputAtConfirmedMove===earlier)
+                                            "slot_buffer_baseline=verified_layout"
+                                        else "slot_buffer_baseline=final_ack",traceId)
+                                }
+                                ok
+                            }.getOrElse { error ->
+                                NeXtepLog.warn("native_swap","ACK frame-state capture failed",error)
+                                false
+                            }
+                            complete(safe)
+                        }
+                        if(android.os.Looper.myLooper()==android.os.Looper.getMainLooper())
+                            settle.run()
+                        else {
+                            StageExchangeTelemetry.nativeEvent("native_ack_ui_dispatch",traceId)
+                            if(!backdropHandler.post(settle)) complete(false)
+                        }
+                    }
                 }
-                complete(ok)
-            } },
+            },
             move={ true },
             liveReady={
                 val now=slotCoordinator?.slotStates()?.getOrNull(slotIndex)
@@ -2708,24 +2729,38 @@ class NeXtepWindowController(
                     outgoing.sameSource(TaskSurfaceCompat.mirrorSourceStamp(task,0))
             },
             moveAsync={ done ->
+                val ackClaimed=java.util.concurrent.atomic.AtomicBoolean(false)
                 moveAsync { ok ->
-                    if(ok){
-                        // Capture the monotonic producer-frame counter at ACK even
-                        // when the output Surface is temporarily unavailable. Keep
-                        // the pre-move producer identity as a strict fallback.
-                        val ack=slot.outputFrameMark()
-                        val ackSequence=slot.contentFrameSequence
-                        val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
-                        outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack
-                            ?: atStart.copy(sequence=ackSequence)
-                        // Request one traversal as soon as ownership is confirmed.
-                        // This is only a wake-up hint, never proof of a fresh buffer.
-                        val ownerStillMatches=
-                            (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&
-                                mainTaskPresenter.currentTaskId()==state.taskId
-                        if(ownerStillMatches)requestSlotLatch()
+                    if(ackClaimed.compareAndSet(false,true)) {
+                        val settle=Runnable {
+                            val safe=runCatching {
+                                if(ok) {
+                                    // Capture the new owner and producer mark on
+                                    // the same main thread as liveReady checks.
+                                    val ack=slot.outputFrameMark()
+                                    val ackSequence=slot.contentFrameSequence
+                                    val earlier=slotCoordinator?.confirmedOutputMark(slotIndex,task)
+                                    outputAtConfirmedMove=earlier?.takeIf { same(it,ack) } ?: ack
+                                        ?: atStart.copy(sequence=ackSequence)
+                                    val ownerStillMatches=
+                                        (slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied)?.taskId==task &&
+                                            mainTaskPresenter.currentTaskId()==state.taskId
+                                    if(ownerStillMatches)requestSlotLatch()
+                                }
+                                ok
+                            }.getOrElse { error ->
+                                NeXtepLog.warn("snapshot_swap","ACK frame-state capture failed",error)
+                                false
+                            }
+                            done(safe)
+                        }
+                        if(android.os.Looper.myLooper()==android.os.Looper.getMainLooper())
+                            settle.run()
+                        else {
+                            StageExchangeTelemetry.nativeEvent("snapshot_ack_ui_dispatch",traceId)
+                            if(!backdropHandler.post(settle)) done(false)
+                        }
                     }
-                    done(ok)
                 }
             },
             liveReady={
