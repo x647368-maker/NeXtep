@@ -2266,7 +2266,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StagePreviewFillPolicy.kt": {
       "reviewed_blob_sha1": "b73ad956c467c1193f88fa1fe8153cf784e6ce8d",
-      "previous_blob_sha1": null,
+      "previous_blob_sha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
       "patches": [
         {
           "before": "",
@@ -2276,7 +2276,7 @@
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StagePreviewFillPolicyTest.kt": {
       "reviewed_blob_sha1": "2779b0efcb4cc7ae5628c792d69a4d1aa648413c",
-      "previous_blob_sha1": null,
+      "previous_blob_sha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
       "patches": [
         {
           "before": "",
