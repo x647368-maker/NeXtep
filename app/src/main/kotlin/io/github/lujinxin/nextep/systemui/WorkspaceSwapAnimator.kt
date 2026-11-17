@@ -12,6 +12,7 @@ import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.SystemClock
 import android.os.Handler
@@ -96,8 +97,16 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         // A translucent/no-wallpaper preview would expose a stale real task
         // when its contained bitmap leaves an uncovered strip. Never start
         // a Canvas flight without an already prepared opaque backing.
+        // The host's own fully opaque, solid workspace material is also a
+        // safe prepared cover. Clone it once so preview drawing cannot alter
+        // the host Drawable bounds. Do not accept translucent backgrounds or
+        // arbitrary child pixels as evidence of an opaque cover.
+        val hostCover=(host.background as? ColorDrawable)
+            ?.takeIf { it.opacity==PixelFormat.OPAQUE }
+            ?.let { ColorDrawable(it.color) }
+        val preparedBackdrop=backdrop ?: hostCover
         val backdropReady = StagePreviewFillPolicy.canStart(
-            opaqueBackdropColor!=null,backdrop?.opacity==PixelFormat.OPAQUE)
+            opaqueBackdropColor!=null,preparedBackdrop?.opacity==PixelFormat.OPAQUE)
         if (!backdropReady) NeXtepLog.warn("workspace_swap","Canvas preview rejected: opaque backdrop unavailable")
         if (!backdropReady || !host.isAttachedToWindow || !host.isHardwareAccelerated || source == null || start.isEmpty ||
             sourceBounds.isEmpty || targetBounds.isEmpty
@@ -110,7 +119,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }
         val token = ++generation
         handoff=StageStableHandoff()
-        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
+        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, preparedBackdrop, stationaryBackground,
             sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,
             sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },
             protectedBounds,sourceIsPreview,targetIsPreview,opaqueBackdropColor)
