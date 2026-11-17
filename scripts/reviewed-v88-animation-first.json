@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "c7d6202e52001785195debacc0f3e955126486fc",
+      "reviewed_blob_sha1": "64369f4217b5f5ec6d7da567467f5e840571437f",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -405,6 +405,10 @@
         {
           "before": "                host = previewHost,\n                backdrop = backdrop,\n                stationaryBackground = stationaryBackground,\n                durationMs = SystemUiRuntime.swapAnimationDurationMs(),\n                returningHome = parkingMain,\n                sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),",
           "after": "                host = previewHost,\n                backdrop = backdrop,\n                stationaryBackground = stationaryBackground,\n                opaqueBackdropColor = opaqueBackdropColor,\n                durationMs = SystemUiRuntime.swapAnimationDurationMs(),\n                returningHome = parkingMain,\n                sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),"
+        },
+        {
+          "before": "        val opaqueBackdropColor=StagePreviewFillPolicy.sampledOpaqueUnderlay(matchedWallpaper)\n        val backdrop = WorkspaceWallpaperBackdrop.crop(",
+          "after": "        val opaqueBackdropColor=StagePreviewFillPolicy.sampledOpaqueUnderlay(matchedWallpaper)\n        if(opaqueBackdropColor==null)tracePreview(\"workspace_preview_opaque_wallpaper_missing\")\n        val backdrop = WorkspaceWallpaperBackdrop.crop("
         }
       ]
     },
@@ -2147,7 +2151,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/PhasedPreviewRegression.kt": {
-      "reviewed_blob_sha1": "191ba67d20a99e1d50781483ff8a089cdd25b96c",
+      "reviewed_blob_sha1": "ac35302f1485148292d93968929639ff792523d0",
       "previous_blob_sha1": "ebb222a2eae988609d118c4fa91ae3f83e95631f",
       "patches": [
         {
@@ -2173,6 +2177,10 @@
         {
           "before": "\n    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {\n        instrumentation.runOnMainSync {\n            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n            val animator=WorkspaceSwapAnimator(activity)\n            var moves=0\n            var finishes=0\n            animator.animate(source,null,RectF(20f,20f,120f,220f),\n                RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),\n                host,null,null,200,false,null,null,\n                move={moves++;true},isLiveReady={true},\n                onFinished={finishes++})\n            check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {\n                \"Missing background leaked preview or repeated real task move\"\n            }\n        }\n    }",
           "after": "\n    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {\n        instrumentation.runOnMainSync {\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {\n                val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                val animator=WorkspaceSwapAnimator(activity)\n                var moves=0\n                var finishes=0\n                animator.animate(source,null,RectF(20f,20f,120f,220f),\n                    RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),\n                    host,background,null,200,false,null,null,\n                    move={moves++;true},isLiveReady={true},\n                    onFinished={finishes++})\n                check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {\n                    \"Missing/transparent background leaked preview or repeated task move\"\n                }\n            }\n        }\n    }"
+        },
+        {
+          "before": "    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {\n        instrumentation.runOnMainSync {\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {",
+          "after": "    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {\n        instrumentation.runOnMainSync {\n            check(host.isAttachedToWindow && host.isHardwareAccelerated) {\n                \"Fallback evidence requires an otherwise capable HWUI preview host\"\n            }\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {"
         }
       ]
     },
