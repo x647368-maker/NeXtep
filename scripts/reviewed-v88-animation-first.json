@@ -1623,7 +1623,7 @@
       ]
     },
     "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageAdaptiveCoveredRailRouteTest.kt": {
-      "reviewed_blob_sha1": "333511be4369d570c472a29f1192a17b0d115cec",
+      "reviewed_blob_sha1": "93f5e3f380f324dba1809a76801aca4ad9bd24eb",
       "previous_blob_sha1": "93ce6dcf529b84430ddf5542325fd9aa86644f66",
       "patches": [
         {
@@ -1645,6 +1645,10 @@
         {
           "before": "    }\n\n    @Test fun nonzeroCropOriginsArePreserved() {\n        val c=Crop(23,47,1295,2564)\n",
           "after": "    }\n\n    @Test fun firstCoveredFrameMustNotCropOrResizeTheCompleteSource() {\n        val physical=Box(0f,0f,1280f,800f)\n        val small=Box(20f,300f,180f,390f)\n        val large=Box(260f,140f,1220f,680f)\n        val exact=Crop(0,0,960,540)\n        // Exactly matched buffers stay on the direct single-clock route.\n        assertNotNull(StageAdaptiveCoveredRailRoute.straightCrossing(\n            small,large,exact,exact,physical,emptyList(),{true}))\n        val exactWithOffset=Crop(23,47,983,587)\n        assertNotNull(StageAdaptiveCoveredRailRoute.straightCrossing(\n            small,large,exactWithOffset,exactWithOffset,physical,emptyList(),{true}))\n        // Slight aspect mismatch is still allowed by the old 2px *outer*\n        // endpoint gap. At p=0 its complete crop is 960x544, but the new\n        // covered sampler immediately uses 960x540 with a 2px inset.\n        // The previous check compared the p=0 legacy transform to itself;\n        // it must no longer admit this perceptible frame-zero content jump.\n        val slightlyDifferent=Crop(0,0,960,544)\n        assertTrue(g.canUseCoveredFlight(\n            small,large,slightlyDifferent,exact,emptyList()))\n        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(\n            small,large,slightlyDifferent,exact,physical,emptyList(),{true}))\n        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(\n            small,large,exact,slightlyDifferent,physical,emptyList(),{true}))\n    }\n\n    @Test fun nonzeroCropOriginsArePreserved() {\n        val c=Crop(23,47,1295,2564)\n"
+        },
+        {
+          "before": "        // it must no longer admit this perceptible frame-zero content jump.\n        val slightlyDifferent=Crop(0,0,960,544)\n        assertTrue(g.canUseCoveredFlight(\n            small,large,slightlyDifferent,exact,emptyList()))\n",
+          "after": "        // it must no longer admit this perceptible frame-zero content jump.\n        val slightlyDifferent=Crop(0,0,960,544)\n        // The old 2px external gap admitted this source, but its first\n        // covered compositor pulse changes several actual source rows.\n        // Global fallback admission must now reject it as well.\n        assertFalse(g.canUseCoveredFlight(\n            small,large,slightlyDifferent,exact,emptyList()))\n"
         }
       ]
     },
@@ -2113,6 +2117,26 @@
         {
           "before": "    }\n\n    @Test fun boundsEventNamesAndCapsTheirNumber() {\n        var time = 0L\n",
           "after": "    }\n\n    @Test fun keepsReadinessCausesWhenMiddleEventsAreTruncated() {\n        var now=0L\n        val recorder=StageSwapTraceBuffer({now})\n        val id=recorder.begin(\"tap_swap\")\n        repeat(21) { now++;recorder.event(\"gpu_prepare_$it\",id) }\n        now++;recorder.event(\"target_wait=slot_post_ack_buffer\",id)\n        now++;recorder.event(\"handoff_state=target_not_ready\",id)\n        repeat(100) { now++;recorder.event(\"gpu_frame_$it\",id) }\n        now++;recorder.event(\"handoff_target_ready\",id)\n        now++;recorder.finish(\"gpu_completed\",id)\n        val text=recorder.describe()\n        assertTrue(text.contains(\"target_wait=slot_post_ack_buffer@22ms\"))\n        assertTrue(text.contains(\"handoff_state=target_not_ready@23ms\"))\n        assertTrue(text.contains(\"handoff_target_ready@124ms\"))\n        assertTrue(text.contains(\"end:gpu_completed@125ms\"))\n        assertTrue(text.contains(\"[omitted=\"))\n        assertTrue(text.length<4000)\n    }\n\n    @Test fun boundsEventNamesAndCapsTheirNumber() {\n        var time = 0L\n"
+        }
+      ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometry.kt": {
+      "reviewed_blob_sha1": "67917265422d606c50ed61b24a6ca57e6fbe15f1",
+      "previous_blob_sha1": "18d3356bac56d6ce1d1c5d58cf0f369a7db06aac",
+      "patches": [
+        {
+          "before": "            val first = mirrorFrame(from, to, crop, 0f, false) ?: return false\n            if (endpointGapPx(from, first.box) > 2f) return false\n            val split = if (from.width * from.height < to.width * to.height) .34f else .66f\n            val points = listOf(0f, split, 1f)\n",
+          "after": "            val first = mirrorFrame(from, to, crop, 0f, false) ?: return false\n            if (endpointGapPx(from, first.box) > 2f) return false\n            // The old \"covered\" compositor keeps the complete source at\n            // progress==0, but begins center cropping for ANY progress>0.\n            // A 2px outer-box allowance can conceal a larger *content* jump\n            // at frame one. Certify the actual two renderer states here, not\n            // just the starting outer rectangle. One source-pixel rounding\n            // (~0.2 screen px on a small rail) is safe; a visible crop snap\n            // selects the established uncropped contain/reveal path instead.\n            val next = mirrorFrame(from, to, crop, 0.000001f, true) ?: return false\n            val sourceWidth = crop.right-crop.left\n            val sourceHeight = crop.bottom-crop.top\n            val maxCropPixels=maxOf(\n                kotlin.math.abs(first.crop.left-next.crop.left),\n                kotlin.math.abs(first.crop.top-next.crop.top),\n                kotlin.math.abs(first.crop.right-next.crop.right),\n                kotlin.math.abs(first.crop.bottom-next.crop.bottom),\n            )*maxOf(first.scale,next.scale)\n            val scalePixels=kotlin.math.abs(first.scale-next.scale)*\n                maxOf(sourceWidth,sourceHeight)\n            if(maxCropPixels>.35f || scalePixels>.35f ||\n                endpointGapPx(first.box,next.box)>.35f ||\n                kotlin.math.abs(first.x-next.x)>.35f ||\n                kotlin.math.abs(first.y-next.y)>.35f)return false\n            val split = if (from.width * from.height < to.width * to.height) .34f else .66f\n            val points = listOf(0f, split, 1f)\n"
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageLiveSurfaceFlightGeometryTest.kt": {
+      "reviewed_blob_sha1": "7034ec0c6013a00d721b21b7b0e98170db80a98a",
+      "previous_blob_sha1": "e1795f15dd46ee5d9097a6efd0aaa520a5f812ef",
+      "patches": [
+        {
+          "before": "    }\n\n    @Test fun ambiguousSourceOrUnsafeSweptEnvelopeRetainsContainReveal() {\n        val g=StageLiveSurfaceFlightGeometry\n",
+          "after": "    }\n\n    @Test fun evenLegacyCoveredFlightCannotJumpSourceCropOnFirstPulse() {\n        val g=StageLiveSurfaceFlightGeometry\n        val screenSmall=b(20f,300f,180f,390f)\n        val screenMain=b(260f,140f,1220f,680f)\n        val exact=StageLiveSurfaceFlightGeometry.Crop(0,0,960,540)\n        assertTrue(g.canUseCoveredFlight(\n            screenSmall,screenMain,exact,exact,emptyList()))\n        // Previous legacy admission allowed this because the starting\n        // letterbox was <2 screen px. The very next positive progress\n        // nevertheless changes the complete 960x544 crop to 960x540.\n        val almost=StageLiveSurfaceFlightGeometry.Crop(0,0,960,544)\n        val original=checkNotNull(g.mirrorFrame(screenSmall,screenMain,almost,0f,true))\n        val next=checkNotNull(g.mirrorFrame(screenSmall,screenMain,almost,.000001f,true))\n        assertEquals(almost,original.crop)\n        assertTrue(next.crop!=original.crop)\n        assertFalse(g.canUseCoveredFlight(\n            screenSmall,screenMain,almost,exact,emptyList()))\n    }\n\n    @Test fun ambiguousSourceOrUnsafeSweptEnvelopeRetainsContainReveal() {\n        val g=StageLiveSurfaceFlightGeometry\n"
         }
       ]
     }
