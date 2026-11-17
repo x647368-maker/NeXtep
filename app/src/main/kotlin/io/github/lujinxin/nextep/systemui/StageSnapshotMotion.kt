@@ -178,12 +178,29 @@ internal object StageSnapshotMotion {
         val canonicalHeight=screen.h.toInt().coerceAtLeast(2)
         val routeUp=u.copy(width=canonicalWidth,height=canonicalHeight)
         val routeDown=d.copy(width=canonicalWidth,height=canonicalHeight)
-        var best=PairFlight(routeUp,routeDown)
-        var bestScore=score(best,screen,excluded,u.arc,withinBudget)?:return null
         val maxArc=minOf(min(screen.w,screen.h)*.22f,
             min(main.w,main.h)*.34f,hypot(main.cx-small.cx,main.cy-small.cy)*.32f)
-        for(factor in floatArrayOf(1f,-1f,2f,-2f,3f,-3f)){
-            val arc=(u.arc*factor).coerceIn(-maxArc,maxArc)
+        // Never let the current occupied-neighbor set select a different
+        // clockwise/anticlockwise bend. This previously flipped the exact
+        // same tablet slot from +arc to -arc after a neighboring slot opened.
+        // Pick handedness using only immutable physical endpoints+viewport.
+        // Two bounded (31-pose) canonical probes run ONCE per tap on the
+        // existing planning lane, not per rendered frame or in the background.
+        val probe=u.arc.times(3f).coerceIn(0f,maxArc)
+        fun canonical(scoreArc:Float):Float? =
+            score(PairFlight(routeUp.copy(arc=scoreArc,sizeBias=.70f),
+                routeDown.copy(arc=scoreArc,sizeBias=.70f)),
+                screen,emptyList(),u.arc,withinBudget)
+        val positive=canonical(probe)?:return null
+        val negative=canonical(-probe)?:return null
+        val sign=if(positive>=negative)1f else -1f
+        var best=PairFlight(routeUp.copy(arc=u.arc*sign),
+            routeDown.copy(arc=u.arc*sign))
+        var bestScore=score(best,screen,excluded,u.arc,withinBudget)?:return null
+        // Occupancy can still adjust the arc magnitude and compactness to
+        // protect live neighboring cards, but never its spatial handedness.
+        for(factor in floatArrayOf(1f,2f,3f)){
+            val arc=(u.arc*factor*sign).coerceIn(-maxArc,maxArc)
             for(bias in floatArrayOf(0f,.35f,.70f)){
                 val candidate=PairFlight(routeUp.copy(arc=arc,sizeBias=bias),
                     routeDown.copy(arc=arc,sizeBias=bias))
