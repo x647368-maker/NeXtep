@@ -33,7 +33,7 @@ internal object StageAdaptiveCoveredRailRoute {
                 accepted=certify(keys,small,main,incoming,outgoing,obstacles,withinBudget)
                 accepted!=null
             },withinBudget) ?:return null
-        return accepted.takeIf{withinBudget() && SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main)}
+        return accepted?.takeIf{withinBudget() && SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main)}
     }
     private fun certify(plan:PairedRailCandidate.Plan,small:Box,main:Box,incoming:Crop,outgoing:Crop,
                         obstacles:List<Box>,withinBudget:()->Boolean):SmoothPairedRailCandidate.Plan? {
