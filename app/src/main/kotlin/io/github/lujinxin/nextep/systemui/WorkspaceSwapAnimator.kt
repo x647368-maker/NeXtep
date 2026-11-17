@@ -20,6 +20,7 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
+import java.util.concurrent.atomic.AtomicBoolean
 import io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
@@ -77,6 +78,21 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         check(overlay == null) { "Previous exchange still owns its preview" }
         releaseAllowed = canRelease
         cancelRequested = false
+        // The visual rejection path is still a real async task move. It must
+        // finish exactly once on UI even if the producer invokes the callback
+        // twice, from a worker, or throws after submitting the move.
+        fun fallbackMoveOnce() {
+            val finished=AtomicBoolean(false)
+            fun finishOnce() {
+                if(!finished.compareAndSet(false,true))return
+                if(Looper.myLooper()==ui.looper)onFinished()
+                else ui.post { onFinished() }
+            }
+            if(moveAsync!=null)runCatching { moveAsync { finishOnce() } }.onFailure {
+                NeXtepLog.warn("workspace_swap","Visual fallback move submission failed",it)
+                finishOnce()
+            } else try { move() } finally { finishOnce() }
+        }
         // A translucent/no-wallpaper preview would expose a stale real task
         // when its contained bitmap leaves an uncovered strip. Never start
         // a Canvas flight without an already prepared opaque backing.
@@ -89,8 +105,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
             source?.recycle()
             if (target !== source) target?.recycle()
             stationaryBackground?.recycle()
-            if (moveAsync != null) moveAsync { onFinished() }
-            else try { move() } finally { onFinished() }
+            fallbackMoveOnce()
             return
         }
         val token = ++generation
@@ -110,8 +125,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         }.isSuccess
         if (!added) {
             preview.release()
-            if (moveAsync != null) moveAsync { onFinished() }
-            else try { move() } finally { onFinished() }
+            fallbackMoveOnce()
             return
         }
         overlay = preview
