@@ -1,0 +1,72 @@
+name: v89 compiled revision identity isolated gate
+on:
+  push:
+    branches:
+      - atomic-workbench/v89-build-revision-diagnostic-20261118
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiled-revision:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)
+          test -x "$sdk"
+          yes | "$sdk" --licenses >/dev/null || true
+          "$sdk" 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Confirm pinned parent and exact four-file delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=2d486febdfc9848ea2a4189e29498e2f56ba6b33
+          git merge-base --is-ancestor "$parent" HEAD
+          python3 scripts/test-v89-handoff-wiring.py
+          python3 - <<'PY'
+          import subprocess
+          changed=set(subprocess.check_output(
+              ["git","diff","--name-only","2d486febdfc9848ea2a4189e29498e2f56ba6b33","HEAD"],
+              text=True).splitlines())
+          allowed={
+            "app/build.gradle.kts",
+            "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt",
+            "app/src/test/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentityTest.kt",
+            ".github/workflows/v89-build-revision-gate.yml",
+          }
+          assert changed==allowed,(sorted(changed-allowed),sorted(allowed-changed))
+          print("PASS exactly four changed files; prior GPU fixes frozen")
+          PY
+      - name: Compile APK without private key and run JVM regression
+        run: bash scripts/ci-android-build.sh :app:testDebugUnitTest :app:assembleDebug -PatomicXposedApi=101.0.0
+      - name: Verify generated BuildConfig embeds this exact CI commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_SHA:0:12}"
+          test -n "$expected"
+          grep -R -F "ATOMIC_BUILD_REVISION = \"$expected\"" app/build/generated/source/buildConfig/debug/
+          grep -R -F 'val BUILD = "${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE}+${BuildConfig.ATOMIC_BUILD_REVISION}"' \
+            app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt
+          test -n "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          echo "PASS compiled loaded_build is tied to checkout ${expected}; APK remains unsigned"
+      - name: Retain raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-revision-jvm-xml
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
