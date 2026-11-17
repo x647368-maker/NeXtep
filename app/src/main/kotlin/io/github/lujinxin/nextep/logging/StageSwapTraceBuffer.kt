@@ -51,7 +51,11 @@ internal class StageSwapTraceBuffer(
     // They are already emitted only on transition; retain them through bounded
     // history truncation, without new sampling, polling or content collection.
     private fun isHandoffWait(name:String):Boolean =
-        name.startsWith("target_wait=") || name.startsWith("handoff_state=")
+        name.startsWith("target_wait=") || name.startsWith("handoff_state=") ||
+        name.startsWith("real_move_requested") || name.startsWith("real_move_ack") ||
+        name.startsWith("native_terminal_transaction_committed") ||
+        name.startsWith("handoff_target_ready") || name.startsWith("endpoint_reveal_start") ||
+        name.startsWith("endpoint_reveal_commit")
 
     private fun eventLocked(name: String) {
         val attempt = active ?: return

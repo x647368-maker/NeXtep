@@ -2894,8 +2894,8 @@ class NeXtepWindowController(
                 runCatching {
                     previewCapturePending=false
                     activeSwapViewport=geometry()
-                    animateSwapPrepared(sourceIndex,targetIndex,drag,move,
-                        tapFallbackFinish ?: onFinished,null,asyncMove,canRelease,tapTraceId)
+                    prepareWorkspaceSwap(sourceIndex,targetIndex,drag,move,
+                        tapFallbackFinish ?: onFinished,asyncMove,canRelease,tapTraceId)
                     true
                 }.onFailure {
                     if(tapTraceId!=null) StageExchangeTelemetry.nativeEvent("workspace_preview_exception",tapTraceId)
@@ -2943,6 +2943,18 @@ class NeXtepWindowController(
                 animateSwap(sourceIndex,targetIndex,drag,move,onFinished,
                     asyncMove,canRelease,attemptNative=false)
             }) return
+        prepareWorkspaceSwap(sourceIndex,targetIndex,drag,move,effectiveOnFinished,
+            asyncMove,canRelease,workspaceTapTraceId)
+    }
+
+    // Shared by ordinary and GPU/RT fallback entries. Capture the real main
+    // once off-thread; retain identity/viewport validation and null-safe fallback.
+    private fun prepareWorkspaceSwap(
+        sourceIndex:Int, targetIndex:Int?, drag:SlotTaskDrag?, move:()->Boolean,
+        effectiveOnFinished:()->Unit, asyncMove:(((Boolean)->Unit)->Unit)?,
+        canRelease:()->Boolean, workspaceTapTraceId:Long?,
+    ) {
+        val task=if(targetIndex==null)mainTaskPresenter.currentTaskId() else null
         if(task==null || !workspaceVisible || suspended || !WorkspaceWallpaperBackdrop.canCapture(context)) {
             animateSwapPrepared(sourceIndex,targetIndex,drag,move,effectiveOnFinished,null,asyncMove,canRelease,workspaceTapTraceId);return
         }

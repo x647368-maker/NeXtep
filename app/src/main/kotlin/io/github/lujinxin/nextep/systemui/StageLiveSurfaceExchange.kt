@@ -761,15 +761,16 @@ internal class StageLiveSurfaceExchange private constructor(
                 val ackClaimed=AtomicBoolean(false)
                 runCatching {
                     moveAsync { ok ->
-                        if(ackClaimed.compareAndSet(false,true)) ui.post {
-                            if (!isRunning || moveComplete) return@post
-                            if (hostDetached || !host.isAttachedToWindow || !ok) { stop(); return@post }
+                        if(ackClaimed.compareAndSet(false,true)) StageAckDispatch.dispatch(
+                            Looper.myLooper()==ui.looper, { action -> ui.post(action) }, Runnable {
+                            if (!isRunning || moveComplete) return@Runnable
+                            if (hostDetached || !host.isAttachedToWindow || !ok) { stop(); return@Runnable }
                             moveComplete = true
                             moveCompletedAt = SystemClock.uptimeMillis()
                             trace(
                                 "real_move_ack@${moveCompletedAt-startedAtMs}ms")
                             if(unmaskedMove)stop() else finishIfReady(liveReady,canRelease)
-                        }
+                        })
                     }
                 }.onFailure {
                     if(ackClaimed.compareAndSet(false,true)) {

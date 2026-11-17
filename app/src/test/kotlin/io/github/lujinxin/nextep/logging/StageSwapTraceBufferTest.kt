@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageSwapTraceBufferTest {
+    @Test fun gpuHandoffMilestonesSurviveDeviceTraceTruncation() {
+        var clock=0L
+        val recorder=StageSwapTraceBuffer({clock})
+        recorder.begin("tap_swap")
+        repeat(14) { recorder.event("prepare_$it") }
+        val stages=listOf("native_terminal_transaction_committed", "real_move_requested",
+            "real_move_ack", "target_wait=slot_post_ack_buffer", "handoff_target_ready",
+            "endpoint_reveal_start", "endpoint_reveal_commit")
+        stages.forEach { clock+=20;recorder.event(it) }
+        repeat(18) { recorder.event("gpu_stats_$it") }
+        recorder.finish("completed")
+        val report=recorder.describe()
+        stages.forEach { assertTrue("lost $it",report.contains(it+"@")) }
+        assertTrue(report.contains("omitted="))
+        assertTrue(report.split(" > ").size<=29)
+    }
+
     @Test fun keepsExactlyLastFiveExchangesWithIndividualDurations() {
         var time = 100L
         val recorder = StageSwapTraceBuffer({ time })

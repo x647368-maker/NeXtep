@@ -1,0 +1,47 @@
+name: v89 minimal handoff JVM gate
+on:
+  push:
+    branches:
+      - atomic-workbench/v89-gpu-handoff-minimal-20261118
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  development:
+    name: v89-handoff-dev-jvm-and-source-boundary
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install SDK without obsolete legacy tools package
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --version
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify unchanged frozen base and fallback wiring
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/frozen" b3313c558c02ae1bbc6379875c5eaa3c010660ef
+          (cd "$RUNNER_TEMP/frozen" && python3 scripts/verify-v89-p02a-boundary.py)
+          python3 scripts/test-v89-handoff-wiring.py
+      - name: Compile and execute JVM regression suite
+        run: bash scripts/ci-android-build.sh :app:testDebugUnitTest -PatomicXposedApi=101.0.0
+      - name: Preserve raw JVM XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-handoff-jvm-xml
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
