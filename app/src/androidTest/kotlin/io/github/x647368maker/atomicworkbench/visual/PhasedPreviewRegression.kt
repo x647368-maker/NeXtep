@@ -182,6 +182,9 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
 
     private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {
         instrumentation.runOnMainSync {
+            check(host.isAttachedToWindow && host.isHardwareAccelerated) {
+                "Fallback evidence requires an otherwise capable HWUI preview host"
+            }
             for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {
                 val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
                 val animator=WorkspaceSwapAnimator(activity)
