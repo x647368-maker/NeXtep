@@ -227,6 +227,9 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
             // The certified paired route already owns easing. Do not ease
             // its clock a second time in the final preview renderer.
             interpolator = when {
+                // P0-2a: the admitted pair now maps raw time in one per-tap
+                // ExchangeMotionPlan, including the certified internal easing.
+                preview.usesMotionPlan -> android.animation.TimeInterpolator { it }
                 preview.usesSharedRoute -> android.animation.TimeInterpolator { it }
                 // Match the snapshot backend clock when the same bounded
                 // non-certified paired corridor is admitted.
@@ -370,6 +373,8 @@ internal class SwapPreviewView(
     private val opaqueBackdropColor:Int?=null,
 ) : View(context) {
     private val protectedCards=protectedBounds.map { RectF(it) }
+    private val motionPlan=sharedMotion?.let(ExchangeMotionPlan::fromExistingPair)
+    val usesMotionPlan get()=motionPlan!=null
     val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
     val usesPairedRoute get()=sharedMotion!=null
     private val upCorners=sharedMotion?.up?.let{StageSnapshotMotion.cornerTrack(it,true,resources.displayMetrics.density)}
@@ -465,12 +470,13 @@ internal class SwapPreviewView(
 
     private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight,
                                       corners:StageSnapshotMotion.CornerTrack) {
-        val pose=flight.pose(progress)
+        val frameProgress=motionPlan?.geometryProgress(progress) ?: progress
+        val pose=flight.pose(frameProgress)
         if(!pose.cx.isFinite() || !pose.cy.isFinite() || !pose.scale.isFinite() || pose.scale<=0f)return
         val halfW=bitmap.width*pose.scale*.5f
         val halfH=bitmap.height*pose.scale*.5f
         destination.set(pose.cx-halfW,pose.cy-halfH,pose.cx+halfW,pose.cy+halfH)
-        val radius=corners.visibleRadius(progress,pose.scale)
+        val radius=corners.visibleRadius(frameProgress,pose.scale)
         outline.reset()
         outline.addRoundRect(destination,radius,radius,Path.Direction.CW)
         val save=canvas.save()
