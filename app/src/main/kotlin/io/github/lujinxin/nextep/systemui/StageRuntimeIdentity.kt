@@ -2,10 +2,13 @@ package io.github.x647368maker.atomicworkbench.systemui
 
 import android.content.*
 import android.os.*
+import io.github.x647368maker.atomicworkbench.BuildConfig
 
 /** Reports the code actually executing inside SystemUI, never PackageManager's APK version. */
 internal object StageRuntimeIdentity {
-    const val BUILD = "0.9.74-dev/89"
+    // Generated from the compiled APK's version and exact CI checkout, not
+    // a runtime PackageManager lookup that could observe a different APK.
+    val BUILD = "${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE}+${BuildConfig.ATOMIC_BUILD_REVISION}"
     const val ACTION = "io.github.x647368maker.atomicworkbench.action.RUNTIME_IDENTITY_30"
     const val AUDIT_ACTION="io.github.x647368maker.atomicworkbench.action.INJECTION_DIAGNOSTIC_V1"
     private var registered=false
