@@ -68,15 +68,15 @@ internal class StageLiveSurfaceExchange private constructor(
         obstacles:List<StageLiveSurfaceFlightGeometry.Box>,
     ):Boolean {
         if(finished.get() || isRunning)return false
-        // The covered fixture must reproduce the old rejection and admit only
-        // the actual adaptive route. No production gate or task identity is bypassed.
+        // Covered fixtures exercise the same new paths as the production
+        // factory. Fake task identities still fail the migration preflight.
         pairedRailPlan=if(coveredFlight) {
             if(!StageLiveSurfaceFlightGeometry.canUseCoveredFlight(slotStart,mainStart,
                     incomingGeometryCrop,outgoingGeometryCrop,obstacles))return false
-            if(StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
-                    outgoingGeometryCrop,screen,obstacles,oldCovered=true)!=null)return false
-            StageAdaptiveCoveredRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
-                outgoingGeometryCrop,screen,obstacles)
+            StageAdaptiveCoveredRailRoute.straightCrossing(slotStart,mainStart,incomingGeometryCrop,
+                outgoingGeometryCrop,screen,obstacles,{true})
+                ?: StageAdaptiveCoveredRailRoute.railCrossing(slotStart,mainStart,incomingGeometryCrop,
+                    outgoingGeometryCrop,screen,obstacles,{true})
         } else StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
             outgoingGeometryCrop,screen,obstacles,oldCovered=false)
         return pairedRailPlan!=null
