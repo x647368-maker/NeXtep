@@ -43,6 +43,35 @@ class StageAdaptiveCoveredRailRouteTest {
         ))
     }
 
+    @Test fun packedPortraitSlotsUseOneReversiblePathWithoutCoveringNeighbors() {
+        val fourSlots = List(4) { index ->
+            val top = 516f + index * 474f
+            Box(18f, top, 248f, top + 455f)
+        }
+        for (rail in listOf(slots, fourSlots)) for (small in rail) {
+            val neighbors = rail.filter { it != small }
+            assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+                small, main, incoming, outgoing, screen, neighbors, { true },
+            ))
+            val plan = checkNotNull(StageAdaptiveCoveredRailRoute.railCrossing(
+                small, main, incoming, outgoing, screen, neighbors, { true },
+            ))
+            var lastX = small.cx
+            for (step in 0..240) {
+                val p = step / 240f
+                val pair = plan.at(p)
+                val reverse = plan.at(1f - p).outgoing
+                assertTrue(pair.incoming.cx >= lastX - .003f)
+                assertTrue(g.endpointGapPx(pair.incoming, reverse) < .003f)
+                assertTrue(neighbors.all {
+                    g.peakSweptOverlap(pair.incoming, pair.incoming, it) <= 1.01 &&
+                        g.peakSweptOverlap(pair.outgoing, pair.outgoing, it) <= 1.01
+                })
+                lastX = pair.incoming.cx
+            }
+        }
+    }
+
     @Test fun mixedAspectPortraitCanUseCertifiedCoveredRoute() {
         for(small in slots) {
             val obstacles=slots.filter{it!=small}

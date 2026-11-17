@@ -66,6 +66,33 @@ internal object StageAdaptiveCoveredRailRoute {
         }
     }
 
+    fun railCrossing(
+        small: Box, main: Box, incoming: Crop, outgoing: Crop, screen: Box,
+        obstacles: List<Box>, withinBudget: () -> Boolean,
+    ): SmoothPairedRailCandidate.Plan? {
+        if (!withinBudget() || !screen.valid() || obstacles.any { !it.valid() }) return null
+        val geometry = StageLiveSurfaceFlightGeometry
+        val turn = geometry.railCorridorFlight(
+            small, main, incoming.right - incoming.left, incoming.bottom - incoming.top, .34f,
+        )?.box ?: return null
+        val hinge = Box(
+            turn.cx - small.width * .5f, turn.cy - small.height * .5f,
+            turn.cx + small.width * .5f, turn.cy + small.height * .5f,
+        )
+        val viewports = listOf(small, hinge, main)
+        if (viewports.any {
+            !it.valid() || it.left < screen.left || it.top < screen.top ||
+                it.right > screen.right || it.bottom > screen.bottom
+        }) return null
+        val keys = viewports.mapIndexed { index, box ->
+            PairedRailCandidate.PairBox(box, viewports[viewports.lastIndex - index])
+        }
+        if (!hasSafeCropRange(keys, incoming, outgoing)) return null
+        val plan = SmoothPairedRailCandidate.railCrossing(small, hinge, main, obstacles, withinBudget)
+            ?: return null
+        return plan.takeIf { withinBudget() && preservesEndpointCrops(it, small, main, incoming, outgoing) }
+    }
+
     private fun hasSafeCropRange(
         keys: List<PairedRailCandidate.PairBox>, incoming: Crop, outgoing: Crop,
     ): Boolean {

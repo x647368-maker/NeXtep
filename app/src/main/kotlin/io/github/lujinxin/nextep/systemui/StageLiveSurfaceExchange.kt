@@ -401,11 +401,16 @@ internal class StageLiveSurfaceExchange private constructor(
                         val direct = if (oldCovered) StageAdaptiveCoveredRailRoute.straightCrossing(
                             from, to, incomingCrop, outgoingCrop, screen, obstacles, withinBudget,
                         ) else null
-                        if (direct != null) {
+                        val rail = if (oldCovered && direct == null) StageAdaptiveCoveredRailRoute.railCrossing(
+                            from, to, incomingCrop, outgoingCrop, screen, obstacles, withinBudget,
+                        ) else null
+                        if (direct != null || rail != null) {
                             adaptiveCovered = true
-                            StageExchangeTelemetry.nativeEvent("paired_straight_crossing")
+                            StageExchangeTelemetry.nativeEvent(
+                                if (direct != null) "paired_straight_crossing" else "paired_rail_crossing",
+                            )
                         }
-                        direct ?: StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
+                        direct ?: rail ?: StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
                             obstacles,oldCovered,withinBudget) ?: if(oldCovered && withinBudget()) {
                             StageAdaptiveCoveredRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
                                 obstacles,withinBudget).also { adaptiveCovered=it!=null }

@@ -35,6 +35,37 @@ internal object SmoothPairedRailCandidate {
         val midpoint = mix(start, end, .5f)
         return Plan(listOf(Segment(0f, 4f, Curve(start, midpoint, end))), 1.0, 0f)
     }
+
+    fun railCrossing(small: Box, hinge: Box, main: Box, obstacles: List<Box>,
+                     withinBudget: () -> Boolean): Plan? {
+        // Travel out of the rail at the original size, then grow inside the
+        // main area. The returning card traces exactly the reverse path.
+        val turn = 1.36f
+        fun pose(time: Float): Box = if (time < turn) mix(small, hinge, time / turn)
+            else mix(hinge, main, (time - turn) / (4f - turn))
+        fun pair(time: Float) = PairBox(pose(time), pose(4f - time))
+        val start = pair(0f)
+        for (trim in floatArrayOf(.24f, .12f, .06f)) {
+            if (!withinBudget()) return null
+            val segments = ArrayList<Segment>(5)
+            var time = 0f
+            var at = start
+            for (corner in floatArrayOf(turn, 4f - turn)) {
+                val before = pair(corner - trim)
+                val after = pair(corner + trim)
+                segments.add(Segment(time, corner - trim, Curve(at, mix(at, before, .5f), before)))
+                segments.add(Segment(corner - trim, corner + trim, Curve(before, pair(corner), after)))
+                time = corner + trim
+                at = after
+            }
+            val end = pair(4f)
+            segments.add(Segment(time, 4f, Curve(at, mix(at, end, .5f), end)))
+            if (segments.all { certify(it.curve, obstacles, start, 5, withinBudget, allowPairOverlap = true) != null }) {
+                return Plan(segments, 1.0, trim).takeIf { withinBudget() }
+            }
+        }
+        return null
+    }
     // Integrated smoothstep velocity ramp. Exactly one acceleration/deceleration;
     // constant nonzero path speed in the interior, zero endpoint velocity.
     fun clock(progress:Float):Float {
@@ -63,17 +94,17 @@ internal object SmoothPairedRailCandidate {
     // Convex-hull certificate for EVERY point of a quadratic, with bounded
     // subdivision. No sample-only admission and no search during drawing.
     private fun certify(q:Curve,others:List<Box>,initial:PairBox,depth:Int,
-                        withinBudget:()->Boolean):Double? {
+                        withinBudget:()->Boolean, allowPairOverlap:Boolean=false):Double? {
         if(!withinBudget())return null
         val a=q.a;val b=q.control;val c=q.b
         val ih=hull(a.incoming,b.incoming,c.incoming);val oh=hull(a.outgoing,b.outgoing,c.outgoing)
         val minArea=minOf(area(a.incoming),area(b.incoming),area(c.incoming),area(a.outgoing),area(b.outgoing),area(c.outgoing))
-        val bound=overlap(ih,oh)/minArea
-        if(bound<=LIMIT && others.all { overlap(ih,it)<=overlap(initial.incoming,it)+1.0 && overlap(oh,it)<=overlap(initial.outgoing,it)+1.0 })return bound
+        val bound=if(allowPairOverlap) 1.0 else overlap(ih,oh)/minArea
+        if((allowPairOverlap || bound<=LIMIT) && others.all { overlap(ih,it)<=overlap(initial.incoming,it)+1.0 && overlap(oh,it)<=overlap(initial.outgoing,it)+1.0 })return bound
         if(depth==0)return null
         val (left,right)=q.split()
-        val l=certify(left,others,initial,depth-1,withinBudget)?:return null
-        val r=certify(right,others,initial,depth-1,withinBudget)?:return null
+        val l=certify(left,others,initial,depth-1,withinBudget,allowPairOverlap)?:return null
+        val r=certify(right,others,initial,depth-1,withinBudget,allowPairOverlap)?:return null
         return max(l,r)
     }
     fun smooth(route:PairedRailCandidate.Plan,others:List<Box>,

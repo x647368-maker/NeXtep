@@ -103,7 +103,10 @@ internal object StageSnapshotMotion {
         val direct = if (covered) StageAdaptiveCoveredRailRoute.straightCrossing(
             a, z, ic, oc, view, obstacles, withinBudget,
         ) else null
-        val plan=direct ?: StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)
+        val rail = if (covered && direct == null) StageAdaptiveCoveredRailRoute.railCrossing(
+            a, z, ic, oc, view, obstacles, withinBudget,
+        ) else null
+        val plan=direct ?: rail ?: StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)
             ?: (if(covered && withinBudget())
                 StageAdaptiveCoveredRailRoute.choose(a,z,ic,oc,view,obstacles,withinBudget) else null)
             ?:return null
