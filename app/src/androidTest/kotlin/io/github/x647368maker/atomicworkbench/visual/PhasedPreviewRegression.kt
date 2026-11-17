@@ -82,7 +82,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
         verifyOpaqueLetterboxAndProtectedNeighbors(activity)
         verifyUnavailableBackdropFallsBackOnce(activity,host)
         verifyWorkerFallbackCompletesOnUi(activity,host)
-        android.util.Log.i("StageP02aMotion",PairedMotionClockRegression.run(activity))
+        android.util.Log.i("StageP02aMotion",PairedMotionClockRegression.run(activity,instrumentation))
         return "PASS production async preview retains protection during pending/cancel and releases exactly once after rollback completion\n"+
             "PASS actual fallback drawing: unpaired dual/source-only/fixed corners use explicit endpoint roles and preserve contain"
     }
