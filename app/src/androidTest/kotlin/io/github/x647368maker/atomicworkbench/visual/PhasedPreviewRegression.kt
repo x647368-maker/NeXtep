@@ -215,6 +215,11 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
             check(host.isAttachedToWindow && host.isHardwareAccelerated) {
                 "Fallback evidence requires an otherwise capable HWUI preview host"
             }
+            // A real opaque host color is now an admissible prepared backdrop.
+            // Deliberately remove it to exercise the truly uncovered fallback.
+            val originalHostBackground=host.background
+            host.background=null
+            try {
             for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {
                 val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
                 val animator=WorkspaceSwapAnimator(activity)
@@ -266,6 +271,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                     "Async submission failure leaked visual completion"
                 }
             }
+            } finally { host.background=originalHostBackground }
         }
     }
 
