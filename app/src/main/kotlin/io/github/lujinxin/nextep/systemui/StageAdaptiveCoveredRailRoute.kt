@@ -63,7 +63,7 @@ internal object StageAdaptiveCoveredRailRoute {
         return plan.takeIf {
             withinBudget() &&
                 hasSafeCropRange(listOf(it.at(0f), it.at(1f)), incoming, outgoing) &&
-                preservesEndpointCrops(it, small, main, incoming, outgoing) &&
+                preservesEndpointCrops(it, small, main, incoming, outgoing, strictNewRoute=true) &&
                 SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main)
         }
     }
@@ -92,7 +92,7 @@ internal object StageAdaptiveCoveredRailRoute {
         if (!hasSafeCropRange(keys, incoming, outgoing)) return null
         val plan = SmoothPairedRailCandidate.railCrossing(small, hinge, main, obstacles, withinBudget)
             ?: return null
-        return plan.takeIf { withinBudget() && preservesEndpointCrops(it, small, main, incoming, outgoing) &&
+        return plan.takeIf { withinBudget() && preservesEndpointCrops(it, small, main, incoming, outgoing, strictNewRoute=true) &&
             SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main) }
     }
 
@@ -112,6 +112,7 @@ internal object StageAdaptiveCoveredRailRoute {
 
     private fun preservesEndpointCrops(
         plan: SmoothPairedRailCandidate.Plan, small: Box, main: Box, incoming: Crop, outgoing: Crop,
+        strictNewRoute:Boolean=false,
     ): Boolean {
         val g=StageLiveSurfaceFlightGeometry
         // Preserve the original visible terminal crop and initial complete source.
@@ -121,6 +122,16 @@ internal object StageAdaptiveCoveredRailRoute {
             Endpoint(last.incoming,small,main,incoming,1f),Endpoint(last.outgoing,main,small,outgoing,1f))) {
             val old=g.mirrorFrame(from,to,crop,p,true)?:return false
             if(p==0f && g.endpointGapPx(viewport,old.box)>2f)return false
+            if(!strictNewRoute) {
+                // The established adaptive-covered path uses the original
+                // terminal crop admission. #1540/#1548 proved that imposing
+                // the new 0.35px start rule on it rejects the real API37
+                // adaptive GPU fixture and crashes instrumentation.
+                // New direct/rail Vivo-style paths remain strictly guarded.
+                val next=if(p==0f)old else frame(viewport,crop)?:return false
+                if(g.endpointGapPx(old.box,next.box)>2f||old.crop!=next.crop)return false
+                continue
+            }
             // applyFrame() renders the existing complete-source mirror at p=0
             // but switches to frame(viewport,crop) as soon as p>0. Earlier
             // admission compared old against ITSELF at p=0, so a tiny source
