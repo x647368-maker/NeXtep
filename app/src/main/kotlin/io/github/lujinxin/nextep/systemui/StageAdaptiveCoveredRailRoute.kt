@@ -121,8 +121,24 @@ internal object StageAdaptiveCoveredRailRoute {
             Endpoint(last.incoming,small,main,incoming,1f),Endpoint(last.outgoing,main,small,outgoing,1f))) {
             val old=g.mirrorFrame(from,to,crop,p,true)?:return false
             if(p==0f && g.endpointGapPx(viewport,old.box)>2f)return false
-            val next=if(p==0f)old else frame(viewport,crop)?:return false
-            if(g.endpointGapPx(old.box,next.box)>2f||old.crop!=next.crop)return false
+            // applyFrame() renders the existing complete-source mirror at p=0
+            // but switches to frame(viewport,crop) as soon as p>0. Earlier
+            // admission compared old against ITSELF at p=0, so a tiny source
+            // aspect mismatch could create an immediate content-crop/scale pop.
+            // Compare the two actual backends at both endpoints. The first
+            // sample must agree subpixel-exactly; an uncertain path falls back
+            // to the existing safe, source-owned compositor route.
+            val next=frame(viewport,crop)?:return false
+            val tolerance=if(p==0f).35f else 2f
+            val sourceWidth=crop.right-crop.left
+            val sourceHeight=crop.bottom-crop.top
+            val scaleShift=kotlin.math.abs(old.scale-next.scale)*
+                maxOf(sourceWidth,sourceHeight)
+            if(old.crop!=next.crop ||
+                g.endpointGapPx(old.box,next.box)>tolerance ||
+                scaleShift>tolerance ||
+                kotlin.math.abs(old.x-next.x)>tolerance ||
+                kotlin.math.abs(old.y-next.y)>tolerance)return false
         }
         return true
     }
