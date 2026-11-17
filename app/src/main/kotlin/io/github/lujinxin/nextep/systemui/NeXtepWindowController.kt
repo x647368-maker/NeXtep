@@ -1487,12 +1487,13 @@ class NeXtepWindowController(
             slotCoordinator?.slotStates()?.none { (it as? SlotState.Occupied)?.taskId == task } != false) return
         cinemaPolicy.enter(task); applyCinemaTask(task, portrait)
     }
-    private fun leaveCinema() {
+    private fun leaveCinema(deferViewportRefresh:Boolean=false) {
         cinemaEpoch++; directionDebounce.reset(); cancelCinemaChecks()
-        cinemaPolicy.leave(); applyCinemaTask(null)
+        cinemaPolicy.leave(); applyCinemaTask(null,deferViewportRefresh=deferViewportRefresh)
         smartRail.armWhenReady()
     }
-    private fun applyCinemaTask(task: Int?, portrait: Boolean = cinemaPortrait) {
+    private fun applyCinemaTask(task: Int?, portrait: Boolean = cinemaPortrait,
+                                deferViewportRefresh:Boolean=false) {
         if (cinemaApplying) return
         val index = task?.let { id -> slotCoordinator?.slotStates()?.indexOfFirst { (it as? SlotState.Occupied)?.taskId == id }?.takeIf { it >= 0 } }
         if (index == cinemaSlot && (index == null || portrait == cinemaPortrait)) return
@@ -1501,7 +1502,9 @@ class NeXtepWindowController(
         val previous = cinemaSlot
         try {
             cinemaSlot = index; cinemaPortrait = portrait; syncCoreViewport()
-            if (workspaceVisible && !suspended) onViewportChanged()
+            // Layout selection owns the combined final geometry. Do not
+            // project the old rail layout once just to exit cinema.
+            if (workspaceVisible && !suspended && !deferViewportRefresh) onViewportChanged()
         } catch (error: Throwable) {
             cinemaSlot = null; viewport.cinema = false; cinemaPolicy.leave()
             slotWindows.forEach { it.setCinema(false) }
@@ -1554,7 +1557,7 @@ class NeXtepWindowController(
         }
         cancelRailLayoutMotion()
         cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
-        leaveCinema()
+        leaveCinema(deferViewportRefresh=changingLayout)
         val previousGeometry=hiddenGeometry ?: geometry()
         if(previous==top && previousSide==side) {
             if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()

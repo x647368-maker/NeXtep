@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "665f9e6812eb7fedec46c2a02ff4b2c6c36c659c",
+      "reviewed_blob_sha1": "0293ff1cef1bc5d96dc8ccfafbe617bd2095703a",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -377,6 +377,18 @@
         {
           "before": "        leaveCinema()\n        if(previous==top && previousSide==side) {",
           "after": "        leaveCinema()\n        val previousGeometry=hiddenGeometry ?: geometry()\n        if(previous==top && previousSide==side) {"
+        },
+        {
+          "before": "    private fun leaveCinema() {\n        cinemaEpoch++; directionDebounce.reset(); cancelCinemaChecks()\n        cinemaPolicy.leave(); applyCinemaTask(null)\n        smartRail.armWhenReady()\n    }\n    private fun applyCinemaTask(task: Int?, portrait: Boolean = cinemaPortrait) {",
+          "after": "    private fun leaveCinema(deferViewportRefresh:Boolean=false) {\n        cinemaEpoch++; directionDebounce.reset(); cancelCinemaChecks()\n        cinemaPolicy.leave(); applyCinemaTask(null,deferViewportRefresh=deferViewportRefresh)\n        smartRail.armWhenReady()\n    }\n    private fun applyCinemaTask(task: Int?, portrait: Boolean = cinemaPortrait,\n                                deferViewportRefresh:Boolean=false) {"
+        },
+        {
+          "before": "            cinemaSlot = index; cinemaPortrait = portrait; syncCoreViewport()\n            if (workspaceVisible && !suspended) onViewportChanged()",
+          "after": "            cinemaSlot = index; cinemaPortrait = portrait; syncCoreViewport()\n            // Layout selection owns the combined final geometry. Do not\n            // project the old rail layout once just to exit cinema.\n            if (workspaceVisible && !suspended && !deferViewportRefresh) onViewportChanged()"
+        },
+        {
+          "before": "        leaveCinema()\n        val previousGeometry=hiddenGeometry ?: geometry()",
+          "after": "        leaveCinema(deferViewportRefresh=changingLayout)\n        val previousGeometry=hiddenGeometry ?: geometry()"
         }
       ]
     },
