@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
+import android.os.Looper
 import io.github.x647368maker.atomicworkbench.systemui.SwapPreviewView
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.WorkspaceSwapAnimator
@@ -15,6 +16,7 @@ import io.github.x647368maker.atomicworkbench.systemui.StagePreviewFillPolicy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Exercise the production async animation contract on a real attached HWUI host. */
 internal class PhasedPreviewRegression(private val instrumentation: Instrumentation) {
@@ -79,6 +81,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
         verifyUnpairedCorners(activity)
         verifyOpaqueLetterboxAndProtectedNeighbors(activity)
         verifyUnavailableBackdropFallsBackOnce(activity,host)
+        verifyWorkerFallbackCompletesOnUi(activity,host)
         return "PASS production async preview retains protection during pending/cancel and releases exactly once after rollback completion\n"+
             "PASS actual fallback drawing: unpaired dual/source-only/fixed corners use explicit endpoint roles and preserve contain"
     }
@@ -262,6 +265,46 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                     failuresFinished==1) {
                     "Async submission failure leaked visual completion"
                 }
+            }
+        }
+    }
+
+    /** Real worker callback, not a synchronous callback disguised as async. */
+    private fun verifyWorkerFallbackCompletesOnUi(activity:Activity,host:FrameLayout) {
+        val finished=CountDownLatch(1)
+        val count=AtomicInteger(0)
+        val submitted=AtomicInteger(0)
+        instrumentation.runOnMainSync {
+            check(host.isAttachedToWindow && host.isHardwareAccelerated)
+            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
+            WorkspaceSwapAnimator(activity).animate(
+                source,null,RectF(20f,20f,120f,220f),
+                RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),
+                host,null,null,200,false,null,null,
+                move={error("Worker fallback invoked sync move")},
+                isLiveReady={true},
+                moveAsync={ done ->
+                    submitted.incrementAndGet()
+                    Thread {
+                        done(true)
+                        done(false)
+                    }.start()
+                },
+                onFinished={
+                    check(Looper.myLooper()==Looper.getMainLooper()) {
+                        "Visual fallback finished off the UI thread"
+                    }
+                    count.incrementAndGet()
+                    finished.countDown()
+                })
+            check(source.isRecycled)
+        }
+        check(finished.await(5,TimeUnit.SECONDS)) {
+            "Worker async fallback did not complete on the UI lane"
+        }
+        instrumentation.runOnMainSync {
+            check(submitted.get()==1 && count.get()==1) {
+                "Background callback reached completion more than once"
             }
         }
     }
