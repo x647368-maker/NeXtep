@@ -3192,6 +3192,7 @@ class NeXtepWindowController(
         // animator safely uses the ordinary task path in that case.
         val matchedWallpaper=matchingWallpaperFrame(geometry)
         val opaqueBackdropColor=StagePreviewFillPolicy.sampledOpaqueUnderlay(matchedWallpaper)
+        if(opaqueBackdropColor==null)tracePreview("workspace_preview_opaque_wallpaper_missing")
         val backdrop = WorkspaceWallpaperBackdrop.crop(matchedWallpaper,0,0,frostStrength,
             wallpaperRotation,geometry.displayRotation)
         val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null
