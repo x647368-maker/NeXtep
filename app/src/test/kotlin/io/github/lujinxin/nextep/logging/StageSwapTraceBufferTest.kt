@@ -70,6 +70,25 @@ class StageSwapTraceBufferTest {
         assertTrue(trace.length<4000)
     }
 
+    @Test fun keepsReadinessCausesWhenMiddleEventsAreTruncated() {
+        var now=0L
+        val recorder=StageSwapTraceBuffer({now})
+        val id=recorder.begin("tap_swap")
+        repeat(21) { now++;recorder.event("gpu_prepare_$it",id) }
+        now++;recorder.event("target_wait=slot_post_ack_buffer",id)
+        now++;recorder.event("handoff_state=target_not_ready",id)
+        repeat(100) { now++;recorder.event("gpu_frame_$it",id) }
+        now++;recorder.event("handoff_target_ready",id)
+        now++;recorder.finish("gpu_completed",id)
+        val text=recorder.describe()
+        assertTrue(text.contains("target_wait=slot_post_ack_buffer@22ms"))
+        assertTrue(text.contains("handoff_state=target_not_ready@23ms"))
+        assertTrue(text.contains("handoff_target_ready@124ms"))
+        assertTrue(text.contains("end:gpu_completed@125ms"))
+        assertTrue(text.contains("[omitted="))
+        assertTrue(text.length<4000)
+    }
+
     @Test fun boundsEventNamesAndCapsTheirNumber() {
         var time = 0L
         val recorder = StageSwapTraceBuffer({ time }, maxRecords=2, maxEvents=4)
