@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,8 +34,14 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" 'platforms;android-36.1' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Run exact source-boundary audit
-        run: python3 scripts/verify-state-continuity.py
+      - name: Verify frozen P0-1 BASE and strict P0-2a delta (no bypass)
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$RUNNER_TEMP/v89-p01-frozen-base"
+          git worktree add --detach "$base" 6ddc3d4333d0aecc7f5a8218aab8e788906156ce
+          (cd "$base" && python3 scripts/verify-state-continuity.py)
+          python3 scripts/verify-v89-p02a-boundary.py
       - name: Compile and execute JVM regression suite
         run: bash scripts/ci-android-build.sh :app:testDebugUnitTest -PatomicXposedApi=101.0.0
       - name: Preserve raw JVM XML
