@@ -3187,7 +3187,13 @@ class NeXtepWindowController(
                 return
             }
         }
-        val backdrop = WorkspaceWallpaperBackdrop.crop(wallpaperBitmap, 0, 0, frostStrength)
+        // Canvas previews need the correctly oriented, already cached
+        // wallpaper. A null/stale frame is not an opaque substitute: the
+        // animator safely uses the ordinary task path in that case.
+        val matchedWallpaper=matchingWallpaperFrame(geometry)
+        val opaqueBackdropColor=StagePreviewFillPolicy.sampledOpaqueUnderlay(matchedWallpaper)
+        val backdrop = WorkspaceWallpaperBackdrop.crop(matchedWallpaper,0,0,frostStrength,
+            wallpaperRotation,geometry.displayRotation)
         val mainTaskId = if (targetIndex == null) mainTaskPresenter.currentTaskId() else null
         val mainPreview = capturedMainPreview
         fun slotPreview(slot: VirtualDisplaySlot): android.graphics.Bitmap? {
@@ -3317,6 +3323,7 @@ class NeXtepWindowController(
                 host = previewHost,
                 backdrop = backdrop,
                 stationaryBackground = stationaryBackground,
+                opaqueBackdropColor = opaqueBackdropColor,
                 durationMs = SystemUiRuntime.swapAnimationDurationMs(),
                 returningHome = parkingMain,
                 sourceQuad = if (parkingMain) null else sourceSlot.view.screenQuad(),
