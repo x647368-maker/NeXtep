@@ -389,6 +389,17 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             outcome=StageLiveSurfaceExchange.lastOutcome()
                         }
                         evidence.add("stale terminal frame="+flags[0]+" committed="+flags[1]+" outcome="+outcome)
+                        if(flags[0] && !flags[1]) {
+                            val trace=StageExchangeTelemetry.nativeDescription().lineSequence()
+                                .lastOrNull { it.contains("instrumented_live_root_f begin@") }.orEmpty()
+                            check(trace.contains("native_move_rejected:terminal_unconfirmed") &&
+                                !trace.contains("native_terminal_transaction_committed") &&
+                                attempt.moves.get()==0) {
+                                "Terminal ACK missed without fail-closed trace: "+trace
+                            }
+                            evidence.add("stale attempt $trial: compositor receipt refused, no move, released; retry")
+                            continue
+                        }
                         check(flags[0] && flags[1]) {
                             "Stale task test did not reach committed terminal geometry: frame="+flags[0]+
                                 " committed="+flags[1]+" outcome="+outcome
