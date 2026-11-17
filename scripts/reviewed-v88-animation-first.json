@@ -2167,7 +2167,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/PhasedPreviewRegression.kt": {
-      "reviewed_blob_sha1": "e364419f2fc7a7e1fa29b1ab2f5c600c16807892",
+      "reviewed_blob_sha1": "2de94bd3b919e777c3bf1c72013db0cde73cb563",
       "previous_blob_sha1": "ebb222a2eae988609d118c4fa91ae3f83e95631f",
       "patches": [
         {
@@ -2225,6 +2225,14 @@
         {
           "before": "            }\n        }\n    }\n}\n",
           "after": "            }\n        }\n    }\n\n    /** Real worker callback, not a synchronous callback disguised as async. */\n    private fun verifyWorkerFallbackCompletesOnUi(activity:Activity,host:FrameLayout) {\n        val finished=CountDownLatch(1)\n        val count=AtomicInteger(0)\n        val submitted=AtomicInteger(0)\n        instrumentation.runOnMainSync {\n            check(host.isAttachedToWindow && host.isHardwareAccelerated)\n            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n            WorkspaceSwapAnimator(activity).animate(\n                source,null,RectF(20f,20f,120f,220f),\n                RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),\n                host,null,null,200,false,null,null,\n                move={error(\"Worker fallback invoked sync move\")},\n                isLiveReady={true},\n                moveAsync={ done ->\n                    submitted.incrementAndGet()\n                    Thread {\n                        done(true)\n                        done(false)\n                    }.start()\n                },\n                onFinished={\n                    check(Looper.myLooper()==Looper.getMainLooper()) {\n                        \"Visual fallback finished off the UI thread\"\n                    }\n                    count.incrementAndGet()\n                    finished.countDown()\n                })\n            check(source.isRecycled)\n        }\n        check(finished.await(5,TimeUnit.SECONDS)) {\n            \"Worker async fallback did not complete on the UI lane\"\n        }\n        instrumentation.runOnMainSync {\n            check(submitted.get()==1 && count.get()==1) {\n                \"Background callback reached completion more than once\"\n            }\n        }\n    }\n}\n"
+        },
+        {
+          "before": "            check(host.isAttachedToWindow && host.isHardwareAccelerated) {\n                \"Fallback evidence requires an otherwise capable HWUI preview host\"\n            }\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {\n                val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                val animator=WorkspaceSwapAnimator(activity)",
+          "after": "            check(host.isAttachedToWindow && host.isHardwareAccelerated) {\n                \"Fallback evidence requires an otherwise capable HWUI preview host\"\n            }\n            // A real opaque host color is now an admissible prepared backdrop.\n            // Deliberately remove it to exercise the truly uncovered fallback.\n            val originalHostBackground=host.background\n            host.background=null\n            try {\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {\n                val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                val animator=WorkspaceSwapAnimator(activity)"
+        },
+        {
+          "before": "                    \"Async submission failure leaked visual completion\"\n                }\n            }\n        }\n    }\n",
+          "after": "                    \"Async submission failure leaked visual completion\"\n                }\n            }\n            } finally { host.background=originalHostBackground }\n        }\n    }\n"
         }
       ]
     },
