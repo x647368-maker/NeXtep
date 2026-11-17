@@ -2083,6 +2083,26 @@
           "after": "            endpoint(last.incoming,small,main,incoming,1f) &&\n            endpoint(last.outgoing,main,small,outgoing,1f) &&\n            SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main) &&\n            withinBudget()\n        }\n"
         }
       ]
+    },
+    "app/src/main/kotlin/io/github/lujinxin/nextep/logging/StageSwapTraceBuffer.kt": {
+      "reviewed_blob_sha1": "c2123044cc729e057dd7f1b0b529938827cc4930",
+      "previous_blob_sha1": "3dca597475348dc30c7ebc316cbff8198a8f648b",
+      "patches": [
+        {
+          "before": "    }\n\n    private fun eventLocked(name: String) {\n        val attempt = active ?: return\n        // Preserve the start and newest stages, including the actual terminal\n        // handoff. Only middle events may be dropped, and disclose that gap.\n        if (attempt.events.size >= eventLimit) {\n            attempt.events.removeAt(headLimit)\n            attempt.omitted++\n",
+          "after": "    }\n\n    // These brief state-change messages reveal WHY an otherwise completed\n    // GPU flight may keep the destination covered for hundreds of milliseconds.\n    // They are already emitted only on transition; retain them through bounded\n    // history truncation, without new sampling, polling or content collection.\n    private fun isHandoffWait(name:String):Boolean =\n        name.startsWith(\"target_wait=\") || name.startsWith(\"handoff_state=\")\n\n    private fun eventLocked(name: String) {\n        val attempt = active ?: return\n        // Preserve initial context, terminal outcome and rare readiness-gate\n        // changes. Prefer dropping an ordinary middle event. Bounded capacity\n        // still wins if every available middle entry is a readiness event.\n        if (attempt.events.size >= eventLimit) {\n            val removable=(headLimit until attempt.events.size)\n                .firstOrNull { !isHandoffWait(attempt.events[it]) } ?: headLimit\n            attempt.events.removeAt(removable)\n            attempt.omitted++\n"
+        }
+      ]
+    },
+    "app/src/test/kotlin/io/github/lujinxin/nextep/logging/StageSwapTraceBufferTest.kt": {
+      "reviewed_blob_sha1": "3f873115bbf89eb163dd1464c8c476004e6df969",
+      "previous_blob_sha1": "f77b9af0d2858061c9e852b7387f2542d4867c69",
+      "patches": [
+        {
+          "before": "    }\n\n    @Test fun boundsEventNamesAndCapsTheirNumber() {\n        var time = 0L\n",
+          "after": "    }\n\n    @Test fun keepsReadinessCausesWhenMiddleEventsAreTruncated() {\n        var now=0L\n        val recorder=StageSwapTraceBuffer({now})\n        val id=recorder.begin(\"tap_swap\")\n        repeat(21) { now++;recorder.event(\"gpu_prepare_$it\",id) }\n        now++;recorder.event(\"target_wait=slot_post_ack_buffer\",id)\n        now++;recorder.event(\"handoff_state=target_not_ready\",id)\n        repeat(100) { now++;recorder.event(\"gpu_frame_$it\",id) }\n        now++;recorder.event(\"handoff_target_ready\",id)\n        now++;recorder.finish(\"gpu_completed\",id)\n        val text=recorder.describe()\n        assertTrue(text.contains(\"target_wait=slot_post_ack_buffer@22ms\"))\n        assertTrue(text.contains(\"handoff_state=target_not_ready@23ms\"))\n        assertTrue(text.contains(\"handoff_target_ready@124ms\"))\n        assertTrue(text.contains(\"end:gpu_completed@125ms\"))\n        assertTrue(text.contains(\"[omitted=\"))\n        assertTrue(text.length<4000)\n    }\n\n    @Test fun boundsEventNamesAndCapsTheirNumber() {\n        var time = 0L\n"
+        }
+      ]
     }
   }
 }
