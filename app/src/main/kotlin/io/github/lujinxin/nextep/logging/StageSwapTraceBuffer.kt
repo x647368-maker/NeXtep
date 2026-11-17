@@ -46,16 +46,17 @@ internal class StageSwapTraceBuffer(
         return true
     }
 
-    // These brief state-change messages reveal WHY an otherwise completed
-    // GPU flight may keep the destination covered for hundreds of milliseconds.
-    // They are already emitted only on transition; retain them through bounded
-    // history truncation, without new sampling, polling or content collection.
-    private fun isHandoffWait(name:String):Boolean =
-        name.startsWith("target_wait=") || name.startsWith("handoff_state=") ||
+    // Prefer preserving irreversible migration and reveal milestones over
+    // potentially noisy readiness transitions. No extra events, allocations
+    // per frame, or background polling; the same fixed capacity still applies.
+    private fun retentionPriority(name:String):Int = when {
         name.startsWith("real_move_requested") || name.startsWith("real_move_ack") ||
-        name.startsWith("native_terminal_transaction_committed") ||
-        name.startsWith("handoff_target_ready") || name.startsWith("endpoint_reveal_start") ||
-        name.startsWith("endpoint_reveal_commit")
+            name.startsWith("native_terminal_transaction_committed") ||
+            name.startsWith("handoff_target_ready") ||
+            name.startsWith("endpoint_reveal_start") || name.startsWith("endpoint_reveal_commit") -> 2
+        name.startsWith("target_wait=") || name.startsWith("handoff_state=") -> 1
+        else -> 0
+    }
 
     private fun eventLocked(name: String) {
         val attempt = active ?: return
@@ -64,7 +65,7 @@ internal class StageSwapTraceBuffer(
         // still wins if every available middle entry is a readiness event.
         if (attempt.events.size >= eventLimit) {
             val removable=(headLimit until attempt.events.size)
-                .firstOrNull { !isHandoffWait(attempt.events[it]) } ?: headLimit
+                .minByOrNull { retentionPriority(attempt.events[it]) } ?: headLimit
             attempt.events.removeAt(removable)
             attempt.omitted++
         }
