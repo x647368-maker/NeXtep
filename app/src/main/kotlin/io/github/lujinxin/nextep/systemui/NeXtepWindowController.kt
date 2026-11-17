@@ -1536,7 +1536,10 @@ class NeXtepWindowController(
         // geometry is committed exactly once below; restore rail visibility
         // only after the final window bounds have been applied.
         val railWasHidden=smartRail.hidden
-        val previousGeometry=geometry()
+        // Hidden rail uses the actually projected pre-restore main task as
+        // the motion origin. A visible rail in cinema mode must instead use
+        // the geometry AFTER leaveCinema(), as it did before this fix.
+        val hiddenGeometry=if(railWasHidden) geometry() else null
         val previous=viewport.isTopRail()
         val previousSide=sidebarSide
         val changingLayout=previous!=top || previousSide!=side
@@ -1552,6 +1555,7 @@ class NeXtepWindowController(
         cancelRailLayoutMotion()
         cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
         leaveCinema()
+        val previousGeometry=hiddenGeometry ?: geometry()
         if(previous==top && previousSide==side) {
             if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()
             return
