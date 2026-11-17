@@ -4,6 +4,9 @@ on:
     branches:
       - atomic-workbench/v89-p0-1-ci-probe-20261117
   workflow_dispatch:
+  pull_request:
+    branches:
+      - atomic-workbench/v89-p0-1-preview-fill-contract
 
 permissions:
   contents: read
