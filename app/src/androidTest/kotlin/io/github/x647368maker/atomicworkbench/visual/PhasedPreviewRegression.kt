@@ -32,7 +32,7 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
             target = Bitmap.createBitmap(100, 200, Bitmap.Config.ARGB_8888)
             animator.animate(source, target, RectF(0f, 0f, 100f, 200f),
                 RectF(0f, 0f, 100f, 200f), RectF(100f, 100f, 400f, 700f),
-                host, null, null, 200, false, null, null,
+                host, ColorDrawable(Color.rgb(29,42,53)), null, 200, false, null, null,
                 move = { error("Async exchange used the synchronous move") },
                 isLiveReady = { true },
                 moveAsync = { done -> complete = done; requested.countDown() },
@@ -75,6 +75,8 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
             instrumentation.runOnMainSync { releaseAllowed = true; animator.cancel() }
         }
         verifyUnpairedCorners(activity)
+        verifyOpaqueLetterboxAndProtectedNeighbors(activity)
+        verifyUnavailableBackdropFallsBackOnce(activity,host)
         return "PASS production async preview retains protection during pending/cancel and releases exactly once after rollback completion\n"+
             "PASS actual fallback drawing: unpaired dual/source-only/fixed corners use explicit endpoint roles and preserve contain"
     }
@@ -121,6 +123,61 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                     } finally { v.release() }
                 }
             } finally { raster.recycle() }
+        }
+    }
+
+    // Probe the production SwapPreviewView, not a duplicate policy renderer.
+    private fun verifyOpaqueLetterboxAndProtectedNeighbors(activity:Activity) {
+        instrumentation.runOnMainSync {
+            val backing=Color.rgb(74,130,182)
+            val untouched=Color.rgb(192,155,42)
+            val sourceColor=Color.rgb(24,202,108)
+            val from=RectF(24f,40f,124f,240f)
+            val to=RectF(240f,40f,560f,300f)
+            val neighbor=RectF(565f,42f,600f,120f)
+            val raster=Bitmap.createBitmap(640,360,Bitmap.Config.ARGB_8888)
+            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888).apply { eraseColor(sourceColor) }
+            val preview=SwapPreviewView(activity,source,null,from,from,to,
+                ColorDrawable(backing),null,null,null,false,true,null,
+                listOf(neighbor),true,false)
+            try {
+                preview.layout(0,0,raster.width,raster.height)
+                raster.eraseColor(untouched)
+                preview.progress=1f
+                preview.draw(Canvas(raster))
+                check(raster.getPixel(252,170)==backing) {
+                    "Portrait source into landscape produced a non-wallpaper letterbox"
+                }
+                check(raster.getPixel(400,170)==sourceColor) {
+                    "Source content was stretched, cropped or missing at destination"
+                }
+                check(raster.getPixel(580,65)==untouched) {
+                    "Protected neighboring card changed during Canvas exchange"
+                }
+                check(raster.getPixel(150,330)==untouched) {
+                    "Non-participating control area changed"
+                }
+            } finally {
+                preview.release()
+                raster.recycle()
+            }
+        }
+    }
+
+    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {
+        instrumentation.runOnMainSync {
+            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
+            val animator=WorkspaceSwapAnimator(activity)
+            var moves=0
+            var finishes=0
+            animator.animate(source,null,RectF(20f,20f,120f,220f),
+                RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),
+                host,null,null,200,false,null,null,
+                move={moves++;true},isLiveReady={true},
+                onFinished={finishes++})
+            check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {
+                "Missing background leaked preview or repeated real task move"
+            }
         }
     }
 }
