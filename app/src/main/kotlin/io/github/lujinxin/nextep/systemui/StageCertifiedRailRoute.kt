@@ -49,6 +49,7 @@ internal object StageCertifiedRailRoute {
             endpoint(first.outgoing,main,small,outgoing,0f) &&
             endpoint(last.incoming,small,main,incoming,1f) &&
             endpoint(last.outgoing,main,small,outgoing,1f) &&
+            SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main) &&
             withinBudget()
         }
     }
