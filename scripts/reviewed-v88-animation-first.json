@@ -2357,6 +2357,16 @@
           "after": "                // The test host is deliberately opaque: pass that already\n                // prepared material explicitly rather than violating P0-1's\n                // no-cover admission contract. Main task capture is STILL null.\n                backdrop=ColorDrawable(Color.rgb(20,22,38)),\n                stationaryBackground=null,"
         }
       ]
+    },
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/ShadeRegression.kt": {
+      "reviewed_blob_sha1": "561c385d0fd267894fc6369fb087a9178941933e",
+      "previous_blob_sha1": "890feb75ca9b0b9cc61daa168e908764c322d7c1",
+      "patches": [
+        {
+          "before": "                val opened=waitFocus(true)\n                if(cycle==0 || !opened)evidence(\"${action}-${cycle}-open\")\n                check(opened){\"Native $name did not open; focus=${focus()}; see shade diagnostics\"}\n                Thread.sleep(220);swipeUpInsideShade()",
+          "after": "                val opened=waitFocus(true)\n                val focusConfirmedAt=SystemClock.uptimeMillis()\n                if(cycle==0 || !opened)evidence(\"${action}-${cycle}-open\")\n                check(opened){\"Native $name did not open; focus=${focus()}; see shade diagnostics\"}\n                Thread.sleep(220)\n                // Evidence-only P0-1 screenshot follow-up. The immediate capture\n                // can race the first presented SystemUI frame, although focus\n                // and visibility are already true. Hold the existing gestures,\n                // then record both delayed pixels AND true elapsed times.\n                // Do not relax or remove any native shade opening/closing checks.\n                if(cycle==0) {\n                    evidence(\"${action}-${cycle}-settled-a\")\n                    record(\"OBSERVE ${name} shade settled-a elapsedSinceFocusMs=\"+\n                        (SystemClock.uptimeMillis()-focusConfirmedAt))\n                    Thread.sleep(200)\n                    evidence(\"${action}-${cycle}-settled-b\")\n                    record(\"OBSERVE ${name} shade settled-b elapsedSinceFocusMs=\"+\n                        (SystemClock.uptimeMillis()-focusConfirmedAt))\n                }\n                swipeUpInsideShade()"
+        }
+      ]
     }
   }
 }
