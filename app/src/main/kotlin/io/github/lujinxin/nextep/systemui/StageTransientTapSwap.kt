@@ -557,6 +557,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         // Production always receives the precomputed worker result. The default
         // is retained for the isolated renderer's instrumentation harness.
         private val pair=planned?:planFlight(incoming,outgoing,slot,main,excluded,viewport)
+        // P0-2a: reuse the admitted route; construct the clock ONCE per tap.
+        private val motionPlan=pair?.let(ExchangeMotionPlan::fromExistingPair)
         private val up=pair?.up
         private val down=pair?.down
         val safe=up!=null && down!=null
@@ -585,15 +587,16 @@ internal class StageTransientTapSwap(private val context:Context) {
         var progress=0f
             set(value){
                 field=value.coerceIn(0f,1f)
+                val frameProgress=motionPlan?.geometryProgress(field) ?: field
                 up?.let {
-                    val pose=it.pose(field)
+                    val pose=it.pose(frameProgress)
                     upView.place(pose)
-                    upCorners?.let{track->upView.round(track.sourceRadius(field,pose.scale))}
+                    upCorners?.let{track->upView.round(track.sourceRadius(frameProgress,pose.scale))}
                 }
                 down?.let {
-                    val pose=it.pose(field)
+                    val pose=it.pose(frameProgress)
                     downView.place(pose)
-                    downCorners?.let{track->downView.round(track.sourceRadius(field,pose.scale))}
+                    downCorners?.let{track->downView.round(track.sourceRadius(frameProgress,pose.scale))}
                 }
             }
         var drawn=false
@@ -668,7 +671,9 @@ internal class StageTransientTapSwap(private val context:Context) {
             progress=0f
             val a=up ?: error("Invalid incoming geometry")
             val b=down ?: error("Invalid outgoing geometry")
-            val easing:TimeInterpolator=if(pair?.usesSharedClock==true) TimeInterpolator{it}
+            val easing:TimeInterpolator=if(motionPlan!=null)
+                TimeInterpolator{ motionPlan.geometryProgress(it) }
+                else if(pair?.usesSharedClock==true) TimeInterpolator{it}
                 else PathInterpolator(.32f,.08f,.36f,1f)
             if(pair?.usesSharedClock==true)trace("snapshot_shared_certified_route")
             // Build every animator before starting any; an unsupported
@@ -738,7 +743,8 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(native)return "render_thread"
             val fallback=ValueAnimator.ofFloat(0f,1f).apply{
                 this.duration=duration
-                interpolator=easing
+                // progress setter already applies the admitted clock; never ease twice.
+                interpolator=if(motionPlan!=null) TimeInterpolator{it} else easing
                 addUpdateListener{progress=it.animatedValue as Float}
                 addListener(object:AnimatorListenerAdapter(){
                     override fun onAnimationEnd(animation:Animator){
