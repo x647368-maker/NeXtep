@@ -1537,7 +1537,7 @@
       "reviewed_blob_sha1": "69cdf30578cbe4b6f1d84ac5f8a1cfbf889d4589"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
-      "reviewed_blob_sha1": "3ead8cc8bafcf52224de40ac2174314997922df9",
+      "reviewed_blob_sha1": "7cc5dd7fca2230aea44eedeb458953cffd16e451",
       "previous_blob_sha1": "00feec10aa9bdf0666b650f3878fd2bd0b078ee7",
       "patches": [
         {
@@ -1699,6 +1699,22 @@
         {
           "before": "        outline.transform(projection)\n        val save = canvas.save()\n        canvas.clipPath(outline)\n        canvas.drawColor(Color.BLACK)\n        canvas.drawBitmap(bitmap, projection, bitmapPaint)\n        canvas.restoreToCount(save)\n    }",
           "after": "        outline.transform(projection)\n        val save = canvas.save()\n        canvas.clipPath(outline)\n        drawSafeBacking(canvas)\n        canvas.drawBitmap(bitmap, projection, bitmapPaint)\n        canvas.restoreToCount(save)\n    }"
+        },
+        {
+          "before": "import android.view.ViewTreeObserver\nimport android.view.animation.PathInterpolator\nimport android.widget.FrameLayout\nimport io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract\nimport io.github.x647368maker.atomicworkbench.logging.NeXtepLog\nimport io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec",
+          "after": "import android.view.ViewTreeObserver\nimport android.view.animation.PathInterpolator\nimport android.widget.FrameLayout\nimport java.util.concurrent.atomic.AtomicBoolean\nimport io.github.x647368maker.atomicworkbench.config.WorkspaceConfigContract\nimport io.github.x647368maker.atomicworkbench.logging.NeXtepLog\nimport io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec"
+        },
+        {
+          "before": "        check(overlay == null) { \"Previous exchange still owns its preview\" }\n        releaseAllowed = canRelease\n        cancelRequested = false\n        // A translucent/no-wallpaper preview would expose a stale real task\n        // when its contained bitmap leaves an uncovered strip. Never start\n        // a Canvas flight without an already prepared opaque backing.",
+          "after": "        check(overlay == null) { \"Previous exchange still owns its preview\" }\n        releaseAllowed = canRelease\n        cancelRequested = false\n        // The visual rejection path is still a real async task move. It must\n        // finish exactly once on UI even if the producer invokes the callback\n        // twice, from a worker, or throws after submitting the move.\n        fun fallbackMoveOnce() {\n            val finished=AtomicBoolean(false)\n            fun finishOnce() {\n                if(!finished.compareAndSet(false,true))return\n                if(Looper.myLooper()==ui.looper)onFinished()\n                else ui.post { onFinished() }\n            }\n            if(moveAsync!=null)runCatching { moveAsync { finishOnce() } }.onFailure {\n                NeXtepLog.warn(\"workspace_swap\",\"Visual fallback move submission failed\",it)\n                finishOnce()\n            } else try { move() } finally { finishOnce() }\n        }\n        // A translucent/no-wallpaper preview would expose a stale real task\n        // when its contained bitmap leaves an uncovered strip. Never start\n        // a Canvas flight without an already prepared opaque backing."
+        },
+        {
+          "before": "            source?.recycle()\n            if (target !== source) target?.recycle()\n            stationaryBackground?.recycle()\n            if (moveAsync != null) moveAsync { onFinished() }\n            else try { move() } finally { onFinished() }\n            return\n        }\n        val token = ++generation",
+          "after": "            source?.recycle()\n            if (target !== source) target?.recycle()\n            stationaryBackground?.recycle()\n            fallbackMoveOnce()\n            return\n        }\n        val token = ++generation"
+        },
+        {
+          "before": "        }.isSuccess\n        if (!added) {\n            preview.release()\n            if (moveAsync != null) moveAsync { onFinished() }\n            else try { move() } finally { onFinished() }\n            return\n        }\n        overlay = preview",
+          "after": "        }.isSuccess\n        if (!added) {\n            preview.release()\n            fallbackMoveOnce()\n            return\n        }\n        overlay = preview"
         }
       ]
     },
@@ -2151,7 +2167,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/PhasedPreviewRegression.kt": {
-      "reviewed_blob_sha1": "ac35302f1485148292d93968929639ff792523d0",
+      "reviewed_blob_sha1": "b81fc84a6cfc74442dc1417d63816a4818498193",
       "previous_blob_sha1": "ebb222a2eae988609d118c4fa91ae3f83e95631f",
       "patches": [
         {
@@ -2181,6 +2197,10 @@
         {
           "before": "    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {\n        instrumentation.runOnMainSync {\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {",
           "after": "    private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {\n        instrumentation.runOnMainSync {\n            check(host.isAttachedToWindow && host.isHardwareAccelerated) {\n                \"Fallback evidence requires an otherwise capable HWUI preview host\"\n            }\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {"
+        },
+        {
+          "before": "                check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {\n                    \"Missing/transparent background leaked preview or repeated task move\"\n                }\n            }\n        }\n    }",
+          "after": "                check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {\n                    \"Missing/transparent background leaked preview or repeated task move\"\n                }\n\n                // When the real move is asynchronous the visual rejection\n                // must neither dispatch a second move nor complete twice.\n                val asyncSource=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                var asyncMoves=0\n                var asyncFinishes=0\n                val asyncPreview=WorkspaceSwapAnimator(activity)\n                asyncPreview.animate(asyncSource,null,RectF(20f,20f,120f,220f),\n                    RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),\n                    host,background,null,200,false,null,null,\n                    move={error(\"Visual rejection used sync move\")},\n                    isLiveReady={true},\n                    moveAsync={ done ->\n                        asyncMoves++\n                        done(true)\n                        done(false) // Simulated duplicate late ACK: must be ignored.\n                    },\n                    onFinished={asyncFinishes++})\n                check(!asyncPreview.isRunning && asyncSource.isRecycled &&\n                    asyncMoves==1 && asyncFinishes==1) {\n                    \"Visual rejection duplicated async move or completion\"\n                }\n\n                val throwingSource=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                var failuresFinished=0\n                val throwingPreview=WorkspaceSwapAnimator(activity)\n                throwingPreview.animate(throwingSource,null,RectF(20f,20f,120f,220f),\n                    RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),\n                    host,background,null,200,false,null,null,\n                    move={error(\"Visual rejection used sync move\")},\n                    isLiveReady={true},\n                    moveAsync={ throw IllegalStateException(\"Injected async submit failure\") },\n                    onFinished={failuresFinished++})\n                check(!throwingPreview.isRunning && throwingSource.isRecycled &&\n                    failuresFinished==1) {\n                    \"Async submission failure leaked visual completion\"\n                }\n            }\n        }\n    }"
         }
       ]
     },
