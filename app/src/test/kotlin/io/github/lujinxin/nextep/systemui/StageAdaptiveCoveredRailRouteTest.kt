@@ -14,6 +14,35 @@ class StageAdaptiveCoveredRailRouteTest {
     private val incoming=Crop(0,0,1272,2517)
     private val outgoing=Crop(0,0,954,2079)
     private val g=StageLiveSurfaceFlightGeometry
+
+    @Test fun straightCrossingKeepsOneCenterLineAndRejectsCoveredNeighbors() {
+        val viewport = Box(0f, 0f, 1280f, 800f)
+        val small = Box(20f, 300f, 180f, 390f)
+        val large = Box(260f, 140f, 1220f, 680f)
+        val crop = Crop(0, 0, 960, 540)
+        val plan = checkNotNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small, large, crop, crop, viewport, emptyList(), { true },
+        ))
+        assertEquals(small, plan.at(0f).incoming)
+        assertEquals(large, plan.at(1f).incoming)
+        assertEquals(small, plan.at(1f).outgoing)
+        for (step in 0..120) {
+            val p = step / 120f
+            val pair = plan.at(p)
+            val fraction = (pair.incoming.cx - small.cx) / (large.cx - small.cx)
+            assertEquals(small.cy + fraction * (large.cy - small.cy), pair.incoming.cy, .001f)
+            assertEquals(small.cx + large.cx, pair.incoming.cx + pair.outgoing.cx, .001f)
+            assertEquals(small.cy + large.cy, pair.incoming.cy + pair.outgoing.cy, .001f)
+        }
+        val neighbor = Box(70f, 395f, 180f, 460f)
+        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small, large, crop, crop, viewport, listOf(neighbor), { true },
+        ))
+        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small, large, crop, crop, viewport, emptyList(), { false },
+        ))
+    }
+
     @Test fun mixedAspectPortraitCanUseCertifiedCoveredRoute() {
         for(small in slots) {
             val obstacles=slots.filter{it!=small}

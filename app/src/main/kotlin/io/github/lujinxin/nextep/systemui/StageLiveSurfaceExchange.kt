@@ -398,7 +398,14 @@ internal class StageLiveSurfaceExchange private constructor(
                     runCatching {
                         val screen=StageLiveSurfaceFlightGeometry.Box(0f,0f,fullScreenWidth.toFloat(),fullScreenHeight.toFloat())
                         val withinBudget={SystemClock.elapsedRealtimeNanos()<deadline}
-                        StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
+                        val direct = if (oldCovered) StageAdaptiveCoveredRailRoute.straightCrossing(
+                            from, to, incomingCrop, outgoingCrop, screen, obstacles, withinBudget,
+                        ) else null
+                        if (direct != null) {
+                            adaptiveCovered = true
+                            StageExchangeTelemetry.nativeEvent("paired_straight_crossing")
+                        }
+                        direct ?: StageCertifiedRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
                             obstacles,oldCovered,withinBudget) ?: if(oldCovered && withinBudget()) {
                             StageAdaptiveCoveredRailRoute.choose(from,to,incomingCrop,outgoingCrop,screen,
                                 obstacles,withinBudget).also { adaptiveCovered=it!=null }

@@ -37,28 +37,64 @@ internal object StageAdaptiveCoveredRailRoute {
     }
     private fun certify(plan:PairedRailCandidate.Plan,small:Box,main:Box,incoming:Crop,outgoing:Crop,
                         obstacles:List<Box>,withinBudget:()->Boolean):SmoothPairedRailCandidate.Plan? {
-        val g=StageLiveSurfaceFlightGeometry
+        if (!hasSafeCropRange(plan.keyframes, incoming, outgoing)) return null
+        val smooth=SmoothPairedRailCandidate.smooth(plan,obstacles,withinBudget)?:return null
+        return smooth.takeIf { withinBudget() && preservesEndpointCrops(it, small, main, incoming, outgoing) }
+    }
+
+    fun straightCrossing(
+        small: Box, main: Box, incoming: Crop, outgoing: Crop, screen: Box,
+        obstacles: List<Box>, withinBudget: () -> Boolean,
+    ): SmoothPairedRailCandidate.Plan? {
+        if (!withinBudget() || !screen.valid() || !small.valid() || !main.valid()) return null
+        if (listOf(small, main).any {
+            it.left < screen.left || it.top < screen.top ||
+                it.right > screen.right || it.bottom > screen.bottom
+        }) return null
+        val geometry = StageLiveSurfaceFlightGeometry
+        for (slot in obstacles) {
+            val peak = geometry.peakSweptOverlap(small, main, slot)
+            val incomingAllowance = geometry.peakSweptOverlap(small, small, slot) + 1.0
+            val outgoingAllowance = geometry.peakSweptOverlap(main, main, slot) + 1.0
+            if (peak > minOf(incomingAllowance, outgoingAllowance)) return null
+        }
+        val plan = SmoothPairedRailCandidate.straightCrossing(small, main)
+        return plan.takeIf {
+            withinBudget() &&
+                hasSafeCropRange(listOf(it.at(0f), it.at(1f)), incoming, outgoing) &&
+                preservesEndpointCrops(it, small, main, incoming, outgoing)
+        }
+    }
+
+    private fun hasSafeCropRange(
+        keys: List<PairedRailCandidate.PairBox>, incoming: Crop, outgoing: Crop,
+    ): Boolean {
         // Convex-hull interpolation: all viewport widths/heights stay between key extrema.
         // Bound cover scale and inward crop size for all intermediate frames, not only samples.
-        for((keys,crop) in listOf(plan.keyframes.map{it.incoming} to incoming,plan.keyframes.map{it.outgoing} to outgoing)) {
+        for((viewports,crop) in listOf(keys.map{it.incoming} to incoming,keys.map{it.outgoing} to outgoing)) {
             val sw=crop.right-crop.left;val sh=crop.bottom-crop.top
-            val maxScale=maxOf(keys.maxOf{it.width}/sw,keys.maxOf{it.height}/sh)
+            val maxScale=maxOf(viewports.maxOf{it.width}/sw,viewports.maxOf{it.height}/sh)
             if(!maxScale.isFinite()||maxScale<=0f||maxScale>10f||
-                keys.minOf{it.width}/maxScale<2f||keys.minOf{it.height}/maxScale<2f)return null
+                viewports.minOf{it.width}/maxScale<2f||viewports.minOf{it.height}/maxScale<2f)return false
         }
-        val smooth=SmoothPairedRailCandidate.smooth(plan,obstacles,withinBudget)?:return null
-        if(!withinBudget())return null
+        return true
+    }
+
+    private fun preservesEndpointCrops(
+        plan: SmoothPairedRailCandidate.Plan, small: Box, main: Box, incoming: Crop, outgoing: Crop,
+    ): Boolean {
+        val g=StageLiveSurfaceFlightGeometry
         // Preserve the original visible terminal crop and initial complete source.
-        val first=smooth.at(0f);val last=smooth.at(1f)
+        val first=plan.at(0f);val last=plan.at(1f)
         for((viewport,from,to,crop,p) in listOf(
             Endpoint(first.incoming,small,main,incoming,0f),Endpoint(first.outgoing,main,small,outgoing,0f),
             Endpoint(last.incoming,small,main,incoming,1f),Endpoint(last.outgoing,main,small,outgoing,1f))) {
-            val old=g.mirrorFrame(from,to,crop,p,true)?:return null
-            if(p==0f && g.endpointGapPx(viewport,old.box)>2f)return null
-            val next=if(p==0f)old else frame(viewport,crop)?:return null
-            if(g.endpointGapPx(old.box,next.box)>2f||old.crop!=next.crop)return null
+            val old=g.mirrorFrame(from,to,crop,p,true)?:return false
+            if(p==0f && g.endpointGapPx(viewport,old.box)>2f)return false
+            val next=if(p==0f)old else frame(viewport,crop)?:return false
+            if(g.endpointGapPx(old.box,next.box)>2f||old.crop!=next.crop)return false
         }
-        return smooth.takeIf{withinBudget()}
+        return true
     }
     private data class Endpoint(val viewport:Box,val from:Box,val to:Box,val crop:Crop,val p:Float)
 }

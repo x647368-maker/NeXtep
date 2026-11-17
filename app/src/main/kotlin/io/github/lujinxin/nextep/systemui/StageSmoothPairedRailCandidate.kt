@@ -27,6 +27,14 @@ internal object SmoothPairedRailCandidate {
             return s.curve.at(((p-s.start)/(s.end-s.start)).coerceIn(0f,1f))
         }
     }
+    // The promoted card draws above the departing card throughout the
+    // crossing. Their overlap is intentional, with no change of layer order.
+    fun straightCrossing(small: Box, main: Box): Plan {
+        val start = PairBox(small, main)
+        val end = PairBox(main, small)
+        val midpoint = mix(start, end, .5f)
+        return Plan(listOf(Segment(0f, 4f, Curve(start, midpoint, end))), 1.0, 0f)
+    }
     // Integrated smoothstep velocity ramp. Exactly one acceleration/deceleration;
     // constant nonzero path speed in the interior, zero endpoint velocity.
     fun clock(progress:Float):Float {

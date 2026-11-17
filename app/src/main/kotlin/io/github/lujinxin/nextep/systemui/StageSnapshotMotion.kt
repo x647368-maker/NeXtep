@@ -100,7 +100,10 @@ internal object StageSnapshotMotion {
         val ic=StageLiveSurfaceFlightGeometry.Crop(0,0,iw,ih)
         val oc=StageLiveSurfaceFlightGeometry.Crop(0,0,ow,oh)
         val covered=StageLiveSurfaceFlightGeometry.canUseCoveredFlight(a,z,ic,oc,obstacles)
-        val plan=StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)
+        val direct = if (covered) StageAdaptiveCoveredRailRoute.straightCrossing(
+            a, z, ic, oc, view, obstacles, withinBudget,
+        ) else null
+        val plan=direct ?: StageCertifiedRailRoute.choose(a,z,ic,oc,view,obstacles,covered,withinBudget)
             ?: (if(covered && withinBudget())
                 StageAdaptiveCoveredRailRoute.choose(a,z,ic,oc,view,obstacles,withinBudget) else null)
             ?:return null
