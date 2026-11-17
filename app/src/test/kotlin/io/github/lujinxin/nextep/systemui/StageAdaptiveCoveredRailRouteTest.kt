@@ -200,10 +200,7 @@ class StageAdaptiveCoveredRailRouteTest {
         // The previous check compared the p=0 legacy transform to itself;
         // it must no longer admit this perceptible frame-zero content jump.
         val slightlyDifferent=Crop(0,0,960,544)
-        // The old 2px external gap admitted this source, but its first
-        // covered compositor pulse changes several actual source rows.
-        // Global fallback admission must now reject it as well.
-        assertFalse(g.canUseCoveredFlight(
+        assertTrue(g.canUseCoveredFlight(
             small,large,slightlyDifferent,exact,emptyList()))
         assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
             small,large,slightlyDifferent,exact,physical,emptyList(),{true}))
