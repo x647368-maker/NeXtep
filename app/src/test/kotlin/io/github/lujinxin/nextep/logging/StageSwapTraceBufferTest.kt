@@ -4,6 +4,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageSwapTraceBufferTest {
+    @Test fun essentialGpuMilestonesSurviveReadinessOscillation() {
+        var now=0L
+        val recorder=StageSwapTraceBuffer({now})
+        val id=recorder.begin("tap_swap")
+        repeat(14) { now++;recorder.event("prepare_$it",id) }
+        val essential=listOf("native_terminal_transaction_committed",
+            "real_move_requested", "real_move_ack", "handoff_target_ready",
+            "endpoint_reveal_start", "endpoint_reveal_commit")
+        essential.forEach { now++;recorder.event(it,id) }
+        // Each transition is individually valid; under the old single-tier
+        // protection, repeated WAIT/READY oscillations evicted all six events.
+        repeat(40) {
+            now++
+            val state=if(it%2==0) "target_wait=slot_post_ack_buffer"
+                else "handoff_state=target_not_ready"
+            recorder.event(state,id)
+        }
+        now++
+        recorder.finish("gpu_completed",id)
+        val trace=recorder.describe()
+        essential.forEach { assertTrue("lost critical milestone: $it",trace.contains("$it@")) }
+        assertTrue(trace.contains("end:gpu_completed@"))
+        assertTrue(trace.contains("[omitted="))
+        assertTrue(trace.split(" > ").size<=29)
+    }
+
     @Test fun gpuHandoffMilestonesSurviveDeviceTraceTruncation() {
         var clock=0L
         val recorder=StageSwapTraceBuffer({clock})
