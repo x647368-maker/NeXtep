@@ -63,6 +63,47 @@ jobs:
             app/src/main/kotlin/io/github/lujinxin/nextep/systemui/StageRuntimeIdentity.kt
           test -n "$(find app/build/outputs/apk/debug -name '*.apk' -print -quit)"
           echo "PASS compiled loaded_build is tied to checkout ${expected}; APK remains unsigned"
+      - name: Preserve unsigned APK identity for offline original-key signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${ATOMIC_SIGNING_READY:-false}" != "true"
+          mapfile -t apks < <(find app/build/outputs/apk/debug -type f -name '*.apk' | sort)
+          test "${#apks[@]}" -eq 1
+          apk="${apks[0]}"
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$apksigner"
+          if "$apksigner" verify --min-sdk-version 35 "$apk" > /tmp/v89-apk-sigcheck.txt 2>&1; then
+            echo "ERROR: expected unsigned APK, not an unexpectedly signed APK"
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("app/build/outputs/apk/debug/output-metadata.json")
+          data=json.loads(p.read_text())
+          assert data["applicationId"]=="io.github.x647368maker.atomicworkbench",data
+          assert len(data["elements"])==1,data
+          assert data["elements"][0]["versionCode"]==89,data
+          assert data["elements"][0]["versionName"]=="0.9.74-dev",data
+          print("PASS unsigned APK metadata, unchanged package/version")
+          PY
+          sha256sum "$apk" > unsigned-apk.sha256
+          printf 'source_commit=%s\ncompiled_revision=%s\npackage=%s\nversion_name=%s\nversion_code=%s\nsigned=%s\n' \
+            "$GITHUB_SHA" "$(printf '%s' "$GITHUB_SHA" | cut -c1-12)" \
+            'io.github.x647368maker.atomicworkbench' '0.9.74-dev' '89' 'false' > unsigned-apk-provenance.txt
+          echo "PASS unsigned signing input saved for private original-key signing; NOT INSTALLABLE"
+      - name: Retain unsigned APK for original-certificate private signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-unsigned-signing-input
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/debug/output-metadata.json
+            unsigned-apk.sha256
+            unsigned-apk-provenance.txt
+          if-no-files-found: error
+          retention-days: 3
       - name: Retain raw results
         if: always()
         uses: actions/upload-artifact@v4
