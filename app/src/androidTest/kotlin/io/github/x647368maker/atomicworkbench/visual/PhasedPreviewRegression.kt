@@ -198,6 +198,43 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {
                     "Missing/transparent background leaked preview or repeated task move"
                 }
+
+                // When the real move is asynchronous the visual rejection
+                // must neither dispatch a second move nor complete twice.
+                val asyncSource=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
+                var asyncMoves=0
+                var asyncFinishes=0
+                val asyncPreview=WorkspaceSwapAnimator(activity)
+                asyncPreview.animate(asyncSource,null,RectF(20f,20f,120f,220f),
+                    RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),
+                    host,background,null,200,false,null,null,
+                    move={error("Visual rejection used sync move")},
+                    isLiveReady={true},
+                    moveAsync={ done ->
+                        asyncMoves++
+                        done(true)
+                        done(false) // Simulated duplicate late ACK: must be ignored.
+                    },
+                    onFinished={asyncFinishes++})
+                check(!asyncPreview.isRunning && asyncSource.isRecycled &&
+                    asyncMoves==1 && asyncFinishes==1) {
+                    "Visual rejection duplicated async move or completion"
+                }
+
+                val throwingSource=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
+                var failuresFinished=0
+                val throwingPreview=WorkspaceSwapAnimator(activity)
+                throwingPreview.animate(throwingSource,null,RectF(20f,20f,120f,220f),
+                    RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),
+                    host,background,null,200,false,null,null,
+                    move={error("Visual rejection used sync move")},
+                    isLiveReady={true},
+                    moveAsync={ throw IllegalStateException("Injected async submit failure") },
+                    onFinished={failuresFinished++})
+                check(!throwingPreview.isRunning && throwingSource.isRecycled &&
+                    failuresFinished==1) {
+                    "Async submission failure leaked visual completion"
+                }
             }
         }
     }
