@@ -199,6 +199,22 @@ class StageConcurrentNativeTrialPolicyTest {
         policy.resetForTests()
     }
 
+    @Test fun onlyVisibleOwnedAttachedSlotMayGetOnePostAckLatch() {
+        val policy=StageConcurrentNativeTrialPolicy
+        // Bit 0: already requested, 1: workspace visible, 2: correct
+        // new slot/main owners, 3: attached, 4: live texture available.
+        for(mask in 0..31) {
+            val requested=(mask and 1)!=0
+            val visible=(mask and 2)!=0
+            val correctOwner=(mask and 4)!=0
+            val attached=(mask and 8)!=0
+            val available=(mask and 16)!=0
+            assertEquals("case=$mask",mask==30,
+                policy.shouldRequestPostAckSlotLatch(
+                    requested,visible,correctOwner,attached,available))
+        }
+    }
+
     @Test fun slotReadyRequiresPostMoveBuffer() {
         assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(null,1L))
         assertFalse(StageConcurrentNativeTrialPolicy.freshFrameAfterTaskAck(42L,42L))
