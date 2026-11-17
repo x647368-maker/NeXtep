@@ -134,7 +134,20 @@ internal object StageAdaptiveCoveredRailRoute {
             val sourceHeight=crop.bottom-crop.top
             val scaleShift=kotlin.math.abs(old.scale-next.scale)*
                 maxOf(sourceWidth,sourceHeight)
-            if(old.crop!=next.crop ||
+            // Integer crop rounding may drop one source pixel although the
+            // physical difference is only 0.18–0.22 screen px on a packed
+            // rail. That is safe. Reject by *projected physical pixels*, not
+            // unconditional source-integer equality. The terminal still
+            // requires exact crop agreement with the original renderer.
+            val cropDelta=listOf(
+                kotlin.math.abs(old.crop.left-next.crop.left),
+                kotlin.math.abs(old.crop.top-next.crop.top),
+                kotlin.math.abs(old.crop.right-next.crop.right),
+                kotlin.math.abs(old.crop.bottom-next.crop.bottom),
+            ).maxOrNull() ?: return false
+            val cropShiftPx=cropDelta*maxOf(old.scale,next.scale)
+            if((p==0f && cropShiftPx>tolerance) ||
+                (p!=0f && old.crop!=next.crop) ||
                 g.endpointGapPx(old.box,next.box)>tolerance ||
                 scaleShift>tolerance ||
                 kotlin.math.abs(old.x-next.x)>tolerance ||
