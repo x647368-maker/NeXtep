@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
@@ -67,6 +68,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         uniformTapMorph: Boolean = false,
         sharedMotion: StageSnapshotMotion.PairFlight? = null,
         protectedBounds: List<RectF> = emptyList(),
+        opaqueBackdropColor: Int? = null,
         sourceIsPreview: Boolean = true,
         targetIsPreview: Boolean = false,
         onFinished: () -> Unit,
@@ -75,7 +77,13 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         check(overlay == null) { "Previous exchange still owns its preview" }
         releaseAllowed = canRelease
         cancelRequested = false
-        if (!host.isAttachedToWindow || !host.isHardwareAccelerated || source == null || start.isEmpty ||
+        // A translucent/no-wallpaper preview would expose a stale real task
+        // when its contained bitmap leaves an uncovered strip. Never start
+        // a Canvas flight without an already prepared opaque backing.
+        val backdropReady = StagePreviewFillPolicy.canStart(
+            opaqueBackdropColor!=null,backdrop?.opacity==PixelFormat.OPAQUE)
+        if (!backdropReady) NeXtepLog.warn("workspace_swap","Canvas preview rejected: opaque backdrop unavailable")
+        if (!backdropReady || !host.isAttachedToWindow || !host.isHardwareAccelerated || source == null || start.isEmpty ||
             sourceBounds.isEmpty || targetBounds.isEmpty
         ) {
             source?.recycle()
@@ -90,7 +98,7 @@ internal class WorkspaceSwapAnimator(private val context: Context) {
         val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,
             sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,
             sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },
-            protectedBounds,sourceIsPreview,targetIsPreview)
+            protectedBounds,sourceIsPreview,targetIsPreview,opaqueBackdropColor)
         // Reuse the non-touchable full-display content panel. Creating and
         // removing another system window can disturb HOME visibility on exchange.
         val added = runCatching {
@@ -345,6 +353,7 @@ internal class SwapPreviewView(
     protectedBounds: List<RectF>,
     sourceIsPreview:Boolean=true,
     targetIsPreview:Boolean=false,
+    private val opaqueBackdropColor:Int?=null,
 ) : View(context) {
     private val protectedCards=protectedBounds.map { RectF(it) }
     val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
@@ -362,7 +371,6 @@ internal class SwapPreviewView(
         strokeWidth = context.resources.displayMetrics.density * 2f
     }
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private val destination = RectF()
     private val fitted = RectF()
     private val sourceRect = Rect()
@@ -378,6 +386,15 @@ internal class SwapPreviewView(
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
     }
 
+    private fun drawSafeBacking(canvas:Canvas) {
+        // The opaque sampled wallpaper underlay prevents live-task leakage
+        // through a translucent drawable. The full prepared wallpaper is then
+        // drawn in display coordinates, including intermediate letterboxes.
+        opaqueBackdropColor?.let { canvas.drawColor(it) }
+        backdrop?.setBounds(0,0,width,height)
+        backdrop?.draw(canvas)
+    }
+
     override fun onDraw(canvas: Canvas) {
         if (released) return
         // Erase the stationary originals only inside the participating windows.
@@ -385,9 +402,7 @@ internal class SwapPreviewView(
         val save = canvas.save()
         canvas.clipPath(backdropClip)
         if(uniformTapMorph)protectedCards.forEach { canvas.clipOutRect(it) }
-        canvas.drawColor(Color.BLACK)
-        backdrop?.setBounds(0, 0, width, height)
-        backdrop?.draw(canvas)
+        drawSafeBacking(canvas)
         canvas.restoreToCount(save)
 
         stationaryBackground?.let { canvas.drawBitmap(it, null, sourceBounds, bitmapPaint) }
@@ -460,29 +475,29 @@ internal class SwapPreviewView(
             !frame.right.isFinite() || !frame.bottom.isFinite() ||
             frame.right <= frame.left || frame.bottom <= frame.top) return
         val bounds = RectF(frame.left, frame.top, frame.right, frame.bottom)
-        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,
-            bounds.left, bounds.top, bounds.right, bounds.bottom)
+        val fit = StagePreviewFillPolicy.frame(bitmap.width, bitmap.height,
+            bounds.left, bounds.top, bounds.right, bounds.bottom).content
         destination.set(fit.left, fit.top, fit.right, fit.bottom)
         outline.reset()
         val radius=StageSnapshotMotion.frameRadius(startRadius,endRadius,progress,bounds.width(),bounds.height())
         outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
         val save = canvas.save()
         canvas.clipPath(outline)
-        canvas.drawColor(Color.BLACK)
+        drawSafeBacking(canvas)
         canvas.drawBitmap(bitmap, null, destination, bitmapPaint)
         canvas.restoreToCount(save)
     }
 
     private fun drawFixedFrame(canvas: Canvas, bitmap: Bitmap, bounds: RectF,endpointRadius:Float) {
-        val fit = StageFixedFrameGeometry.fit(bitmap.width, bitmap.height,
-            bounds.left, bounds.top, bounds.right, bounds.bottom)
+        val fit = StagePreviewFillPolicy.frame(bitmap.width, bitmap.height,
+            bounds.left, bounds.top, bounds.right, bounds.bottom).content
         destination.set(fit.left, fit.top, fit.right, fit.bottom)
         outline.reset()
         val radius=StageSnapshotMotion.frameRadius(endpointRadius,endpointRadius,0f,bounds.width(),bounds.height())
         outline.addRoundRect(bounds, radius, radius, Path.Direction.CW)
         val save = canvas.save()
         canvas.clipPath(outline)
-        canvas.drawColor(Color.BLACK)
+        drawSafeBacking(canvas)
         // Uniform scale + letterbox. Never stretch video, faces or text.
         canvas.drawBitmap(bitmap, null, destination, bitmapPaint)
         canvas.restoreToCount(save)
@@ -526,7 +541,7 @@ internal class SwapPreviewView(
         outline.transform(projection)
         val save = canvas.save()
         canvas.clipPath(outline)
-        canvas.drawColor(Color.BLACK)
+        drawSafeBacking(canvas)
         canvas.drawBitmap(bitmap, projection, bitmapPaint)
         canvas.restoreToCount(save)
     }
