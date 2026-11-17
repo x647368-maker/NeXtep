@@ -74,6 +74,62 @@ internal object SmoothPairedRailCandidate {
         fun eased(x:Float):Float {val u=x/ramp;return ramp*(u*u*u-.5f*u*u*u*u)/(1-ramp)}
         return when {t<ramp->eased(t);t>1-ramp->1-eased(1-t);else->(t-ramp*.5f)/(1-ramp)}
     }
+    /**
+     * The old certified/adaptive fallback can choose a different route from
+     * the Vivo-style crossing on adjacent taps. Never admit a fallback that
+     * backtracks along the physical rail-to-main axis: a quadratic Bezier has
+     * monotone axis motion when BOTH control-point deltas have that sign.
+     * This is an analytical per-tap check, not a sampled per-frame heuristic.
+     * The legacy task/mirror fallback remains available if this guard rejects.
+     */
+    fun preservesPrimaryDirection(plan:Plan, small:Box, main:Box):Boolean {
+        if (!small.valid() || !main.valid() || plan.segments.isEmpty()) return false
+        val leftRight = small.cx < main.left || small.cx > main.right
+        val topBottom = small.cy < main.top || small.cy > main.bottom
+        val horizontal = when {
+            leftRight && !topBottom -> true
+            topBottom && !leftRight -> false
+            else -> abs(main.cx-small.cx)/main.width >= abs(main.cy-small.cy)/main.height
+        }
+        fun axis(b:Box):Float = if(horizontal)b.cx else b.cy
+        val forward=axis(main)-axis(small)
+        if(!forward.isFinite() || abs(forward)<1f)return false
+        val sign=if(forward>0f)1f else -1f
+        fun ordered(a:Box,control:Box,b:Box,direction:Float):Boolean {
+            if(!a.valid() || !control.valid() || !b.valid())return false
+            val x=axis(a)*direction
+            val y=axis(control)*direction
+            val z=axis(b)*direction
+            return x.isFinite() && y.isFinite() && z.isFinite() &&
+                y+.02f>=x && z+.02f>=y
+        }
+        var prior:Segment?=null
+        for(segment in plan.segments) {
+            if(!segment.start.isFinite() || !segment.end.isFinite() ||
+                segment.end<=segment.start)return false
+            val before=prior
+            if(before==null) {
+                if(abs(segment.start)>.0002f)return false
+            } else {
+                if(abs(before.end-segment.start)>.0002f)return false
+                // Reject an instantaneous center jump between two admitted curves.
+                if(abs(axis(before.curve.b.incoming)-axis(segment.curve.a.incoming))>.02f ||
+                    abs(axis(before.curve.b.outgoing)-axis(segment.curve.a.outgoing))>.02f)return false
+            }
+            val c=segment.curve
+            if(!ordered(c.a.incoming,c.control.incoming,c.b.incoming,sign) ||
+                !ordered(c.a.outgoing,c.control.outgoing,c.b.outgoing,-sign))return false
+            prior=segment
+        }
+        if(abs(plan.segments.last().end-4f)>.0002f)return false
+        val first=plan.segments.first().curve.a
+        val last=plan.segments.last().curve.b
+        return abs(axis(first.incoming)-axis(small))<=.02f &&
+            abs(axis(first.outgoing)-axis(main))<=.02f &&
+            abs(axis(last.incoming)-axis(main))<=.02f &&
+            abs(axis(last.outgoing)-axis(small))<=.02f
+    }
+
     private fun quadratic(a:Box,c:Box,b:Box,t:Float):Box {
         fun edge(x:Float,y:Float,z:Float):Float {
             val left=x+(y-x)*t
