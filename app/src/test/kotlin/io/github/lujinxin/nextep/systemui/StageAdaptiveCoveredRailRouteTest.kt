@@ -208,6 +208,28 @@ class StageAdaptiveCoveredRailRouteTest {
             small,large,exact,slightlyDifferent,physical,emptyList(),{true}))
     }
 
+    @Test fun api37MixedAspectAdaptiveFallbackSurvivesNewRouteStartSeamGate() {
+        // Directly reconstructed from StageNativeFlightRuntimeRegression
+        // adaptiveCovered=true and physical 1272x2772 fixture, not a mock
+        // with matching source/viewport aspect ratios.
+        val viewport=Box(0f,0f,1272f,2772f)
+        val small=Box(12f,359f,200f,731f)
+        val large=Box(212f,307f,848f,1693f)
+        val incoming=Crop(0,0,424,839)
+        val outgoing=Crop(0,0,318,693)
+        val neighbor=Box(12f,749f,200f,1121f)
+        assertTrue(g.canUseCoveredFlight(
+            small,large,incoming,outgoing,listOf(neighbor)))
+        // The new straight/rail candidates may be rejected if their very
+        // first crop differs visibly from the source. That MUST NOT disable
+        // the independently certified legacy adaptive GPU fallback.
+        val legacy=StageAdaptiveCoveredRailRoute.choose(
+            small,large,incoming,outgoing,viewport,listOf(neighbor),{true})
+        assertNotNull("do not crash API37 on a rejected new rail route",legacy)
+        assertTrue(SmoothPairedRailCandidate.preservesPrimaryDirection(
+            checkNotNull(legacy),small,large))
+    }
+
     @Test fun nonzeroCropOriginsArePreserved() {
         val c=Crop(23,47,1295,2564)
         val f=checkNotNull(StageAdaptiveCoveredRailRoute.frame(main,c))
