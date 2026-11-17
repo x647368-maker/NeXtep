@@ -123,6 +123,44 @@ class StageAdaptiveCoveredRailRouteTest {
             assertNull(StageAdaptiveCoveredRailRoute.choose(slots[0],main,incoming,outgoing,screen,slots.drop(1)){++calls<=limit})
         }
     }
+    @Test fun invalidNeighborGeometryCannotSilentlyEnterDirectCrossing() {
+        val viewport=Box(0f,0f,1280f,800f)
+        val small=Box(20f,300f,180f,390f)
+        val large=Box(260f,140f,1220f,680f)
+        val crop=Crop(0,0,960,540)
+        for(obstacle in listOf(
+            Box(Float.NaN,395f,180f,460f),
+            Box(70f,395f,70f,460f),
+            Box(70f,Float.POSITIVE_INFINITY,180f,460f),
+        )) {
+            assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+                small,large,crop,crop,viewport,listOf(obstacle),{true},
+            ))
+        }
+    }
+
+    @Test fun fallbackAdmissionProvesDirectionWithoutFrameSampling() {
+        val viewport=Box(0f,0f,1280f,800f)
+        val small=Box(20f,300f,180f,390f)
+        val large=Box(260f,140f,1220f,680f)
+        val crop=Crop(0,0,960,540)
+        val good=checkNotNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small,large,crop,crop,viewport,emptyList(),{true},
+        ))
+        assertTrue(SmoothPairedRailCandidate.preservesPrimaryDirection(good,small,large))
+        val bad=SmoothPairedRailCandidate.Plan(listOf(
+            SmoothPairedRailCandidate.Segment(0f,4f,SmoothPairedRailCandidate.Curve(
+                PairedRailCandidate.PairBox(small,large),
+                PairedRailCandidate.PairBox(
+                    Box(1500f,300f,1660f,390f),
+                    Box(-400f,140f,-200f,680f),
+                ),
+                PairedRailCandidate.PairBox(large,small),
+            )),
+        ),1.0,0f)
+        assertFalse(SmoothPairedRailCandidate.preservesPrimaryDirection(bad,small,large))
+    }
+
     @Test fun nonzeroCropOriginsArePreserved() {
         val c=Crop(23,47,1295,2564)
         val f=checkNotNull(StageAdaptiveCoveredRailRoute.frame(main,c))
