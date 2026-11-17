@@ -2335,6 +2335,20 @@
           "after": "package io.github.x647368maker.atomicworkbench.systemui\n\nimport org.junit.Assert.assertEquals\nimport org.junit.Assert.assertFalse\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\n\nclass StagePreviewFillPolicyTest {\n    @Test fun letterboxPolicyDoesNotStretchPortraitIntoLandscape() {\n        val result=StagePreviewFillPolicy.frame(100,200,10f,20f,510f,320f)\n        assertTrue(result.hasUncoveredArea)\n        assertTrue(result.horizontalGap > 300f)\n        assertEquals(0f,result.verticalGap,.001f)\n        assertEquals(result.content.width/100f,result.content.height/200f,.001f)\n    }\n\n    @Test fun landscapeIntoPortraitUsesPreparedBacking() {\n        val result=StagePreviewFillPolicy.frame(200,100,0f,0f,200f,600f)\n        assertTrue(result.hasUncoveredArea)\n        assertTrue(result.verticalGap > 400f)\n        assertEquals(0f,result.horizontalGap,.001f)\n    }\n\n    @Test fun alignedFrameHasNoArtificialBars() {\n        val result=StagePreviewFillPolicy.frame(100,200,0f,0f,300f,600f)\n        assertFalse(result.hasUncoveredArea)\n        assertEquals(0f,result.horizontalGap,.001f)\n        assertEquals(0f,result.verticalGap,.001f)\n    }\n\n    @Test fun previewRequiresARealOpaqueCover() {\n        assertFalse(StagePreviewFillPolicy.canStart(false,false))\n        assertTrue(StagePreviewFillPolicy.canStart(true,false))\n        assertTrue(StagePreviewFillPolicy.canStart(false,true))\n        assertTrue(StagePreviewFillPolicy.canStart(true,true))\n    }\n}\n"
         }
       ]
+    },
+    "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageMainSlotMorphRegression.kt": {
+      "reviewed_blob_sha1": "03e971643a7b40b332cdd5da22f6263796adda6f",
+      "previous_blob_sha1": "5169b4eb28f4a353861ca598a144340b2c560cd1",
+      "patches": [
+        {
+          "before": "import android.graphics.Color\n",
+          "after": "import android.graphics.Color\nimport android.graphics.drawable.ColorDrawable\n"
+        },
+        {
+          "before": "                backdrop=null,\n                stationaryBackground=null,",
+          "after": "                // The test host is deliberately opaque: pass that already\n                // prepared material explicitly rather than violating P0-1's\n                // no-cover admission contract. Main task capture is STILL null.\n                backdrop=ColorDrawable(Color.rgb(20,22,38)),\n                stationaryBackground=null,"
+        }
+      ]
     }
   }
 }
