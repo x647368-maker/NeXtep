@@ -2536,6 +2536,22 @@ class NeXtepWindowController(
         }
         var lastTargetWait=""
         val incoming=state.taskId
+        var postAckLatchRequested=false
+        fun requestPostAckSlotLatch() {
+            val occupied=slotCoordinator?.slotStates()?.getOrNull(slotIndex) as? SlotState.Occupied
+            val ownerMatches=occupied?.taskId==task && mainTaskPresenter.currentTaskId()==incoming
+            val texture=slot.view.textureView
+            if(!StageConcurrentNativeTrialPolicy.shouldRequestPostAckSlotLatch(
+                    postAckLatchRequested,
+                    workspaceVisible && !suspended && !sidebarCollapsed && !groupInputBlocked,
+                    ownerMatches,slot.view.isAttachedToWindow,texture.isAvailable))return
+            postAckLatchRequested=true
+            // This is only one UI invalidation hint after confirmed ownership,
+            // NOT a fresh SurfaceTexture buffer or proof of visible pixels.
+            runCatching { texture.postInvalidateOnAnimation() }
+                .onSuccess { StageExchangeTelemetry.nativeEvent("gpu_slot_latch_requested",traceId) }
+                .onFailure { NeXtepLog.warn("native_swap","One-shot slot latch unavailable",it) }
+        }
         activeSwapViewport=g
         deferredSwapGeometryRefresh=false
         slot.view.beginExchangePreview()
@@ -2561,6 +2577,7 @@ class NeXtepWindowController(
                                         if(outputAtConfirmedMove!=null && outputAtConfirmedMove===earlier)
                                             "slot_buffer_baseline=verified_layout"
                                         else "slot_buffer_baseline=final_ack",traceId)
+                                    requestPostAckSlotLatch()
                                 }
                                 ok
                             }.getOrElse { error ->
@@ -2584,7 +2601,10 @@ class NeXtepWindowController(
                 val reason=when {
                     now !is SlotState.Occupied || now.taskId!=task -> "slot_owner"
                     !slot.view.textureView.isAvailable -> "slot_texture"
-                    !outputHasFreshFrame() -> "slot_post_ack_buffer"
+                    !outputHasFreshFrame() -> {
+                        requestPostAckSlotLatch()
+                        "slot_post_ack_buffer"
+                    }
                     mainTaskPresenter.currentTaskId()!=incoming -> "main_owner"
                     !TaskSurfaceCompat.isPresentationSettled(incoming,g) -> "main_geometry"
                     else -> "ready"
