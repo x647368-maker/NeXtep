@@ -46,12 +46,22 @@ internal class StageSwapTraceBuffer(
         return true
     }
 
+    // These brief state-change messages reveal WHY an otherwise completed
+    // GPU flight may keep the destination covered for hundreds of milliseconds.
+    // They are already emitted only on transition; retain them through bounded
+    // history truncation, without new sampling, polling or content collection.
+    private fun isHandoffWait(name:String):Boolean =
+        name.startsWith("target_wait=") || name.startsWith("handoff_state=")
+
     private fun eventLocked(name: String) {
         val attempt = active ?: return
-        // Preserve the start and newest stages, including the actual terminal
-        // handoff. Only middle events may be dropped, and disclose that gap.
+        // Preserve initial context, terminal outcome and rare readiness-gate
+        // changes. Prefer dropping an ordinary middle event. Bounded capacity
+        // still wins if every available middle entry is a readiness event.
         if (attempt.events.size >= eventLimit) {
-            attempt.events.removeAt(headLimit)
+            val removable=(headLimit until attempt.events.size)
+                .firstOrNull { !isHandoffWait(attempt.events[it]) } ?: headLimit
+            attempt.events.removeAt(removable)
             attempt.omitted++
         }
         val elapsed = (now() - attempt.startMs).coerceAtLeast(0)
