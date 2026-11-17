@@ -375,6 +375,7 @@ internal class SwapPreviewView(
     private val protectedCards=protectedBounds.map { RectF(it) }
     private val motionPlan=sharedMotion?.let(ExchangeMotionPlan::fromExistingPair)
     val usesMotionPlan get()=motionPlan!=null
+    internal fun sampleGeometryProgress(raw:Float):Float = motionPlan?.geometryProgress(raw) ?: raw
     val usesSharedRoute get()=sharedMotion?.usesSharedClock==true
     val usesPairedRoute get()=sharedMotion!=null
     private val upCorners=sharedMotion?.up?.let{StageSnapshotMotion.cornerTrack(it,true,resources.displayMetrics.density)}
@@ -470,7 +471,7 @@ internal class SwapPreviewView(
 
     private fun drawSharedMotionFrame(canvas:Canvas, bitmap:Bitmap, flight:StageSnapshotMotion.Flight,
                                       corners:StageSnapshotMotion.CornerTrack) {
-        val frameProgress=motionPlan?.geometryProgress(progress) ?: progress
+        val frameProgress=sampleGeometryProgress(progress)
         val pose=flight.pose(frameProgress)
         if(!pose.cx.isFinite() || !pose.cy.isFinite() || !pose.scale.isFinite() || pose.scale<=0f)return
         val halfW=bitmap.width*pose.scale*.5f
