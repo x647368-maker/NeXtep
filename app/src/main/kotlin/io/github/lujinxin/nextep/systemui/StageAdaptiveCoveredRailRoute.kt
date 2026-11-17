@@ -33,7 +33,7 @@ internal object StageAdaptiveCoveredRailRoute {
                 accepted=certify(keys,small,main,incoming,outgoing,obstacles,withinBudget)
                 accepted!=null
             },withinBudget) ?:return null
-        return accepted.takeIf{withinBudget()}
+        return accepted.takeIf{withinBudget() && SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main)}
     }
     private fun certify(plan:PairedRailCandidate.Plan,small:Box,main:Box,incoming:Crop,outgoing:Crop,
                         obstacles:List<Box>,withinBudget:()->Boolean):SmoothPairedRailCandidate.Plan? {
@@ -46,7 +46,8 @@ internal object StageAdaptiveCoveredRailRoute {
         small: Box, main: Box, incoming: Crop, outgoing: Crop, screen: Box,
         obstacles: List<Box>, withinBudget: () -> Boolean,
     ): SmoothPairedRailCandidate.Plan? {
-        if (!withinBudget() || !screen.valid() || !small.valid() || !main.valid()) return null
+        if (!withinBudget() || !screen.valid() || !small.valid() || !main.valid() ||
+            obstacles.any { !it.valid() }) return null
         if (listOf(small, main).any {
             it.left < screen.left || it.top < screen.top ||
                 it.right > screen.right || it.bottom > screen.bottom
@@ -62,7 +63,8 @@ internal object StageAdaptiveCoveredRailRoute {
         return plan.takeIf {
             withinBudget() &&
                 hasSafeCropRange(listOf(it.at(0f), it.at(1f)), incoming, outgoing) &&
-                preservesEndpointCrops(it, small, main, incoming, outgoing)
+                preservesEndpointCrops(it, small, main, incoming, outgoing) &&
+                SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main)
         }
     }
 
@@ -90,7 +92,8 @@ internal object StageAdaptiveCoveredRailRoute {
         if (!hasSafeCropRange(keys, incoming, outgoing)) return null
         val plan = SmoothPairedRailCandidate.railCrossing(small, hinge, main, obstacles, withinBudget)
             ?: return null
-        return plan.takeIf { withinBudget() && preservesEndpointCrops(it, small, main, incoming, outgoing) }
+        return plan.takeIf { withinBudget() && preservesEndpointCrops(it, small, main, incoming, outgoing) &&
+            SmoothPairedRailCandidate.preservesPrimaryDirection(it,small,main) }
     }
 
     private fun hasSafeCropRange(
