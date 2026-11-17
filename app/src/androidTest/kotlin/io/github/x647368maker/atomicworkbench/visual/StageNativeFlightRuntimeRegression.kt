@@ -78,7 +78,8 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             .apply { isAccessible=true }
         class Attempt(val flight:StageLiveSurfaceExchange,val a:SurfaceControl,val b:SurfaceControl,
                       val ended:CountDownLatch,val finishes:AtomicInteger,val moves:AtomicInteger)
-        fun begin(cancelImmediately:Boolean=false,detachImmediately:Boolean=false):Attempt {
+        fun begin(cancelImmediately:Boolean=false,detachImmediately:Boolean=false,
+                  immediateMove:Boolean=true):Attempt {
             var result:Attempt?=null
             inst.runOnMainSync {
                 var a:SurfaceControl?=null
@@ -110,7 +111,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     val moves=AtomicInteger()
                     check(engine.start(360,{ complete -> moves.incrementAndGet();complete(false) },
                         { moves.incrementAndGet();false },{ false },{ false },
-                        { finishes.incrementAndGet();StageExchangeTelemetry.endNativeTap("instrumented_finish",traceId);ended.countDown() },true))
+                        { finishes.incrementAndGet();StageExchangeTelemetry.endNativeTap("instrumented_finish",traceId);ended.countDown() },immediateMove))
                     result=Attempt(engine,ma,mb,ended,finishes,moves)
                     if(cancelImmediately) { engine.stop();engine.stop() }
                     if(detachImmediately) {
@@ -400,6 +401,51 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                 check(observed) { "No admitted flight with real moving pixels after three $label attempts" }
             }
             if(pairedRail) {
+                // Exercise the *actual* post-ready compositor reveal, not a
+                // mocked policy boolean. Fake Shell IDs are never migrated.
+                // This reproduces the lost ColorOS ValueAnimator pulse/end
+                // class without claiming a real OEM task handoff.
+                val revealOnly=begin(immediateMove=false)
+                try {
+                    inst.runOnMainSync {
+                        val flight=revealOnly.flight
+                        val gpuClock=cls.getDeclaredField("animator").apply { isAccessible=true }
+                        val originalClock=checkNotNull(gpuClock.get(flight) as? ValueAnimator)
+                        originalClock.removeAllUpdateListeners()
+                        originalClock.removeAllListeners()
+                        originalClock.cancel()
+                        cls.getDeclaredField("frameComplete").apply { isAccessible=true }
+                            .setBoolean(flight,true)
+                        cls.getDeclaredField("moveComplete").apply { isAccessible=true }
+                            .setBoolean(flight,true)
+                        val revealMethod=cls.getDeclaredMethod("revealReadyDestination",
+                            Function0::class.java,Function0::class.java,
+                            Long::class.javaPrimitiveType!!).apply { isAccessible=true }
+                        revealMethod.invoke(flight,{ true },{ true },48L)
+                        val reveal=checkNotNull(cls.getDeclaredField("revealAnimator")
+                            .apply { isAccessible=true }.get(flight) as? ValueAnimator)
+                        // Suppress BOTH native animator listeners and frame
+                        // callbacks. The one-shot terminal clock must own exit.
+                        reveal.removeAllUpdateListeners()
+                        reveal.removeAllListeners()
+                        reveal.cancel()
+                    }
+                    check(revealOnly.ended.await(1200L,TimeUnit.MILLISECONDS)) {
+                        "Ready endpoint reveal remained masked after missing animator pulse/end"
+                    }
+                    awaitHandlesReleased(revealOnly,"missing-reveal-callbacks")
+                    val outcome=BooleanArray(2)
+                    inst.runOnMainSync {
+                        outcome[0]=cls.getDeclaredField("handoffReady")
+                            .apply { isAccessible=true }.getBoolean(revealOnly.flight)
+                        outcome[1]=cls.getDeclaredField("handoffTimedOut")
+                            .apply { isAccessible=true }.getBoolean(revealOnly.flight)
+                    }
+                    check(outcome[0] && !outcome[1]) {
+                        "No confirmed bounded final-alpha compositor handoff: ready=${outcome[0]} timeout=${outcome[1]}"
+                    }
+                    evidence.add("forced missing reveal pulse/end: compositor terminal committed, handoff ready, one finish, no 1800ms watchdog")
+                } finally { inst.runOnMainSync { revealOnly.flight.stop() } }
                 val detached=begin(detachImmediately=true)
                 awaitHandlesReleased(detached,"host-detach")
                 inst.runOnMainSync {
