@@ -261,13 +261,26 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
             val scanHeight=main.bottom-scanTop
             val pixels=IntArray(hostWidth*scanHeight)
             val positions=ArrayList<Int>()
+            val coordinateX=ArrayList<Int>()
+            val coordinateY=ArrayList<Int>()
             for(y in scanTop until main.bottom step 12) {
                 for(x in 0 until hostWidth step 12) {
-                    if(sourceRoots.none { it.contains(x,y) })
+                    if(sourceRoots.none { it.contains(x,y) }) {
                         positions.add((y-scanTop)*hostWidth+x)
+                        coordinateX.add(x)
+                        coordinateY.add(y)
+                    }
                 }
             }
             val sampleOffsets=positions.toIntArray()
+            val sampleX=coordinateX.toIntArray()
+            val sampleY=coordinateY.toIntArray()
+            val outsideSmall=BooleanArray(sampleOffsets.size) { i ->
+                !small.contains(sampleX[i],sampleY[i])
+            }
+            val outsideMain=BooleanArray(sampleOffsets.size) { i ->
+                !main.contains(sampleX[i],sampleY[i])
+            }
             // Recreate immediately after cleanup and observe physical moving
             // pixels. Repeat to verify stale task preflight at the endpoint.
             for(label in listOf("mid","stale")) {
@@ -313,12 +326,17 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                             frame.getPixels(pixels,0,hostWidth,origin[0],
                                 origin[1]+scanTop,hostWidth,scanHeight)
                             val readAt=SystemClock.uptimeMillis()
-                            for(offset in sampleOffsets) {
-                                val c=pixels[offset]
-                                val x=offset%hostWidth
-                                val y=scanTop+offset/hostWidth
-                                if(matches(c,blue)) { up++;ux+=x;uy+=y;if(!small.contains(x,y))movedUp++ }
-                                if(matches(c,orange)) { down++;dx+=x;dy+=y;if(!main.contains(x,y))movedDown++ }
+                            // Identical 12px sampling lattice and color
+                            // thresholds; precompute division and Rect.contains
+                            // only once, outside the moving compositor window.
+                            // Reduces analysis jitter without allowing any
+                            // missing two-card pixel evidence to pass.
+                            for(i in sampleOffsets.indices) {
+                                val c=pixels[sampleOffsets[i]]
+                                val x=sampleX[i]
+                                val y=sampleY[i]
+                                if(matches(c,blue)) { up++;ux+=x;uy+=y;if(outsideSmall[i])movedUp++ }
+                                if(matches(c,orange)) { down++;dx+=x;dy+=y;if(outsideMain[i])movedDown++ }
                             }
                             val both=up>12 && down>12 && movedUp>12 && movedDown>12
                             if(!pairedRail)moving=both
