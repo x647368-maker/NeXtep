@@ -177,7 +177,10 @@ internal object AtomicPopupMenu {
         val preferredDualWidth=maxOf(fullWidth,preferredCategoryWidth+dp(3)+dp(144))
         val metrics=categoryPaint.fontMetricsInt
         val categoryHeight=maxOf(dp(30),metrics.bottom-metrics.top+dp(4))*StageMenuPolicy.groups.size+dp(8)
-        val dualHeight=maxOf(dp(if(compactWidth)152 else 180),categoryHeight)
+        // Allow the naturally measured right pane to grow beyond the former
+        // 152dp viewport. #1477 screenshots proved rows were cut mid-line.
+        // The popup remains anchor-pinned and never changes task geometry.
+        val dualHeight=maxOf(dp(if(compactWidth)272 else 280),categoryHeight)
         val dualBounds=if(grouped) StageMenuPlacement.pinnedDual(
             safe.box(),anchorBox,preferredDualWidth,dualHeight,dp(220),
             minOf(categoryHeight,safe.height().coerceAtLeast(1)),blocked,dp(2)) else null
@@ -321,6 +324,9 @@ internal object AtomicPopupMenu {
         }
         var selectedCategory:Int?=null
         val childPages=mutableListOf<InlinePage>()
+        // The header back affordance delegates to the same category-switch path.
+        val categoryButtons=mutableMapOf<Int,TextView>()
+        lateinit var page:(Int?)->Unit
         lateinit var renderRight:()->Unit
         fun action(label:String,run:()->Unit,subpage:Boolean=false) = row(label,navigation=subpage) select@{
             if(active!==popup || !popup.isShowing || pendingAction!=null || inlineNavigation!=null)return@select
@@ -405,23 +411,22 @@ internal object AtomicPopupMenu {
             } else {
                 // The supplied layout panel has no duplicate title; other
                 // categories have one compact descriptive right-pane header.
-                selectedCategory?.takeIf{it!=0}?.let { index->
+                selectedCategory?.takeIf{it==2 || it==3}?.let { index->
                     rows.addView(TextView(context).apply {
-                        text=StageMenuPolicy.groups[index]
+                        text="‹  ${StageMenuPolicy.groups[index]}"
                         textSize=11f
                         includeFontPadding=false
                         setTextColor(Color.WHITE)
                         setPadding(dp(5),dp(2),dp(5),dp(3))
                         gravity=Gravity.CENTER_VERTICAL
-                        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        isClickable=true;isFocusable=true
+                        setOnClickListener { page(0) }
                     },LinearLayout.LayoutParams(-1,-2))
                 }
                 items.filter{StageMenuPolicy.group(it.first)==selectedCategory}
                     .forEach { action(it.first,it.second,it.first in submenuLabels) }
             }
         }
-        val categoryButtons=mutableMapOf<Int,TextView>()
-        lateinit var page:(Int?)->Unit
         page=pageChange@{ category ->
             if(pendingAction!=null)return@pageChange
             if(active===popup && SystemUiPanelMonitor.refresh(context)==StagePanelMenuGate.State.CLOSED) {
