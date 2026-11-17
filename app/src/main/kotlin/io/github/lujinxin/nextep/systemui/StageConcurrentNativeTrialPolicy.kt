@@ -194,6 +194,18 @@ internal object StageConcurrentNativeTrialPolicy {
     fun freshFrameOnConfirmedOutput(sameOutput:Boolean, baseline:Long?, current:Long):Boolean =
         sameOutput && freshFrameAfterTaskAck(baseline,current)
 
+    /**
+     * An ACK only proves migration was accepted, not that the replacement
+     * virtual-display buffer was drawn. A single UI traversal may help a
+     * ready TextureView latch its next producer frame without a timer/poll.
+     * Never request it for a stale owner, detached view, hidden workspace or
+     * a slot that has already been nudged on this swap.
+     */
+    fun shouldRequestPostAckSlotLatch(
+        requested:Boolean, visible:Boolean, ownerMatches:Boolean,
+        attached:Boolean, textureAvailable:Boolean,
+    ):Boolean = !requested && visible && ownerMatches && attached && textureAvailable
+
     // Only used during an active real swap after ownership has been verified.
     // An absent animator-end or detached View must not strand the handoff.
     enum class HandoffAction { WAIT, READY, EXPIRED }
