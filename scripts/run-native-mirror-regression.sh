@@ -19,6 +19,31 @@ collect_flight_evidence_on_failure() {
   return "$result"
 }
 trap collect_flight_evidence_on_failure EXIT
+
+# Android37 google_apis_ps16k starts GMS/background package initialization
+# after sys.boot_completed. In #1523 the lowmemorykiller killed the **test
+# app process** (SIGKILL/oom_score_adj=700) immediately after the first
+# real-mirror pass while multiple system apps were also killed. Treat that as
+# an emulator-environment failure rather than an app crash or a green test.
+# Do not lower the physical pixel gate or disable any test assertion.
+wait_for_guest_memory() {
+  local phase="$1" attempt available stable=0
+  for attempt in $(seq 1 24); do
+    available=$(adb shell cat /proc/meminfo 2>/dev/null | awk '$1=="MemAvailable:" {print $2}' | tr -d '\r')
+    if [[ "$available" =~ ^[0-9]+$ ]] && (( available >= 950000 )); then
+      stable=$((stable+1))
+    else
+      stable=0
+    fi
+    echo "API37 guest memory phase=$phase sample=$attempt available_kb=${available:-unknown} stable=$stable"
+    if ((stable>=3)); then return 0; fi
+    sleep 4
+  done
+  echo "::error::API37 guest did not recover >=950000KB available memory for three consecutive checks; compositor evidence is inconclusive"
+  adb shell cat /proc/meminfo | head -18 || true
+  adb shell dumpsys activity oom | tail -60 || true
+  return 75
+}
 keytool -genkeypair -keystore /tmp/atomic-native/test.p12 \
   -storetype PKCS12 -storepass android -keypass android -alias visual \
   -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Native SF Mirror Test'
@@ -36,6 +61,11 @@ adb shell wm size 1272x2772
 adb shell wm density 512
 adb shell settings put global hidden_api_policy 1
 adb shell settings put global animator_duration_scale 1
+# Let background package setup settle before expensive full-screen GPU
+# screenshots. This applies only to the isolated API37 CI emulator, not the
+# user's SystemUI process or any production background task.
+sleep 25
+wait_for_guest_memory before_mirror
 adb logcat -c
 # The dedicated test has a hard 180-second wall clock limit. Never label a
 # hung or skipped system compositor as a PASS.
@@ -60,6 +90,10 @@ grep -F 'NATIVE_MIRROR_PASS' native-mirror-instrumentation.txt
 grep -F 'PASS API37 SurfaceFlinger live dual-root mirror' native-mirror-instrumentation.txt
 test -s visual-results/native-api37-dual-live-surface-mirrors.png
 echo 'PASS dual real GPU mirror composition and live producer update'
+# #1523's second instrumentation process was killed by guest LMKD within
+# seconds of this PASS. Require another stable memory window before launch.
+sleep 15
+wait_for_guest_memory before_flight
 
 # Exercise the complete production dual-card flight engine, not only the
 # mirror primitive. These use synthetic non-task roots so migration must be
