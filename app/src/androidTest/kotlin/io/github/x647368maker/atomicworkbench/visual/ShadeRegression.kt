@@ -154,9 +154,25 @@ internal class ShadeRegression(private val inst:Instrumentation) {
                 if(action==0)swipe(.001f,.80f)
                 else check(inst.uiAutomation.performGlobalAction(action))
                 val opened=waitFocus(true)
+                val focusConfirmedAt=SystemClock.uptimeMillis()
                 if(cycle==0 || !opened)evidence("${action}-${cycle}-open")
                 check(opened){"Native $name did not open; focus=${focus()}; see shade diagnostics"}
-                Thread.sleep(220);swipeUpInsideShade()
+                Thread.sleep(220)
+                // Evidence-only P0-1 screenshot follow-up. The immediate capture
+                // can race the first presented SystemUI frame, although focus
+                // and visibility are already true. Hold the existing gestures,
+                // then record both delayed pixels AND true elapsed times.
+                // Do not relax or remove any native shade opening/closing checks.
+                if(cycle==0) {
+                    evidence("${action}-${cycle}-settled-a")
+                    record("OBSERVE ${name} shade settled-a elapsedSinceFocusMs="+
+                        (SystemClock.uptimeMillis()-focusConfirmedAt))
+                    Thread.sleep(200)
+                    evidence("${action}-${cycle}-settled-b")
+                    record("OBSERVE ${name} shade settled-b elapsedSinceFocusMs="+
+                        (SystemClock.uptimeMillis()-focusConfirmedAt))
+                }
+                swipeUpInsideShade()
                 if(!waitFocus(false,10)) {
                     secondSwipe++;swipeUpShadeFallback()
                     val closed=waitFocus(false)
