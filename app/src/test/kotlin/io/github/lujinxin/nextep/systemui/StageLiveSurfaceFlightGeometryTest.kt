@@ -306,6 +306,25 @@ class StageLiveSurfaceFlightGeometryTest {
         }
     }
 
+    @Test fun evenLegacyCoveredFlightCannotJumpSourceCropOnFirstPulse() {
+        val g=StageLiveSurfaceFlightGeometry
+        val screenSmall=b(20f,300f,180f,390f)
+        val screenMain=b(260f,140f,1220f,680f)
+        val exact=StageLiveSurfaceFlightGeometry.Crop(0,0,960,540)
+        assertTrue(g.canUseCoveredFlight(
+            screenSmall,screenMain,exact,exact,emptyList()))
+        // Previous legacy admission allowed this because the starting
+        // letterbox was <2 screen px. The very next positive progress
+        // nevertheless changes the complete 960x544 crop to 960x540.
+        val almost=StageLiveSurfaceFlightGeometry.Crop(0,0,960,544)
+        val original=checkNotNull(g.mirrorFrame(screenSmall,screenMain,almost,0f,true))
+        val next=checkNotNull(g.mirrorFrame(screenSmall,screenMain,almost,.000001f,true))
+        assertEquals(almost,original.crop)
+        assertTrue(next.crop!=original.crop)
+        assertFalse(g.canUseCoveredFlight(
+            screenSmall,screenMain,almost,exact,emptyList()))
+    }
+
     @Test fun ambiguousSourceOrUnsafeSweptEnvelopeRetainsContainReveal() {
         val g=StageLiveSurfaceFlightGeometry
         val small=b(25f,850f,235f,1220f)
