@@ -16,7 +16,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 40
     steps:
+      # Required by the project's embedded historical release-notes generator.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
