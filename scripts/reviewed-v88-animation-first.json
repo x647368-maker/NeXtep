@@ -1537,7 +1537,7 @@
       "reviewed_blob_sha1": "69cdf30578cbe4b6f1d84ac5f8a1cfbf889d4589"
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/WorkspaceSwapAnimator.kt": {
-      "reviewed_blob_sha1": "7cc5dd7fca2230aea44eedeb458953cffd16e451",
+      "reviewed_blob_sha1": "91ce3ae09ef0208c6f6aaa4910db22803fb954f3",
       "previous_blob_sha1": "00feec10aa9bdf0666b650f3878fd2bd0b078ee7",
       "patches": [
         {
@@ -1715,6 +1715,18 @@
         {
           "before": "        }.isSuccess\n        if (!added) {\n            preview.release()\n            if (moveAsync != null) moveAsync { onFinished() }\n            else try { move() } finally { onFinished() }\n            return\n        }\n        overlay = preview",
           "after": "        }.isSuccess\n        if (!added) {\n            preview.release()\n            fallbackMoveOnce()\n            return\n        }\n        overlay = preview"
+        },
+        {
+          "before": "import android.graphics.PixelFormat\nimport android.graphics.Rect\nimport android.graphics.RectF\nimport android.graphics.drawable.Drawable\nimport android.os.SystemClock\nimport android.os.Handler",
+          "after": "import android.graphics.PixelFormat\nimport android.graphics.Rect\nimport android.graphics.RectF\nimport android.graphics.drawable.ColorDrawable\nimport android.graphics.drawable.Drawable\nimport android.os.SystemClock\nimport android.os.Handler"
+        },
+        {
+          "before": "        // A translucent/no-wallpaper preview would expose a stale real task\n        // when its contained bitmap leaves an uncovered strip. Never start\n        // a Canvas flight without an already prepared opaque backing.\n        val backdropReady = StagePreviewFillPolicy.canStart(\n            opaqueBackdropColor!=null,backdrop?.opacity==PixelFormat.OPAQUE)\n        if (!backdropReady) NeXtepLog.warn(\"workspace_swap\",\"Canvas preview rejected: opaque backdrop unavailable\")\n        if (!backdropReady || !host.isAttachedToWindow || !host.isHardwareAccelerated || source == null || start.isEmpty ||\n            sourceBounds.isEmpty || targetBounds.isEmpty",
+          "after": "        // A translucent/no-wallpaper preview would expose a stale real task\n        // when its contained bitmap leaves an uncovered strip. Never start\n        // a Canvas flight without an already prepared opaque backing.\n        // The host's own fully opaque, solid workspace material is also a\n        // safe prepared cover. Clone it once so preview drawing cannot alter\n        // the host Drawable bounds. Do not accept translucent backgrounds or\n        // arbitrary child pixels as evidence of an opaque cover.\n        val hostCover=(host.background as? ColorDrawable)\n            ?.takeIf { it.opacity==PixelFormat.OPAQUE }\n            ?.let { ColorDrawable(it.color) }\n        val preparedBackdrop=backdrop ?: hostCover\n        val backdropReady = StagePreviewFillPolicy.canStart(\n            opaqueBackdropColor!=null,preparedBackdrop?.opacity==PixelFormat.OPAQUE)\n        if (!backdropReady) NeXtepLog.warn(\"workspace_swap\",\"Canvas preview rejected: opaque backdrop unavailable\")\n        if (!backdropReady || !host.isAttachedToWindow || !host.isHardwareAccelerated || source == null || start.isEmpty ||\n            sourceBounds.isEmpty || targetBounds.isEmpty"
+        },
+        {
+          "before": "        }\n        val token = ++generation\n        handoff=StageStableHandoff()\n        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, backdrop, stationaryBackground,\n            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,\n            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },\n            protectedBounds,sourceIsPreview,targetIsPreview,opaqueBackdropColor)",
+          "after": "        }\n        val token = ++generation\n        handoff=StageStableHandoff()\n        val preview = SwapPreviewView(context, source, target, start, sourceBounds, targetBounds, preparedBackdrop, stationaryBackground,\n            sourceQuad, targetQuad, freezeGeometry, uniformTapMorph,\n            sharedMotion?.takeIf { uniformTapMorph && !freezeGeometry && !returningHome && target!=null },\n            protectedBounds,sourceIsPreview,targetIsPreview,opaqueBackdropColor)"
         }
       ]
     },
@@ -2167,7 +2179,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/PhasedPreviewRegression.kt": {
-      "reviewed_blob_sha1": "e364419f2fc7a7e1fa29b1ab2f5c600c16807892",
+      "reviewed_blob_sha1": "2de94bd3b919e777c3bf1c72013db0cde73cb563",
       "previous_blob_sha1": "ebb222a2eae988609d118c4fa91ae3f83e95631f",
       "patches": [
         {
@@ -2225,6 +2237,14 @@
         {
           "before": "            }\n        }\n    }\n}\n",
           "after": "            }\n        }\n    }\n\n    /** Real worker callback, not a synchronous callback disguised as async. */\n    private fun verifyWorkerFallbackCompletesOnUi(activity:Activity,host:FrameLayout) {\n        val finished=CountDownLatch(1)\n        val count=AtomicInteger(0)\n        val submitted=AtomicInteger(0)\n        instrumentation.runOnMainSync {\n            check(host.isAttachedToWindow && host.isHardwareAccelerated)\n            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n            WorkspaceSwapAnimator(activity).animate(\n                source,null,RectF(20f,20f,120f,220f),\n                RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),\n                host,null,null,200,false,null,null,\n                move={error(\"Worker fallback invoked sync move\")},\n                isLiveReady={true},\n                moveAsync={ done ->\n                    submitted.incrementAndGet()\n                    Thread {\n                        done(true)\n                        done(false)\n                    }.start()\n                },\n                onFinished={\n                    check(Looper.myLooper()==Looper.getMainLooper()) {\n                        \"Visual fallback finished off the UI thread\"\n                    }\n                    count.incrementAndGet()\n                    finished.countDown()\n                })\n            check(source.isRecycled)\n        }\n        check(finished.await(5,TimeUnit.SECONDS)) {\n            \"Worker async fallback did not complete on the UI lane\"\n        }\n        instrumentation.runOnMainSync {\n            check(submitted.get()==1 && count.get()==1) {\n                \"Background callback reached completion more than once\"\n            }\n        }\n    }\n}\n"
+        },
+        {
+          "before": "            check(host.isAttachedToWindow && host.isHardwareAccelerated) {\n                \"Fallback evidence requires an otherwise capable HWUI preview host\"\n            }\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {\n                val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                val animator=WorkspaceSwapAnimator(activity)",
+          "after": "            check(host.isAttachedToWindow && host.isHardwareAccelerated) {\n                \"Fallback evidence requires an otherwise capable HWUI preview host\"\n            }\n            // A real opaque host color is now an admissible prepared backdrop.\n            // Deliberately remove it to exercise the truly uncovered fallback.\n            val originalHostBackground=host.background\n            host.background=null\n            try {\n            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {\n                val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)\n                val animator=WorkspaceSwapAnimator(activity)"
+        },
+        {
+          "before": "                    \"Async submission failure leaked visual completion\"\n                }\n            }\n        }\n    }\n",
+          "after": "                    \"Async submission failure leaked visual completion\"\n                }\n            }\n            } finally { host.background=originalHostBackground }\n        }\n    }\n"
         }
       ]
     },
