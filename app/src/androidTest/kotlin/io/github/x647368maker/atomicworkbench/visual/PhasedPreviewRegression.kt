@@ -10,6 +10,8 @@ import android.graphics.drawable.ColorDrawable
 import io.github.x647368maker.atomicworkbench.systemui.SwapPreviewView
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.WorkspaceSwapAnimator
+import io.github.x647368maker.atomicworkbench.systemui.WorkspaceWallpaperBackdrop
+import io.github.x647368maker.atomicworkbench.systemui.StagePreviewFillPolicy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -157,6 +159,31 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 check(raster.getPixel(150,330)==untouched) {
                     "Non-participating control area changed"
                 }
+
+                // Also exercise the real wallpaper-crop drawable (strength 0
+                // deliberately avoids GPU-only blur in a software raster).
+                val wallpaper=Bitmap.createBitmap(raster.width,raster.height,
+                    Bitmap.Config.ARGB_8888).apply { eraseColor(backing) }
+                val wallpaperView=SwapPreviewView(activity,
+                    Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888).apply { eraseColor(sourceColor) },
+                    null,from,from,to,WorkspaceWallpaperBackdrop.crop(wallpaper,0,0,0),
+                    null,null,null,false,true,null,listOf(neighbor),true,false,
+                    StagePreviewFillPolicy.sampledOpaqueUnderlay(wallpaper))
+                try {
+                    raster.eraseColor(untouched)
+                    wallpaperView.layout(0,0,raster.width,raster.height)
+                    wallpaperView.progress=1f
+                    wallpaperView.draw(Canvas(raster))
+                    check(raster.getPixel(252,170)==backing &&
+                        raster.getPixel(400,170)==sourceColor &&
+                        raster.getPixel(580,65)==untouched) {
+                        "Production wallpaper crop failed fill / contain / neighbor contract"
+                    }
+                } finally {
+                    wallpaperView.release()
+                    wallpaper.recycle()
+                }
+
                 // A legitimate all-black app frame is not a failed preview.
                 val black=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
                     .apply { eraseColor(Color.BLACK) }
