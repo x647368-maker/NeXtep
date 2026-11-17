@@ -35,6 +35,16 @@ val atomicNativeSurfaceTrial = providers.gradleProperty("atomicNativeSurfaceTria
 val atomicPairedRailTrial = providers.gradleProperty("atomicPairedRailTrial")
     .map { it == "true" }.getOrElse(false) && atomicNativeSurfaceTrial
 
+// The commit embedded in the installed DEX lets a SystemUI diagnostic prove
+// which CI checkout was compiled, even when versionCode stays frozen at 89.
+// An explicit -PatomicBuildRevision wins for verified local builds; otherwise
+// GitHub Actions provides its exact checkout SHA. Source-only builds say unknown.
+val atomicBuildRevision = providers.gradleProperty("atomicBuildRevision")
+    .orElse(providers.environmentVariable("GITHUB_SHA"))
+    .getOrElse("unknown")
+    .take(12)
+    .takeIf { it.matches(Regex("[a-fA-F0-9]{8,12}")) } ?: "unknown"
+
 android {
     buildFeatures { buildConfig = true }
     namespace = "io.github.x647368maker.atomicworkbench"
@@ -48,6 +58,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.x647368maker.atomicworkbench"
+        buildConfigField("String", "ATOMIC_BUILD_REVISION", "\"$atomicBuildRevision\"")
         minSdk = 35
         targetSdk = 36
         buildConfigField("boolean", "ATOMIC_NATIVE_SURFACE_TRIAL", "false")
