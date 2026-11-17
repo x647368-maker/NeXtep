@@ -19,7 +19,7 @@
       ]
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/NeXtepWindowController.kt": {
-      "reviewed_blob_sha1": "3a1c97ac4eaf57b2d064c072f9219a7f5b24c4cb",
+      "reviewed_blob_sha1": "73c1aac4520548d147c55ba39bf9d25e1ccc7670",
       "previous_blob_sha1": "19e13db2789a071f4c9f8c49a782f9e1e3b01379",
       "patches": [
         {
@@ -349,6 +349,26 @@
         {
           "before": "                uniformTapMorph = animateTap,\n                sharedMotion = sharedMotion,\n                protectedBounds = if(protectedGeometryComplete) protectedBounds else emptyList(),\n                move = {\n                    // Ignore frames produced while the old tasks were still in\n                    // place. Handoff needs a buffer after the logical exchange.",
           "after": "                uniformTapMorph = animateTap,\n                sharedMotion = sharedMotion,\n                protectedBounds = if(protectedGeometryComplete) protectedBounds else emptyList(),\n                // The fallback must know the real endpoint role even when\n                // no paired route can be planned (slot-slot and parking too).\n                sourceIsPreview = !parkingMain,\n                targetIsPreview = parkingMain || targetIndex != null,\n                move = {\n                    // Ignore frames produced while the old tasks were still in\n                    // place. Handoff needs a buffer after the logical exchange."
+        },
+        {
+          "before": "        smartRail.stop()\n        // Preserve the established collapsed-rail expand/side callbacks.",
+          "after": "        // Do not let smart-rail restore trigger an intermediate Shell/main\n        // Surface refit before this explicit layout selection. The chosen\n        // geometry is committed exactly once below; restore rail visibility\n        // only after the final window bounds have been applied.\n        val railWasHidden=smartRail.hidden\n        val previousGeometry=geometry()\n        val previous=viewport.isTopRail()\n        val previousSide=sidebarSide\n        val changingLayout=previous!=top || previousSide!=side\n        if(railWasHidden && changingLayout)smartRail.stop(restorePresentation=false)\n        else smartRail.stop()\n        // Preserve the established collapsed-rail expand/side callbacks."
+        },
+        {
+          "before": "        leaveCinema()\n        val previousGeometry = geometry()\n        val previous = viewport.isTopRail()\n        val previousSide=sidebarSide\n        if(previous==top && previousSide==side) {",
+          "after": "        leaveCinema()\n        if(previous==top && previousSide==side) {"
+        },
+        {
+          "before": "                onViewportChanged()\n                // The same physical-axis entry is used on phones, folds and\n                // tablets. The normal geometry owner still lays out real tasks.\n                animateRailLayoutSelection(previousGeometry, geometry(), 10, 200L)",
+          "after": "                onViewportChanged()\n                // Explicit selection owns the only viewport reconfiguration.\n                // A prior auto-hidden rail must become visible at the NEW\n                // position, never at the previous one for a transient frame.\n                if(railWasHidden && changingLayout && workspaceVisible && !suspended) {\n                    records.firstOrNull { it.title==\"NeXtepSidebar\" }?.view?.let {\n                        it.animate().cancel()\n                        it.alpha=1f\n                    }\n                    scheduleCinemaCheck()\n                }\n                // The same physical-axis entry is used on phones, folds and\n                // tablets. The normal geometry owner still lays out real tasks.\n                animateRailLayoutSelection(previousGeometry, geometry(), 10, 200L)"
+        },
+        {
+          "before": "                onViewportChanged()\n                if (!sidebarCollapsed) smartRail.armWhenReady()\n            }\n            throw it\n        }\n    }\n\n    private fun cancelRailLayoutMotion()",
+          "after": "                onViewportChanged()\n                if(railWasHidden && changingLayout && workspaceVisible && !suspended) {\n                    records.firstOrNull { it.title==\"NeXtepSidebar\" }?.view?.let {\n                        it.animate().cancel()\n                        it.alpha=1f\n                    }\n                }\n                if (!sidebarCollapsed) smartRail.armWhenReady()\n            }\n            throw it\n        }\n    }\n\n    private fun cancelRailLayoutMotion()"
+        },
+        {
+          "before": "        cancelRailLayoutMotion()\n        smartRail.stop()\n        cancelDragVisuals()\n        sidebarCollapsed = value",
+          "after": "        cancelRailLayoutMotion()\n        // Collapsing an auto-hidden rail used to restore the old wide main\n        // Surface and immediately refit it again to the collapsed width.\n        // Keep it hidden and perform only the final collapsed reconfiguration.\n        if(smartRail.hidden && value)smartRail.stop(restorePresentation=false)\n        else smartRail.stop()\n        cancelDragVisuals()\n        sidebarCollapsed = value"
         }
       ]
     },

@@ -1531,7 +1531,17 @@ class NeXtepWindowController(
     private fun changeStageLayout(top: Boolean, side: SidebarSide = sidebarSide) {
         check(!groupInputBlocked && !workgroups.isSwitching()) { "请等待工作组切换完成" }
         if (workspaceVisible) check(slotCoordinator?.isGroupRestoreReady() == true) { "请等待窗口切换完成" }
-        smartRail.stop()
+        // Do not let smart-rail restore trigger an intermediate Shell/main
+        // Surface refit before this explicit layout selection. The chosen
+        // geometry is committed exactly once below; restore rail visibility
+        // only after the final window bounds have been applied.
+        val railWasHidden=smartRail.hidden
+        val previousGeometry=geometry()
+        val previous=viewport.isTopRail()
+        val previousSide=sidebarSide
+        val changingLayout=previous!=top || previousSide!=side
+        if(railWasHidden && changingLayout)smartRail.stop(restorePresentation=false)
+        else smartRail.stop()
         // Preserve the established collapsed-rail expand/side callbacks. Atomic
         // layout selection applies to the visible four-card path, not its state machine.
         if (!top && sidebarCollapsed && side != sidebarSide) {
@@ -1542,9 +1552,6 @@ class NeXtepWindowController(
         cancelRailLayoutMotion()
         cancelDragVisuals(); contentDrag.cancel(); windowPickerGeneration++; windowPicker.dismiss()
         leaveCinema()
-        val previousGeometry = geometry()
-        val previous = viewport.isTopRail()
-        val previousSide=sidebarSide
         if(previous==top && previousSide==side) {
             if (workspaceVisible && !suspended && !sidebarCollapsed) smartRail.armWhenReady()
             return
@@ -1554,6 +1561,16 @@ class NeXtepWindowController(
             viewport.setTopRail(top)
             if (workspaceVisible && !suspended) {
                 onViewportChanged()
+                // Explicit selection owns the only viewport reconfiguration.
+                // A prior auto-hidden rail must become visible at the NEW
+                // position, never at the previous one for a transient frame.
+                if(railWasHidden && changingLayout && workspaceVisible && !suspended) {
+                    records.firstOrNull { it.title=="NeXtepSidebar" }?.view?.let {
+                        it.animate().cancel()
+                        it.alpha=1f
+                    }
+                    scheduleCinemaCheck()
+                }
                 // The same physical-axis entry is used on phones, folds and
                 // tablets. The normal geometry owner still lays out real tasks.
                 animateRailLayoutSelection(previousGeometry, geometry(), 10, 200L)
@@ -1564,6 +1581,12 @@ class NeXtepWindowController(
             viewport.setTopRail(previous)
             if (workspaceVisible && !suspended) {
                 onViewportChanged()
+                if(railWasHidden && changingLayout && workspaceVisible && !suspended) {
+                    records.firstOrNull { it.title=="NeXtepSidebar" }?.view?.let {
+                        it.animate().cancel()
+                        it.alpha=1f
+                    }
+                }
                 if (!sidebarCollapsed) smartRail.armWhenReady()
             }
             throw it
@@ -2188,7 +2211,11 @@ class NeXtepWindowController(
     private fun setSidebarCollapsed(value: Boolean) {
         if (!workspaceVisible || suspended || groupInputBlocked || sidebarCollapsed == value) return
         cancelRailLayoutMotion()
-        smartRail.stop()
+        // Collapsing an auto-hidden rail used to restore the old wide main
+        // Surface and immediately refit it again to the collapsed width.
+        // Keep it hidden and perform only the final collapsed reconfiguration.
+        if(smartRail.hidden && value)smartRail.stop(restorePresentation=false)
+        else smartRail.stop()
         cancelDragVisuals()
         sidebarCollapsed = value
         onViewportChanged()
