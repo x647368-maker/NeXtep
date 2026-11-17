@@ -44,6 +44,27 @@ wait_for_guest_memory() {
   adb shell dumpsys activity oom | tail -60 || true
   return 75
 }
+# #1532 screenshot failed all-black with only the gesture handle.
+# The device log showed lockscreenVisibility:true and a keyguard sleep token
+# during full-resolution pixel capture. This is a guest-screen condition,
+# not a valid failure attribution to the wallpaper GPU layer. Keep the
+# emulator awake/unlocked at each *fixture boundary*; never weaken pixels.
+ensure_guest_awake() {
+  local phase="$1" power
+  adb shell svc power stayon true
+  adb shell settings put system screen_off_timeout 2147483647
+  adb shell input keyevent KEYCODE_WAKEUP
+  adb shell wm dismiss-keyguard
+  adb shell input keyevent KEYCODE_MENU
+  power="$(adb shell dumpsys power)"
+  if ! grep -Eq 'mWakefulness(Raw)?=Awake' <<< "$power"; then
+    echo "::error::API37 guest is not awake at $phase; do not classify black compositor pixels as a wallpaper regression"
+    printf '%s\n' "$power" | grep -E 'Wakefulness|Display Power' | head -12 || true
+    return 76
+  fi
+  echo "API37 guest awake and keyguard dismissal requested before $phase"
+}
+
 keytool -genkeypair -keystore /tmp/atomic-native/test.p12 \
   -storetype PKCS12 -storepass android -keypass android -alias visual \
   -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Native SF Mirror Test'
@@ -66,6 +87,7 @@ adb shell settings put global animator_duration_scale 1
 # user's SystemUI process or any production background task.
 sleep 25
 wait_for_guest_memory before_mirror
+ensure_guest_awake before_mirror
 adb logcat -c
 # The dedicated test has a hard 180-second wall clock limit. Never label a
 # hung or skipped system compositor as a PASS.
@@ -94,6 +116,7 @@ echo 'PASS dual real GPU mirror composition and live producer update'
 # seconds of this PASS. Require another stable memory window before launch.
 sleep 15
 wait_for_guest_memory before_flight
+ensure_guest_awake before_flight
 
 # Exercise the complete production dual-card flight engine, not only the
 # mirror primitive. These use synthetic non-task roots so migration must be
@@ -112,6 +135,7 @@ if [ "$status" -ne 0 ]; then
 fi
 grep -Fx 'PRODUCTION_ANIMATION_GATE_PASS' native-flight-instrumentation.txt
 grep -F 'NATIVE_FLIGHT_PASS' native-flight-instrumentation.txt
+ensure_guest_awake before_paired
 
 set +e
 timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e pairedFlightOnly true -w \
@@ -124,6 +148,7 @@ if [ "$status" -ne 0 ]; then
   exit "$status"
 fi
 grep -F 'PAIRED_FLIGHT_PASS' paired-flight-instrumentation.txt
+ensure_guest_awake before_adaptive
 
 # Mixed-aspect covered regression is independent of the old contain fixture.
 set +e
