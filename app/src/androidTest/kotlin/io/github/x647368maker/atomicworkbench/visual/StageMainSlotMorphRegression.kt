@@ -5,6 +5,7 @@ import android.app.Instrumentation
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.RectF
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.systemui.WorkspaceSwapAnimator
@@ -40,7 +41,10 @@ internal class StageMainSlotMorphRegression(private val instrumentation: Instrum
                 sourceBounds=RectF(sourceBox),
                 targetBounds=mainBox,
                 host=host,
-                backdrop=null,
+                // The test host is deliberately opaque: pass that already
+                // prepared material explicitly rather than violating P0-1's
+                // no-cover admission contract. Main task capture is STILL null.
+                backdrop=ColorDrawable(Color.rgb(20,22,38)),
                 stationaryBackground=null,
                 durationMs=300,
                 returningHome=false,
