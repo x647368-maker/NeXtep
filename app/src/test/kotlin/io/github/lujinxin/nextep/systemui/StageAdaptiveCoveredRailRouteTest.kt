@@ -223,6 +223,12 @@ class StageAdaptiveCoveredRailRouteTest {
         // The new straight/rail candidates may be rejected if their very
         // first crop differs visibly from the source. That MUST NOT disable
         // the independently certified legacy adaptive GPU fallback.
+        // This is the precise stage that previously crashed the strict
+        // API37 test entry: only the first two plans were attempted there.
+        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small,large,incoming,outgoing,viewport,listOf(neighbor),{true}))
+        assertNull(StageAdaptiveCoveredRailRoute.railCrossing(
+            small,large,incoming,outgoing,viewport,listOf(neighbor),{true}))
         val legacy=StageAdaptiveCoveredRailRoute.choose(
             small,large,incoming,outgoing,viewport,listOf(neighbor),{true})
         assertNotNull("do not crash API37 on a rejected new rail route",legacy)
