@@ -1741,7 +1741,7 @@
       ]
     },
     "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/RefinementRegression.kt": {
-      "reviewed_blob_sha1": "cc9415745727b687a00c68946f50b54e20454960",
+      "reviewed_blob_sha1": "8c9b10579710a5e69da7096f38a51d70bebd2bca",
       "previous_blob_sha1": "988be22f195bbbd6d9ecbf858cd086f201e87bc8",
       "patches": [
         {
@@ -1831,6 +1831,14 @@
         {
           "before": "        click(\"快捷栏与显示\");click(\"快捷栏样式\")\n        check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)",
           "after": "        // #1477's raster screenshots showed partially cut final action rows;\n        // structure and callback assertions alone were insufficient.\n        click(\"窗口管理\")\n        val managementRoot=checkNotNull(inst.uiAutomation.rootInActiveWindow)\n        val managementPopup=Rect().also(managementRoot::getBoundsInScreen)\n        val managementLast=Rect().also(crowdedNode(\"关闭主窗（移回后台）\")::getBoundsInScreen)\n        check(managementLast.bottom<=managementPopup.bottom-(2*m.density).toInt()){\n            \"Window management last row clipped: last=$managementLast popup=$managementPopup\"}\n        check(managementRoot.findAccessibilityNodeInfosByText(\"窗口管理\")\n            .count{it.text?.toString()==\"窗口管理\"}==1){\"Original has no duplicate management header\"}\n        click(\"快捷栏与显示\")\n        val shortcutRoot=checkNotNull(inst.uiAutomation.rootInActiveWindow)\n        val shortcutPopup=Rect().also(shortcutRoot::getBoundsInScreen)\n        val shortcutLast=Rect().also(crowdedNode(\"固定侧栏\")::getBoundsInScreen)\n        check(shortcutLast.bottom<=shortcutPopup.bottom-(2*m.density).toInt()){\n            \"Shortcut last row clipped: last=$shortcutLast popup=$shortcutPopup\"}\n        check(crowdedNode(\"‹  快捷栏与显示\").isVisibleToUser)\n        click(\"‹  快捷栏与显示\")\n        check(crowdedNode(\"窗口布局\").isSelected)\n        click(\"其他功能\")\n        check(crowdedNode(\"‹  其他功能\").isVisibleToUser)\n        click(\"‹  其他功能\")\n        check(crowdedNode(\"窗口布局\").isSelected)\n        record(\"PASS actual menu viewport: final action rows fully drawn, no duplicate title, both original back headers work\")\n        click(\"快捷栏与显示\");click(\"快捷栏样式\")\n        check(checkNotNull(inst.uiAutomation.rootInActiveWindow).windowId==window)"
+        },
+        {
+          "before": "\"关闭主窗（移回后台）\",\"退出台前调度\")",
+          "after": "\"关闭主窗（移回后台）\",\"添加常用应用到快捷栏\",\"恢复被隐藏的常用应用\",\"退出台前调度\")"
+        },
+        {
+          "before": "        check(crowdedNode(\"‹  其他功能\").isVisibleToUser)\n        click(\"‹  其他功能\")",
+          "after": "        check(crowdedNode(\"‹  其他功能\").isVisibleToUser)\n        val otherRoot=checkNotNull(inst.uiAutomation.rootInActiveWindow)\n        val otherPopup=Rect().also(otherRoot::getBoundsInScreen)\n        for (label in listOf(\"切换全屏（保留工作区）\",\"添加常用应用到快捷栏\",\"恢复被隐藏的常用应用\",\"退出台前调度\")) {\n            val row=Rect().also(crowdedNode(label)::getBoundsInScreen)\n            check(row.bottom<=otherPopup.bottom-(2*m.density).toInt()){\n                \"Original four Other actions must all remain visibly accessible: $label row=$row popup=$otherPopup\"}\n        }\n        click(\"‹  其他功能\")"
         }
       ]
     },
