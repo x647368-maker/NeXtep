@@ -161,6 +161,28 @@ class StageAdaptiveCoveredRailRouteTest {
         assertFalse(SmoothPairedRailCandidate.preservesPrimaryDirection(bad,small,large))
     }
 
+    @Test fun fallbackAdmissionRejectsSecondaryAxisAndResizeSnapAtCurveSeam() {
+        val small=Box(20f,300f,180f,390f)
+        val large=Box(260f,140f,1220f,680f)
+        val middle=PairedRailCandidate.PairBox(
+            Box(340f,300f,500f,390f),Box(340f,140f,500f,680f),
+        )
+        val shifted=PairedRailCandidate.PairBox(
+            Box(340f,312f,500f,402f),Box(340f,152f,500f,692f),
+        )
+        val start=PairedRailCandidate.PairBox(small,large)
+        val end=PairedRailCandidate.PairBox(large,small)
+        val segments=listOf(
+            SmoothPairedRailCandidate.Segment(0f,2f,
+                SmoothPairedRailCandidate.Curve(start,middle,middle)),
+            SmoothPairedRailCandidate.Segment(2f,4f,
+                SmoothPairedRailCandidate.Curve(shifted,shifted,end)),
+        )
+        assertFalse(SmoothPairedRailCandidate.preservesPrimaryDirection(
+            SmoothPairedRailCandidate.Plan(segments,1.0,0f),small,large,
+        ))
+    }
+
     @Test fun nonzeroCropOriginsArePreserved() {
         val c=Crop(23,47,1295,2564)
         val f=checkNotNull(StageAdaptiveCoveredRailRoute.frame(main,c))
