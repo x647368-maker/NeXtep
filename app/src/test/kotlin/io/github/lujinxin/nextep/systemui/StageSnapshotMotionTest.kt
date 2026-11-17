@@ -138,6 +138,46 @@ class StageSnapshotMotionTest {
             }
         }
     }
+    @Test fun samePhysicalSlotNeverReversesSnapshotArcAcrossOccupancyMasks() {
+        // Four possible slots per device, including an actual landscape
+        // tablet counterexample: its two middle rail slots previously changed
+        // arc sign when an adjacent slot was opened or closed.
+        data class Layout(
+            val screen:StageSnapshotMotion.Box,
+            val main:StageSnapshotMotion.Box,
+            val slots:List<StageSnapshotMotion.Box>,
+        )
+        val phone=b(0f,0f,1080f,2354f)
+        val layouts=listOf(
+            Layout(phone,b(264f,390f,1074f,2136f),
+                (0..3).map{val y=312f+444f*it;b(30f,y,246f,y+420f)}),
+            Layout(phone,b(6f,390f,816f,2136f),
+                (0..3).map{val y=312f+444f*it;b(834f,y,1050f,y+420f)}),
+            Layout(phone,b(180f,714f,900f,2262f),
+                (0..3).map{val x=126f+216f*it;b(x,312f,x+192f,672f)}),
+            Layout(b(0f,0f,2048f,2248f),b(300f,160f,2020f,2200f),
+                (0..3).map{val y=100f+510f*it;b(20f,y,280f,y+470f)}),
+            Layout(b(0f,0f,2560f,1600f),b(400f,160f,2450f,1440f),
+                (0..3).map{val y=180f+330f*it;b(30f,y,350f,y+290f)}),
+        )
+        for((device,layout) in layouts.withIndex())for((slot,small) in layout.slots.withIndex()) {
+            val reference=checkNotNull(StageSnapshotMotion.pairedFlights(
+                small,layout.main,1080,2354,1080,2354,layout.screen,emptyList()))
+            val refSign=if(reference.up.arc>0f)1 else -1
+            for(mask in 0 until 16) {
+                if(mask and (1 shl slot)!=0)continue
+                val neighbors=layout.slots.filterIndexed { index,_ -> mask and (1 shl index)!=0 }
+                val got=checkNotNull(StageSnapshotMotion.pairedFlights(
+                    small,layout.main,1080,2354,1080,2354,layout.screen,neighbors))
+                assertEquals("device=$device slot=$slot mask=$mask",
+                    refSign,if(got.up.arc>0f)1 else -1)
+                assertEquals("opposite card uses same selected corridor",
+                    got.up.arc,got.down.arc,0f)
+                assertTrue(got.up.arc.isFinite() && got.down.arc.isFinite())
+            }
+        }
+    }
+
     @Test fun boundedPairedCorridorNeverReturnsAPartialRoute(){
         val screen=b(0f,0f,1080f,2354f)
         val small=b(30f,312f,246f,732f)
