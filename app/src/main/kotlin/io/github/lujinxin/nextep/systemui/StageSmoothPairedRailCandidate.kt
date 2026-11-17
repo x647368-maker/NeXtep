@@ -103,6 +103,11 @@ internal object SmoothPairedRailCandidate {
             return x.isFinite() && y.isFinite() && z.isFinite() &&
                 y+.02f>=x && z+.02f>=y
         }
+        // Center continuity alone cannot rule out an abrupt resize or
+        // secondary-axis snap at a segment seam. Check all four edges.
+        fun sameBox(a:Box,b:Box):Boolean =
+            abs(a.left-b.left)<=.04f && abs(a.top-b.top)<=.04f &&
+            abs(a.right-b.right)<=.04f && abs(a.bottom-b.bottom)<=.04f
         var prior:Segment?=null
         for(segment in plan.segments) {
             if(!segment.start.isFinite() || !segment.end.isFinite() ||
@@ -113,8 +118,8 @@ internal object SmoothPairedRailCandidate {
             } else {
                 if(abs(before.end-segment.start)>.0002f)return false
                 // Reject an instantaneous center jump between two admitted curves.
-                if(abs(axis(before.curve.b.incoming)-axis(segment.curve.a.incoming))>.02f ||
-                    abs(axis(before.curve.b.outgoing)-axis(segment.curve.a.outgoing))>.02f)return false
+                if(!sameBox(before.curve.b.incoming,segment.curve.a.incoming) ||
+                    !sameBox(before.curve.b.outgoing,segment.curve.a.outgoing))return false
             }
             val c=segment.curve
             if(!ordered(c.a.incoming,c.control.incoming,c.b.incoming,sign) ||
