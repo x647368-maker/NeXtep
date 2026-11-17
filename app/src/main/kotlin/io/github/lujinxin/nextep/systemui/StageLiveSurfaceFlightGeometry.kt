@@ -285,6 +285,28 @@ internal object StageLiveSurfaceFlightGeometry {
         fun safe(from: Box, to: Box, crop: Crop): Boolean {
             val first = mirrorFrame(from, to, crop, 0f, false) ?: return false
             if (endpointGapPx(from, first.box) > 2f) return false
+            // The old "covered" compositor keeps the complete source at
+            // progress==0, but begins center cropping for ANY progress>0.
+            // A 2px outer-box allowance can conceal a larger *content* jump
+            // at frame one. Certify the actual two renderer states here, not
+            // just the starting outer rectangle. One source-pixel rounding
+            // (~0.2 screen px on a small rail) is safe; a visible crop snap
+            // selects the established uncropped contain/reveal path instead.
+            val next = mirrorFrame(from, to, crop, 0.000001f, true) ?: return false
+            val sourceWidth = crop.right-crop.left
+            val sourceHeight = crop.bottom-crop.top
+            val maxCropPixels=maxOf(
+                kotlin.math.abs(first.crop.left-next.crop.left),
+                kotlin.math.abs(first.crop.top-next.crop.top),
+                kotlin.math.abs(first.crop.right-next.crop.right),
+                kotlin.math.abs(first.crop.bottom-next.crop.bottom),
+            )*maxOf(first.scale,next.scale)
+            val scalePixels=kotlin.math.abs(first.scale-next.scale)*
+                maxOf(sourceWidth,sourceHeight)
+            if(maxCropPixels>.35f || scalePixels>.35f ||
+                endpointGapPx(first.box,next.box)>.35f ||
+                kotlin.math.abs(first.x-next.x)>.35f ||
+                kotlin.math.abs(first.y-next.y)>.35f)return false
             val split = if (from.width * from.height < to.width * to.height) .34f else .66f
             val points = listOf(0f, split, 1f)
             val envelopes = points.map { p ->
