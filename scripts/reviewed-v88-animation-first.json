@@ -922,7 +922,7 @@
     },
     "app/src/main/kotlin/io/github/lujinxin/nextep/systemui/AtomicPopupMenu.kt": {
       "previous_blob_sha1": "0803a510b2dc42fd1e846460bb1a14cfd900aa2a",
-      "reviewed_blob_sha1": "5f5f864f47c58daf17c25c0831b2397f5ecb9695",
+      "reviewed_blob_sha1": "6c396b03235e152531e696b323b5ad0551b3469f",
       "patches": [
         {
           "before": "        if (dualBounds!=null) {\n            content.addView(ScrollView(context).apply { addView(categories) },",
@@ -1087,6 +1087,30 @@
         {
           "before": "            } else {\n                items.filter{StageMenuPolicy.group(it.first)==selectedCategory}\n                    .forEach { action(it.first,it.second,it.first in submenuLabels) }\n            }\n        }\n        val categoryButtons",
           "after": "            } else {\n                // The supplied layout panel has no duplicate title; other\n                // categories have one compact descriptive right-pane header.\n                selectedCategory?.takeIf{it!=0}?.let { index->\n                    rows.addView(TextView(context).apply {\n                        text=StageMenuPolicy.groups[index]\n                        textSize=11f\n                        includeFontPadding=false\n                        setTextColor(Color.WHITE)\n                        setPadding(dp(5),dp(2),dp(5),dp(3))\n                        gravity=Gravity.CENTER_VERTICAL\n                        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO\n                    },LinearLayout.LayoutParams(-1,-2))\n                }\n                items.filter{StageMenuPolicy.group(it.first)==selectedCategory}\n                    .forEach { action(it.first,it.second,it.first in submenuLabels) }\n            }\n        }\n        val categoryButtons"
+        },
+        {
+          "before": "val dualHeight=maxOf(dp(if(compactWidth)152 else 180),categoryHeight)",
+          "after": "// Allow the naturally measured right pane to grow beyond the former\n        // 152dp viewport. #1477 screenshots proved rows were cut mid-line.\n        // The popup remains anchor-pinned and never changes task geometry.\n        val dualHeight=maxOf(dp(if(compactWidth)272 else 280),categoryHeight)"
+        },
+        {
+          "before": "lateinit var renderRight:()->Unit",
+          "after": "// The header back affordance delegates to the same category-switch path.\n        val categoryButtons=mutableMapOf<Int,TextView>()\n        lateinit var page:(Int?)->Unit\n        lateinit var renderRight:()->Unit"
+        },
+        {
+          "before": "selectedCategory?.takeIf{it!=0}?.let { index->",
+          "after": "selectedCategory?.takeIf{it==2 || it==3}?.let { index->"
+        },
+        {
+          "before": "text=StageMenuPolicy.groups[index]\n                        textSize=11f",
+          "after": "text=\"‹  ${StageMenuPolicy.groups[index]}\"\n                        textSize=11f"
+        },
+        {
+          "before": "importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO\n                    },LinearLayout.LayoutParams(-1,-2))",
+          "after": "isClickable=true;isFocusable=true\n                        setOnClickListener { page(0) }\n                    },LinearLayout.LayoutParams(-1,-2))"
+        },
+        {
+          "before": "        val categoryButtons=mutableMapOf<Int,TextView>()\n        lateinit var page:(Int?)->Unit\n        page=pageChange@{",
+          "after": "        page=pageChange@{"
         }
       ]
     },
