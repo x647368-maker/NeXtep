@@ -73,9 +73,19 @@ internal class StageLiveSurfaceExchange private constructor(
         pairedRailPlan=if(coveredFlight) {
             if(!StageLiveSurfaceFlightGeometry.canUseCoveredFlight(slotStart,mainStart,
                     incomingGeometryCrop,outgoingGeometryCrop,obstacles))return false
+            // Match the complete production admission chain at create():
+            // new straight > new reversible rail > old certified > legacy
+            // adaptive covered. The strict new first-pulse crop guard must
+            // reject unsafe NEW paths, but must not make the independently
+            // certified fallback invisible to the real compositor test.
+            // No fake task move and no relaxation of ANY pixel assertion.
             StageAdaptiveCoveredRailRoute.straightCrossing(slotStart,mainStart,incomingGeometryCrop,
                 outgoingGeometryCrop,screen,obstacles,{true})
                 ?: StageAdaptiveCoveredRailRoute.railCrossing(slotStart,mainStart,incomingGeometryCrop,
+                    outgoingGeometryCrop,screen,obstacles,{true})
+                ?: StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
+                    outgoingGeometryCrop,screen,obstacles,oldCovered=true)
+                ?: StageAdaptiveCoveredRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
                     outgoingGeometryCrop,screen,obstacles,{true})
         } else StageCertifiedRailRoute.choose(slotStart,mainStart,incomingGeometryCrop,
             outgoingGeometryCrop,screen,obstacles,oldCovered=false)
