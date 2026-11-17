@@ -1,6 +1,7 @@
 package io.github.x647368maker.atomicworkbench.visual
 
 import android.app.Activity
+import android.app.Instrumentation
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
@@ -19,7 +20,13 @@ import kotlin.math.abs
  * to SurfaceFlinger; that is the separate P0-5 display-frame gate.
  */
 internal object PairedMotionClockRegression {
-    fun run(activity: Activity): String {
+    fun run(activity: Activity, instrumentation: Instrumentation): String {
+        var report = "P0-2a clock fixture not executed"
+        instrumentation.runOnMainSync { report = verifyOnMain(activity) }
+        return report
+    }
+
+    private fun verifyOnMain(activity: Activity): String {
         val small=StageSnapshotMotion.Box(16f,85f,116f,285f)
         val main=StageSnapshotMotion.Box(140f,45f,520f,675f)
         val incomingW=100
