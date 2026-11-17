@@ -183,6 +183,31 @@ class StageAdaptiveCoveredRailRouteTest {
         ))
     }
 
+    @Test fun firstCoveredFrameMustNotCropOrResizeTheCompleteSource() {
+        val physical=Box(0f,0f,1280f,800f)
+        val small=Box(20f,300f,180f,390f)
+        val large=Box(260f,140f,1220f,680f)
+        val exact=Crop(0,0,960,540)
+        // Exactly matched buffers stay on the direct single-clock route.
+        assertNotNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small,large,exact,exact,physical,emptyList(),{true}))
+        val exactWithOffset=Crop(23,47,983,587)
+        assertNotNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small,large,exactWithOffset,exactWithOffset,physical,emptyList(),{true}))
+        // Slight aspect mismatch is still allowed by the old 2px *outer*
+        // endpoint gap. At p=0 its complete crop is 960x544, but the new
+        // covered sampler immediately uses 960x540 with a 2px inset.
+        // The previous check compared the p=0 legacy transform to itself;
+        // it must no longer admit this perceptible frame-zero content jump.
+        val slightlyDifferent=Crop(0,0,960,544)
+        assertTrue(g.canUseCoveredFlight(
+            small,large,slightlyDifferent,exact,emptyList()))
+        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small,large,slightlyDifferent,exact,physical,emptyList(),{true}))
+        assertNull(StageAdaptiveCoveredRailRoute.straightCrossing(
+            small,large,exact,slightlyDifferent,physical,emptyList(),{true}))
+    }
+
     @Test fun nonzeroCropOriginsArePreserved() {
         val c=Crop(23,47,1295,2564)
         val f=checkNotNull(StageAdaptiveCoveredRailRoute.frame(main,c))
