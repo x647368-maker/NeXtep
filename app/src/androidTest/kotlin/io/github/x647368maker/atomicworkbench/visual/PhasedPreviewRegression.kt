@@ -157,6 +157,22 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
                 check(raster.getPixel(150,330)==untouched) {
                     "Non-participating control area changed"
                 }
+                // A legitimate all-black app frame is not a failed preview.
+                val black=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
+                    .apply { eraseColor(Color.BLACK) }
+                val blackPreview=SwapPreviewView(activity,black,null,from,from,to,
+                    ColorDrawable(backing),null,null,null,false,true,null,
+                    listOf(neighbor),true,false)
+                try {
+                    raster.eraseColor(untouched)
+                    blackPreview.layout(0,0,raster.width,raster.height)
+                    blackPreview.progress=1f
+                    blackPreview.draw(Canvas(raster))
+                    check(raster.getPixel(400,170)==Color.BLACK &&
+                        raster.getPixel(252,170)==backing) {
+                        "Valid black task content was misclassified as an artificial fill"
+                    }
+                } finally { blackPreview.release() }
             } finally {
                 preview.release()
                 raster.recycle()
@@ -166,17 +182,19 @@ internal class PhasedPreviewRegression(private val instrumentation: Instrumentat
 
     private fun verifyUnavailableBackdropFallsBackOnce(activity:Activity,host:FrameLayout) {
         instrumentation.runOnMainSync {
-            val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
-            val animator=WorkspaceSwapAnimator(activity)
-            var moves=0
-            var finishes=0
-            animator.animate(source,null,RectF(20f,20f,120f,220f),
-                RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),
-                host,null,null,200,false,null,null,
-                move={moves++;true},isLiveReady={true},
-                onFinished={finishes++})
-            check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {
-                "Missing background leaked preview or repeated real task move"
+            for(background in listOf(null,ColorDrawable(Color.TRANSPARENT))) {
+                val source=Bitmap.createBitmap(100,200,Bitmap.Config.ARGB_8888)
+                val animator=WorkspaceSwapAnimator(activity)
+                var moves=0
+                var finishes=0
+                animator.animate(source,null,RectF(20f,20f,120f,220f),
+                    RectF(20f,20f,120f,220f),RectF(200f,20f,560f,320f),
+                    host,background,null,200,false,null,null,
+                    move={moves++;true},isLiveReady={true},
+                    onFinished={finishes++})
+                check(!animator.isRunning && source.isRecycled && moves==1 && finishes==1) {
+                    "Missing/transparent background leaked preview or repeated task move"
+                }
             }
         }
     }
