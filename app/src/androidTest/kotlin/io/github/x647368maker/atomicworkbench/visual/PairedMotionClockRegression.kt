@@ -3,6 +3,7 @@ package io.github.x647368maker.atomicworkbench.visual
 import android.app.Activity
 import android.app.Instrumentation
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
@@ -12,6 +13,7 @@ import io.github.x647368maker.atomicworkbench.systemui.StageSnapshotMotion
 import io.github.x647368maker.atomicworkbench.systemui.StageTransientTapSwap
 import io.github.x647368maker.atomicworkbench.systemui.SwapPreviewView
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * P0-2a API35/37 fixture. Samples both REAL production preview classes with
@@ -54,9 +56,11 @@ internal object PairedMotionClockRegression {
             Rect(small.left.toInt(),small.top.toInt(),small.right.toInt(),small.bottom.toInt()),
             Rect(main.left.toInt(),main.top.toInt(),main.right.toInt(),main.bottom.toInt()),
             emptyList(),ColorDrawable(Color.BLUE),Rect(0,0,600,720),planned=pair)
+        val raster=Bitmap.createBitmap(600,720,Bitmap.Config.ARGB_8888)
         var cases=0
         try {
             check(rt.safe)
+            canvas.layout(0,0,600,720)
             for (k in 0..120) {
                 val raw=k/120f
                 val a=canvas.sampleGeometryProgress(raw)
@@ -67,6 +71,31 @@ internal object PairedMotionClockRegression {
                 }
                 val inPose=pair.up.pose(a)
                 val outPose=pair.down.pose(b)
+                // Check actual production CardView transform properties, not
+                // just two calls to the same plan helper.
+                rt.progress=raw
+                val incomingView=rt.getChildAt(1)
+                val outgoingView=rt.getChildAt(0)
+                check(abs(incomingView.translationX-(inPose.cx-incomingW*.5f))<.01f &&
+                    abs(incomingView.translationY-(inPose.cy-incomingH*.5f))<.01f &&
+                    abs(incomingView.scaleX-inPose.scale)<.00001f &&
+                    abs(incomingView.scaleY-inPose.scale)<.00001f)
+                check(abs(outgoingView.translationX-(outPose.cx-outgoingW*.5f))<.01f &&
+                    abs(outgoingView.translationY-(outPose.cy-outgoingH*.5f))<.01f &&
+                    abs(outgoingView.scaleX-outPose.scale)<.00001f &&
+                    abs(outgoingView.scaleY-outPose.scale)<.00001f)
+                // Assert real Canvas bitmap at the expected incoming center.
+                // Incoming is drawn after outgoing, so overlap cannot hide it.
+                if(k%30==0) {
+                    canvas.progress=raw
+                    raster.eraseColor(Color.MAGENTA)
+                    canvas.draw(Canvas(raster))
+                    val px=inPose.cx.roundToInt().coerceIn(0,raster.width-1)
+                    val py=inPose.cy.roundToInt().coerceIn(0,raster.height-1)
+                    check(raster.getPixel(px,py)==Color.GREEN) {
+                        "Production Canvas incoming frame missed shared-clock pose at $k: x=$px y=$py"
+                    }
+                }
                 check(inPose.scale>0f && outPose.scale>0f &&
                     inPose.cx.isFinite() && outPose.cx.isFinite() &&
                     inPose.cy.isFinite() && outPose.cy.isFinite())
@@ -87,7 +116,8 @@ internal object PairedMotionClockRegression {
         } finally {
             canvas.release()
             rt.release()
+            raster.recycle()
         }
-        return "PASS production Canvas/RT paired preview geometry clock: $cases samples; exact endpoints and no extra easing"
+        return "PASS real Canvas pixels and RT child transforms share $cases paired clock samples; exact endpoints"
     }
 }
