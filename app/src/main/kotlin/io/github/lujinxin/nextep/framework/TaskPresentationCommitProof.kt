@@ -63,11 +63,28 @@ internal class TaskPresentationCommitProof<F> {
 
     companion object {
         /**
-         * Older devices keep their previous proof behavior. Only an active
-         * move to physical display 0 can require a compositor receipt.
+         * Only a real destination-display-0 task transfer on a supported
+         * device can install the compositor callback. At submission time a
+         * live reservation is required, avoiding idle receipt listeners.
          */
         fun needsReceipt(sdk:Int,moveUnexpired:Boolean,destinationDisplay:Int?,
                          currentlyOwned:Boolean):Boolean =
             sdk>=33 && moveUnexpired && destinationDisplay==0 && currentlyOwned
+
+        /**
+         * Handoff readiness must not become "true" only because the
+         * reservation deadline elapsed. A recorded transfer can still be
+         * completing while its compositor receipt is late or missing.
+         *
+         * This predicate performs no work and never prolongs the existing
+         * bounded visual attempt: its TIMEOUT/rollback owner remains the
+         * GPU/RT handoff coordinator. Once the record is cancelled or a
+         * different destination owns the task, normal readiness resumes.
+         */
+        fun settledAfterRecordedMove(sdk:Int,recordedReservation:Long?,
+                                     destinationDisplay:Int?,currentlyOwned:Boolean,
+                                     committed:Boolean):Boolean =
+            !needsReceipt(sdk,recordedReservation!=null,destinationDisplay,
+                currentlyOwned) || committed
     }
 }
