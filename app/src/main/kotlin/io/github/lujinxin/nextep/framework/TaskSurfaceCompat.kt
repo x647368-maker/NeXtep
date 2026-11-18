@@ -709,7 +709,7 @@ object TaskSurfaceCompat {
                 // The record remains authoritative after its 2s scheduling
                 // TTL until exact compositor proof or explicit cancellation.
                 // A deadline is never a valid first App frame.
-                activeReservation=reservation!=null,
+                recordedPromotion=reservation!=null,
                 destinationDisplay=exchangeDisplays[taskId],
                 verifiedMainLeash=ownedTaskLeash(taskId)===currentLeash,
                 previousFinalCommitted=reservation!=null &&
