@@ -1,0 +1,113 @@
+name: v89 phased promotion second-zoom isolated gate
+on:
+  push:
+    branches:
+      - atomic-workbench/v89-phased-promotion-no-double-zoom-20261118
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  promotion-jvm-and-unsigned-apk:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)
+          test -x "$sdk"
+          yes | "$sdk" --licenses >/dev/null || true
+          "$sdk" 'platforms;android-36.1' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Strict scope and frozen live exchange guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=e69bf898d28f0ca3fb528e691c5052fd672c967d
+          git merge-base --is-ancestor "$parent" HEAD
+          python3 scripts/test-v89-handoff-wiring.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          parent="e69bf898d28f0ca3fb528e691c5052fd672c967d"
+          pre="app/src/main/kotlin/io/github/lujinxin/nextep/"
+          changed=set(subprocess.check_output(["git","diff","--name-only",parent,"HEAD"],text=True).splitlines())
+          expected={
+              pre+"framework/StagePhasedPromotionEntryPolicy.kt",
+              pre+"framework/TaskSurfaceCompat.kt",
+              "app/src/test/kotlin/io/github/lujinxin/nextep/framework/StagePhasedPromotionEntryPolicyTest.kt",
+              ".github/workflows/v89-phased-promotion-no-second-zoom-gate.yml",
+          }
+          assert changed==expected,(sorted(changed-expected),sorted(expected-changed))
+          for f in [
+              pre+"systemui/StageLiveSurfaceExchange.kt",
+              pre+"systemui/StageConcurrentNativeTrialPolicy.kt",
+              pre+"systemui/StageTransientTapSwap.kt",
+              pre+"systemui/StageSnapshotMotion.kt",
+              pre+"systemui/NeXtepWindowController.kt",
+              pre+"display/SlotTaskCoordinator.kt",
+          ]:
+              assert Path(f).read_bytes()==subprocess.check_output(
+                  ["git","show",parent+":"+f]),f
+          source=Path(pre+"framework/TaskSurfaceCompat.kt").read_text()
+          assert "suppressDuplicateEntry=StagePhasedPromotionEntryPolicy.suppressDuplicateEntrance(" in source
+          assert "verifiedMainLeash=ownedTaskLeash(taskId) === leash" in source
+          assert 'phasedEvent("promotion_duplicate_entry_suppressed")' in source
+          assert "else if (prepared != null || suppressDuplicateEntry ||" in source
+          print("PASS: 4-file scope; task coordinator, GPU/RT ownership and routes frozen")
+          PY
+      - name: Run all JVM tests and compile unsigned APK
+        run: bash scripts/ci-android-build.sh :app:testDebugUnitTest :app:assembleDebug -PatomicXposedApi=101.0.0
+      - name: Check revision and unsigned identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${ATOMIC_SIGNING_READY:-false}" != "true"
+          test -f app/build/outputs/apk/debug/app-debug-unsigned.apk
+          if "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --min-sdk-version 35 app/build/outputs/apk/debug/app-debug-unsigned.apk; then
+            echo 'ERROR: unexpected signature on unsigned artifact'
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("app/build/outputs/apk/debug/output-metadata.json")
+          m=json.loads(p.read_text())
+          assert m["applicationId"]=="io.github.x647368maker.atomicworkbench"
+          assert len(m["elements"])==1
+          assert m["elements"][0]["versionCode"]==89
+          assert m["elements"][0]["versionName"]=="0.9.74-dev"
+          PY
+          grep -R -F "ATOMIC_BUILD_REVISION = \"${GITHUB_SHA:0:12}\"" app/build/generated/source/buildConfig/debug/
+          sha256sum app/build/outputs/apk/debug/app-debug-unsigned.apk > unsigned-promotion-no-double-zoom.sha256
+          printf 'source_commit=%s\nsigned=false\n' "$GITHUB_SHA" > promotion-no-double-zoom-provenance.txt
+      - name: Retain raw JVM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-promotion-jvm-xml
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Retain unsigned offline signing input
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-promotion-unsigned-input
+          path: |
+            app/build/outputs/apk/debug/app-debug-unsigned.apk
+            app/build/outputs/apk/debug/output-metadata.json
+            unsigned-promotion-no-double-zoom.sha256
+            promotion-no-double-zoom-provenance.txt
+          if-no-files-found: error
+          retention-days: 3
