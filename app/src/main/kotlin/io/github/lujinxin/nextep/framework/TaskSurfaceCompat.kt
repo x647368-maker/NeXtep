@@ -1020,11 +1020,15 @@ object TaskSurfaceCompat {
                     runCatching {
                         (transaction as SurfaceControl.Transaction)
                             .addTransactionCommittedListener(Executor { it.run() }) {
-                                val sameOwner=activePresentations[taskId]===presentation &&
-                                    ownedTaskLeash(taskId)===leash &&
-                                    displayExchanges[taskId]==reservation &&
-                                    exchangeDisplays[taskId]==Display.DEFAULT_DISPLAY &&
-                                    isDisplayExchanging(taskId)
+                                // The compositor may commit after the
+                                // scheduling TTL, yet before this bounded
+                                // handoff completes. Validate the *recorded*
+                                // move and leash, not the current clock.
+                                val sameOwner=TaskPresentationCommitProof.matchesCommittedReceipt(
+                                    displayExchanges[taskId],reservation,
+                                    exchangeDisplays[taskId],
+                                    activePresentations[taskId]===presentation,
+                                    ownedTaskLeash(taskId)===leash)
                                 if(presentation.commitProof.acknowledge(ticket,sameOwner)) {
                                     animationHandler.post {
                                         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
