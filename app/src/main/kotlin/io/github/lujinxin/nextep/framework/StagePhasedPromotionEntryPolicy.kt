@@ -30,9 +30,9 @@ internal object StagePhasedPromotionEntryPolicy {
      *
      * This only affects the confirmed *current main leash* of a still-recorded
      * real move, even if its scheduling TTL elapsed; a deadline cannot be
-     * interpreted as a compositor receipt. Only while the previous final
-     * presentation has no valid
-     * committed receipt. Normal post-handoff layout, user drag, rotation,
+     * interpreted as a compositor receipt. Until both the final frame commits
+     * and the exact visual handoff closes, normal reapply must not start
+     * another scale flight. Normal post-handoff layout, user drag, rotation,
      * task replacement and cold app opening still retain their old routes.
      */
     /**
@@ -52,10 +52,11 @@ internal object StagePhasedPromotionEntryPolicy {
         finalFrameCommitted:Boolean,
         geometryStable:Boolean,
         noPresentationAnimator:Boolean,
+        visualHandoffPending:Boolean=false,
     ):Boolean =
         hasReservation && expired && destinationDisplay==0 &&
             ownsSameMainLeash && finalFrameCommitted &&
-            geometryStable && noPresentationAnimator
+            geometryStable && noPresentationAnimator && !visualHandoffPending
 
     fun commitMoveRepositionWithoutExtraAnimator(
         recordedPromotion:Boolean,
@@ -65,8 +66,9 @@ internal object StagePhasedPromotionEntryPolicy {
         geometryChanged:Boolean,
         rotationChanged:Boolean,
         leashChanged:Boolean,
+        visualHandoffPending:Boolean=false,
     ):Boolean =
         recordedPromotion && destinationDisplay==0 && verifiedMainLeash &&
-            !previousFinalCommitted && geometryChanged &&
+            (!previousFinalCommitted || visualHandoffPending) && geometryChanged &&
             !rotationChanged && !leashChanged
 }
