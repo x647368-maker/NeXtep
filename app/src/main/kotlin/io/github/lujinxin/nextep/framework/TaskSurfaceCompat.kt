@@ -325,8 +325,16 @@ object TaskSurfaceCompat {
                 slotSurfaces.remove(taskId,it)
             }
         }
+        // Expired *scheduling* time is not a successful main-task frame.
+        // In particular, a different task's promotion must not erase an
+        // unconfirmed display=0 receipt gate when this new move begins.
+        // Completed main promotions retire through the verified, stable
+        // reapply path; failures use explicit cancelDisplayExchange.
         displayExchanges.entries.removeIf {
-            if (it.value >= now) false else {
+            if (!TaskPresentationCommitProof.mayPruneExpiredReservation(
+                    Build.VERSION.SDK_INT,it.value<now,exchangeDisplays[it.key])) {
+                false
+            } else {
                 exchangeDisplays.remove(it.key)
                 pendingDemotedFits.remove(it.key)
                 true
@@ -1036,12 +1044,21 @@ object TaskSurfaceCompat {
         val finalFrame=presentation?.let {
             SurfaceFrame(it.scaleX,it.scaleY,it.positionX,it.positionY,it.crop)
         }
+        // A real, still-recorded display=0 move remains eligible for its
+        // exact final-frame compositor receipt AFTER its scheduling TTL.
+        // The old presentation object's callback is correctly invalidated by
+        // a geometry replacement; the new object MUST be able to register
+        // its own receipt, otherwise main readiness stays stuck false.
         val requireReceipt=TaskPresentationCommitProof.needsReceipt(
             Build.VERSION.SDK_INT,
-            reservation!=null && reservation>=SystemClock.uptimeMillis(),
+            reservation!=null,
             exchangeDisplays[taskId],presentation!=null && frame==finalFrame)
         val ticket=if(requireReceipt && reservation!=null && presentation!=null)
             presentation.commitProof.arm(leash,reservation,frame) else null
+        // Bounded one-shot registration per exact presentation generation:
+        // periodic ordinary reapply cannot accumulate callback listeners.
+        val claimedListener=ticket!=null && presentation!=null &&
+            presentation.commitProof.claimListener(ticket)
         activePresentations[taskId]?.takeIf { it.leash === leash }?.frame = frame
         val loader = hostClassLoader ?: error("SystemUI host class loader is unavailable")
         val transactionClass = Class.forName(
@@ -1058,14 +1075,14 @@ object TaskSurfaceCompat {
                 // A committed task transform is not a GPU mirror receipt or
                 // Binder ACK. Only the matching leash and move reservation
                 // can satisfy this gate; callback does not write any Surface.
-                if(ticket!=null && presentation!=null && reservation!=null) {
+                if(claimedListener && ticket!=null && presentation!=null &&
+                    reservation!=null) {
                     runCatching {
                         (transaction as SurfaceControl.Transaction)
                             .addTransactionCommittedListener(Executor { it.run() }) {
-                                // The compositor may commit after the
-                                // scheduling TTL, yet before this bounded
-                                // handoff completes. Validate the *recorded*
-                                // move and leash, not the current clock.
+                                // A late receipt is valid for the same exact
+                                // recorded move, task leash, presentation and
+                                // final crop/transform; never for a newer one.
                                 val sameOwner=TaskPresentationCommitProof.matchesCommittedReceipt(
                                     displayExchanges[taskId],reservation,
                                     exchangeDisplays[taskId],
@@ -1079,11 +1096,22 @@ object TaskSurfaceCompat {
                                 }
                             }
                     }.onFailure {
+                        presentation.commitProof.releaseFailedListener(ticket)
                         io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
                             .phasedEvent("main_task_fit_receipt_unavailable")
                     }
                 }
-                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
+                try {
+                    io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") {
+                        invokeRequired(transaction, "apply")
+                    }
+                } catch(error:Throwable) {
+                    // A transaction that never reached the compositor cannot
+                    // permanently consume the one-shot receipt opportunity.
+                    if(claimedListener && ticket!=null && presentation!=null)
+                        presentation.commitProof.releaseFailedListener(ticket)
+                    throw error
+                }
             } finally {
                 invokeOptional(transaction, "close")
             }
