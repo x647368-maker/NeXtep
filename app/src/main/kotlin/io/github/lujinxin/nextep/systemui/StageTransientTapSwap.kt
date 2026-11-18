@@ -602,7 +602,9 @@ internal class StageTransientTapSwap(private val context:Context) {
         // Retire the opaque main-region backdrop on the same traversal, while
         // preserving the incoming preview briefly over the real resized App.
         // The outgoing preview stays in its slot until its fresh output gate.
-        internal fun revealMain(onComplete:()->Unit):Boolean{
+        // Retain the previous no-argument instrumentation entrypoint while
+        // allowing the owner to observe completion of the bounded fade.
+        internal fun revealMain(onComplete:()->Unit={}):Boolean{
             if(mainRevealed || released || progress!=1f)return false
             mainRevealed=true
             mask.reset();mask.addRect(RectF(slotRect),Path.Direction.CW)
