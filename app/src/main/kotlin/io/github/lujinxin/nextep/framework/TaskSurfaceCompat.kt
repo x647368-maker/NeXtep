@@ -703,6 +703,18 @@ object TaskSurfaceCompat {
             "WM Shell task leash is invalid for taskId=$taskId"
         }
         val leashChanged = currentLeash !== previous.leash
+        val reservation=displayExchanges[taskId]
+        val oneWriterDuringPromotion=
+            StagePhasedPromotionEntryPolicy.commitMoveRepositionWithoutExtraAnimator(
+                activeReservation=isDisplayExchanging(taskId),
+                destinationDisplay=exchangeDisplays[taskId],
+                verifiedMainLeash=ownedTaskLeash(taskId)===currentLeash,
+                previousFinalCommitted=reservation!=null &&
+                    previous.commitProof.confirmed(previous.leash,reservation,previous.frame),
+                geometryChanged=geometryChanged,
+                rotationChanged=rotationChanged,
+                leashChanged=leashChanged,
+            )
         val presentation = if (leashChanged || geometryChanged) {
             ActivePresentation(
                 taskId = taskId,
@@ -720,10 +732,15 @@ object TaskSurfaceCompat {
         } else {
             previous
         }
-        if (leashChanged || rotationChanged) {
-            // Rotation changes the coordinate space; an old animation frame must
-            // never interpolate across it or overwrite a replacement leash.
+        if (leashChanged || rotationChanged || oneWriterDuringPromotion) {
+            // Rotation/reparent changes coordinates; a real moving task also
+            // already has exactly one external GPU/RT flight owner. Never
+            // replay a second independent in-task scale animation before the
+            // matching compositor receipt of its new terminal frame.
             cancelPresentationAnimation(taskId)
+            if(oneWriterDuringPromotion)
+                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
+                    .phasedEvent("promotion_reapply_second_zoom_suppressed")
             applyPresentation(presentation)
         } else if (geometryChanged) {
             animatePresentation(taskId, previous.frame, presentation, REPOSITION_DURATION_MS)
