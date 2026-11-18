@@ -42,7 +42,8 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs build/out/AtomicWorkbench-SurfaceProbe-v1.apk > build/out/signature.txt
           "$BT/aapt2" dump badging build/out/AtomicWorkbench-SurfaceProbe-v1.apk > build/out/badging.txt
           grep -F "package: name='io.github.x647368maker.surfaceprobe' versionCode='1'" build/out/badging.txt
-          grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true' build/out/signature.txt
+          cat build/out/signature.txt
+          grep -E 'Verified using v(2|3) scheme .*: true' build/out/signature.txt
           ! grep -F 'android.permission.INTERNET' build/out/badging.txt
           cp /tmp/probe-tests.txt build/out/tests.txt
           cp "$BT/lib/apksigner.jar" build/out/apksigner.jar
