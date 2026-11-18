@@ -99,6 +99,8 @@ internal class StageTransientTapSwap(private val context:Context) {
         private val handoff=StageStableHandoff()
         private val mainHandoff=StageStableHandoff()
         private var mainRevealed=false
+        private var mainRevealCompleted=false
+        private var mainRevealStartedAt=0L
         private var handoffBegan=0L
         private fun current()=active===this
         private fun stillValid()=runCatching(valid).getOrDefault(false) && host.isAttachedToWindow
@@ -121,26 +123,48 @@ internal class StageTransientTapSwap(private val context:Context) {
             override fun run(){
                 if(!current())return
                 if(!host.isAttachedToWindow){finish("host_detached");return}
-                val elapsed=SystemClock.uptimeMillis()-handoffBegan
+                val now=SystemClock.uptimeMillis()
+                val elapsed=now-handoffBegan
                 val ready=runCatching(liveReady).getOrDefault(false)
-                when(handoff.decide(ready,elapsed>=StageTransientTapPolicy.HANDOFF_BUDGET_MS)){
-                    StageStableHandoff.Decision.READY->
-                        finish(if(terminalReceiptMissing)"terminal_unconfirmed_output_ready" else "ready")
-                    StageStableHandoff.Decision.TIMEOUT->
-                        finish(if(terminalReceiptMissing)"terminal_unconfirmed_handoff_timeout" else "handoff_timeout")
-                    StageStableHandoff.Decision.WAIT->{
-                        // Handoff begins only after successful task ACK AND terminal
-                        // animation commit. A settled main must not be held hostage
-                        // by the other producer's late output. Keep the slot's own
-                        // cover and strict freshness gate intact.
-                        if(!terminalReceiptMissing && !mainRevealed &&
-                            mainHandoff.observe(runCatching(mainReady).getOrDefault(false))){
-                            view?.revealMain()
-                            mainRevealed=true
-                            trace("snapshot_main_revealed")
-                        }
-                        host.postOnAnimation(this)
+                val decision=handoff.decide(ready,
+                    elapsed>=StageTransientTapPolicy.HANDOFF_BUDGET_MS)
+                // Stable main ownership and settled geometry are necessary
+                // before exposing the live App. This check never substitutes
+                // for the slot's separate post-move fresh-buffer gate.
+                val stableMain=mainHandoff.observe(
+                    runCatching(mainReady).getOrDefault(false))
+                if(StageMainEndpointRevealPolicy.canBegin(
+                        moveAck,flightDone,terminalReceiptMissing,
+                        stableMain,mainRevealed)) {
+                    val owned=view
+                    if(owned!=null && owned.revealMain {
+                            if(current() && view===owned) {
+                                mainRevealCompleted=true
+                                trace("snapshot_main_reveal_complete")
+                                host.postOnAnimation(checkHandoff)
+                            }
+                        }) {
+                        mainRevealed=true
+                        mainRevealStartedAt=now
+                        trace("snapshot_main_reveal_begin")
                     }
+                }
+                when(decision){
+                    StageStableHandoff.Decision.READY->{
+                        // Removing the preview during its last alpha frame
+                        // recreates the exact second-zoom this blend avoids.
+                        // One bounded wait only; missing vendor callbacks
+                        // may never hold the real task beyond 72ms.
+                        if(StageMainEndpointRevealPolicy.keepPreviewDuringReady(
+                                mainRevealed,mainRevealCompleted,
+                                now-mainRevealStartedAt))host.postOnAnimation(this)
+                        else finish(if(terminalReceiptMissing)
+                            "terminal_unconfirmed_output_ready" else "ready")
+                    }
+                    StageStableHandoff.Decision.TIMEOUT->
+                        finish(if(terminalReceiptMissing)
+                            "terminal_unconfirmed_handoff_timeout" else "handoff_timeout")
+                    StageStableHandoff.Decision.WAIT->host.postOnAnimation(this)
                 }
             }
         }
@@ -569,15 +593,39 @@ internal class StageTransientTapSwap(private val context:Context) {
             addRect(RectF(slot),Path.Direction.CW);addRect(RectF(main),Path.Direction.CW)
         }
         private var mainRevealed=false
-        // Only invoked by the post-terminal, post-ACK handoff gate.
-        // Remove BOTH the incoming preview and its opaque background in
-        // the same View traversal. The outgoing preview remains in its slot.
-        internal fun revealMain(){
-            if(mainRevealed || released || progress!=1f)return
+        private var mainRevealComplete=false
+        private val needsMainBlend=StageMainEndpointRevealPolicy.needsBlend(
+            incoming.width,incoming.height,mainRect.width(),mainRect.height())
+        // Invoked only by the post-terminal, post-ACK main ownership gate.
+        // Retire the opaque main-region backdrop on the same traversal, while
+        // preserving the incoming preview briefly over the real resized App.
+        // The outgoing preview stays in its slot until its fresh output gate.
+        internal fun revealMain(onComplete:()->Unit):Boolean{
+            if(mainRevealed || released || progress!=1f)return false
             mainRevealed=true
-            upView.visibility=View.INVISIBLE
             mask.reset();mask.addRect(RectF(slotRect),Path.Direction.CW)
             invalidate()
+            fun completed(){
+                if(released || mainRevealComplete)return
+                mainRevealComplete=true
+                upView.visibility=View.INVISIBLE
+                invalidate()
+                onComplete()
+            }
+            if(!needsMainBlend) {
+                completed()
+            } else {
+                // Hardware alpha only: no Bitmap redraw, extra Surface,
+                // animation of task geometry or background polling.
+                val started=runCatching {
+                    upView.animate().cancel()
+                    upView.animate().alpha(0f)
+                        .setDuration(StageMainEndpointRevealPolicy.BLEND_MS)
+                        .withEndAction(::completed).start()
+                }.isSuccess
+                if(!started)completed()
+            }
+            return true
         }
         private val density=context.resources.displayMetrics.density
         private val upCorners=up?.let{StageSnapshotMotion.cornerTrack(it,true,density)}
@@ -657,7 +705,7 @@ internal class StageTransientTapSwap(private val context:Context) {
             if(released)return
             val save=canvas.save()
             excluded.forEach{canvas.clipOutRect(it)}
-            if(mainRevealed)canvas.clipRect(slotRect)
+            if(mainRevealComplete)canvas.clipRect(slotRect)
             super.dispatchDraw(canvas)
             canvas.restoreToCount(save)
             if(canvas.isHardwareAccelerated && safe){
@@ -757,6 +805,9 @@ internal class StageTransientTapSwap(private val context:Context) {
             return "ui_transform"
         }
         fun stopMotion(){
+            // An interrupted fade cannot keep a stale bitmap visible after
+            // the attempt has transferred ownership or lost its host.
+            upView.animate().cancel()
             val old=animations.toList()
             animations.clear()
             old.forEach{anim->
