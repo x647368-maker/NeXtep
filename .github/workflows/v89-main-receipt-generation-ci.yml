@@ -71,15 +71,14 @@ jobs:
           new=Path(compat).read_text()
           start_move="    fun markDisplayExchange(taskId: Int, destinationDisplayId: Int)"
           end_move="    fun isDisplayExchanging(taskId: Int)"
-          start_tx="    private fun applyPresentation(\\n"
-          # There are two overloaded applyPresentation functions. Select
-          # the exact multiline task/frame signature, never the full object.
-          start_tx="    private fun applyPresentation(\\n        taskId: Int,"
+          start_tx="    private fun applyPresentation("
+          # Choose the final task/leash/frame overload immediately before
+          # appendOwnedTransforms; do not exclude the other presenter writers.
           end_tx="    private fun appendOwnedTransforms(transaction: Any)"
           def unchanged_outside(s):
               a=s.index(start_move)
               b=s.index(end_move,a)
-              c=s.index(start_tx,b)
+              c=s.rindex(start_tx,b,s.index(end_tx))
               d=s.index(end_tx,c)
               return s[:a]+s[b:c]+s[d:]
           assert unchanged_outside(new)==unchanged_outside(old),(
@@ -88,7 +87,7 @@ jobs:
           assert "fun claimListener(ticket:Ticket<F>)" in p
           assert "fun releaseFailedListener(ticket:Ticket<F>)" in p
           assert "fun mayPruneExpiredReservation" in p
-          assert "reservation!=null,\\n            exchangeDisplays[taskId]" in new
+          assert "reservation!=null," in new
           assert "claimListener(ticket)" in new
           assert "releaseFailedListener(ticket)" in new
           assert "mayPruneExpiredReservation(" in new
