@@ -25,6 +25,7 @@ internal class TaskPresentationCommitProof<F> {
     private data class State<F>(
         val armed:Ticket<F>?=null,
         val committed:Ticket<F>?=null,
+        val listenerClaimed:Boolean=false,
     )
     private val state=AtomicReference(State<F>())
 
@@ -36,7 +37,7 @@ internal class TaskPresentationCommitProof<F> {
                 current.reservation==reservation && current.frame==frame)
                 return current
             val ticket=Ticket(leash,reservation,frame)
-            if(state.compareAndSet(before,State(ticket,null)))return ticket
+            if(state.compareAndSet(before,State(ticket,null,false)))return ticket
         }
     }
 
@@ -46,7 +47,32 @@ internal class TaskPresentationCommitProof<F> {
         while(true) {
             val before=state.get()
             if(before.armed!==ticket || before.committed!=null)return false
-            if(state.compareAndSet(before,State(ticket,ticket)))return true
+            if(state.compareAndSet(before,State(ticket,ticket,true)))return true
+        }
+    }
+
+    /**
+     * Attach at most one listener to the exact final frame of one still-owned
+     * presentation generation, regardless of how often steady reapply is
+     * invoked after a scheduling TTL. Another frame/leash/move gets a fresh
+     * ticket from arm(). Failed listener installation or Transaction.apply()
+     * releases this claim for the next bounded reconciliation opportunity.
+     */
+    fun claimListener(ticket:Ticket<F>):Boolean {
+        while(true) {
+            val before=state.get()
+            if(before.armed!==ticket || before.committed!=null ||
+                before.listenerClaimed)return false
+            if(state.compareAndSet(before,before.copy(listenerClaimed=true)))return true
+        }
+    }
+
+    fun releaseFailedListener(ticket:Ticket<F>) {
+        while(true) {
+            val before=state.get()
+            if(before.armed!==ticket || before.committed!=null ||
+                !before.listenerClaimed)return
+            if(state.compareAndSet(before,before.copy(listenerClaimed=false)))return
         }
     }
 
@@ -70,6 +96,17 @@ internal class TaskPresentationCommitProof<F> {
         fun needsReceipt(sdk:Int,moveUnexpired:Boolean,destinationDisplay:Int?,
                          currentlyOwned:Boolean):Boolean =
             sdk>=33 && moveUnexpired && destinationDisplay==0 && currentlyOwned
+
+        /**
+         * An incomplete main promotion must never be pruned merely because
+         * its *scheduling* TTL expired. Successful promotions are retired by
+         * the existing exact-leash, exact-receipt, stable-geometry policy;
+         * failed promotions use explicit cancellation/rollback. Legacy
+         * expired slot reservations retain their original cleanup behavior.
+         */
+        fun mayPruneExpiredReservation(sdk:Int,expired:Boolean,
+                                      destinationDisplay:Int?):Boolean =
+            expired && !(sdk>=33 && destinationDisplay==0)
 
         /**
          * Handoff readiness must not become "true" only because the
