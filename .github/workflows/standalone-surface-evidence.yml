@@ -20,6 +20,7 @@ jobs:
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Test config and binary trace admission
         run: |
+          set -euo pipefail
           cd tools/surface-evidence
           mkdir -p /tmp/probe-test
           javac -d /tmp/probe-test src/TraceConfig.java src/TraceCheck.java test/SelfTest.java

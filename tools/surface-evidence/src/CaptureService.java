@@ -40,7 +40,7 @@ public final class CaptureService extends Service {
     }
     // All commands are compile-time constants. No shell command is supplied by an intent or the UI.
     private int run(String command,String input,File out,File err,int seconds)throws Exception{
-        Process process=new ProcessBuilder("su","-c",command).redirectOutput(out).redirectError(err).start();
+        java.lang.Process process=new ProcessBuilder("su","-c",command).redirectOutput(out).redirectError(err).start();
         try {
             try(OutputStream stdin=process.getOutputStream()){if(input!=null)stdin.write(input.getBytes(StandardCharsets.UTF_8));}
             if(!process.waitFor(seconds,TimeUnit.SECONDS)){process.destroy();if(!process.waitFor(2,TimeUnit.SECONDS))process.destroyForcibly();throw new IOException("命令超时");}
