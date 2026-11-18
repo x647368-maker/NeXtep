@@ -141,7 +141,9 @@ internal class StageTransientTapSwap(private val context:Context) {
                             if(current() && view===owned) {
                                 mainRevealCompleted=true
                                 trace("snapshot_main_reveal_complete")
-                                host.postOnAnimation(checkHandoff)
+                                // This Runnable owns the next check; avoid
+                                // referring to the property inside its initializer.
+                                host.postOnAnimation(this)
                             }
                         }) {
                         mainRevealed=true
