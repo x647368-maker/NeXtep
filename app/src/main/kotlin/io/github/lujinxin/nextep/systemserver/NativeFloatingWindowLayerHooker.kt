@@ -152,6 +152,12 @@ class NativeFloatingWindowLayerHooker : XposedInterface.Hooker {
         if (!observationRequested.compareAndSet(false, true)) return
         observationHandler.post {
             runCatching {
+                // Reuse the existing on-demand WM panel observation startup.
+                // Before this, startGeometryObservation existed but was never
+                // installed: every Task.onDisplayChanged/reset transform could
+                // synchronously read Settings while holding the WM lock.
+                // Subscribe outside prepareSurfaces and use the RAM snapshot.
+                SystemServerWorkspaceBridge.startGeometryObservation(context)
                 workspaceObserver = SystemServerWorkspaceBridge.observeWorkspaceActive(
                     context, observationHandler,
                 ) { workspaceActive = it }
