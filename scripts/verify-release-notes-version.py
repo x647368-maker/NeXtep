@@ -66,7 +66,7 @@ def main():
 .getOrElse("unknown")
 .take(12)
 .takeIf { it.matches(Regex("[a-fA-F0-9]{8,12}")) } ?: "unknown"
-buildConfigField("String", "ATOMIC_BUILD_REVISION", "\\"$atomicBuildRevision\\"")'''
+buildConfigField("String", "ATOMIC_BUILD_REVISION", "\"$atomicBuildRevision\"")'''
         assert runtime_identity_contract(f'const val BUILD = "{stamp}"', "", stamp)
         assert not runtime_identity_contract('const val BUILD = "0.9.73-dev/88"', "", stamp)
         assert runtime_identity_contract(DYNAMIC_BUILD, build_fixture, stamp)
