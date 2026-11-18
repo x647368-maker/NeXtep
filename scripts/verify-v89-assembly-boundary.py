@@ -157,13 +157,23 @@ def main():
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "explicit P0 mirror contract admission delta")
-    equal(paths(contract_fix, "HEAD"), {
+    first_frame_fix = "6c770090b8ec05906ad4b0cd712a4ab60a8a9858"
+    subprocess.run(["git", "merge-base", "--is-ancestor", first_frame_fix, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(contract_fix, first_frame_fix), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageLiveSurfaceFlightGeometry.kt",
         P+"framework/TaskSurfaceCompat.kt",
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMainMirrorStartTest.kt",
     }, "explicit owned source first-frame mapping delta")
+    equal(paths(first_frame_fix, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"systemui/StageHeldEndpointPolicy.kt",
+        P+"framework/TaskSurfaceCompat.kt",
+        P+"display/TaskSwitcherView.kt",
+        P+"systemui/StageConcurrentNativeTrialPolicy.kt",
+        T+"systemui/StageAnchoredEndpointTest.kt",
+    }, "explicit content-anchored flight/hold delta")
     mirror_source = source("systemui/StageLiveSurfaceExchange.kt",
                            "DETACHED, RETAINED, UNKNOWN", "return markUnavailable(\"mirror_root_unknown\")")
     require("unknown_legacy" not in mirror_source, "no unknown-as-retained route")
@@ -172,7 +182,10 @@ def main():
             mirror_source.index("TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)"),
             "unknown rejected before geometry and mirror acquisition")
     source("framework/TaskSurfaceCompat.kt", "fun ownedMainMirrorFrame(", "p.frame !== frame")
-    source("systemui/StageLiveSurfaceExchange.kt", "sameMirrorContent(firstMain,plannedFirst)", "mainFirstFrame ?: plannedOutgoing", "mainSourceStillMatches()")
+    source("systemui/StageLiveSurfaceExchange.kt", "sameMirrorContent(firstMain,plannedFirst.second)",
+           "mainFirstFrame ?: rawOutgoing", "mainSourceStillMatches()", "slotSourceStillMatches()",
+           "StageHeldEndpointPolicy.anchoredFlight(", "StageHeldEndpointPolicy.anchoredFit(")
+    source("display/TaskSwitcherView.kt", "fun mirrorLiveContentBounds()", "textureView.getTransform(")
     source("logging/StageAttemptEvidence.kt", "max_scale_step=", "task_pair up=", "stage_overflow=")
     source("logging/StageSurfaceHandoffTrace.kt", "task_write_temporal", "fun bindPair(", "if(!evidence.hasOpenCapture())return")
     source("systemui/StageLiveSurfaceExchange.kt", "traceMirrorAdmission(detached)", '"held_mirror"')

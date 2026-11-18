@@ -11,6 +11,106 @@ internal object StageHeldEndpointPolicy {
     data class Fit(val left:Int,val top:Int,val right:Int,val bottom:Int,
                    val scale:Float,val x:Float,val y:Float)
 
+    data class ContentMap(val scale:Float,val x:Float,val y:Float) {
+        fun valid()=scale.isFinite() && scale>0f && x.isFinite() && y.isFinite()
+    }
+
+    internal data class ContentAnchor(
+        val sourceRoot:ContentMap,
+        val sourceCrop:StageLiveSurfaceFlightGeometry.Crop,
+        val target:ContentMap,
+        val viewport:StageLiveSurfaceFlightGeometry.Box,
+        val rawTerminal:StageLiveSurfaceFlightGeometry.MirrorFrame,
+    )
+
+    fun rootMap(producerScale:Float,producerX:Float,producerY:Float,detachedRoot:Boolean):ContentMap =
+        if(detachedRoot) ContentMap(1f,0f,0f) else ContentMap(producerScale,producerX,producerY)
+
+    // target = mirror * producerRoot, solved for the absolute mirror transform.
+    fun mirrorMap(target:ContentMap,root:ContentMap):ContentMap? {
+        if(!target.valid() || !root.valid())return null
+        val scale=target.scale/root.scale
+        return ContentMap(scale,target.x-root.x*scale,target.y-root.y*scale)
+            .takeIf { it.valid() && it.scale<=10f }
+    }
+
+    private fun inwardCrop(l:Double,t:Double,r:Double,b:Double):StageLiveSurfaceFlightGeometry.Crop? {
+        val x1=ceil(l);val y1=ceil(t);val x2=floor(r);val y2=floor(b)
+        if(!x1.isFinite() || !y1.isFinite() || !x2.isFinite() || !y2.isFinite() ||
+            x1<Int.MIN_VALUE || y1<Int.MIN_VALUE || x2>Int.MAX_VALUE || y2>Int.MAX_VALUE ||
+            x2-x1<2.0 || y2-y1<2.0)return null
+        return StageLiveSurfaceFlightGeometry.Crop(x1.toInt(),y1.toInt(),x2.toInt(),y2.toInt())
+    }
+
+    /** Crop only; never stretch a buffer or change an already chosen content map. */
+    private fun fitMapped(viewport:StageLiveSurfaceFlightGeometry.Box,
+                          available:StageLiveSurfaceFlightGeometry.Crop,map:ContentMap):Fit? {
+        if(!viewport.valid() || !map.valid() || map.scale>10f)return null
+        val z=map.scale.toDouble()
+        val crop=inwardCrop(maxOf(available.left.toDouble(),(viewport.left-map.x)/z),
+            maxOf(available.top.toDouble(),(viewport.top-map.y)/z),
+            minOf(available.right.toDouble(),(viewport.right-map.x)/z),
+            minOf(available.bottom.toDouble(),(viewport.bottom-map.y)/z)) ?: return null
+        return Fit(crop.left,crop.top,crop.right,crop.bottom,map.scale,map.x,map.y)
+    }
+
+    fun anchoredFit(viewport:StageLiveSurfaceFlightGeometry.Box,
+                    local:StageLiveSurfaceFlightGeometry.Crop,
+                    root:ContentMap,target:ContentMap):Fit? {
+        val map=mirrorMap(target,root) ?: return null
+        val z=root.scale.toDouble()
+        val available=inwardCrop(local.left*z+root.x,local.top*z+root.y,
+            local.right*z+root.x,local.bottom*z+root.y) ?: return null
+        return fitMapped(viewport,available,map)
+    }
+
+    private fun Fit.asFrame():StageLiveSurfaceFlightGeometry.MirrorFrame {
+        val crop=StageLiveSurfaceFlightGeometry.Crop(left,top,right,bottom)
+        return StageLiveSurfaceFlightGeometry.MirrorFrame(scale,x,y,crop,
+            StageLiveSurfaceFlightGeometry.Box(left*scale+x,top*scale+y,right*scale+x,bottom*scale+y))
+    }
+
+    /**
+     * Keep the certified route's viewport as an absolute collision bound.
+     * Ease only the content scale and anchor within that viewport; a larger
+     * or smaller producer must not enlarge the swept card. At the endpoint
+     * the same map is used by the held writer, not a fresh COVER/CONTAIN.
+     */
+    fun anchoredFlight(raw:StageLiveSurfaceFlightGeometry.MirrorFrame,
+                       anchor:ContentAnchor,progress:Float):StageLiveSurfaceFlightGeometry.MirrorFrame? {
+        if(!progress.isFinite() || !raw.box.valid() || !anchor.rawTerminal.box.valid() ||
+            !raw.scale.isFinite() || raw.scale<=0f || !anchor.rawTerminal.scale.isFinite() ||
+            anchor.rawTerminal.scale<=0f)return null
+        if(progress<=0f)return raw
+        val end=mirrorMap(anchor.target,anchor.sourceRoot) ?: return null
+        val u=StageLiveSurfaceFlightGeometry.phaseEase(progress)
+        val map=if(progress>=1f) end else {
+            val terminal=anchor.rawTerminal
+            val cx=(anchor.sourceCrop.left.toDouble()+anchor.sourceCrop.right)*.5
+            val cy=(anchor.sourceCrop.top.toDouble()+anchor.sourceCrop.bottom)*.5
+            val dx=(end.x+cx*end.scale-terminal.x-cx*terminal.scale)/terminal.box.width
+            val dy=(end.y+cy*end.scale-terminal.y-cy*terminal.scale)/terminal.box.height
+            val scale=raw.scale*(1f+(end.scale/terminal.scale-1f)*u)
+            ContentMap(scale,(raw.x+cx*(raw.scale-scale)+dx*raw.box.width*u).toFloat(),
+                (raw.y+cy*(raw.scale-scale)+dy*raw.box.height*u).toFloat())
+        }
+        // Intersect with the full certified viewport and the original
+        // available crop. Rounded edges can only shrink the footprint.
+        val bounds=if(progress<1f)raw.box else StageLiveSurfaceFlightGeometry.Box(
+            maxOf(raw.box.left,anchor.viewport.left),maxOf(raw.box.top,anchor.viewport.top),
+            minOf(raw.box.right,anchor.viewport.right),minOf(raw.box.bottom,anchor.viewport.bottom))
+        return fitMapped(bounds,anchor.sourceCrop,map)?.asFrame()
+    }
+
+    fun terminalFits(anchor:ContentAnchor):Boolean {
+        val projected=anchoredFlight(anchor.rawTerminal,anchor,1f) ?: return false
+        val map=mirrorMap(anchor.target,anchor.sourceRoot) ?: return false
+        val ideal=fitMapped(anchor.viewport,anchor.sourceCrop,map)?.asFrame() ?: return false
+        // A route with a smaller/shifted certified envelope must not silently
+        // cut away valid target pixels. Choose the existing safer route.
+        return StageLiveSurfaceFlightGeometry.endpointGapPx(projected.box,ideal.box)<=2f
+    }
+
     /**
      * Match the *covered* compositor flight's endpoint when the producer is
      * rebound after a real display move. The legacy fit() intentionally uses

@@ -98,6 +98,8 @@ internal object StageConcurrentNativeTrialPolicy {
         "fallback:mirror_source_changed",
         "fallback:main_source_frame_unsettled",
         "fallback:main_source_mapping_unrepresentable",
+        "fallback:slot_content_mapping_unavailable",
+        "fallback:content_anchor_unrepresentable",
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false
