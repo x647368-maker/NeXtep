@@ -42,6 +42,42 @@ class StagePhasedPromotionEntryPolicyTest {
         }
     }
 
+    @Test fun expiredSchedulingDeadlineCannotReintroduceSecondZoomBeforeRealReceipt() {
+        // The accepted reservation's absolute deadline is not a Surface
+        // transaction receipt. A slow ColorOS migration can exceed it while
+        // the identical owner/frame is still awaiting compositor commit.
+        val expiredMoveRecord:Long?=1000L
+        val uptimeNow=10000L
+        assertTrue(checkNotNull(expiredMoveRecord)<uptimeNow)
+        assertTrue(policy.commitMoveRepositionWithoutExtraAnimator(
+            recordedPromotion=expiredMoveRecord!=null,
+            destinationDisplay=0,
+            verifiedMainLeash=true,
+            previousFinalCommitted=false,
+            geometryChanged=true,
+            rotationChanged=false,
+            leashChanged=false,
+        ))
+        assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
+            recordedPromotion=false, // explicitly cancelled record
+            destinationDisplay=0,
+            verifiedMainLeash=true,
+            previousFinalCommitted=false,
+            geometryChanged=true,
+            rotationChanged=false,
+            leashChanged=false,
+        ))
+        assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
+            recordedPromotion=expiredMoveRecord!=null,
+            destinationDisplay=0,
+            verifiedMainLeash=true,
+            previousFinalCommitted=true, // committed real main frame
+            geometryChanged=true,
+            rotationChanged=false,
+            leashChanged=false,
+        ))
+    }
+
     @Test fun delayedOrCrossTaskPromotionsCannotBlockNormalLayoutAnimations() {
         // No reservation, any other display, or unrelated task owner: normal
         // workspace reposition still uses the existing ValueAnimator.
