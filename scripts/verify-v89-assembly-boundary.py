@@ -166,12 +166,18 @@ def main():
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMainMirrorStartTest.kt",
     }, "explicit owned source first-frame mapping delta")
-    equal(paths(first_frame_fix, "HEAD"), {
+    coordinate_fix = "81fcf72f7380d5fa79ff8f034bce93aeac58e27b"
+    subprocess.run(["git", "merge-base", "--is-ancestor", coordinate_fix, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(first_frame_fix, coordinate_fix), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageHeldEndpointPolicy.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
         T+"systemui/StageMainDestinationCoordinateTest.kt",
     }, "isolated mirror coordinate observation and destination affine delta")
+    equal(paths(coordinate_fix, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageMirrorRootContractTest.kt",
+    }, "explicit private firmware-scoped evidence trial only")
     mirror_source = source("systemui/StageLiveSurfaceExchange.kt",
                            "DETACHED, RETAINED, UNKNOWN", "return markUnavailable(\"mirror_root_unknown\")")
     require("unknown_legacy" not in mirror_source, "no unknown-as-retained route")
@@ -192,6 +198,15 @@ def main():
     source("systemui/StageLiveSurfaceExchange.kt", "mirror_root_observation=",
            "StageHeldEndpointPolicy.mainDestinationFit(", "if(incoming && mainFit==null)")
     require("incomingRebaseReceiptArmed" in mirror_source, "receipt-generation work deliberately deferred")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "BuildConfig.DEBUG && BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL",
+           "Build.FINGERPRINT.toByteArray(Charsets.UTF_8)",
+           "hex==EVIDENCE_TRIAL_FIRMWARE_SHA256",
+           ".ticket(SystemClock.elapsedRealtime())!=null",
+           "StageMirrorEvidenceTrial.resolve(observation,inEvidenceScope,diagnosticOptIn)",
+           "detached_evidence_trial")
+    require("Build.MODEL" not in mirror_source and "Build.MANUFACTURER" not in mirror_source,
+            "no brand/model root contract inference")
     for unchanged in ("framework/TaskSurfaceCompat.kt", "systemui/StageLiveSurfaceFlightGeometry.kt"):
         path = P+unchanged
         require((ROOT/path).read_bytes()==git("show", first_frame_fix+":"+path),

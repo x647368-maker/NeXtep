@@ -87,6 +87,31 @@ internal data class StageMirrorRootObservation(
 }
 
 /**
+ * PRIVATE DIAGNOSTIC CANDIDATE ONLY — evidence scope from a captured firmware,
+ * not an OEM-wide capability determination. Never carry this override into
+ * a stable/release build. The original observation remains UNKNOWN.
+ */
+internal object StageMirrorEvidenceTrial {
+    fun resolve(observed:StageMirrorRootObservation,firmwareScopedDebug:Boolean,
+                optInDiagnostic:Boolean):StageMirrorRootContract {
+        if(!firmwareScopedDebug)return observed.contract
+        // An explicit contradictory flag read on the measured firmware
+        // cannot be used as proof for either path.
+        if(observed.contract==StageMirrorRootContract.RETAINED)
+            return StageMirrorRootContract.UNKNOWN
+        if(observed.contract!=StageMirrorRootContract.UNKNOWN)return observed.contract
+        if(!optInDiagnostic)return StageMirrorRootContract.UNKNOWN
+        // Missing keys/packages or inaccessible readers are not a capability
+        // signal; only the separately scoped, visible-mirror evidence supports
+        // this marked private trial. Do not override inconsistent/invalid reads.
+        if(observed.reason !in setOf("missing_key_or_empty_package","class_lookup",
+                "load_method_lookup","package_load","read_method_lookup",
+                "read_default_false","read_default_true"))return StageMirrorRootContract.UNKNOWN
+        return StageMirrorRootContract.DETACHED
+    }
+}
+
+/**
  * Experimental real live SurfaceFlinger flight, NOT a bitmap preview.
  *
  * Source is a mirror of the current rail-window ViewRoot. Its crop contains
@@ -413,6 +438,23 @@ internal class StageLiveSurfaceExchange private constructor(
                 StageMirrorRootObservation.error(stage,error)
             }
         }
+        // Exact, non-unique firmware build fingerprint digest (not a device
+        // serial or user identifier). No model/brand/OS-family allowlist.
+        // Only this private debug branch + existing active voluntary diagnostic
+        // + exact captured firmware can run the evidence candidate.
+        private const val EVIDENCE_TRIAL_FIRMWARE_SHA256 =
+            "e5084857edcc3d0d5fa1b4b0cfb93d0d4f00ad19925ce94be86e2f47f134d24f"
+        private val evidenceTrialFirmware by lazy {
+            BuildConfig.DEBUG && BuildConfig.ATOMIC_NATIVE_SURFACE_TRIAL &&
+                Build.VERSION.SDK_INT==37 && runCatching {
+                    val digest=java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(Build.FINGERPRINT.toByteArray(Charsets.UTF_8))
+                    val hex=digest.joinToString("") { byte ->
+                        (byte.toInt() and 255).toString(16).padStart(2,'0')
+                    }
+                    hex==EVIDENCE_TRIAL_FIRMWARE_SHA256
+                }.getOrDefault(false)
+        }
         @Volatile private var lastOutcome = "not_attempted"
         fun lastOutcome(): String = lastOutcome
         private fun markUnavailable(why: String): StageLiveSurfaceExchange? {
@@ -470,8 +512,18 @@ internal class StageLiveSurfaceExchange private constructor(
             if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
                 return markUnavailable("invalid_bounds")
             val observation=mirrorRootObservation
-            val contract=observation.contract
+            val inEvidenceScope=evidenceTrialFirmware
+            val diagnosticOptIn=inEvidenceScope &&
+                io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.evidence
+                    .ticket(SystemClock.elapsedRealtime())!=null
+            val contract=StageMirrorEvidenceTrial.resolve(observation,inEvidenceScope,diagnosticOptIn)
+            val evidenceTrial=contract==StageMirrorRootContract.DETACHED &&
+                observation.contract==StageMirrorRootContract.UNKNOWN
             StageExchangeTelemetry.nativeEvent("mirror_root_observation="+observation.diagnostic())
+            if(inEvidenceScope) StageExchangeTelemetry.nativeEvent(
+                "mirror_evidence_trial="+(if(evidenceTrial)"private_detached_candidate" else
+                    if(observation.contract==StageMirrorRootContract.RETAINED)"contradictory_flag_rejected"
+                    else if(diagnosticOptIn)"not_needed_or_rejected" else "diagnostic_not_armed"))
             val detached=contract.detachedOrNull() ?: run {
                 StageExchangeTelemetry.nativeEvent("mirror_root=unknown")
                 return markUnavailable("mirror_root_unknown")
@@ -496,7 +548,7 @@ internal class StageLiveSurfaceExchange private constructor(
             var transferred=false
             try {
                 StageExchangeTelemetry.nativeEvent(
-                    "mirror_root=${if(detached) "detached" else "retained"}")
+                    "mirror_root=${if(evidenceTrial) "detached_evidence_trial" else if(detached) "detached" else "retained"}")
                 // The mirror must follow the app TASK, not the rail's ViewRoot.
                 // That root switches the producer during the two-stage exchange,
                 // which caused PR59 to show the new app twice while still flying.
