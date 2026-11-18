@@ -135,7 +135,24 @@ def main():
         subprocess.run(["git", "merge-base", "--is-ancestor", parent, child], cwd=ROOT, check=True)
     equal(paths(CANDIDATE, assembly), {GATE, WORKFLOW}, "original assembly delta")
     equal(paths(assembly, cover), cover_paths, "covered mirror continuity delta")
-    equal(paths(cover, "HEAD"), {GATE}, "post-cover gate-only delta")
+    rejected = "0e7bf3b9c0baab23d2ba0e74cf70dd1995f45830"
+    evidence = "5bc5159ea541de1a690cda4f3fe1d7ba878739ef"
+    for parent, child in ((cover, rejected), (rejected, evidence), (evidence, "HEAD")):
+        subprocess.run(["git", "merge-base", "--is-ancestor", parent, child], cwd=ROOT, check=True)
+    equal(paths(cover, rejected), {GATE}, "previous candidate gate delta")
+    equal(paths(rejected, evidence), {
+        P+"logging/StageAttemptEvidence.kt", P+"logging/StageHandoffEvidenceBuffer.kt",
+        P+"logging/StageSurfaceHandoffTrace.kt", P+"logging/StageExchangeTelemetry.kt",
+        P+"framework/TaskSurfaceCompat.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"monitoring/StageHandoffEvidenceContract.kt", P+"config/StageIssueSession.kt",
+        P+"config/StageIssueReportPolicy.kt", P+"systemui/NeXtepWindowController.kt",
+        T+"logging/StageAttemptEvidenceTest.kt",
+    }, "explicit failed-device evidence repair")
+    equal(paths(evidence, "HEAD"), {GATE}, "post-evidence gate-only delta")
+    source("logging/StageAttemptEvidence.kt", "max_scale_step=", "task_pair up=", "stage_overflow=")
+    source("logging/StageSurfaceHandoffTrace.kt", "task_write_temporal", "fun bindPair(", "if(!evidence.hasOpenCapture())return")
+    source("systemui/StageLiveSurfaceExchange.kt", "traceMirrorAdmission(detached)", '"held_mirror"')
+    source("framework/TaskSurfaceCompat.kt", "StageSurfaceHandoffTrace.taskWriter(")
     source("systemui/StageLiveSurfaceExchange.kt",
            "StageHeldEndpointPolicy.coveredFit(", "covered ?: StageHeldEndpointPolicy.fit(",
            "frame.token!=stamp.token || frame.leash!==stamp.leash")
