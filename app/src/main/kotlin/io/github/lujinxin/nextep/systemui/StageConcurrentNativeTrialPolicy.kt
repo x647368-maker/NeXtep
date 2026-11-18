@@ -98,6 +98,9 @@ internal object StageConcurrentNativeTrialPolicy {
         "fallback:mirror_source_changed",
         "fallback:main_source_frame_unsettled",
         "fallback:main_source_mapping_unrepresentable",
+        // Only the precisely scoped evidence candidate can emit this reason.
+        // Re-evaluate on the next user tap; never clear a prior OEM denial.
+        "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false

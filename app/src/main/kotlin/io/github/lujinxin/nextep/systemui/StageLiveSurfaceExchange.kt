@@ -92,6 +92,19 @@ internal data class StageMirrorRootObservation(
  * a stable/release build. The original observation remains UNKNOWN.
  */
 internal object StageMirrorEvidenceTrial {
+    const val DIAGNOSTIC_REQUIRED = "mirror_evidence_diagnostic_required"
+
+    private fun eligibleUnknown(observed:StageMirrorRootObservation,
+                                firmwareScopedDebug:Boolean):Boolean =
+        firmwareScopedDebug && observed.contract==StageMirrorRootContract.UNKNOWN &&
+            observed.reason in setOf("missing_key_or_empty_package","class_lookup",
+                "load_method_lookup","package_load","read_method_lookup",
+                "read_default_false","read_default_true")
+
+    fun awaitingDiagnostic(observed:StageMirrorRootObservation,firmwareScopedDebug:Boolean,
+                           optInDiagnostic:Boolean):Boolean =
+        !optInDiagnostic && eligibleUnknown(observed,firmwareScopedDebug)
+
     fun resolve(observed:StageMirrorRootObservation,firmwareScopedDebug:Boolean,
                 optInDiagnostic:Boolean):StageMirrorRootContract {
         if(!firmwareScopedDebug)return observed.contract
@@ -104,9 +117,7 @@ internal object StageMirrorEvidenceTrial {
         // Missing keys/packages or inaccessible readers are not a capability
         // signal; only the separately scoped, visible-mirror evidence supports
         // this marked private trial. Do not override inconsistent/invalid reads.
-        if(observed.reason !in setOf("missing_key_or_empty_package","class_lookup",
-                "load_method_lookup","package_load","read_method_lookup",
-                "read_default_false","read_default_true"))return StageMirrorRootContract.UNKNOWN
+        if(!eligibleUnknown(observed,firmwareScopedDebug))return StageMirrorRootContract.UNKNOWN
         return StageMirrorRootContract.DETACHED
     }
 }
@@ -526,6 +537,8 @@ internal class StageLiveSurfaceExchange private constructor(
                     else if(diagnosticOptIn)"not_needed_or_rejected" else "diagnostic_not_armed"))
             val detached=contract.detachedOrNull() ?: run {
                 StageExchangeTelemetry.nativeEvent("mirror_root=unknown")
+                if(StageMirrorEvidenceTrial.awaitingDiagnostic(observation,inEvidenceScope,diagnosticOptIn))
+                    return markUnavailable(StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED)
                 return markUnavailable("mirror_root_unknown")
             }
             val outgoingBefore=TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)

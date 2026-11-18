@@ -174,10 +174,32 @@ def main():
         T+"systemui/StageMirrorRootContractTest.kt",
         T+"systemui/StageMainDestinationCoordinateTest.kt",
     }, "isolated mirror coordinate observation and destination affine delta")
-    equal(paths(coordinate_fix, "HEAD"), {
+    evidence_trial = "c9dd04350bfc4986b4e197f040852e204abc6c23"
+    subprocess.run(["git", "merge-base", "--is-ancestor", evidence_trial, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(coordinate_fix, evidence_trial), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "explicit private firmware-scoped evidence trial only")
+    equal(paths(evidence_trial, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"systemui/StageConcurrentNativeTrialPolicy.kt",
+        T+"systemui/StageMirrorRootContractTest.kt",
+    }, "isolated opt-in diagnostic retry delta")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "StageMirrorEvidenceTrial.awaitingDiagnostic(observation,inEvidenceScope,diagnosticOptIn)",
+           "return markUnavailable(StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED)")
+    retry_source = source("systemui/StageConcurrentNativeTrialPolicy.kt",
+                          '"fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED')
+    require(retry_source == git("show", evidence_trial+":"+P+"systemui/StageConcurrentNativeTrialPolicy.kt").decode().replace(
+            '        "fallback:main_source_mapping_unrepresentable",',
+            '        "fallback:main_source_mapping_unrepresentable",\n'
+            '        // Only the precisely scoped evidence candidate can emit this reason.\n'
+            '        // Re-evaluate on the next user tap; never clear a prior OEM denial.\n'
+            '        "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,', 1),
+            "session policy changed beyond the single transient reason")
+    source("systemui/NeXtepWindowController.kt",
+           "if (StageConcurrentNativeTrialPolicy.transientMirrorOutcome(reason))",
+           'StageConcurrentNativeTrialPolicy.disableForSession("OEM mirror unavailable: "+reason)')
     mirror_source = source("systemui/StageLiveSurfaceExchange.kt",
                            "DETACHED, RETAINED, UNKNOWN", "return markUnavailable(\"mirror_root_unknown\")")
     require("unknown_legacy" not in mirror_source, "no unknown-as-retained route")
