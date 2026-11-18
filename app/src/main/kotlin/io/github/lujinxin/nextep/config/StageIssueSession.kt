@@ -273,7 +273,7 @@ internal class StageIssueSession(context: Context) {
             if(handoffEvidence!=null) {
                 appendLine("【跨进程窗口变换取证｜仅本次自愿诊断】")
                 appendLine("时间为同一设备 elapsedRealtimeNanos；write 是写入事务，submit 是提交返回，均非画面已显示证明。仅保留有限事件，缺失或溢出不能判为无故障。")
-                appendLine(if(bootIdentity==false) "设备已重启：不能关联旧会话。" else if(handoffEvidence.length<=69_000)handoffEvidence else "跨进程记录超过上限，不可视为完整。")
+                appendLine(if(bootIdentity==false) "设备已重启：不能关联旧会话。" else if(handoffEvidence.length<=81_000)handoffEvidence else "跨进程记录超过上限，不可视为完整。")
             }
             appendLine(StageIssueReportPolicy.exchangeSection(
                 if (bootIdentity == false) -1 else preferences.getInt("start_pid", -1),

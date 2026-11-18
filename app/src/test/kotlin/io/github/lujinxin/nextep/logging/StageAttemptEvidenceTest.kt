@@ -8,6 +8,8 @@ class StageAttemptEvidenceTest {
     @Test fun tenThousandWritesCannotEraseAttemptOrSingleFrameJump() {
         val e=StageAttemptEvidence()
         e.begin(115,100,"tap_swap")
+        e.bindPair(115,100,869,873)
+        e.writer(115,"unrelated",42,500,sample(101,.5f)) {error("unrelated layer")}
         e.stage(115,101,"root","mirror_root=unknown_legacy")
         var layerLookups=0
         repeat(10_000) { i ->

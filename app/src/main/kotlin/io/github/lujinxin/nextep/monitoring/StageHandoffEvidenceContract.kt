@@ -86,7 +86,7 @@ internal object StageHandoffEvidenceContract {
                 override fun onReceive(c:Context,i:Intent) {
                     val b=getResultExtras(false)
                     val text=if(resultCode==RESULT && b!=null && b.getLong("token")==token)
-                        b.getString("evidence")?.takeIf { it.length<=34_000 }?.let {
+                        b.getString("evidence")?.takeIf { it.length<=40_000 }?.let {
                             "pid=${b.getInt("pid")} revision=${b.getString("revision")}\n$it"
                         } else null
                     receive(target,text ?: "不可用：没有匹配本会话的完整记录。")

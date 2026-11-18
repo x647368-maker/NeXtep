@@ -2870,6 +2870,12 @@ class NeXtepWindowController(
             StageExchangeTelemetry.beginNativeTap()
             val tapTraceId=StageExchangeTelemetry.currentNativeTapId()
             workspaceTapTraceId=tapTraceId
+            val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+            if(diag.evidence.hasOpenCapture())runCatching {
+                val up=(slotCoordinator?.slotStates()?.getOrNull(sourceIndex) as? SlotState.Occupied)?.taskId
+                val down=mainTaskPresenter.currentTaskId()
+                if(up!=null && down!=null)diag.bindPair(tapTraceId,up,down)
+            }
             var fallbackFinished=false
             tapFallbackFinish = {
                 if (!fallbackFinished) {

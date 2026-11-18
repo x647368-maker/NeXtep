@@ -53,6 +53,10 @@ internal object StageSurfaceHandoffTrace {
         if(id==null)return
         captured { c,n,ns -> evidence.attemptStage(c,n,id,ns,key,message()) }
     }
+    fun bindPair(id:Long?,up:Int,down:Int) {
+        if(id==null)return
+        captured { c,n,ns -> evidence.bindPair(c,n,id,ns,up,down) }
+    }
     fun writer(id:Long?,role:String,task:Int,leash:Any,sx:Float,sy:Float,x:Float,y:Float,
                l:Int,t:Int,r:Int,b:Int) {
         if(id==null)return
@@ -62,7 +66,7 @@ internal object StageSurfaceHandoffTrace {
         }
     }
     fun taskWriter(task:Int,leash:Any,sx:Float,sy:Float,x:Float,y:Float,crop:android.graphics.Rect?) {
-        if(evidence.hasOpenCapture())writer(StageExchangeTelemetry.currentNativeTapId(),"task_write",
+        if(evidence.hasOpenCapture())writer(StageExchangeTelemetry.currentNativeTapId(),"task_write_temporal",
             task,leash,sx,sy,x,y,crop?.left ?: -1,crop?.top ?: -1,crop?.right ?: -1,crop?.bottom ?: -1)
         // Keep external OS tracing independent; no per-frame FIFO in the TXT.
         if(Trace.isEnabled())runCatching {

@@ -40,6 +40,8 @@ internal class StageAttemptEvidence {
         val tracks=mutableListOf<Track>()
         var stageOverflow=0
         var trackOverflow=0
+        var up:Int?=null
+        var down:Int?=null
         var result="ongoing"
         var end:Long?=null
         fun render():String=buildString {
@@ -68,8 +70,18 @@ internal class StageAttemptEvidence {
         if(a.stages.size>=32) { a.stageOverflow++;return }
         a.stages[key]="$ns "+message.take(175)
     }
+    fun bindPair(id:Long,ns:Long,up:Int,down:Int) {
+        val a=active?.takeIf { it.id==id } ?: return
+        if(up<0 || down<0 || up==down)return
+        if(a.up!=null)return
+        a.up=up;a.down=down
+        stage(id,ns,"task_pair","task_pair up=$up down=$down")
+    }
     fun writer(id:Long,role:String,task:Int,handle:Int,s:Sample,layer:()->String) {
         val a=active?.takeIf { it.id==id } ?: return
+        // Actual task writes are temporal observations; they carry no per-tap
+        // callback token. Refuse attribution to unrelated tasks.
+        if(a.up==null || (task!=a.up && task!=a.down))return
         val old=a.tracks.firstOrNull { it.role==role && it.task==task && it.handle==handle }
         if(old!=null) { old.add(s);return }
         if(a.tracks.size>=4) { a.trackOverflow++;return }
@@ -79,7 +91,7 @@ internal class StageAttemptEvidence {
         appendLine("attempt_history=${history.size} evicted=$evicted; writer samples are transaction intents, not compositor pixels")
         history.forEach { a ->
             val value=a.render()
-            if(value.length<=8_000)append(value)
+            if(value.length<=10_000)append(value)
             else appendLine("attempt=${a.id} export_overflow=true start_ns=${a.start} end_ns=${a.end}")
         }
     }

@@ -60,6 +60,9 @@ internal class StageHandoffEvidenceBuffer(private val capacity:Int=24) {
     @Synchronized fun endAttempt(c:Capture,now:Long,id:Long,ns:Long,result:String) {
         if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.end(id,ns,result)
     }
+    @Synchronized fun bindPair(c:Capture,now:Long,id:Long,ns:Long,up:Int,down:Int) {
+        if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.bindPair(id,ns,up,down)
+    }
     @Synchronized fun attemptWriter(c:Capture,now:Long,id:Long,role:String,task:Int,handle:Int,
                                     sample:StageAttemptEvidence.Sample,layer:()->String) {
         if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.writer(id,role,task,handle,sample,layer)
