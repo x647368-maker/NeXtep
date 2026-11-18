@@ -12,6 +12,46 @@ internal object StageHeldEndpointPolicy {
                    val scale:Float,val x:Float,val y:Float)
 
     /**
+     * Map the observed destination main task's own local pixels into screen
+     * coordinates. For DETACHED we explicitly reproduce the producer affine
+     * map; for RETAINED it is already present and the mirror uses identity.
+     * Clip in that coordinate space; even an aspect-mismatched crop must not
+     * select a new content scale. This does not solve the earlier flight
+     * terminal's aspect mismatch, producer reflow or cross-process ordering.
+     */
+    fun mainDestinationFit(targetLeft:Float,targetTop:Float,targetRight:Float,targetBottom:Float,
+                           cropLeft:Int,cropTop:Int,cropRight:Int,cropBottom:Int,
+                           producerScale:Float,producerX:Float,producerY:Float,
+                           detachedRoot:Boolean):Fit? {
+        if(!listOf(targetLeft,targetTop,targetRight,targetBottom,producerScale,
+                producerX,producerY).all { it.isFinite() } ||
+            producerScale<=0f || producerScale>10f ||
+            targetRight-targetLeft<2f || targetBottom-targetTop<2f ||
+            cropRight.toLong()-cropLeft<2L || cropBottom.toLong()-cropTop<2L)return null
+        val z=producerScale.toDouble()
+        val x=producerX.toDouble()
+        val y=producerY.toDouble()
+        val l:Double;val t:Double;val r:Double;val b:Double
+        if(detachedRoot) {
+            l=ceil(maxOf(cropLeft.toDouble(),(targetLeft.toDouble()-x)/z))
+            t=ceil(maxOf(cropTop.toDouble(),(targetTop.toDouble()-y)/z))
+            r=floor(minOf(cropRight.toDouble(),(targetRight.toDouble()-x)/z))
+            b=floor(minOf(cropBottom.toDouble(),(targetBottom.toDouble()-y)/z))
+        } else {
+            l=ceil(maxOf(targetLeft.toDouble(),cropLeft*z+x))
+            t=ceil(maxOf(targetTop.toDouble(),cropTop*z+y))
+            r=floor(minOf(targetRight.toDouble(),cropRight*z+x))
+            b=floor(minOf(targetBottom.toDouble(),cropBottom*z+y))
+        }
+        if(listOf(l,t,r,b).any { !it.isFinite() || it<Int.MIN_VALUE || it>Int.MAX_VALUE } ||
+            r-l<2.0 || b-t<2.0)return null
+        return Fit(l.toInt(),t.toInt(),r.toInt(),b.toInt(),
+            if(detachedRoot)producerScale else 1f,
+            if(detachedRoot)producerX else 0f,
+            if(detachedRoot)producerY else 0f)
+    }
+
+    /**
      * Match the *covered* compositor flight's endpoint when the producer is
      * rebound after a real display move. The legacy fit() intentionally uses
      * CONTAIN, which can change the visible card's scale/aspect as soon as

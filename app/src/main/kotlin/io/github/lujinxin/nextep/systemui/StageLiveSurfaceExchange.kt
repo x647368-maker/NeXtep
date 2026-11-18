@@ -47,6 +47,45 @@ internal enum class StageMirrorRootContract {
     }
 }
 
+/** Separate missing/unreadable flag evidence from the inferred coordinate contract.
+ * Aconfig's two default values distinguish a missing key (or empty package)
+ * from a value actually returned by the API. They do not prove OEM behavior.
+ */
+internal data class StageMirrorRootObservation(
+    val contract:StageMirrorRootContract,
+    val reason:String,
+    val errorType:String?=null,
+    val errorCode:Int?=null,
+) {
+    fun diagnostic():String = reason +
+        (errorType?.let { ":$it" } ?: "") +
+        (errorCode?.let { ":code=$it" } ?: "")
+
+    companion object {
+        fun fromReads(a:Boolean?,b:Boolean?):StageMirrorRootObservation {
+            val contract=StageMirrorRootContract.fromFlagReads(a,b)
+            val reason=when {
+                a==null || b==null -> "invalid_read_type"
+                a==false && b==true -> "missing_key_or_empty_package"
+                a==true && b==false -> "inconsistent_reads"
+                else -> "flag_read"
+            }
+            return StageMirrorRootObservation(contract,reason)
+        }
+
+        fun error(stage:String,error:Throwable):StageMirrorRootObservation {
+            val cause=(error as? java.lang.reflect.InvocationTargetException)?.targetException ?: error
+            val code=runCatching {
+                if(cause.javaClass.name=="android.os.flagging.AconfigStorageReadException")
+                    cause.javaClass.getMethod("getErrorCode").invoke(cause) as? Int
+                else null
+            }.getOrNull()
+            return StageMirrorRootObservation(StageMirrorRootContract.UNKNOWN,stage,
+                cause.javaClass.simpleName,code)
+        }
+    }
+}
+
 /**
  * Experimental real live SurfaceFlinger flight, NOT a bitmap preview.
  *
@@ -211,14 +250,27 @@ internal class StageLiveSurfaceExchange private constructor(
             // must not switch to CONTAIN merely because Shell supplies a new
             // producer crop during reparent; that is a second zoom/letterbox
             // while the old task mirror is still displayed.
-            val covered=if(coveredFlight) StageHeldEndpointPolicy.coveredFit(
+            // Coordinate-contract isolation only: when the incoming task
+            // already has a destination main presentation, reproduce its
+            // actual local-to-screen map. Do not refit it to the card. Leave
+            // the earlier flight curve/terminal scale and demotion unchanged.
+            val mainFit=if(incoming) StageHeldEndpointPolicy.mainDestinationFit(
                 target.left,target.top,target.right,target.bottom,
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
                 frame.scale,frame.x,frame.y,detachedRoot) else null
-            val fit=covered ?: StageHeldEndpointPolicy.fit(
+            if(incoming && mainFit==null) {
+                endpointWriteFailed.set(true)
+                trace("held_main_coordinate_unrepresentable")
+                return@HeldMirrorWriter
+            }
+            val covered=if(!incoming && coveredFlight) StageHeldEndpointPolicy.coveredFit(
                 target.left,target.top,target.right,target.bottom,
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
-                frame.scale,frame.x,frame.y,detachedRoot) ?: return@HeldMirrorWriter
+                frame.scale,frame.x,frame.y,detachedRoot) else null
+            val fit=mainFit ?: (covered ?: StageHeldEndpointPolicy.fit(
+                target.left,target.top,target.right,target.bottom,
+                frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
+                frame.scale,frame.x,frame.y,detachedRoot)) ?: return@HeldMirrorWriter
             runCatching {
                 if (finished.get() || hostDetached || !mirror.isValid) return@runCatching
                 // Crop and transform are submitted with the task's new frame.
@@ -234,7 +286,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     fit.scale,fit.scale,fit.x,fit.y,fit.left,fit.top,fit.right,fit.bottom)
                 val rebaseFlag=if(incoming) incomingRebased else outgoingRebased
                 if(rebaseFlag.compareAndSet(false,true)) runCatching {
-                    trace("held_endpoint_fit_"+(if(covered!=null)"cover" else "contain")+
+                    trace("held_endpoint_fit_"+(if(mainFit!=null)"main_coordinates" else if(covered!=null)"cover" else "contain")+
                         "_"+(if(incoming)"incoming" else "outgoing")+
                         "_crop="+fit.left+","+fit.top+","+fit.right+","+fit.bottom)
                 }
@@ -338,17 +390,28 @@ internal class StageLiveSurfaceExchange private constructor(
         // Read the actual read-only flag once, never set system flags or infer
         // from a manufacturer/model. An unreadable flag is not proof of retained
         // coordinates: refuse this route before acquiring any mirror or cover.
-        private val mirrorRootContract: StageMirrorRootContract by lazy {
-            runCatching {
+        private val mirrorRootObservation: StageMirrorRootObservation by lazy {
+            var stage="class_lookup"
+            try {
                 val type=Class.forName("android.os.flagging.AconfigPackage")
-                val pkg=type.getMethod("load",String::class.java)
-                    .invoke(null,"com.android.graphics.surfaceflinger.flags")
+                stage="load_method_lookup"
+                val load=type.getMethod("load",String::class.java)
+                stage="package_load"
+                val pkg=load.invoke(null,"com.android.graphics.surfaceflinger.flags")
+                    ?: error("null package")
+                stage="read_method_lookup"
                 val read=type.getMethod("getBooleanFlagValue",String::class.java,
                     Boolean::class.javaPrimitiveType)
-                val a=read.invoke(pkg,"detached_mirror",false) as Boolean
-                val b=read.invoke(pkg,"detached_mirror",true) as Boolean
-                StageMirrorRootContract.fromFlagReads(a,b)
-            }.getOrDefault(StageMirrorRootContract.UNKNOWN)
+                stage="read_default_false"
+                val a=read.invoke(pkg,"detached_mirror",false) as? Boolean
+                stage="read_default_true"
+                val b=read.invoke(pkg,"detached_mirror",true) as? Boolean
+                StageMirrorRootObservation.fromReads(a,b)
+            } catch (error:Exception) {
+                StageMirrorRootObservation.error(stage,error)
+            } catch (error:LinkageError) {
+                StageMirrorRootObservation.error(stage,error)
+            }
         }
         @Volatile private var lastOutcome = "not_attempted"
         fun lastOutcome(): String = lastOutcome
@@ -406,7 +469,9 @@ internal class StageLiveSurfaceExchange private constructor(
             )
             if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
                 return markUnavailable("invalid_bounds")
-            val contract=mirrorRootContract
+            val observation=mirrorRootObservation
+            val contract=observation.contract
+            StageExchangeTelemetry.nativeEvent("mirror_root_observation="+observation.diagnostic())
             val detached=contract.detachedOrNull() ?: run {
                 StageExchangeTelemetry.nativeEvent("mirror_root=unknown")
                 return markUnavailable("mirror_root_unknown")

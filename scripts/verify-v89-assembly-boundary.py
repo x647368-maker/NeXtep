@@ -157,13 +157,21 @@ def main():
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "explicit P0 mirror contract admission delta")
-    equal(paths(contract_fix, "HEAD"), {
+    first_frame_fix = "6c770090b8ec05906ad4b0cd712a4ab60a8a9858"
+    subprocess.run(["git", "merge-base", "--is-ancestor", first_frame_fix, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(contract_fix, first_frame_fix), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageLiveSurfaceFlightGeometry.kt",
         P+"framework/TaskSurfaceCompat.kt",
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMainMirrorStartTest.kt",
     }, "explicit owned source first-frame mapping delta")
+    equal(paths(first_frame_fix, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"systemui/StageHeldEndpointPolicy.kt",
+        T+"systemui/StageMirrorRootContractTest.kt",
+        T+"systemui/StageMainDestinationCoordinateTest.kt",
+    }, "isolated mirror coordinate observation and destination affine delta")
     mirror_source = source("systemui/StageLiveSurfaceExchange.kt",
                            "DETACHED, RETAINED, UNKNOWN", "return markUnavailable(\"mirror_root_unknown\")")
     require("unknown_legacy" not in mirror_source, "no unknown-as-retained route")
@@ -180,7 +188,14 @@ def main():
     source("systemui/StageLiveSurfaceExchange.kt",
            "StageHeldEndpointPolicy.coveredFit(", "covered ?: StageHeldEndpointPolicy.fit(",
            "frame.token!=stamp.token || frame.leash!==stamp.leash")
-    source("systemui/StageHeldEndpointPolicy.kt", "fun coveredFit(")
+    source("systemui/StageHeldEndpointPolicy.kt", "fun coveredFit(", "fun mainDestinationFit(")
+    source("systemui/StageLiveSurfaceExchange.kt", "mirror_root_observation=",
+           "StageHeldEndpointPolicy.mainDestinationFit(", "if(incoming && mainFit==null)")
+    require("incomingRebaseReceiptArmed" in mirror_source, "receipt-generation work deliberately deferred")
+    for unchanged in ("framework/TaskSurfaceCompat.kt", "systemui/StageLiveSurfaceFlightGeometry.kt"):
+        path = P+unchanged
+        require((ROOT/path).read_bytes()==git("show", first_frame_fix+":"+path),
+                "coordinate-only stage unexpectedly changed "+unchanged)
     require("randomizedRebaseRespectsSourceBoundsAndUniformCenteredCover" in
             (ROOT/(T+"systemui/StageHeldEndpointPolicyTest.kt")).read_text(),
             "randomized cover continuity regression")
