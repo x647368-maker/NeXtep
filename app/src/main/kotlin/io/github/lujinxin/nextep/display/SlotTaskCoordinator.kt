@@ -12,6 +12,7 @@ import io.github.x647368maker.atomicworkbench.R
 import io.github.x647368maker.atomicworkbench.config.AppLanguage
 import io.github.x647368maker.atomicworkbench.framework.ActivityTaskManagerCompat
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.StageMainVisualHandoffHold
 import io.github.x647368maker.atomicworkbench.framework.UserTargetedActivityLauncher
 import io.github.x647368maker.atomicworkbench.framework.WindowContainerTransactionCompat
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
@@ -102,6 +103,13 @@ class SlotTaskCoordinator(
     private var recentSelectionGeneration = 0
     private var activeDrag: SlotTaskDrag? = null
     private var visualTransitionPending = false
+    private var phasedMainVisualHold:StageMainVisualHandoffHold.Lease?=null
+
+    private fun releasePhasedMainVisualHold() {
+        val lease=phasedMainVisualHold ?: return
+        phasedMainVisualHold=null
+        TaskSurfaceCompat.endMainVisualHandoff(lease)
+    }
     private var transitionGeneration = 0
     private val refreshPolicy = WorkspaceRefreshPolicy()
     private var reconciliationAt = 0L
@@ -1290,6 +1298,7 @@ class SlotTaskCoordinator(
         confirmedOutput = null
         exchangeSession = null
         transitionGeneration += 1
+        releasePhasedMainVisualHold()
         visualTransitionPending = false
         transitionInProgress = false
         pendingSelection = null
@@ -1801,6 +1810,7 @@ class SlotTaskCoordinator(
             StageExchangeTelemetry.endPhased(exchangeSession?.phase == ExchangeSession.Phase.COMMITTED)
             confirmedOutput=null
             exchangeSession = null
+            releasePhasedMainVisualHold()
             visualTransitionPending = false
             transitionInProgress = false
             slots.forEach { it.view.setBusy(suspended || recentSelectionPending) }
@@ -2219,6 +2229,13 @@ class SlotTaskCoordinator(
             },
             complete,
         )
+        // Bind the visual lifetime to the verified incoming Task token before
+        // the first real migration. The existing finish/cancel paths, not the
+        // old frame receipt or clock, release this exact lease.
+        check(token==transitionGeneration && transitionInProgress && visualTransitionPending)
+        check(phasedMainVisualHold==null)
+        phasedMainVisualHold=TaskSurfaceCompat.beginMainVisualHandoff(
+            slotTask.taskId,checkNotNull(slotTask.token))
         exchangeSession = session
         session.start()
     }
