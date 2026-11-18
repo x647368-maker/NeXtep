@@ -19,4 +19,30 @@ internal object StagePhasedPromotionEntryPolicy {
     ): Boolean =
         activeReservation && reservedDestinationDisplay==0 &&
         verifiedMainLeash && !preparedAlready && !explicitFullscreenEntrance
+
+    /**
+     * A real display=0 promotion owns the card's visible flight and will only
+     * reveal the resized app after its matching compositor receipt. While that
+     * receipt is pending, a concurrent geometry refresh must not install an
+     * additional independent REPOSITION animator onto the same task leash:
+     * it can first restore the previous large frame and then scale it down,
+     * creating a second zoom after the flight.
+     *
+     * This only affects the confirmed *current main leash* of an unexpired
+     * real move, and only while its former final presentation has no valid
+     * committed receipt. Normal post-handoff layout, user drag, rotation,
+     * task replacement and cold app opening still retain their old routes.
+     */
+    fun commitMoveRepositionWithoutExtraAnimator(
+        activeReservation:Boolean,
+        destinationDisplay:Int?,
+        verifiedMainLeash:Boolean,
+        previousFinalCommitted:Boolean,
+        geometryChanged:Boolean,
+        rotationChanged:Boolean,
+        leashChanged:Boolean,
+    ):Boolean =
+        activeReservation && destinationDisplay==0 && verifiedMainLeash &&
+            !previousFinalCommitted && geometryChanged &&
+            !rotationChanged && !leashChanged
 }
