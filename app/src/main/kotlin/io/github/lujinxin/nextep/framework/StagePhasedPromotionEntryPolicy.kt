@@ -35,6 +35,25 @@ internal object StagePhasedPromotionEntryPolicy {
      * committed receipt. Normal post-handoff layout, user drag, rotation,
      * task replacement and cold app opening still retain their old routes.
      */
+    /**
+     * The display exchange reservation is normally replaced by the next
+     * task move. Once the task's real terminal frame is committed AND the
+     * scheduling window has elapsed, retaining the old entry forever would
+     * suppress normal later user layout animations.
+     *
+     * Never retire on time alone, on memory-only frame equality, on an
+     * unrelated leash, or before the compositor accepts that final frame.
+     */
+    fun canRetireCompletedMainReservation(
+        hasReservation:Boolean,
+        expired:Boolean,
+        destinationDisplay:Int?,
+        ownsSameMainLeash:Boolean,
+        finalFrameCommitted:Boolean,
+    ):Boolean =
+        hasReservation && expired && destinationDisplay==0 &&
+            ownsSameMainLeash && finalFrameCommitted
+
     fun commitMoveRepositionWithoutExtraAnimator(
         recordedPromotion:Boolean,
         destinationDisplay:Int?,
