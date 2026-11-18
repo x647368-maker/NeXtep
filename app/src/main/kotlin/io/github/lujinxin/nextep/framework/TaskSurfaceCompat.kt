@@ -752,12 +752,14 @@ object TaskSurfaceCompat {
         // the main task's new leash transform. The existing bounded handoff
         // must wait for a committed receipt of the exact frame.
         val reservation=displayExchanges[taskId]
-        val needsProof=TaskPresentationCommitProof.needsReceipt(
-            Build.VERSION.SDK_INT,
-            reservation!=null && reservation>=SystemClock.uptimeMillis(),
-            exchangeDisplays[taskId],ownedTaskLeash(taskId)===p.leash)
-        return !needsProof || (reservation!=null &&
-            p.commitProof.confirmed(p.leash,reservation,f))
+        // Reservation expiration is NOT a positive compositor receipt.
+        // Existing visual attempts own a bounded timeout/rollback; do not
+        // silently unmask a full-size App after a slow or lost OEM callback.
+        // The record is cleared by normal cancel or replaced by a new move.
+        return TaskPresentationCommitProof.settledAfterRecordedMove(
+            Build.VERSION.SDK_INT,reservation,exchangeDisplays[taskId],
+            ownedTaskLeash(taskId)===p.leash,
+            reservation!=null && p.commitProof.confirmed(p.leash,reservation,f))
     }
 
     fun ownsMainTask(taskId: Int): Boolean = activePresentations[taskId]?.let {
