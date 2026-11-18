@@ -148,7 +148,19 @@ internal class StageTransientDualFlightRegression(private val instrumentation:In
             check(ipcDone.await(3,java.util.concurrent.TimeUnit.SECONDS))
             // A late slot buffer must not retain an already verified main
             // endpoint or its background mask. Test actual composed pixels.
-            instrumentation.runOnMainSync { flight.revealMain() }
+            // Regression for the real PR153 anti-zoom transition, not only
+            // a pure policy. A contained aspect-mismatched bitmap must retire
+            // after the real 48ms HWUI alpha animation and must never leave
+            // the terminal main region permanently masked.
+            val mainRevealComplete=java.util.concurrent.CountDownLatch(1)
+            instrumentation.runOnMainSync {
+                check(flight.revealMain { mainRevealComplete.countDown() }) {
+                    "Verified terminal preview refused main endpoint handoff"
+                }
+            }
+            check(mainRevealComplete.await(2,java.util.concurrent.TimeUnit.SECONDS)) {
+                "Real HWUI main preview reveal never completed"
+            }
             frame(1f){shot->
                 check(similar(pixel(shot,main.centerX(),main.centerY()),purple)) {
                     "Main preview/mask still covers ready live endpoint"
