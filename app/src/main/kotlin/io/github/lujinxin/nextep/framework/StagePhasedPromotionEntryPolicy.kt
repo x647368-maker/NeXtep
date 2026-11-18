@@ -28,13 +28,15 @@ internal object StagePhasedPromotionEntryPolicy {
      * it can first restore the previous large frame and then scale it down,
      * creating a second zoom after the flight.
      *
-     * This only affects the confirmed *current main leash* of an unexpired
-     * real move, and only while its former final presentation has no valid
+     * This only affects the confirmed *current main leash* of a still-recorded
+     * real move, even if its scheduling TTL elapsed; a deadline cannot be
+     * interpreted as a compositor receipt. Only while the previous final
+     * presentation has no valid
      * committed receipt. Normal post-handoff layout, user drag, rotation,
      * task replacement and cold app opening still retain their old routes.
      */
     fun commitMoveRepositionWithoutExtraAnimator(
-        activeReservation:Boolean,
+        recordedPromotion:Boolean,
         destinationDisplay:Int?,
         verifiedMainLeash:Boolean,
         previousFinalCommitted:Boolean,
@@ -42,7 +44,7 @@ internal object StagePhasedPromotionEntryPolicy {
         rotationChanged:Boolean,
         leashChanged:Boolean,
     ):Boolean =
-        activeReservation && destinationDisplay==0 && verifiedMainLeash &&
+        recordedPromotion && destinationDisplay==0 && verifiedMainLeash &&
             !previousFinalCommitted && geometryChanged &&
             !rotationChanged && !leashChanged
 }
