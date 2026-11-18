@@ -68,7 +68,7 @@ jobs:
           assert "animator_duration_scale 3" in ci_script
           assert "animator_duration_scale 4" in ci_script
           assert "terminalDeadlineDelay hard-caps scale at 4x" in ci_script
-          assert ci_script.index("animator_duration_scale 6") > ci_script.index("PAIRED_FLIGHT_PASS")
+          assert ci_script.index("animator_duration_scale 4") > ci_script.index("PAIRED_FLIGHT_PASS")
           assert 'ADAPTIVE_COVERED_FLIGHT_PASS' in ci_script
           print("PASS only pixel fixture changes; identical same-frame dual-moving GPU and protected-slot gates")
           PY
