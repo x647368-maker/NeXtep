@@ -124,6 +124,18 @@ jobs:
           echo 'ATOMIC_SIGNING_READY=true' >> "$GITHUB_ENV"
       - name: Build and test; retry only transient dependency downloads
         run: bash scripts/ci-android-build.sh :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+      - name: Verify compiled build identity matches exact CI checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${GITHUB_SHA:0:12}"
+          test "${#expected}" = 12
+          grep -R -F "ATOMIC_BUILD_REVISION = \"$expected\"" app/build/generated/source/buildConfig/debug/
+          version_name=$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*$/\1/p' app/build.gradle.kts)
+          version_code=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' app/build.gradle.kts)
+          test -n "$version_name" && test -n "$version_code"
+          grep -R -F "VERSION_NAME = \"$version_name\"" app/build/generated/source/buildConfig/debug/
+          grep -R -F "VERSION_CODE = $version_code;" app/build/generated/source/buildConfig/debug/
       - name: Verify offline release notes are embedded unchanged
         shell: bash
         run: |
