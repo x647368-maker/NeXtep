@@ -27,6 +27,26 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
+internal enum class StageMirrorRootContract {
+    DETACHED, RETAINED, UNKNOWN;
+
+    // Opposite defaults distinguish a known flag from a missing flag.
+    companion object {
+        fun fromFlagReads(defaultFalse: Boolean?, defaultTrue: Boolean?): StageMirrorRootContract =
+            when {
+                defaultFalse == true && defaultTrue == true -> DETACHED
+                defaultFalse == false && defaultTrue == false -> RETAINED
+                else -> UNKNOWN
+            }
+    }
+
+    fun detachedOrNull(): Boolean? = when (this) {
+        DETACHED -> true
+        RETAINED -> false
+        UNKNOWN -> null
+    }
+}
+
 /**
  * Experimental real live SurfaceFlinger flight, NOT a bitmap preview.
  *
@@ -306,9 +326,9 @@ internal class StageLiveSurfaceExchange private constructor(
         private const val MOVE_PROGRESS = .94f
         // AOSP has two mirror-root coordinate contracts (detached_mirror).
         // Read the actual read-only flag once, never set system flags or infer
-        // from a manufacturer/model. Older/opaque OEMs keep the legacy contract
-        // and log unknown instead of claiming the flag was observed.
-        private val detachedMirrorRoot: Boolean? by lazy {
+        // from a manufacturer/model. An unreadable flag is not proof of retained
+        // coordinates: refuse this route before acquiring any mirror or cover.
+        private val mirrorRootContract: StageMirrorRootContract by lazy {
             runCatching {
                 val type=Class.forName("android.os.flagging.AconfigPackage")
                 val pkg=type.getMethod("load",String::class.java)
@@ -317,8 +337,8 @@ internal class StageLiveSurfaceExchange private constructor(
                     Boolean::class.javaPrimitiveType)
                 val a=read.invoke(pkg,"detached_mirror",false) as Boolean
                 val b=read.invoke(pkg,"detached_mirror",true) as Boolean
-                if(a==b) a else null
-            }.getOrNull()
+                StageMirrorRootContract.fromFlagReads(a,b)
+            }.getOrDefault(StageMirrorRootContract.UNKNOWN)
         }
         @Volatile private var lastOutcome = "not_attempted"
         fun lastOutcome(): String = lastOutcome
@@ -376,9 +396,13 @@ internal class StageLiveSurfaceExchange private constructor(
             )
             if (!from.valid() || !to.valid() || fullScreenWidth < 2 || fullScreenHeight < 2)
                 return markUnavailable("invalid_bounds")
-            val detached=detachedMirrorRoot
+            val contract=mirrorRootContract
+            val detached=contract.detachedOrNull() ?: run {
+                StageExchangeTelemetry.nativeEvent("mirror_root=unknown")
+                return markUnavailable("mirror_root_unknown")
+            }
             val outgoingCrop=StageLiveSurfaceFlightGeometry.mainMirrorCrop(
-                to,fullScreenWidth,fullScreenHeight,detached==true)
+                to,fullScreenWidth,fullScreenHeight,detached)
                 ?: return markUnavailable("invalid_bounds")
             // Vendor APIs can throw after the first handle has been acquired.
             // Every early return and constructor failure must release all
@@ -389,7 +413,7 @@ internal class StageLiveSurfaceExchange private constructor(
             var transferred=false
             try {
                 StageExchangeTelemetry.nativeEvent(
-                    "mirror_root=${detached?.let { if(it) "detached" else "retained" } ?: "unknown_legacy"}")
+                    "mirror_root=${if(detached) "detached" else "retained"}")
                 // The mirror must follow the app TASK, not the rail's ViewRoot.
                 // That root switches the producer during the two-stage exchange,
                 // which caused PR59 to show the new app twice while still flying.
@@ -514,7 +538,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     outgoingCrop.toAndroidRect(),
                     from,to,backdrop,masks,coveredFlight,
                     stableIncoming,stableOutgoing,
-                    detached==true,
+                    detached,
                 )
                 exchange.pairedRailPlan=pairedPlan
                 exchange.traceMirrorAdmission(detached)
