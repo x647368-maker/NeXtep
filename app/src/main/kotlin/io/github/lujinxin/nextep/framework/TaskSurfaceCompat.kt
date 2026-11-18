@@ -681,17 +681,20 @@ object TaskSurfaceCompat {
             ?: error("No active surface presentation for taskId=$taskId")
         val now = SystemClock.uptimeMillis()
         if (rotationHandoff.holds(taskId, now)) return@runCatching
-        // The old display=0 reservation can survive successful handoff; the
-        // exchange map previously retired old entries only when a *new* task
-        // move started. That would suppress normal layout animations forever
-        // when the same App stays in the main window.
-        //
-        // Retire ONLY an expired recorded promotion whose exact owned current
-        // leash and final frame already received SurfaceFlinger commit proof.
-        // Use compare-and-remove on the reservation so an overlapping new
-        // move cannot be accidentally cancelled. Leave the destination
-        // marker until the next move overwrites it: removing the two separate
-        // map entries here could race with a freshly marked reservation.
+        val scaleX = geometry.contentScale
+        val scaleY = scaleX
+        val crop = sourceCrop(geometry)
+        val rotationChanged = previous.geometry.displayRotation != geometry.displayRotation
+        val geometryChanged = rotationChanged || previous.scaleX != scaleX ||
+            previous.scaleY != scaleY ||
+            previous.positionX != geometry.contentTranslationX ||
+            previous.positionY != geometry.contentTranslationY || previous.crop != crop
+        // Successful display=0 reservations can linger after visual handoff.
+        // Retire them only on an already-stable, idle geometry observation:
+        // retiring in the SAME callback as a NEW geometry transform could
+        // cause the receipt gate to accept the still-uncommitted next frame.
+        // Compare-and-remove only the old reservation; never touch a freshly
+        // recorded move's destination marker in the second concurrent map.
         val observedReservation=displayExchanges[taskId]
         if(StagePhasedPromotionEntryPolicy.canRetireCompletedMainReservation(
                 hasReservation=observedReservation!=null,
@@ -701,19 +704,13 @@ object TaskSurfaceCompat {
                 finalFrameCommitted=observedReservation!=null &&
                     previous.commitProof.confirmed(
                         previous.leash,observedReservation,previous.frame),
+                geometryStable=!geometryChanged && previous.geometry==geometry,
+                noPresentationAnimator=!presentationAnimators.containsKey(taskId),
             ) && observedReservation!=null &&
             displayExchanges.remove(taskId,observedReservation)) {
             io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
                 .phasedEvent("promotion_completed_record_retired")
         }
-        val scaleX = geometry.contentScale
-        val scaleY = scaleX
-        val crop = sourceCrop(geometry)
-        val rotationChanged = previous.geometry.displayRotation != geometry.displayRotation
-        val geometryChanged = rotationChanged || previous.scaleX != scaleX ||
-            previous.scaleY != scaleY ||
-            previous.positionX != geometry.contentTranslationX ||
-            previous.positionY != geometry.contentTranslationY || previous.crop != crop
         if (!geometryChanged && now - previous.lastAppliedAt < MIN_REAPPLY_INTERVAL_MS) {
             return@runCatching
         }
