@@ -7,6 +7,103 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TaskPresentationCommitProofTest {
+    @Test fun postExpiryGeometryReplacementStillObtainsOneNewCompositorListener() {
+        val move=1234L // already in the past: scheduling TTL != receipt
+        val oldLeash=Any()
+        val newLeash=oldLeash // same Surface, different ActivePresentation object
+        val previous=TaskPresentationCommitProof<String>()
+        val current=TaskPresentationCommitProof<String>()
+        val old=previous.arm(oldLeash,move,"scale=.5")
+        assertTrue(previous.claimListener(old))
+        assertTrue(TaskPresentationCommitProof.needsReceipt(37,true,0,true))
+        // A geometry update builds a NEW ActivePresentation, so its final
+        // transform must be allowed to register an independent receipt.
+        val newFrame="scale=.7 crop=900x2000"
+        val currentTicket=current.arm(newLeash,move,newFrame)
+        assertTrue(current.claimListener(currentTicket))
+        assertFalse(current.claimListener(currentTicket))
+        // Old committed transaction cannot satisfy a new presentation.
+        assertFalse(TaskPresentationCommitProof.matchesCommittedReceipt(
+            move,move,0,false,true))
+        assertFalse(previous.acknowledge(old,false))
+        assertFalse(current.confirmed(newLeash,move,newFrame))
+        // The new active transaction, although past deadline, is valid.
+        assertTrue(TaskPresentationCommitProof.matchesCommittedReceipt(
+            move,move,0,true,true))
+        assertTrue(current.acknowledge(currentTicket,true))
+        assertTrue(current.confirmed(newLeash,move,newFrame))
+        assertFalse(current.claimListener(currentTicket))
+        assertTrue(TaskPresentationCommitProof.settledAfterRecordedMove(
+            37,move,0,true,current.confirmed(newLeash,move,newFrame)))
+    }
+
+    @Test fun expiredIncompleteMainReservationIsNeverPrunedByOtherTaskMove() {
+        for(sdk in listOf(27,32,33,35,37)) {
+            for(expired in listOf(false,true)) {
+                for(destination in listOf<Int?>(null,0,4)) {
+                    val expected=expired && !(sdk>=33 && destination==0)
+                    assertEquals("sdk=$sdk expired=$expired dest=$destination",expected,
+                        TaskPresentationCommitProof.mayPruneExpiredReservation(
+                            sdk,expired,destination))
+                }
+            }
+        }
+        assertFalse(TaskPresentationCommitProof.mayPruneExpiredReservation(
+            37,true,0)) // another task move must not lift unconfirmed gate
+        assertTrue(TaskPresentationCommitProof.mayPruneExpiredReservation(
+            37,true,7)) // expired virtual-display move keeps old cleanup
+    }
+
+    @Test fun compositorListenerIsOneShotPerGenerationAndRetryableOnFailure() {
+        val p=TaskPresentationCommitProof<String>()
+        val sameLeash=Any()
+        val first=p.arm(sameLeash,1234L,"main frame A")
+        assertTrue(p.claimListener(first))
+        repeat(250) {
+            assertSame(first,p.arm(sameLeash,1234L,"main frame A"))
+            assertFalse(p.claimListener(first))
+        }
+        p.releaseFailedListener(first)
+        assertTrue(p.claimListener(first)) // failed registration or apply retries
+        assertFalse(p.claimListener(first))
+        assertTrue(p.acknowledge(first,true))
+        p.releaseFailedListener(first) // confirmed proof cannot reset
+        assertFalse(p.claimListener(first))
+        assertTrue(p.confirmed(sameLeash,1234L,"main frame A"))
+        val next=p.arm(sameLeash,1234L,"main frame B")
+        assertNotSame(first,next)
+        assertTrue(p.claimListener(next))
+        assertFalse(p.acknowledge(first,true))
+        assertFalse(p.confirmed(sameLeash,1234L,"main frame B"))
+        p.invalidate()
+        assertFalse(p.claimListener(next))
+        assertFalse(p.acknowledge(next,true))
+    }
+
+    @Test fun eightConcurrentWritersClaimAtMostOneListenerForSameTerminalFrame() {
+        val p=TaskPresentationCommitProof<Int>()
+        val leash=Any()
+        val ticket=p.arm(leash,1234L,99)
+        val start=CountDownLatch(1)
+        val done=CountDownLatch(8)
+        val claims=java.util.concurrent.atomic.AtomicInteger(0)
+        val threads=(0 until 8).map {
+            Thread {
+                start.await(3,TimeUnit.SECONDS)
+                if(p.claimListener(ticket))claims.incrementAndGet()
+                done.countDown()
+            }
+        }
+        threads.forEach { it.start() }
+        start.countDown()
+        assertTrue(done.await(4,TimeUnit.SECONDS))
+        threads.forEach { it.join(1000) }
+        assertEquals(1,claims.get())
+        assertFalse(p.confirmed(leash,1234L,99))
+        assertTrue(p.acknowledge(ticket,true))
+        assertTrue(p.confirmed(leash,1234L,99))
+    }
+
     @Test fun targetValueOrApplyCallIsNotACompositorReceipt() {
         val p=TaskPresentationCommitProof<String>()
         val leash=Any()
