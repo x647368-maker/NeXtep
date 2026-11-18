@@ -20,6 +20,46 @@ class StagePhasedPromotionEntryPolicyTest {
         }
     }
 
+    @Test fun onlyUncommittedOwnedMainMoveSuppressesSecondRepositionAnimation() {
+        // Exhaust every boolean gate; a non-swap task, wrong leash, completed
+        // prior destination frame, rotation or leash change must NEVER enter
+        // the new one-writer path.
+        for(mask in 0 until 128) {
+            fun bit(n:Int)=(mask and (1 shl n))!=0
+            val active=bit(0)
+            val targetMain=bit(1)
+            val owned=bit(2)
+            val priorReceipt=bit(3)
+            val geometryChanged=bit(4)
+            val rotated=bit(5)
+            val leashChanged=bit(6)
+            val expected=active && targetMain && owned && !priorReceipt &&
+                geometryChanged && !rotated && !leashChanged
+            assertEquals("mask=$mask",expected,
+                policy.commitMoveRepositionWithoutExtraAnimator(
+                    active,targetMain.let{if(it)0 else 7},
+                    owned,priorReceipt,geometryChanged,rotated,leashChanged))
+        }
+    }
+
+    @Test fun delayedOrCrossTaskPromotionsCannotBlockNormalLayoutAnimations() {
+        // No reservation, any other display, or unrelated task owner: normal
+        // workspace reposition still uses the existing ValueAnimator.
+        val p=policy
+        assertFalse(p.commitMoveRepositionWithoutExtraAnimator(
+            true,null,true,false,true,false,false))
+        assertFalse(p.commitMoveRepositionWithoutExtraAnimator(
+            true,5,true,false,true,false,false))
+        assertFalse(p.commitMoveRepositionWithoutExtraAnimator(
+            true,0,false,false,true,false,false))
+        assertFalse(p.commitMoveRepositionWithoutExtraAnimator(
+            false,0,true,false,true,false,false))
+        assertFalse(p.commitMoveRepositionWithoutExtraAnimator(
+            true,0,true,true,true,false,false))
+        assertTrue(p.commitMoveRepositionWithoutExtraAnimator(
+            true,0,true,false,true,false,false))
+    }
+
     @Test fun neverClaimPromotionWithoutActualDestinationDisplayReservation() {
         val p=policy
         assertFalse(p.suppressDuplicateEntrance(true,null,true,false,false))
