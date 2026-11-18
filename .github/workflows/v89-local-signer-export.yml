@@ -1,0 +1,42 @@
+name: v89 transient Android SDK signer tool (NO SECRETS)
+on:
+  push:
+    branches:
+      - atomic-workbench/v89-local-signer-tool-isolated-20261118
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-apksigner-jar:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare public Android SDK build-tools only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)
+          test -x "$sdk"
+          yes | "$sdk" --licenses >/dev/null || true
+          "$sdk" 'build-tools;36.0.0'
+          jar="$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar"
+          test -s "$jar"
+          jar tf "$jar" | grep -q 'com/android/apksigner/ApkSignerTool.class'
+          mkdir -p local-sign-tool
+          cp "$jar" local-sign-tool/apksigner.jar
+          sha256sum local-sign-tool/apksigner.jar > local-sign-tool/apksigner.sha256
+          echo 'Only Android SDK tool bytes are uploaded. No signing key or APK is present.' > local-sign-tool/README.txt
+      - name: Preserve transient local signer executable without private keys
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-apksigner-tool-no-secrets
+          path: local-sign-tool/
+          if-no-files-found: error
+          retention-days: 1
