@@ -91,7 +91,7 @@ jobs:
       - name: Verify low-power one-shot sparse-card reflow contract
         run: python3 scripts/verify-sparse-rail-reflow.py
       - name: Check task continuity source boundaries
-        run: python3 scripts/verify-state-continuity.py
+        run: python3 scripts/verify-v89-assembly-boundary.py
       - name: Verify real API 101 source and JVM contracts
         run: |
           bash scripts/ci-android-build.sh :app:testDebugUnitTest -PatomicXposedApi=101.0.0
