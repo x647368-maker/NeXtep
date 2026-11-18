@@ -17,7 +17,7 @@ object SystemServerWorkspaceBridge {
     private const val SIDEBAR_SIDE_KEY = "atomic_workspace_sidebar_side_v1"
     private const val GEOMETRY_KEY = "atomic_workspace_geometry_v1"
     private val geometryObservationStarted = AtomicBoolean(false)
-    @Volatile private var observedGeometry: WorkspaceGeometry? = null
+    private val geometryCache = WorkspaceObservedGeometryCache<WorkspaceGeometry>()
 
     /** Subscribe once in system_server. WM animation callbacks then read only RAM. */
     fun startGeometryObservation(context: Context) {
@@ -26,7 +26,7 @@ object SystemServerWorkspaceBridge {
         handler.post {
             runCatching {
                 val resolver = context.contentResolver
-                fun refresh() { observedGeometry = readActiveGeometry(context) }
+                fun refresh() { geometryCache.observe(readActiveGeometry(context)) }
                 val observer = object : ContentObserver(handler) {
                     override fun onChange(selfChange: Boolean) = refresh()
                 }
@@ -35,12 +35,13 @@ object SystemServerWorkspaceBridge {
                 refresh()
             }.onFailure {
                 geometryObservationStarted.set(false)
+                geometryCache.clear()
                 NeXtepLog.warn("system_server_bridge", "Geometry observation unavailable", it)
             }
         }
     }
 
-    fun observedActiveGeometry(): WorkspaceGeometry? = observedGeometry
+    fun observedActiveGeometry(): WorkspaceGeometry? = geometryCache.current()
 
     fun publishLayout(context: Context, profile: WorkspaceLayoutProfile) {
         runCatching {
@@ -127,7 +128,9 @@ object SystemServerWorkspaceBridge {
     }.getOrDefault(SidebarSide.RIGHT)
 
     fun activeGeometry(context: Context): WorkspaceGeometry? =
-        if (geometryObservationStarted.get()) observedGeometry else readActiveGeometry(context)
+        if (geometryObservationStarted.get()) geometryCache.getOrRead {
+            readActiveGeometry(context)
+        } else readActiveGeometry(context)
 
     private fun readActiveGeometry(context: Context): WorkspaceGeometry? = runCatching {
         if (!isWorkspaceActive(context)) return@runCatching null
