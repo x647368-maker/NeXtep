@@ -290,7 +290,21 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
                     val axisLength=kotlin.math.hypot(axisX,axisY)
                     fun projection(x:Float,y:Float)=(x*axisX+y*axisY)/axisLength
                     val start=SystemClock.uptimeMillis()
-                    val deadline=start+1450L
+                    // The physical API37 16K emulator can spend 250-550ms
+                    // capturing a *single* full-screen SurfaceFlinger image.
+                    // Fixed 1450ms sampling missed the second card's external
+                    // footprint in CI #44230271251 (3 screenshots), while the
+                    // identical unchanged GPU path previously passed with 7.
+                    //
+                    // Keep the SAME-frame two-real-card external-footprint
+                    // requirement unmodified. Give the isolated slowed
+                    // geometry fixture enough screenshot opportunities; this
+                    // window is not a benchmark of production animation speed.
+                    val flightScale=ValueAnimator.getDurationScale()
+                    val captureWindowMs=maxOf(1450L,(360f*flightScale).toLong()+700L)
+                    val deadline=start+captureWindowMs
+                    evidence.add("$label sampling_window_ms=$captureWindowMs animator_scale=$flightScale"+
+                        " original_same_frame_outside_gate=required")
                     // Retain only one screenshot while sampling. Compression
                     // and evidence writes on failure happen AFTER observation.
                     try {
