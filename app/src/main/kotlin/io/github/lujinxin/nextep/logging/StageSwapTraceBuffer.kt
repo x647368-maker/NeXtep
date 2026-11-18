@@ -53,7 +53,9 @@ internal class StageSwapTraceBuffer(
         name.startsWith("real_move_requested") || name.startsWith("real_move_ack") ||
             name.startsWith("native_terminal_transaction_committed") ||
             name.startsWith("handoff_target_ready") ||
-            name.startsWith("endpoint_reveal_start") || name.startsWith("endpoint_reveal_commit") -> 2
+            name.startsWith("endpoint_reveal_start") || name.startsWith("endpoint_reveal_commit") ||
+            name.startsWith("move_tasks ") || name.startsWith("cover_hide_submit:") ||
+            name.startsWith("handoff_timeout:") -> 2
         name.startsWith("target_wait=") || name.startsWith("handoff_state=") -> 1
         else -> 0
     }

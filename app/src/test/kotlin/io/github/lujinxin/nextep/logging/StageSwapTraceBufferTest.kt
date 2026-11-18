@@ -4,6 +4,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageSwapTraceBufferTest {
+    @Test fun taskIdentityAndTimeoutCoverSubmissionSurviveTraceOverflow() {
+        var now=0L
+        val r=StageSwapTraceBuffer({now})
+        val a=r.begin("tap_swap")
+        repeat(20) { now++;r.event("prepare_$it",a) }
+        now++;r.event("move_tasks up=12 down=34",a)
+        now++;r.event("handoff_timeout:target_not_ready",a)
+        now++;r.event("cover_hide_submit:timeout up=12 down=34",a)
+        repeat(80) { now++;r.event("gpu_stats_$it",a) }
+        r.finish("not_ready",a)
+        val report=r.describe()
+        assertTrue(report.contains("move_tasks up=12 down=34@21ms"))
+        assertTrue(report.contains("handoff_timeout:target_not_ready@22ms"))
+        assertTrue(report.contains("cover_hide_submit:timeout up=12 down=34@23ms"))
+        assertTrue(report.contains("end:not_ready"))
+        assertTrue(report.contains("omitted="))
+        assertTrue(report.split(" > ").size<=29)
+    }
+
     @Test fun essentialGpuMilestonesSurviveReadinessOscillation() {
         var now=0L
         val recorder=StageSwapTraceBuffer({now})

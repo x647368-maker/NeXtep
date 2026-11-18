@@ -93,8 +93,18 @@ internal class StageLiveSurfaceExchange private constructor(
     }
     private val ui = Handler(Looper.getMainLooper())
     private val traceAttemptId = StageExchangeTelemetry.currentNativeTapId()
-    private fun trace(stage: String) =
-        StageExchangeTelemetry.nativeEvent(stage, traceAttemptId)
+    private fun trace(stage: String) {
+        // A flight created outside a recorded tap must not write into a later tap.
+        traceAttemptId?.let { StageExchangeTelemetry.nativeEvent(stage, it) }
+    }
+
+    private fun traceCoverHideSubmitted(route: String) {
+        // Submission returned, not a compositor receipt or proof of presented pixels.
+        runCatching { trace("cover_hide_submit:$route up=${incomingStamp.taskId} down=${outgoingStamp.taskId}") }
+        io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.mark {
+            "cover_hide_submit $route up=${incomingStamp.taskId} down=${outgoingStamp.taskId} attempt=$traceAttemptId"
+        }
+    }
     private val lifetimeWatchdog = Runnable {
         if (isRunning) {
             trace("lifetime_watchdog frame=$frameComplete move=$moveComplete check=$handoffCheckStarted")
@@ -747,6 +757,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     tx.apply()
                 }.onFailure { NeXtepLog.warn("native_swap","Unconfirmed flight could not be hidden",it) }.isSuccess
                 if(!hidden){stop();return}
+                traceCoverHideSubmitted("unmasked")
                 unmaskedMove=true
                 trace("native_unmasked_fallback:first=$firstTransactionCommitted terminal=$terminalTransactionCommitted")
             }
@@ -754,6 +765,7 @@ internal class StageLiveSurfaceExchange private constructor(
             if (concurrentHandoff && frameComplete && !unmaskedMove) armHeldEndpointWriter()
             trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
+            runCatching { trace("move_tasks up=${incomingStamp.taskId} down=${outgoingStamp.taskId}") }
             if (moveAsync != null) {
                 // First callback owns the result, even if the provider throws
                 // after calling it synchronously. Do not discard a verified
@@ -1290,6 +1302,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     if (mainMirror.isValid) tx.setVisibility(mainMirror,false)
                     occlusion.hide(tx)
                     tx.apply()
+                    traceCoverHideSubmitted(if(handoffTimedOut) "timeout" else if(handoffReady) "ready" else "not_ready")
                 }
             },
             { sourceMirror.release() },

@@ -58,7 +58,7 @@ internal object WorkspaceTaskSurfaceHook {
                         // Only the reparent's sync transaction owns this change.
                         // A separate pending transaction can reset the matrix while
                         // the outgoing snapshot is still attached to display 0.
-                        sync?.let { fit(task, leash, it) }
+                        sync?.let { fit(task, leash, it, "reparent") }
                     }.onFailure { NeXtepLog.warn("workspace_task_surface", "Early task fitting unavailable", it) }
                     return result
                 }
@@ -75,7 +75,7 @@ internal object WorkspaceTaskSurfaceHook {
                     val transaction = chain.args[0] as? SurfaceControl.Transaction ?: return@runCatching
                     val leash = chain.args[2] as? SurfaceControl ?: return@runCatching
                     if (call(task, "getSurfaceControl") !== leash) return@runCatching
-                    fit(task, leash, transaction)
+                    fit(task, leash, transaction, "reset")
                 }.onFailure { NeXtepLog.warn("workspace_task_surface", "Finish task fitting unavailable", it) }
                 return result
             }
@@ -83,7 +83,16 @@ internal object WorkspaceTaskSurfaceHook {
         NeXtepLog.info("workspace_task_surface", "Installed atomic main/slot destination fitting")
     }
 
-    private fun fit(task: Any, leash: SurfaceControl, transaction: SurfaceControl.Transaction) {
+    private fun traceFit(task: Any, leash: SurfaceControl, source: String,
+                         scale: Float, x: Float, y: Float, crop: String?) {
+        io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.mark {
+            val id=field(task,"mTaskId") as? Int ?: -1
+            val layer=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.layerId(leash)
+            "server_write $source task=$id layer=$layer s=$scale xy=$x,$y c=$crop"
+        }
+    }
+
+    private fun fit(task: Any, leash: SurfaceControl, transaction: SurfaceControl.Transaction, source: String) {
         if (!leash.isValid || call(task, "getWindowingMode") != 1) return
         val configuration = call(task, "getConfiguration") ?: return
         val extra = field(configuration, "mOplusExtraConfiguration")
@@ -101,6 +110,7 @@ internal object WorkspaceTaskSurfaceHook {
             transaction.setCrop(leash, null as Rect?)
             setCornerRadius.invoke(transaction, leash, 0f)
             transaction.setPosition(leash, 0f, 0f)
+            traceFit(task,leash,source,1f,0f,0f,null)
             return
         }
         if (call(task, "getDisplayId") != 0 || !promotedTasks.containsKey(task)) return
@@ -113,6 +123,12 @@ internal object WorkspaceTaskSurfaceHook {
         setCornerRadius.invoke(transaction, leash, io.github.x647368maker.atomicworkbench.framework.WindowCornerPolicy.sourceRadius(
             geometry.contentScale, geometry.contentScale, geometry.screenWidth, geometry.screenHeight,
             context.resources.displayMetrics.density, true))
+        // No change to the fitted transform. Unknown layer IDs stay unknown.
+        io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.mark {
+            val id=field(task,"mTaskId") as? Int ?: -1
+            val layer=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.layerId(leash)
+            "server_write $source task=$id layer=$layer s=${geometry.contentScale} xy=${geometry.contentTranslationX},${geometry.contentTranslationY} c=0,0,${geometry.screenWidth},${geometry.screenHeight}"
+        }
     }
 
     private fun isSlotDisplay(display: Any): Boolean {

@@ -1192,6 +1192,13 @@ object TaskSurfaceCompat {
         }
         invokeRequired(transaction, "setPosition", leash, frame.positionX, frame.positionY)
         appendHeldMirrorFrame(transaction,taskId,leash,frame)
+        // Read-only, opt-in system trace. This marks writes into a transaction,
+        // not a submission, commit, or presented App buffer.
+        if(displayExchanges.containsKey(taskId))
+            io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.mark {
+                val layer=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.layerId(leash)
+                "ui_write task=$taskId layer=$layer s=${frame.scaleX},${frame.scaleY} xy=${frame.positionX},${frame.positionY} c=${crop?.flattenToString()}"
+            }
     }
 
     private fun sourceCrop(geometry: WorkspaceGeometry) = Rect(
