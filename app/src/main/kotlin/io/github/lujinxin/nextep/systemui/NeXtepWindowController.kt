@@ -2619,10 +2619,20 @@ class NeXtepWindowController(
             immediateMove=true,
             onFinished={
                 slot.view.endExchangePreview()
+                val nativeOutcome=StageLiveSurfaceExchange.lastOutcome()
+                // Only after a completed, slow, genuinely owned GPU handoff:
+                // temporarily prefer the existing RT fallback on later taps.
+                // This never starts a second move or weakens endpoint checks.
+                val nativeElapsed=android.os.SystemClock.uptimeMillis()-before
+                if(StageConcurrentNativeTrialPolicy.noteCompletedGpuHandoff(
+                        nativeOutcome,nativeElapsed)) {
+                    StageExchangeTelemetry.nativeEvent(
+                        "native_slow_handoff_cooldown:${nativeElapsed}ms",traceId)
+                }
                 StageExchangeTelemetry.nativeEvent(
-                    "native_finished:"+StageLiveSurfaceExchange.lastOutcome(),traceId)
+                    "native_finished:"+nativeOutcome,traceId)
                 StageExchangeTelemetry.endNativeTap(
-                    "gpu_" + StageLiveSurfaceExchange.lastOutcome().take(48),traceId)
+                    "gpu_" + nativeOutcome.take(48),traceId)
                 activeSwapViewport=null
                 liveSurfaceExchange=null
                 val flush=deferredSwapGeometryRefresh
