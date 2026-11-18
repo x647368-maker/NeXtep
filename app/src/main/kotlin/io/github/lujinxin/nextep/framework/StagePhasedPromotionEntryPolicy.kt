@@ -42,7 +42,7 @@ internal object StagePhasedPromotionEntryPolicy {
      * suppress normal later user layout animations.
      *
      * Never retire on time alone, on memory-only frame equality, on an
-     * unrelated leash, or before the compositor accepts that final frame.
+     * unrelated leash, before the compositor accepts that final frame, or\n     * in the same callback that submits new task geometry. The latter would\n     * turn the new uncommitted frame into a falsely settled endpoint.
      */
     fun canRetireCompletedMainReservation(
         hasReservation:Boolean,
@@ -50,9 +50,12 @@ internal object StagePhasedPromotionEntryPolicy {
         destinationDisplay:Int?,
         ownsSameMainLeash:Boolean,
         finalFrameCommitted:Boolean,
+        geometryStable:Boolean,
+        noPresentationAnimator:Boolean,
     ):Boolean =
         hasReservation && expired && destinationDisplay==0 &&
-            ownsSameMainLeash && finalFrameCommitted
+            ownsSameMainLeash && finalFrameCommitted &&
+            geometryStable && noPresentationAnimator
 
     fun commitMoveRepositionWithoutExtraAnimator(
         recordedPromotion:Boolean,
