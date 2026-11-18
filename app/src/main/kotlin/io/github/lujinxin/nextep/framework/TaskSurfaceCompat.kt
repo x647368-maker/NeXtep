@@ -613,6 +613,19 @@ object TaskSurfaceCompat {
             geometry = geometry,
         )
         val prepared = preparedPresentations[taskId]
+        // In rare OEM paths the early promotion fit can fail or be cleared
+        // while the reserved phased move still succeeds. This task is already
+        // owned by the new main-display leash; giving it a second cold-launch
+        // scale animation would create the visible extra zoom during swap.
+        // Require the exact unexpired move reservation and the current owned
+        // leash, not just a recycled task ID or a guessed vendor callback.
+        val suppressDuplicateEntry=StagePhasedPromotionEntryPolicy.suppressDuplicateEntrance(
+            activeReservation=isDisplayExchanging(taskId),
+            reservedDestinationDisplay=exchangeDisplays[taskId],
+            verifiedMainLeash=ownedTaskLeash(taskId) === leash,
+            preparedAlready=prepared!=null,
+            explicitFullscreenEntrance=animateFromFullscreen,
+        )
         activePresentations[taskId] = presentation
         preparedPresentations.remove(taskId)
         if (!ValueAnimator.areAnimatorsEnabled()) {
@@ -625,9 +638,14 @@ object TaskSurfaceCompat {
                 presentation,
                 WorkspaceTransitionSpec.DURATION_MS,
             )
-        } else if (prepared != null || geometry.navigationInsets != WorkspaceNavigationInsets()) {
+        } else if (prepared != null || suppressDuplicateEntry ||
+                   geometry.navigationInsets != WorkspaceNavigationInsets()) {
             // Promotion and recorded-button cold launches fit their native first
-            // frame already. Do not shrink it again with a second entry zoom.
+            // frame already. A still-owned, unexpired phased promotion must
+            // also avoid a second entry zoom when its optional pre-fit was lost.
+            if(suppressDuplicateEntry)
+                io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
+                    .phasedEvent("promotion_duplicate_entry_suppressed")
             applyPresentation(presentation)
         } else animatePresentation(
             taskId = taskId,
