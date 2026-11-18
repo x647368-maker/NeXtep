@@ -168,7 +168,15 @@ internal class StageLiveSurfaceExchange private constructor(
             val mirror=if(incoming) sourceMirror else mainMirror
             if(!mirror.isValid) return@HeldMirrorWriter
             val target=if(incoming) mainStart else slotStart
-            val fit=StageHeldEndpointPolicy.fit(
+            // The running GPU route is cover-cropped. Its terminal geometry
+            // must not switch to CONTAIN merely because Shell supplies a new
+            // producer crop during reparent; that is a second zoom/letterbox
+            // while the old task mirror is still displayed.
+            val covered=if(coveredFlight) StageHeldEndpointPolicy.coveredFit(
+                target.left,target.top,target.right,target.bottom,
+                frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
+                frame.scale,frame.x,frame.y,detachedRoot) else null
+            val fit=covered ?: StageHeldEndpointPolicy.fit(
                 target.left,target.top,target.right,target.bottom,
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
                 frame.scale,frame.x,frame.y,detachedRoot) ?: return@HeldMirrorWriter
@@ -182,7 +190,12 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(radiusSetter!=null) runCatching {
                     radiusSetter.invoke(transaction,mirror,(24f*density/fit.scale).coerceIn(0f,120f*density))
                 }
-                (if(incoming) incomingRebased else outgoingRebased).set(true)
+                val rebaseFlag=if(incoming) incomingRebased else outgoingRebased
+                if(rebaseFlag.compareAndSet(false,true)) runCatching {
+                    trace("held_endpoint_fit_"+(if(covered!=null)"cover" else "contain")+
+                        "_"+(if(incoming)"incoming" else "outgoing")+
+                        "_crop="+fit.left+","+fit.top+","+fit.right+","+fit.bottom)
+                }
                 // Observe the existing matched destination transaction once
                 // per card, with no new transaction, thread or frame query.
                 // Do not retry registration on every unrelated Shell commit.
