@@ -5,7 +5,7 @@ internal object StageIssueReportPolicy {
     const val MAX_DURATION_MS = 60 * 60 * 1000L
     const val MAX_MARKERS = 12
     const val MAX_DESCRIPTION_CHARS = 400
-    const val MAX_REPORT_CHARS = 48_000
+    const val MAX_REPORT_CHARS = 110_000
     const val MAX_EXCHANGE_DIAGNOSTICS_CHARS = 24_000
 
     val DURATION_OPTIONS_MS = listOf(5 * 60_000L, 15 * 60_000L, 30 * 60_000L, 60 * 60_000L)

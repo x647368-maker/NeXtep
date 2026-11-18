@@ -10,6 +10,7 @@ internal class StageHandoffEvidenceBuffer(private val capacity:Int=24) {
         var dropped=0
         var lastMessage:String?=null
         var repeatCount=0
+        val attempts=StageAttemptEvidence()
     }
     @Volatile private var current:Capture?=null
 
@@ -50,12 +51,26 @@ internal class StageHandoffEvidenceBuffer(private val capacity:Int=24) {
         ticket.events.addLast("$nanos $bounded")
     }
 
+    @Synchronized fun beginAttempt(c:Capture,now:Long,id:Long,ns:Long,op:String) {
+        if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.begin(id,ns,op)
+    }
+    @Synchronized fun attemptStage(c:Capture,now:Long,id:Long,ns:Long,key:String,msg:String) {
+        if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.stage(id,ns,key,msg)
+    }
+    @Synchronized fun endAttempt(c:Capture,now:Long,id:Long,ns:Long,result:String) {
+        if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.end(id,ns,result)
+    }
+    @Synchronized fun attemptWriter(c:Capture,now:Long,id:Long,role:String,task:Int,handle:Int,
+                                    sample:StageAttemptEvidence.Sample,layer:()->String) {
+        if(current===c && !c.closed && now in c.token until c.deadline)c.attempts.writer(id,role,task,handle,sample,layer)
+    }
     @Synchronized fun finish(token:Long):String? {
         val c=current?.takeIf { it.token==token } ?: return null
         c.closed=true
         return buildString {
             appendLine("token=$token events=${c.events.size} dropped=${c.dropped} repeated=${c.repeatCount}")
             c.events.forEach { appendLine(it) }
+            append(c.attempts.describe())
         }
     }
 }

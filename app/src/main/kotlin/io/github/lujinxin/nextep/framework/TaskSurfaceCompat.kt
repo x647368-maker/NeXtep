@@ -1195,10 +1195,8 @@ object TaskSurfaceCompat {
         // Read-only, opt-in system trace. This marks writes into a transaction,
         // not a submission, commit, or presented App buffer.
         if(displayExchanges.containsKey(taskId))
-            io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.mark {
-                val layer=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.layerId(leash)
-                "ui_write task=$taskId layer=$layer s=${frame.scaleX},${frame.scaleY} xy=${frame.positionX},${frame.positionY} c=${crop?.flattenToString()}"
-            }
+            io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace.taskWriter(
+                taskId,leash,frame.scaleX,frame.scaleY,frame.positionX,frame.positionY,crop)
     }
 
     private fun sourceCrop(geometry: WorkspaceGeometry) = Rect(

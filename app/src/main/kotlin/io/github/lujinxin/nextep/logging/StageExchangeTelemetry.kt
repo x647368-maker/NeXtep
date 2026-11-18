@@ -24,16 +24,20 @@ internal object StageExchangeTelemetry {
     // only one 680-character tail and could overwrite the actual fallback.
     private val swapTrace=StageSwapTraceBuffer(SystemClock::uptimeMillis)
     fun beginNativeTap(operation:String="tap_swap") {
-        swapTrace.begin(operation)
+        val id=swapTrace.begin(operation)
+        StageSurfaceHandoffTrace.beginAttempt(id,operation)
     }
     fun currentNativeTapId(): Long? = swapTrace.activeId()
     fun nativeEvent(stage:String, attemptId:Long?=null) {
         // The bounded trace is the sole exported history. Do not also build
         // an unused, growing text tail on every compositor callback.
-        swapTrace.event(stage,attemptId)
+        val id=attemptId ?: swapTrace.activeId() ?: return
+        if(swapTrace.event(stage,id))StageSurfaceHandoffTrace.attemptStage(id,stage)
     }
     fun endNativeTap(result:String, attemptId:Long?=null) {
-        swapTrace.finish(result,attemptId)
+        val id=attemptId ?: swapTrace.activeId() ?: return
+        StageSurfaceHandoffTrace.endAttempt(id,result)
+        swapTrace.finish(result,id)
     }
     fun nativeDescription():String=swapTrace.describe()
     fun <T> phase(name:String,block:()->T):T = active.get()?.span(name,block) ?: block()

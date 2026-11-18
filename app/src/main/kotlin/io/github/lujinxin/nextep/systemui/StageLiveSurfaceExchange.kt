@@ -98,6 +98,15 @@ internal class StageLiveSurfaceExchange private constructor(
         traceAttemptId?.let { StageExchangeTelemetry.nativeEvent(stage, it) }
     }
 
+    private fun traceMirrorAdmission(detached:Boolean?) {
+        val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+        diag.detail(traceAttemptId,"mirror_up") {
+            "mirror_up task=${incomingStamp.taskId} src_layer=${diag.layerId(incomingStamp.leash)} mirror_layer=${diag.layerId(sourceMirror)} root=$detached crop=${sourceCrop.flattenToString()} target=$mainStart"
+        }
+        diag.detail(traceAttemptId,"mirror_down") {
+            "mirror_down task=${outgoingStamp.taskId} src_layer=${diag.layerId(outgoingStamp.leash)} mirror_layer=${diag.layerId(mainMirror)} root=$detached crop=${mainCrop.flattenToString()} target=$slotStart"
+        }
+    }
     private fun traceCoverHideSubmitted(route: String) {
         // Submission returned, not a compositor receipt or proof of presented pixels.
         runCatching { trace("cover_hide_submit:$route up=${incomingStamp.taskId} down=${outgoingStamp.taskId}") }
@@ -190,6 +199,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(radiusSetter!=null) runCatching {
                     radiusSetter.invoke(transaction,mirror,(24f*density/fit.scale).coerceIn(0f,120f*density))
                 }
+                val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+                if(diag.evidence.hasOpenCapture())diag.writer(traceAttemptId,"held_mirror",frame.taskId,mirror,
+                    fit.scale,fit.scale,fit.x,fit.y,fit.left,fit.top,fit.right,fit.bottom)
                 val rebaseFlag=if(incoming) incomingRebased else outgoingRebased
                 if(rebaseFlag.compareAndSet(false,true)) runCatching {
                     trace("held_endpoint_fit_"+(if(covered!=null)"cover" else "contain")+
@@ -505,6 +517,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     detached==true,
                 )
                 exchange.pairedRailPlan=pairedPlan
+                exchange.traceMirrorAdmission(detached)
                 // Transfer ownership only once the exchange object exists.
                 lastOutcome="capable:two_owned_tasks_and_atomic_masks"
                 transferred=true
@@ -1037,6 +1050,16 @@ internal class StageLiveSurfaceExchange private constructor(
         transaction.setPosition(sourceMirror,incoming.x,incoming.y)
         transaction.setScale(mainMirror,outgoing.scale,outgoing.scale)
         transaction.setPosition(mainMirror,outgoing.x,outgoing.y)
+        if(p==0f || p==1f) {
+            val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+            val phase=if(p==0f)"initial" else "terminal"
+            diag.detail(traceAttemptId,"flight_up_$phase") {
+                "flight_up_$phase task=${incomingStamp.taskId} s=${incoming.scale} xy=${incoming.x},${incoming.y} crop=${incoming.crop}"
+            }
+            diag.detail(traceAttemptId,"flight_down_$phase") {
+                "flight_down_$phase task=${outgoingStamp.taskId} s=${outgoing.scale} xy=${outgoing.x},${outgoing.y} crop=${outgoing.crop}"
+            }
+        }
         // Preserve the previously accepted 24dp-equivalent round cards while
         // their compositor scale changes. A parent layer's corner radius uses
         // source-layer units, hence divide by the current uniform scale.
