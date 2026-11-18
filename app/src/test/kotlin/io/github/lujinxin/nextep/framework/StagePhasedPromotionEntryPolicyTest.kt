@@ -42,6 +42,47 @@ class StagePhasedPromotionEntryPolicyTest {
         }
     }
 
+    @Test fun onlyVerifiedExpiredMainMoveCanRetireItsOldReservation() {
+        // A terminal task/SF commit receipt, correct current leash and
+        // *expired* scheduling reservation are mandatory together. Time
+        // expiration alone must NEVER lift the safety gate.
+        for(mask in 0 until 32) {
+            fun bit(n:Int)=(mask and (1 shl n))!=0
+            val recorded=bit(0)
+            val expired=bit(1)
+            val targetMain=bit(2)
+            val sameLeash=bit(3)
+            val committed=bit(4)
+            val expected=recorded && expired && targetMain &&
+                sameLeash && committed
+            assertEquals("mask=$mask",expected,
+                policy.canRetireCompletedMainReservation(
+                    recorded,expired,if(targetMain)0 else 7,
+                    sameLeash,committed))
+        }
+    }
+
+    @Test fun successfulRecordedPromotionCanResumeNormalLayoutOnlyAfterReceipt() {
+        // Reapply's lazy cleanup is triggered on its next geometry callback.
+        // Both pre-expiry and uncommitted post-expiry paths stay one-writer,
+        // while fully verified historical promotions can be retired.
+        val recorded=true
+        assertFalse(policy.canRetireCompletedMainReservation(
+            recorded,false,0,true,true)) // visual attempt may still be live
+        assertFalse(policy.canRetireCompletedMainReservation(
+            recorded,true,0,true,false)) // missing real SF commit receipt
+        assertTrue(policy.canRetireCompletedMainReservation(
+            recorded,true,0,true,true))
+        assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
+            recordedPromotion=false,destinationDisplay=0,
+            verifiedMainLeash=true,previousFinalCommitted=true,
+            geometryChanged=true,rotationChanged=false,leashChanged=false))
+        assertTrue(policy.commitMoveRepositionWithoutExtraAnimator(
+            recordedPromotion=recorded,destinationDisplay=0,
+            verifiedMainLeash=true,previousFinalCommitted=false,
+            geometryChanged=true,rotationChanged=false,leashChanged=false))
+    }
+
     @Test fun expiredSchedulingDeadlineCannotReintroduceSecondZoomBeforeRealReceipt() {
         // The accepted reservation's absolute deadline is not a Surface
         // transaction receipt. A slow ColorOS migration can exceed it while
