@@ -106,6 +106,46 @@ class TaskPresentationCommitProofTest {
             35,1001L,0,true,gate.confirmed(leash,1001L,321)))
     }
 
+    @Test fun matchingLateCompositorReceiptStillCountsAfterSchedulingDeadline() {
+        val proof=TaskPresentationCommitProof<String>()
+        val owner=Any()
+        val reservation=1000L
+        val observedClock=9000L
+        assertTrue(observedClock>reservation)
+        val ticket=proof.arm(owner,reservation,"final-main")
+        // The receipt belongs to the exact recorded move even if the
+        // OEM reports its transaction after the reservation's TTL.
+        val matches=TaskPresentationCommitProof.matchesCommittedReceipt(
+            reservation,reservation,0,true,true)
+        assertTrue(matches)
+        assertTrue(proof.acknowledge(ticket,matches))
+        assertTrue(proof.confirmed(owner,reservation,"final-main"))
+        assertTrue(TaskPresentationCommitProof.settledAfterRecordedMove(
+            37,reservation,0,true,proof.confirmed(owner,reservation,"final-main")))
+    }
+
+    @Test fun cancelledOrReplacedMoveAndSurfaceCannotReuseLateReceipt() {
+        val matches=TaskPresentationCommitProof
+        val original=7000L
+        assertFalse(matches.matchesCommittedReceipt(null,original,0,true,true))
+        assertFalse(matches.matchesCommittedReceipt(original+1,original,0,true,true))
+        assertFalse(matches.matchesCommittedReceipt(original,original,5,true,true))
+        assertFalse(matches.matchesCommittedReceipt(original,original,0,false,true))
+        assertFalse(matches.matchesCommittedReceipt(original,original,0,true,false))
+        val proof=TaskPresentationCommitProof<Int>()
+        val owner=Any()
+        val old=proof.arm(owner,original,15)
+        // A new task/display transfer invalidates the old receipt ticket,
+        // including if both transfers happen with matching final geometry.
+        val newTicket=proof.arm(owner,original+1,15)
+        assertFalse(proof.acknowledge(old,true))
+        assertFalse(proof.confirmed(owner,original+1,15))
+        assertTrue(proof.acknowledge(newTicket,true))
+        assertTrue(proof.confirmed(owner,original+1,15))
+        proof.invalidate()
+        assertFalse(proof.acknowledge(newTicket,true))
+    }
+
     @Test fun concurrentArmsAndCallbacksCannotPublishObsoleteTaskReceipts() {
         val p=TaskPresentationCommitProof<Int>()
         val owners=Array(8) { Any() }
