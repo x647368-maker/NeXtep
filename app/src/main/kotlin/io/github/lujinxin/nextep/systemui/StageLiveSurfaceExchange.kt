@@ -21,6 +21,8 @@ import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.BuildConfig
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.TaskPresentationCommitProof
+import io.github.x647368maker.atomicworkbench.framework.StageHeldReceiptGeometry
 import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.concurrent.Executor
@@ -193,12 +195,32 @@ internal class StageLiveSurfaceExchange private constructor(
     private val incomingRebased=AtomicBoolean(false)
     private val outgoingRebased=AtomicBoolean(false)
     private val endpointWriteFailed=AtomicBoolean(false)
-    // The first matching destination rebase receipt is stronger than a local
-    // frame write, but is NOT a fresh producer buffer or visible-pixel proof.
-    private val incomingRebaseReceiptArmed=AtomicBoolean(false)
-    private val outgoingRebaseReceiptArmed=AtomicBoolean(false)
-    private val incomingRebaseCommitted=AtomicBoolean(false)
-    private val outgoingRebaseCommitted=AtomicBoolean(false)
+    // Receipts belong to the current geometry generation, not the first
+    // matching transaction. Same geometry claims exactly one listener;
+    // changed geometry (including A -> B -> A) gets a fresh ticket.
+    private val incomingRebaseProof=TaskPresentationCommitProof<StageHeldReceiptGeometry>()
+    private val outgoingRebaseProof=TaskPresentationCommitProof<StageHeldReceiptGeometry>()
+
+    private fun expectedFinalGeometry(frame:TaskSurfaceCompat.MirrorDestinationFrame,
+                                      incoming:Boolean):Boolean {
+        val expected=if(incoming)mainSourceFrame else slotSourceFrame
+        return expected==null || (frame.crop==expected.crop && frame.densityDpi==expected.densityDpi &&
+            frame.scale==expected.scale && frame.x==expected.x && frame.y==expected.y)
+    }
+
+    private fun heldReceiptConfirmed(incoming:Boolean):Boolean {
+        val stamp=if(incoming)incomingStamp else outgoingStamp
+        val display=if(incoming)outgoingStamp.displayId else incomingStamp.displayId
+        val current=TaskSurfaceCompat.heldDestinationFrame(stamp,display) ?: return false
+        val reservation=current.moveReservation ?: return false
+        val proof=if(incoming)incomingRebaseProof else outgoingRebaseProof
+        return expectedFinalGeometry(current,incoming) &&
+            proof.confirmed(current.leash,reservation,current.receiptGeometry())
+    }
+
+    private fun heldGeometryReady():Boolean =
+        incomingAnchor==null || !concurrentHandoff || unmaskedMove || Build.VERSION.SDK_INT<33 ||
+            (!endpointWriteFailed.get() && heldReceiptConfirmed(true) && heldReceiptConfirmed(false))
 
     // After the terminal frame, the source producer can change its bounds
     // AND its local root transform. Keep the mirror in the same destination
@@ -264,17 +286,24 @@ internal class StageLiveSurfaceExchange private constructor(
                         "_"+(if(incoming)"incoming" else "outgoing")+
                         "_crop="+fit.left+","+fit.top+","+fit.right+","+fit.bottom)
                 }
-                // Observe the existing matched destination transaction once
-                // per card, with no new transaction, thread or frame query.
-                // Do not retry registration on every unrelated Shell commit.
-                if(coveredFlight && pairedRailPlan!=null && Build.VERSION.SDK_INT>=33) {
-                    val armed=if(incoming) incomingRebaseReceiptArmed else outgoingRebaseReceiptArmed
-                    val committed=if(incoming) incomingRebaseCommitted else outgoingRebaseCommitted
-                    if(armed.compareAndSet(false,true)) runCatching {
+                // Arm every changed write, including a non-final one, to
+                // invalidate the prior generation. Only the expected final
+                // producer geometry may install a commit listener.
+                val reservation=frame.moveReservation
+                if((anchor!=null || (coveredFlight && pairedRailPlan!=null)) &&
+                    Build.VERSION.SDK_INT>=33 && reservation!=null) {
+                    val proof=if(incoming)incomingRebaseProof else outgoingRebaseProof
+                    val key=frame.receiptGeometry()
+                    val ticket=proof.arm(frame.leash,reservation,key)
+                    if(expectedFinalGeometry(frame,incoming) && proof.claimListener(ticket)) runCatching {
                         transaction.addTransactionCommittedListener(Executor { it.run() }) {
-                            if(!finished.get() && !hostDetached) committed.set(true)
+                            val current=TaskSurfaceCompat.heldDestinationFrame(stamp,expectedDisplay)
+                            val stillOwned=!finished.get() && !hostDetached &&
+                                current!=null && current.leash===frame.leash &&
+                                current.moveReservation==reservation && current.receiptGeometry()==key
+                            proof.acknowledge(ticket,stillOwned)
                         }
-                    }
+                    }.onFailure { proof.releaseFailedListener(ticket) }
                 }
             }.onFailure { endpointWriteFailed.set(true) }
         }
@@ -687,6 +716,15 @@ internal class StageLiveSurfaceExchange private constructor(
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
+        // Anchored flights must retain the source until the terminal frame.
+        // The old early-move lane cannot prove that contract; use its
+        // existing onUnavailable path before any mirror is made visible.
+        if(incomingAnchor!=null && !concurrentHandoff) {
+            lastOutcome="fallback:anchored_terminal_required"
+            finished.set(true)
+            cleanupWithoutCallback()
+            return false
+        }
         if(!mainSourceStillMatches() || !slotSourceStillMatches()) {
             finished.set(true)
             cleanupWithoutCallback()
@@ -903,8 +941,15 @@ internal class StageLiveSurfaceExchange private constructor(
                 unmaskedMove=true
                 trace("native_unmasked_fallback:first=$firstTransactionCommitted terminal=$terminalTransactionCommitted")
             }
+            if (concurrentHandoff && frameComplete && !unmaskedMove) {
+                armHeldEndpointWriter()
+                if(incomingAnchor!=null && heldWriter==null) {
+                    trace("native_move_rejected:held_writer_unavailable")
+                    stop()
+                    return
+                }
+            }
             sentMove = true
-            if (concurrentHandoff && frameComplete && !unmaskedMove) armHeldEndpointWriter()
             trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
             runCatching { trace("move_tasks up=${incomingStamp.taskId} down=${outgoingStamp.taskId}") }
@@ -1227,11 +1272,18 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(hostDetached || !host.isAttachedToWindow){stop();return}
                 val now=SystemClock.uptimeMillis()
                 val releasable=frameComplete && runCatching { canRelease() }.getOrDefault(false)
-                val live=releasable && runCatching { liveReady() }.getOrDefault(false)
+                val taskLive=releasable && runCatching { liveReady() }.getOrDefault(false)
+                if(taskLive && endpointWriteFailed.get()) {
+                    trace("held_endpoint_mapping_unconfirmed")
+                    stop()
+                    return
+                }
+                val live=taskLive && heldGeometryReady()
                 val reason=when {
                     !frameComplete -> "flight_end_missing"
                     !releasable -> "session_unsettled"
-                    !live -> "target_not_ready"
+                    !taskLive -> "target_not_ready"
+                    !live -> "held_geometry_receipt"
                     else -> "ready"
                 }
                 if (reason != lastHandoffWait) {
@@ -1260,8 +1312,8 @@ internal class StageLiveSurfaceExchange private constructor(
                         // Unsupported OEM receipts never cause extra waiting.
                         val adaptiveBlend=StageConcurrentNativeTrialPolicy.adaptiveHandoffBlend(
                             concurrentHandoff && coveredFlight && pairedRailPlan!=null,
-                            firstTransactionCommitted,incomingRebaseCommitted.get(),
-                            outgoingRebaseCommitted.get(),endpointWriteFailed.get(),
+                            firstTransactionCommitted,heldReceiptConfirmed(true),
+                            heldReceiptConfirmed(false),endpointWriteFailed.get(),
                             deadline-now,ValueAnimator.getDurationScale())
                         if (gapReveal || adaptiveBlend) {
                             val duration=if(gapReveal) READY_REVEAL_MS
@@ -1297,7 +1349,7 @@ internal class StageLiveSurfaceExchange private constructor(
         if (!isRunning || revealAnimator != null) return
         // Ready at the preceding main-loop check is not evidence that the
         // reveal itself has completed. Do not mark an aborted fade as success.
-        if (!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {
+        if (!runCatching { canRelease() && liveReady() && heldGeometryReady() }.getOrDefault(false)) {
             trace("endpoint_reveal_rejected")
             stop()
             return
@@ -1313,14 +1365,14 @@ internal class StageLiveSurfaceExchange private constructor(
             handoffReady=finalAlphaSubmitted &&
                 (!requireCommit || finalAlphaCommitted) &&
                 !hostDetached && host.isAttachedToWindow &&
-                runCatching { canRelease() && liveReady() }.getOrDefault(false)
+                runCatching { canRelease() && liveReady() && heldGeometryReady() }.getOrDefault(false)
             trace(if(handoffReady) "endpoint_reveal_end" else "endpoint_reveal_unconfirmed")
             stop()
         }
         fun submit(progress:Float,origin:String) {
             if(!isRunning || finalAlphaSubmitted)return
             if(hostDetached || !host.isAttachedToWindow){stop();return}
-            if(!runCatching { canRelease() && liveReady() }.getOrDefault(false)) {
+            if(!runCatching { canRelease() && liveReady() && heldGeometryReady() }.getOrDefault(false)) {
                 trace("endpoint_reveal_target_lost")
                 stop()
                 return
@@ -1448,9 +1500,9 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(nativeFrameCount>0) trace("gpu_unchanged_skipped=$unchangedFrameSkips")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
-                if(concurrentHandoff && coveredFlight && pairedRailPlan!=null)
-                    trace("endpoint_rebase_receipts up="+incomingRebaseCommitted.get()+
-                        " down="+outgoingRebaseCommitted.get()+" pixels_not_proven")
+                if(concurrentHandoff && (incomingAnchor!=null || (coveredFlight && pairedRailPlan!=null)))
+                    trace("endpoint_rebase_receipts up="+heldReceiptConfirmed(true)+
+                        " down="+heldReceiptConfirmed(false)+" current_geometry_only pixels_not_proven")
                 NeXtepLog.info("native_swap",
                     "Native dual-surface finished: GPU transactions=$nativeFrameCount " +
                     "initialCommitted=$firstTransactionCommitted realTaskMoved=$moveComplete")

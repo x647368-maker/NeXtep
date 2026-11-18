@@ -24,6 +24,16 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 
+/** Immutable per-write geometry identity; leash and move reservation are
+ * separate identity fields in TaskPresentationCommitProof's ticket.
+ * This key does not claim a producer buffer or physical pixel receipt.
+ */
+internal data class StageHeldReceiptGeometry(
+    val taskId:Int,val displayId:Int,val token:Any,val densityDpi:Int,
+    val cropLeft:Int,val cropTop:Int,val cropRight:Int,val cropBottom:Int,
+    val scale:Float,val x:Float,val y:Float,
+)
+
 /**
  * Reflective SystemUI/WM Shell bridge for transforming a real task leash.
  *
@@ -110,7 +120,11 @@ object TaskSurfaceCompat {
     internal data class MirrorDestinationFrame(
         val taskId: Int, val displayId: Int, val token: Any, val leash: Any,
         val crop: Rect, val scale: Float, val x: Float, val y: Float,
-    )
+        val densityDpi:Int=0,val moveReservation:Long?=null,
+    ) {
+        fun receiptGeometry()=StageHeldReceiptGeometry(taskId,displayId,token,densityDpi,
+            crop.left,crop.top,crop.right,crop.bottom,scale,x,y)
+    }
 
     internal fun mirrorSourceStamp(taskId: Int, displayId: Int): MirrorSourceStamp? {
         val state=observedStates[taskId] ?: return null
@@ -144,10 +158,44 @@ object TaskSurfaceCompat {
             state.vendorWindowed || state.windowingMode!=WINDOWING_MODE_FULLSCREEN ||
             state.bounds!=crop || crop.isEmpty || observedLeashes[taskId]!==leash ||
             !isValid(leash) || frame.scaleX!=frame.scaleY) return
-        if (heldMirrorWriter.get() !== writer) return
+        val reservation=displayExchanges[taskId] ?: return
+        if (heldMirrorWriter.get() !== writer || observedStates[taskId]!==state ||
+            exchangeDisplays[taskId]!=state.displayId || state.densityDpi<=0) return
         // Endpoint fitting is optional; never abort a real task transaction.
         runCatching { writer.append(tx,MirrorDestinationFrame(
-            taskId,state.displayId,token,leash,crop,frame.scaleX,frame.positionX,frame.positionY)) }
+            taskId,state.displayId,token,leash,Rect(crop),frame.scaleX,frame.positionX,frame.positionY,
+            state.densityDpi,reservation)) }
+    }
+
+    /** Cache-only current destination geometry. The receipt gate separately
+     * requires identity, reservation and the final expected producer mapping.
+     * No task query, Binder call or SurfaceFlinger readback.
+     */
+    internal fun heldDestinationFrame(stamp:MirrorSourceStamp,destination:Int):MirrorDestinationFrame? {
+        val task=stamp.taskId
+        val state=observedStates[task] ?: return null
+        val reservation=displayExchanges[task] ?: return null
+        if(state.displayId!=destination || state.token!=stamp.token ||
+            exchangeDisplays[task]!=destination || !isDisplayExchanging(task) ||
+            state.vendorWindowed || state.windowingMode!=WINDOWING_MODE_FULLSCREEN ||
+            state.densityDpi<=0 || observedLeashes[task]!==stamp.leash ||
+            !isValid(stamp.leash))return null
+        val frame=if(destination==Display.DEFAULT_DISPLAY) {
+            val active=activePresentations[task] ?: return null
+            if(active.restoring || active.leash!==stamp.leash)return null
+            active.frame
+        } else {
+            val slot=slotSurfaces[task] ?: return null
+            if(slot.leash!==stamp.leash || slot.displayId!=destination ||
+                !verifiedDemotedSlot(task,slot,state))return null
+            SurfaceFrame(1f,1f,0f,0f,slot.crop)
+        }
+        val crop=frame.crop ?: return null
+        if(crop.isEmpty || state.bounds!=crop || frame.scaleX!=frame.scaleY ||
+            observedStates[task]!==state || observedLeashes[task]!==stamp.leash ||
+            displayExchanges[task]!=reservation)return null
+        return MirrorDestinationFrame(task,destination,stamp.token,stamp.leash,
+            Rect(crop),frame.scaleX,frame.positionX,frame.positionY,state.densityDpi,reservation)
     }
     private data class MethodKey(val type: Class<*>, val name: String, val arguments: List<Class<*>?>)
     private val methodCache = ConcurrentHashMap<MethodKey, Method>()
@@ -408,6 +456,8 @@ object TaskSurfaceCompat {
         if (stamp.displayId != Display.DEFAULT_DISPLAY ||
             !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId))) return null
         val p=activePresentations[stamp.taskId] ?: return null
+        val state=observedStates[stamp.taskId] ?: return null
+        if(state.densityDpi<=0)return null
         val frame=p.frame
         val crop=frame.crop ?: return null
         if (p.leash !== stamp.leash || !isPresentationSettled(stamp.taskId,p.geometry) ||
@@ -415,7 +465,7 @@ object TaskSurfaceCompat {
             frame.scaleX != frame.scaleY || !frame.scaleX.isFinite() || frame.scaleX<=0f ||
             !frame.positionX.isFinite() || !frame.positionY.isFinite() || crop.isEmpty) return null
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
-            Rect(crop),frame.scaleX,frame.positionX,frame.positionY)
+            Rect(crop),frame.scaleX,frame.positionX,frame.positionY,state.densityDpi)
     }
 
     internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
@@ -446,10 +496,10 @@ object TaskSurfaceCompat {
         val state=observedStates[stamp.taskId] ?: return null
         if(slot.leash!==stamp.leash || slot.displayId!=stamp.displayId ||
             slot.lastAppliedAt<=0L || slot.crop!=state.bounds ||
-            slot.crop.left!=0 || slot.crop.top!=0 || slot.crop.isEmpty ||
-            slotSurfaces[stamp.taskId]!==slot)return null
+            slot.crop.left!=0 || slot.crop.top!=0 || slot.crop.isEmpty || state.densityDpi<=0 ||
+            slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state)return null
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
-            Rect(slot.crop),1f,0f,0f)
+            Rect(slot.crop),1f,0f,0f,state.densityDpi)
     }
 
     internal fun createOwnedSlotTaskMirror(

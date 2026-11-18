@@ -166,7 +166,9 @@ def main():
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMainMirrorStartTest.kt",
     }, "explicit owned source first-frame mapping delta")
-    equal(paths(first_frame_fix, "HEAD"), {
+    anchor_fix = "3eadb71cbd336171619f1da7b46ccda5306ff14e"
+    subprocess.run(["git", "merge-base", "--is-ancestor", anchor_fix, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(first_frame_fix, anchor_fix), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageHeldEndpointPolicy.kt",
         P+"framework/TaskSurfaceCompat.kt",
@@ -174,6 +176,11 @@ def main():
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageAnchoredEndpointTest.kt",
     }, "explicit content-anchored flight/hold delta")
+    equal(paths(anchor_fix, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"framework/TaskSurfaceCompat.kt",
+        T+"systemui/StageHeldEndpointReceiptTest.kt",
+    }, "explicit generation-bound held mirror receipt delta")
     mirror_source = source("systemui/StageLiveSurfaceExchange.kt",
                            "DETACHED, RETAINED, UNKNOWN", "return markUnavailable(\"mirror_root_unknown\")")
     require("unknown_legacy" not in mirror_source, "no unknown-as-retained route")
@@ -184,7 +191,12 @@ def main():
     source("framework/TaskSurfaceCompat.kt", "fun ownedMainMirrorFrame(", "p.frame !== frame")
     source("systemui/StageLiveSurfaceExchange.kt", "sameMirrorContent(firstMain,plannedFirst.second)",
            "mainFirstFrame ?: rawOutgoing", "mainSourceStillMatches()", "slotSourceStillMatches()",
-           "StageHeldEndpointPolicy.anchoredFlight(", "StageHeldEndpointPolicy.anchoredFit(")
+           "StageHeldEndpointPolicy.anchoredFlight(", "StageHeldEndpointPolicy.anchoredFit(",
+           "proof.arm(frame.leash,reservation,key)", "proof.claimListener(ticket)",
+           "current.receiptGeometry()==key", "taskLive && heldGeometryReady()",
+           "canRelease() && liveReady() && heldGeometryReady()")
+    require("incomingRebaseReceiptArmed" not in mirror_source, "no first-write-only mirror receipt")
+    source("framework/TaskSurfaceCompat.kt", "fun heldDestinationFrame(", "val densityDpi:Int=0,val moveReservation:Long?=null")
     source("display/TaskSwitcherView.kt", "fun mirrorLiveContentBounds()", "textureView.getTransform(")
     source("logging/StageAttemptEvidence.kt", "max_scale_step=", "task_pair up=", "stage_overflow=")
     source("logging/StageSurfaceHandoffTrace.kt", "task_write_temporal", "fun bindPair(", "if(!evidence.hasOpenCapture())return")
