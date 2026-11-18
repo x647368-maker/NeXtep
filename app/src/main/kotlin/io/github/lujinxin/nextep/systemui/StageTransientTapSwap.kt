@@ -595,7 +595,7 @@ internal class StageTransientTapSwap(private val context:Context) {
         private var mainRevealed=false
         private var mainRevealComplete=false
         private val needsMainBlend=StageMainEndpointRevealPolicy.needsBlend(
-            incoming.width,incoming.height,mainRect.width(),mainRect.height())
+            incoming.width,incoming.height,mainRect.width().toFloat(),mainRect.height().toFloat())
         // Invoked only by the post-terminal, post-ACK main ownership gate.
         // Retire the opaque main-region backdrop on the same traversal, while
         // preserving the incoming preview briefly over the real resized App.
@@ -621,7 +621,7 @@ internal class StageTransientTapSwap(private val context:Context) {
                     upView.animate().cancel()
                     upView.animate().alpha(0f)
                         .setDuration(StageMainEndpointRevealPolicy.BLEND_MS)
-                        .withEndAction(::completed).start()
+                        .withEndAction { completed() }.start()
                 }.isSuccess
                 if(!started)completed()
             }
