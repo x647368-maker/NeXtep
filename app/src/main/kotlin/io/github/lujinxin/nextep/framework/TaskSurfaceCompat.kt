@@ -86,6 +86,17 @@ object TaskSurfaceCompat {
     private val slotSurfaces = ConcurrentHashMap<Int, SlotSurface>()
     private val displayExchanges = ConcurrentHashMap<Int, Long>()
     private val exchangeDisplays = ConcurrentHashMap<Int, Int>()
+    private val mainVisualHandoffs=StageMainVisualHandoffHold()
+
+    internal fun beginMainVisualHandoff(taskId:Int,token:Any):StageMainVisualHandoffHold.Lease =
+        mainVisualHandoffs.begin(taskId,token)
+
+    internal fun endMainVisualHandoff(lease:StageMainVisualHandoffHold.Lease) {
+        mainVisualHandoffs.end(lease)
+    }
+
+    private fun hasMainVisualHandoff(taskId:Int):Boolean =
+        mainVisualHandoffs.holds(taskId,observedStates[taskId]?.token)
     private val observedStates = ConcurrentHashMap<Int, TaskInfoCompat.WindowState>()
     private val observedLeashes = ConcurrentHashMap<Int, Any>()
 
@@ -634,10 +645,11 @@ object TaskSurfaceCompat {
         // while the reserved phased move still succeeds. This task is already
         // owned by the new main-display leash; giving it a second cold-launch
         // scale animation would create the visible extra zoom during swap.
-        // Require the exact unexpired move reservation and the current owned
-        // leash, not just a recycled task ID or a guessed vendor callback.
+        // Require the current owned leash and an unexpired reservation or
+        // matching live visual handoff; a recycled task ID is insufficient.
         val suppressDuplicateEntry=StagePhasedPromotionEntryPolicy.suppressDuplicateEntrance(
-            activeReservation=isDisplayExchanging(taskId),
+            activeReservation=isDisplayExchanging(taskId) ||
+                (displayExchanges.containsKey(taskId) && hasMainVisualHandoff(taskId)),
             reservedDestinationDisplay=exchangeDisplays[taskId],
             verifiedMainLeash=ownedTaskLeash(taskId) === leash,
             preparedAlready=prepared!=null,
@@ -658,7 +670,7 @@ object TaskSurfaceCompat {
         } else if (prepared != null || suppressDuplicateEntry ||
                    geometry.navigationInsets != WorkspaceNavigationInsets()) {
             // Promotion and recorded-button cold launches fit their native first
-            // frame already. A still-owned, unexpired phased promotion must
+            // frame already. A still-owned phased promotion must
             // also avoid a second entry zoom when its optional pre-fit was lost.
             if(suppressDuplicateEntry)
                 io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
@@ -704,6 +716,7 @@ object TaskSurfaceCompat {
         // Compare-and-remove only the old reservation; never touch a freshly
         // recorded move's destination marker in the second concurrent map.
         val observedReservation=displayExchanges[taskId]
+        val visualHandoffPending=hasMainVisualHandoff(taskId)
         if(StagePhasedPromotionEntryPolicy.canRetireCompletedMainReservation(
                 hasReservation=observedReservation!=null,
                 expired=observedReservation!=null && observedReservation<now,
@@ -714,6 +727,7 @@ object TaskSurfaceCompat {
                         previous.leash,observedReservation,previous.frame),
                 geometryStable=!geometryChanged && previous.geometry==geometry,
                 noPresentationAnimator=!presentationAnimators.containsKey(taskId),
+                visualHandoffPending=visualHandoffPending,
             ) && observedReservation!=null &&
             displayExchanges.remove(taskId,observedReservation)) {
             io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
@@ -747,6 +761,7 @@ object TaskSurfaceCompat {
                 geometryChanged=geometryChanged,
                 rotationChanged=rotationChanged,
                 leashChanged=leashChanged,
+                visualHandoffPending=hasMainVisualHandoff(taskId),
             )
         val presentation = if (leashChanged || geometryChanged) {
             ActivePresentation(
