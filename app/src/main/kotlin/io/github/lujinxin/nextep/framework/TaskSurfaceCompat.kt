@@ -706,7 +706,10 @@ object TaskSurfaceCompat {
         val reservation=displayExchanges[taskId]
         val oneWriterDuringPromotion=
             StagePhasedPromotionEntryPolicy.commitMoveRepositionWithoutExtraAnimator(
-                activeReservation=isDisplayExchanging(taskId),
+                // The record remains authoritative after its 2s scheduling
+                // TTL until exact compositor proof or explicit cancellation.
+                // A deadline is never a valid first App frame.
+                activeReservation=reservation!=null,
                 destinationDisplay=exchangeDisplays[taskId],
                 verifiedMainLeash=ownedTaskLeash(taskId)===currentLeash,
                 previousFinalCommitted=reservation!=null &&
