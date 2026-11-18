@@ -154,11 +154,13 @@ ensure_guest_awake before_adaptive
 # Preserve the exact same-frame two-real-moving-card pixel assertion. The
 # 1272x2772 16K emulator's full-display screenshot may cost >500ms per
 # sample; CI #44230271251 missed a brief simultaneous outside footprint
-# with only three real screenshots. Run this *geometry-only* capture at 6x
-# scale (normal GPU/paired regressions above remain at 3x). This does not
-# benchmark or change any production animation duration.
-adb shell settings put global animator_duration_scale 6
-echo 'API37 adaptive geometry capture: animation scale=6; all two-card and protected-slot pixel gates unchanged'
+# with only three real screenshots. Run this *geometry-only* capture at 4x
+# scale (normal GPU/paired regressions above remain at 3x). The production
+# terminalDeadlineDelay hard-caps scale at 4x and expiry at 1500ms: **never**
+# use 6x, which ends the mirror before the physical motion can finish. This
+# does not benchmark or change any production animation duration.
+adb shell settings put global animator_duration_scale 4
+echo 'API37 adaptive geometry capture: animation scale=4 within production terminal cap; original pixel gates unchanged'
 set +e
 timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e pairedFlightOnly true -e adaptiveCoveredFlight true -w \
   io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \
