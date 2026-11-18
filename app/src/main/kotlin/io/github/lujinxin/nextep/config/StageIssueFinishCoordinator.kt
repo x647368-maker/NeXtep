@@ -20,17 +20,27 @@ internal object StageIssueFinishCoordinator {
             return
         }
         val ticket = pending.join(token, onResult) ?: return
-        fun complete(snapshot: WorkspaceEnergyContract.Snapshot?) {
+        fun complete(snapshot: WorkspaceEnergyContract.Snapshot?,evidence:String?=null) {
             if (!pending.owns(ticket)) return
             val result = runCatching {
                 if (!session.active() || session.currentToken() != token) null
                 else session.finish(session.storedVersion(), session.storedNote(),
-                    BatterySample.read(app), snapshot, mode)
+                    BatterySample.read(app), snapshot, mode,evidence)
             }
             pending.complete(ticket, result)
         }
-        runCatching {
-            query(::complete)
-        }.onFailure { complete(null) }
+        var energyHandled=false
+        fun onEnergy(snapshot:WorkspaceEnergyContract.Snapshot?) {
+            if(energyHandled || !pending.owns(ticket))return
+            energyHandled=true
+            if(StageIssueTestCatalog.modulesFor(session.selectedCategory()).any { it=="performance" || it=="layout" }) {
+                runCatching {
+                    io.github.x647368maker.atomicworkbench.monitoring.StageHandoffEvidenceContract.finish(app,token) {
+                        complete(snapshot,it)
+                    }
+                }.onFailure { complete(snapshot,"不可用：读取失败。") }
+            } else complete(snapshot)
+        }
+        runCatching { query(::onEnergy) }.onFailure { onEnergy(null) }
     }
 }

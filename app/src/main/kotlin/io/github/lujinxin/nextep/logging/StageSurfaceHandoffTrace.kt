@@ -1,6 +1,7 @@
 package io.github.x647368maker.atomicworkbench.logging
 
 import android.os.Trace
+import android.os.SystemClock
 import android.view.SurfaceControl
 
 /**
@@ -9,6 +10,7 @@ import android.view.SurfaceControl
  * A write/submit marker is not a commit, and layer IDs may be inaccessible.
  */
 internal object StageSurfaceHandoffTrace {
+    val evidence=StageHandoffEvidenceBuffer()
     private val layerGetter by lazy {
         runCatching {
             SurfaceControl::class.java.getDeclaredMethod("getLayerId").apply { isAccessible=true }
@@ -22,10 +24,18 @@ internal object StageSurfaceHandoffTrace {
 
     inline fun mark(message:()->String) {
         // Never let optional diagnostics change task/transaction handling.
-        if(!Trace.isEnabled()) return
         runCatching {
-            Trace.beginSection(("AW:"+message()).take(127))
-            Trace.endSection()
+            val enabled=Trace.isEnabled()
+            val now=SystemClock.elapsedRealtime()
+            val ticket=evidence.ticket(now)
+            if(!enabled && ticket==null)return
+            val nanos=SystemClock.elapsedRealtimeNanos()
+            val text=message()
+            if(ticket!=null)evidence.record(ticket,now,nanos,text)
+            if(enabled) {
+                Trace.beginSection(("AW:"+text).take(127))
+                Trace.endSection()
+            }
         }
     }
 }

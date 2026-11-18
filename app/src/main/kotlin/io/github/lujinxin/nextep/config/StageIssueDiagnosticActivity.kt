@@ -351,6 +351,8 @@ class StageIssueDiagnosticActivity : AppCompatActivity() {
         boundWasActive=true
         note.setText(freshNote)
         StageIssueEventObserver.enable(this)
+        if(StageIssueTestCatalog.modulesFor(chosen).any { it=="performance" || it=="layout" })
+            io.github.x647368maker.atomicworkbench.monitoring.StageHandoffEvidenceContract.arm(this,token,minutes)
         WorkspaceEnergyContract.query(this, includeExchangeDiagnostics = true){ snapshot ->
             session.setStartRuntime(token,snapshot)
             if(!isDestroyed)render()

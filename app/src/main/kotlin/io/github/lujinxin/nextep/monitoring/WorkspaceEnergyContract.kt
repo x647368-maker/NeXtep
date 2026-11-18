@@ -28,6 +28,7 @@ internal object WorkspaceEnergyContract {
     )
 
     fun register(context: Context, handler: Handler, snapshot: () -> Bundle) {
+        StageHandoffEvidenceContract.register(context,handler)
         context.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != ACTION || !isOrderedBroadcast) return

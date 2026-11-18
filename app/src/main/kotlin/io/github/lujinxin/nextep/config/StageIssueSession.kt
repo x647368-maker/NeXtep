@@ -183,7 +183,7 @@ internal class StageIssueSession(context: Context) {
     }
 
     fun finish(version: String, note: String, battery: BatterySample,
-               snapshot: WorkspaceEnergyContract.Snapshot?, mode: String): String? {
+               snapshot: WorkspaceEnergyContract.Snapshot?, mode: String, handoffEvidence:String?=null): String? {
         if (!active()) return null
         val token = currentToken()
         val elapsed = elapsed()
@@ -270,6 +270,11 @@ internal class StageIssueSession(context: Context) {
             appendLine("判定区分：测试App前后台与工作台真实显示状态不同；工作台仅能读取开启/挂起，不推断第三方App焦点。")
             appendLine("运行计数变化：${runtimeDelta(snapshot)}")
             if (bootIdentity == false) appendLine("设备已重启：以下交换记录仅为结束快照，不与起始编号或进程号比较。")
+            if(handoffEvidence!=null) {
+                appendLine("【跨进程窗口变换取证｜仅本次自愿诊断】")
+                appendLine("时间为同一设备 elapsedRealtimeNanos；write 是写入事务，submit 是提交返回，均非画面已显示证明。仅保留有限事件，缺失或溢出不能判为无故障。")
+                appendLine(if(bootIdentity==false) "设备已重启：不能关联旧会话。" else handoffEvidence.take(10_500))
+            }
             appendLine(StageIssueReportPolicy.exchangeSection(
                 if (bootIdentity == false) -1 else preferences.getInt("start_pid", -1),
                 if (bootIdentity == false) null else preferences.getLong("start_swap_id", -1L).takeIf { it >= 0L },
