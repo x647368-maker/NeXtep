@@ -66,6 +66,46 @@ class TaskPresentationCommitProofTest {
         }
     }
 
+    @Test fun elapsedReservationNeverTurnsMissingCompositorReceiptIntoReady() {
+        val p=TaskPresentationCommitProof
+        // The reservation may be past its 2-second scheduling window while
+        // the GPU/RT handoff still owns a bounded attempt. A recorded move
+        // is NOT a committed pixel/transform transaction.
+        val expiredReservation=1000L
+        val now=8000L
+        assertTrue(expiredReservation<now)
+        assertFalse(p.settledAfterRecordedMove(
+            37,expiredReservation,0,true,false))
+        assertTrue(p.settledAfterRecordedMove(
+            37,expiredReservation,0,true,true))
+        // Explicit cancellation, changed destination/owner and pre-33
+        // devices retain the original unguarded main readiness.
+        assertTrue(p.settledAfterRecordedMove(37,null,0,true,false))
+        assertTrue(p.settledAfterRecordedMove(37,expiredReservation,5,true,false))
+        assertTrue(p.settledAfterRecordedMove(37,expiredReservation,0,false,false))
+        assertTrue(p.settledAfterRecordedMove(32,expiredReservation,0,true,false))
+    }
+
+    @Test fun receiptFreshnessRequiresSameMoveEvenAfterDeadline() {
+        val gate=TaskPresentationCommitProof<Int>()
+        val leash=Any()
+        val original=gate.arm(leash,1000L,321)
+        assertFalse(gate.confirmed(leash,1000L,321))
+        assertFalse(TaskPresentationCommitProof.settledAfterRecordedMove(
+            35,1000L,0,true,gate.confirmed(leash,1000L,321)))
+        assertTrue(gate.acknowledge(original,true))
+        assertTrue(TaskPresentationCommitProof.settledAfterRecordedMove(
+            35,1000L,0,true,gate.confirmed(leash,1000L,321)))
+        val newer=gate.arm(leash,1001L,321)
+        assertFalse(gate.confirmed(leash,1001L,321))
+        assertFalse(gate.acknowledge(original,true))
+        assertFalse(TaskPresentationCommitProof.settledAfterRecordedMove(
+            35,1001L,0,true,gate.confirmed(leash,1001L,321)))
+        assertTrue(gate.acknowledge(newer,true))
+        assertTrue(TaskPresentationCommitProof.settledAfterRecordedMove(
+            35,1001L,0,true,gate.confirmed(leash,1001L,321)))
+    }
+
     @Test fun concurrentArmsAndCallbacksCannotPublishObsoleteTaskReceipts() {
         val p=TaskPresentationCommitProof<Int>()
         val owners=Array(8) { Any() }
