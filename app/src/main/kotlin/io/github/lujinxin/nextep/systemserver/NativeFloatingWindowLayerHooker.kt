@@ -151,6 +151,10 @@ class NativeFloatingWindowLayerHooker : XposedInterface.Hooker {
         val context = field(service, "mContext") as? Context ?: return
         if (!observationRequested.compareAndSet(false, true)) return
         observationHandler.post {
+            // The existing physical-display observer has a real production
+            // caller. Register the read-only diagnostics outside the WM lock,
+            // independently of the Settings observer's success or failure.
+            io.github.x647368maker.atomicworkbench.monitoring.StageHandoffEvidenceContract.register(context, observationHandler)
             runCatching {
                 workspaceObserver = SystemServerWorkspaceBridge.observeWorkspaceActive(
                     context, observationHandler,

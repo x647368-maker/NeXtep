@@ -33,7 +33,6 @@ object SystemServerWorkspaceBridge {
                 resolver.registerContentObserver(Settings.Global.getUriFor(ACTIVE_KEY), false, observer)
                 resolver.registerContentObserver(Settings.Global.getUriFor(GEOMETRY_KEY), false, observer)
                 refresh()
-                io.github.x647368maker.atomicworkbench.monitoring.StageHandoffEvidenceContract.register(context,handler)
             }.onFailure {
                 geometryObservationStarted.set(false)
                 NeXtepLog.warn("system_server_bridge", "Geometry observation unavailable", it)
