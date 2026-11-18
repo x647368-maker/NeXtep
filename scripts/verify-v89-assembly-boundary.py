@@ -125,10 +125,24 @@ def historical_gate():
 def main():
     require(not git("status", "--porcelain", "--untracked-files=no"),
             "tracked worktree differs from compiled checkout")
-    # Entire pinned candidate tree (including all unlisted files) must survive
-    # untouched except for exactly this new verification script and one CI line.
-    subprocess.run(["git", "merge-base", "--is-ancestor", CANDIDATE, "HEAD"], cwd=ROOT, check=True)
-    equal(paths(CANDIDATE, "HEAD"), {GATE, WORKFLOW}, "post-candidate delta")
+    # Keep the previously reviewed assembly and the exact cover-only layer.
+    assembly = "026f07b95b214e227267a174ccb674c44afd2e45"
+    cover = "a45b4537741bbd1d0e7ef1ae962950a3ec0c3160"
+    cover_paths = {P+"systemui/StageLiveSurfaceExchange.kt",
+                   P+"systemui/StageHeldEndpointPolicy.kt",
+                   T+"systemui/StageHeldEndpointPolicyTest.kt"}
+    for parent, child in ((CANDIDATE, assembly), (assembly, cover), (cover, "HEAD")):
+        subprocess.run(["git", "merge-base", "--is-ancestor", parent, child], cwd=ROOT, check=True)
+    equal(paths(CANDIDATE, assembly), {GATE, WORKFLOW}, "original assembly delta")
+    equal(paths(assembly, cover), cover_paths, "covered mirror continuity delta")
+    equal(paths(cover, "HEAD"), {GATE}, "post-cover gate-only delta")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "StageHeldEndpointPolicy.coveredFit(", "covered ?: StageHeldEndpointPolicy.fit(",
+           "frame.token!=stamp.token || frame.leash!==stamp.leash")
+    source("systemui/StageHeldEndpointPolicy.kt", "fun coveredFit(")
+    require("randomizedRebaseRespectsSourceBoundsAndUniformCenteredCover" in
+            (ROOT/(T+"systemui/StageHeldEndpointPolicyTest.kt")).read_text(),
+            "randomized cover continuity regression")
     old = git("show", CANDIDATE+":"+WORKFLOW).decode()
     marker = "        run: python3 scripts/verify-state-continuity.py\n"
     replacement = "        run: python3 "+GATE+"\n"
