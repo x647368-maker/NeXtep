@@ -46,19 +46,21 @@ class StagePhasedPromotionEntryPolicyTest {
         // A terminal task/SF commit receipt, correct current leash and
         // *expired* scheduling reservation are mandatory together. Time
         // expiration alone must NEVER lift the safety gate.
-        for(mask in 0 until 32) {
+        for(mask in 0 until 128) {
             fun bit(n:Int)=(mask and (1 shl n))!=0
             val recorded=bit(0)
             val expired=bit(1)
             val targetMain=bit(2)
             val sameLeash=bit(3)
             val committed=bit(4)
+            val stable=bit(5)
+            val idle=bit(6)
             val expected=recorded && expired && targetMain &&
-                sameLeash && committed
+                sameLeash && committed && stable && idle
             assertEquals("mask=$mask",expected,
                 policy.canRetireCompletedMainReservation(
                     recorded,expired,if(targetMain)0 else 7,
-                    sameLeash,committed))
+                    sameLeash,committed,stable,idle))
         }
     }
 
@@ -68,11 +70,15 @@ class StagePhasedPromotionEntryPolicyTest {
         // while fully verified historical promotions can be retired.
         val recorded=true
         assertFalse(policy.canRetireCompletedMainReservation(
-            recorded,false,0,true,true)) // visual attempt may still be live
+            recorded,false,0,true,true,true,true)) // flight may still be live
         assertFalse(policy.canRetireCompletedMainReservation(
-            recorded,true,0,true,false)) // missing real SF commit receipt
+            recorded,true,0,true,false,true,true)) // no SF receipt
+        assertFalse(policy.canRetireCompletedMainReservation(
+            recorded,true,0,true,true,false,true)) // new layout is pending
+        assertFalse(policy.canRetireCompletedMainReservation(
+            recorded,true,0,true,true,true,false)) // active ValueAnimator
         assertTrue(policy.canRetireCompletedMainReservation(
-            recorded,true,0,true,true))
+            recorded,true,0,true,true,true,true))
         assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
             recordedPromotion=false,destinationDisplay=0,
             verifiedMainLeash=true,previousFinalCommitted=true,
