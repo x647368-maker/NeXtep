@@ -6,10 +6,12 @@ import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Rect
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
+import android.view.SurfaceControl
 import android.view.animation.DecelerateInterpolator
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import io.github.x647368maker.atomicworkbench.monitoring.WorkspaceEnergyDiagnostics
@@ -19,6 +21,7 @@ import io.github.x647368maker.atomicworkbench.workspace.WorkspaceTransitionSpec
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -50,7 +53,11 @@ object TaskSurfaceCompat {
         val restoring: Boolean = false,
         val geometry: WorkspaceGeometry,
         @Volatile var frame: SurfaceFrame = SurfaceFrame(scaleX, scaleY, positionX, positionY, crop),
-    )
+    ) {
+        // A planned frame is not compositor-commit proof. One proof per task
+        // presentation preserves owner identity across leash replacements.
+        val commitProof=TaskPresentationCommitProof<SurfaceFrame>()
+    }
 
     private const val SYSTEM_UI_FACTORY =
         "com.android.systemui.SystemUIAppComponentFactoryBase"
@@ -327,6 +334,8 @@ object TaskSurfaceCompat {
         }
         exchangeDisplays[taskId] = destinationDisplayId
         displayExchanges[taskId] = now + REAPPLY_WINDOW_MS
+        if(destinationDisplayId==Display.DEFAULT_DISPLAY)
+            activePresentations[taskId]?.commitProof?.invalidate()
     }
 
     fun isDisplayExchanging(taskId: Int): Boolean =
@@ -733,10 +742,22 @@ object TaskSurfaceCompat {
     internal fun isPresentationSettled(taskId: Int, geometry: WorkspaceGeometry): Boolean {
         val p=activePresentations[taskId] ?: return false
         val f=p.frame
-        return !p.restoring && p.geometry==geometry && ownsMainTask(taskId) &&
+        val fitted=!p.restoring && p.geometry==geometry && ownsMainTask(taskId) &&
             !presentationAnimators.containsKey(taskId) &&
             f.scaleX==p.scaleX && f.scaleY==p.scaleY &&
             f.positionX==p.positionX && f.positionY==p.positionY && f.crop==p.crop
+        if(!fitted)return false
+        // During real display=0 promotion an in-memory target or a
+        // Transaction.apply() return cannot prove that SurfaceFlinger accepted
+        // the main task's new leash transform. The existing bounded handoff
+        // must wait for a committed receipt of the exact frame.
+        val reservation=displayExchanges[taskId]
+        val needsProof=TaskPresentationCommitProof.needsReceipt(
+            Build.VERSION.SDK_INT,
+            reservation!=null && reservation>=SystemClock.uptimeMillis(),
+            exchangeDisplays[taskId],ownedTaskLeash(taskId)===p.leash)
+        return !needsProof || (reservation!=null &&
+            p.commitProof.confirmed(p.leash,reservation,f))
     }
 
     fun ownsMainTask(taskId: Int): Boolean = activePresentations[taskId]?.let {
@@ -964,6 +985,19 @@ object TaskSurfaceCompat {
         // Frame commits use observed ownership, never Binder or the organizer lock.
         if (ownedTaskLeash(taskId) !== leash) return
         val frame = SurfaceFrame(scaleX, scaleY, positionX, positionY, crop)
+        val presentation=activePresentations[taskId]?.takeIf {
+            it.leash === leash && !it.restoring
+        }
+        val reservation=displayExchanges[taskId]
+        val finalFrame=presentation?.let {
+            SurfaceFrame(it.scaleX,it.scaleY,it.positionX,it.positionY,it.crop)
+        }
+        val requireReceipt=TaskPresentationCommitProof.needsReceipt(
+            Build.VERSION.SDK_INT,
+            reservation!=null && reservation>=SystemClock.uptimeMillis(),
+            exchangeDisplays[taskId],presentation!=null && frame==finalFrame)
+        val ticket=if(requireReceipt && reservation!=null && presentation!=null)
+            presentation.commitProof.arm(leash,reservation,frame) else null
         activePresentations[taskId]?.takeIf { it.leash === leash }?.frame = frame
         val loader = hostClassLoader ?: error("SystemUI host class loader is unavailable")
         val transactionClass = Class.forName(
@@ -977,6 +1011,30 @@ object TaskSurfaceCompat {
         transactionGuard.ownedTransaction {
             try {
                 writeFrame(transaction, taskId, leash, frame)
+                // A committed task transform is not a GPU mirror receipt or
+                // Binder ACK. Only the matching leash and move reservation
+                // can satisfy this gate; callback does not write any Surface.
+                if(ticket!=null && presentation!=null && reservation!=null) {
+                    runCatching {
+                        (transaction as SurfaceControl.Transaction)
+                            .addTransactionCommittedListener(Executor { it.run() }) {
+                                val sameOwner=activePresentations[taskId]===presentation &&
+                                    ownedTaskLeash(taskId)===leash &&
+                                    displayExchanges[taskId]==reservation &&
+                                    exchangeDisplays[taskId]==Display.DEFAULT_DISPLAY &&
+                                    isDisplayExchanging(taskId)
+                                if(presentation.commitProof.acknowledge(ticket,sameOwner)) {
+                                    animationHandler.post {
+                                        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
+                                            .phasedEvent("main_task_fit_transaction_committed")
+                                    }
+                                }
+                            }
+                    }.onFailure {
+                        io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
+                            .phasedEvent("main_task_fit_receipt_unavailable")
+                    }
+                }
                 io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry.phase("surface_submit") { invokeRequired(transaction, "apply") }
             } finally {
                 invokeOptional(transaction, "close")
