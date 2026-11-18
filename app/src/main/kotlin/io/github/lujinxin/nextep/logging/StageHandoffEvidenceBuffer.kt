@@ -22,7 +22,17 @@ internal class StageHandoffEvidenceBuffer(private val capacity:Int=24) {
         return true
     }
 
-    fun ticket(now:Long):Capture?=current?.takeIf { !it.closed && now>=it.token && now<it.deadline }
+    fun hasOpenCapture():Boolean=current?.closed==false
+
+    fun ticket(now:Long):Capture? {
+        val c=current ?: return null
+        if(c.closed || now<c.token)return null
+        if(now>=c.deadline) {
+            c.closed=true
+            return null
+        }
+        return c
+    }
 
     @Synchronized fun record(ticket:Capture,now:Long,nanos:Long,message:String) {
         if(current!==ticket || ticket.closed || now<ticket.token || now>=ticket.deadline)return

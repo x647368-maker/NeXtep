@@ -5,8 +5,8 @@ import android.os.SystemClock
 import android.view.SurfaceControl
 
 /**
- * Optional cross-process trace breadcrumbs. Only when the OS trace tag is
- * enabled; never starts tracing, creates a transaction, polls or queries Binder.
+ * Optional cross-process breadcrumbs for an explicitly armed user diagnosis
+ * or OS trace; never starts tracing, creates a transaction, polls or queries Binder.
  * A write/submit marker is not a commit, and layer IDs may be inaccessible.
  */
 internal object StageSurfaceHandoffTrace {
@@ -26,6 +26,7 @@ internal object StageSurfaceHandoffTrace {
         // Never let optional diagnostics change task/transaction handling.
         runCatching {
             val enabled=Trace.isEnabled()
+            if(!enabled && !evidence.hasOpenCapture())return
             val now=SystemClock.elapsedRealtime()
             val ticket=evidence.ticket(now)
             if(!enabled && ticket==null)return

@@ -85,7 +85,7 @@ internal object StageHandoffEvidenceContract {
             val receiver=object:BroadcastReceiver() {
                 override fun onReceive(c:Context,i:Intent) {
                     val b=getResultExtras(false)
-                    val text=if(resultCode==RESULT && b?.getLong("token")==token)
+                    val text=if(resultCode==RESULT && b!=null && b.getLong("token")==token)
                         b.getString("evidence")?.takeIf { it.length<=5_000 }?.let {
                             "pid=${b.getInt("pid")} revision=${b.getString("revision")}\n$it"
                         } else null
