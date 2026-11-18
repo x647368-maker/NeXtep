@@ -6,6 +6,42 @@ import org.junit.Test
 class StagePhasedPromotionEntryPolicyTest {
     private val policy=StagePhasedPromotionEntryPolicy
 
+    @Test fun committedFrameDoesNotEndStillActiveVisualHandoff() {
+        // Task migration ACK/receipt may arrive before the animation owner
+        // calls finished. A geometry refresh in between must remain silent.
+        assertTrue(policy.commitMoveRepositionWithoutExtraAnimator(
+            true,0,true,true,true,false,false,visualHandoffPending=true))
+        assertFalse(policy.canRetireCompletedMainReservation(
+            true,true,0,true,true,true,true,visualHandoffPending=true))
+        assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
+            true,0,true,true,true,false,false,visualHandoffPending=false))
+        assertTrue(policy.canRetireCompletedMainReservation(
+            true,true,0,true,true,true,true,visualHandoffPending=false))
+        // Same protections for non-owned tasks and unrelated displays.
+        assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
+            true,7,true,true,true,false,false,visualHandoffPending=true))
+        assertFalse(policy.commitMoveRepositionWithoutExtraAnimator(
+            true,0,false,true,true,false,false,visualHandoffPending=true))
+    }
+
+    @Test fun visualHoldIsExactTaskAndTokenAndOldFinishCannotReleaseNewLease() {
+        val h=StageMainVisualHandoffHold()
+        val old=h.begin(8,"token-A")
+        assertTrue(h.holds(8,"token-A"))
+        assertFalse(h.holds(8,null))
+        assertFalse(h.holds(8,"reused-task-id"))
+        assertFalse(h.holds(9,"token-A"))
+        val next=h.begin(8,"token-A")
+        assertFalse(h.end(old))
+        assertTrue(h.holds(8,"token-A"))
+        val other=h.begin(9,"token-B")
+        assertTrue(h.end(next))
+        assertFalse(h.holds(8,"token-A"))
+        assertTrue(h.holds(9,"token-B"))
+        assertTrue(h.end(other))
+        assertFalse(h.end(other))
+    }
+
     @Test fun onlyUnexpiredCurrentMainPromotionWithoutPreparedFitSuppressesEntryZoom() {
         for(mask in 0 until 32) {
             fun bit(n:Int)=mask and (1 shl n)!=0
