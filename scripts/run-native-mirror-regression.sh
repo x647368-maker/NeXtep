@@ -151,12 +151,22 @@ grep -F 'PAIRED_FLIGHT_PASS' paired-flight-instrumentation.txt
 ensure_guest_awake before_adaptive
 
 # Mixed-aspect covered regression is independent of the old contain fixture.
+# Preserve the exact same-frame two-real-moving-card pixel assertion. The
+# 1272x2772 16K emulator's full-display screenshot may cost >500ms per
+# sample; CI #44230271251 missed a brief simultaneous outside footprint
+# with only three real screenshots. Run this *geometry-only* capture at 6x
+# scale (normal GPU/paired regressions above remain at 3x). This does not
+# benchmark or change any production animation duration.
+adb shell settings put global animator_duration_scale 6
+echo 'API37 adaptive geometry capture: animation scale=6; all two-card and protected-slot pixel gates unchanged'
 set +e
 timeout --signal=TERM --kill-after=10s 180s adb shell am instrument -e pairedFlightOnly true -e adaptiveCoveredFlight true -w \
   io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation \
   | tee adaptive-flight-instrumentation.txt
 status=${PIPESTATUS[0]}
 set -e
+# Reset the test fixture even when this instrumentation returns failure.
+adb shell settings put global animator_duration_scale 3 || true
 if [ "$status" -ne 0 ]; then
   echo "::error::API37 adaptive covered flight instrumentation failed (exit=$status)"
   exit "$status"
