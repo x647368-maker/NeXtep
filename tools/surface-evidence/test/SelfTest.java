@@ -19,6 +19,9 @@ public final class SelfTest {
    String cfg=TraceConfig.make(true,true);
    check(cfg.contains("duration_ms: 30000")&&cfg.contains("TRACE_FLAG_BUFFERS")&&cfg.contains("TRACE_FLAG_VIRTUAL_DISPLAYS")&&cfg.contains(TraceConfig.TRANSACTIONS));
    check(!TraceConfig.make(false,false).contains(TraceConfig.FRAME));
+   check(TraceConfig.make(180,true,false,false,false,true).contains("duration_ms: 180000"));
+   check(!TraceConfig.make(180,true,false,false,false,true).contains(TraceConfig.TRANSACTIONS));
+   check(TraceConfig.duration(999)==60);
    check(!cfg.contains("android.input")&&!cfg.contains("android.log")&&!cfg.contains("TRACE_FLAG_INPUT"));
    System.out.println("PASS trace packet admission, truncated trace rejection, bounded metadata-only config");
   }finally{f.delete();}
