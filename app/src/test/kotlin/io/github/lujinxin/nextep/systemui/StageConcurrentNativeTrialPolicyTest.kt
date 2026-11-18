@@ -4,6 +4,50 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StageConcurrentNativeTrialPolicyTest {
+    @Test fun onlySlowSuccessfulNativeHandoffsTemporarilyPreferRtFallback() {
+        val policy=StageConcurrentNativeTrialPolicy
+        policy.resetForTests()
+        val complete="completed:gpu_transactions_and_live_handoff_pixels_not_proven"
+        // No global GPU ban from failed, timed-out or fast exchanges.
+        listOf("ended:committed=true frames=43 move=true",
+            "fallback:first_commit_timeout", "completed:wrong_backend",
+            "completed:gpu_unverified", "").forEach { reason ->
+            assertFalse(policy.noteCompletedGpuHandoff(reason,746L,nowMs=1000L))
+        }
+        assertFalse(policy.noteCompletedGpuHandoff(complete,389L,nowMs=1000L))
+        assertFalse(policy.noteCompletedGpuHandoff(complete,619L,nowMs=1000L))
+        assertTrue(policy.allowed(true,true,false,nowMs=1000L))
+
+        // The OnePlus API37 reproduction: a completed 746ms native swap.
+        assertTrue(policy.noteCompletedGpuHandoff(complete,746L,nowMs=1000L))
+        assertFalse(policy.allowed(true,true,false,nowMs=1001L))
+        assertEquals("cooldown:slow_gpu_handoff_746ms",
+            policy.gateReason(true,true,false,nowMs=1001L))
+        assertFalse(policy.allowed(true,true,false,nowMs=8999L))
+        // No timer, permanent session ban or manual reset. A later tap retries.
+        assertTrue(policy.allowed(true,true,false,nowMs=9000L))
+        assertEquals("allowed",policy.gateReason(true,true,false,nowMs=9000L))
+        policy.resetForTests()
+    }
+
+    @Test fun slowNativeCooldownPreservesExistingPowerAndOemAdmission() {
+        val p=StageConcurrentNativeTrialPolicy
+        p.resetForTests()
+        val complete="completed:gpu_transactions_and_live_handoff_pixels_not_proven"
+        assertTrue(p.noteCompletedGpuHandoff(complete,622L,nowMs=300L))
+        // There is never an extra background retry; visible/animation/power
+        // state remain authoritative after the expired bounded pause.
+        assertFalse(p.allowed(false,true,false,nowMs=8300L))
+        assertFalse(p.allowed(true,false,false,nowMs=8300L))
+        assertFalse(p.allowed(true,true,true,nowMs=8300L))
+        assertTrue(p.allowed(true,true,false,nowMs=8300L))
+        p.disableForSession("OEM rejected real mirror")
+        assertFalse(p.allowed(true,true,false,nowMs=100000L))
+        assertTrue(p.gateReason(true,true,false,nowMs=100000L)
+            .startsWith("session_disabled:"))
+        p.resetForTests()
+    }
+
     @Test fun firstReceiptUsesOriginalDeadlineNotDelayedMainDispatch() {
         val p=StageConcurrentNativeTrialPolicy
         assertFalse(p.firstReceiptWithinBudget(100,-1,48))
