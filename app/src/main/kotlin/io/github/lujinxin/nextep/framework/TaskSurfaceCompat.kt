@@ -1055,10 +1055,6 @@ object TaskSurfaceCompat {
             exchangeDisplays[taskId],presentation!=null && frame==finalFrame)
         val ticket=if(requireReceipt && reservation!=null && presentation!=null)
             presentation.commitProof.arm(leash,reservation,frame) else null
-        // Bounded one-shot registration per exact presentation generation:
-        // periodic ordinary reapply cannot accumulate callback listeners.
-        val claimedListener=ticket!=null && presentation!=null &&
-            presentation.commitProof.claimListener(ticket)
         activePresentations[taskId]?.takeIf { it.leash === leash }?.frame = frame
         val loader = hostClassLoader ?: error("SystemUI host class loader is unavailable")
         val transactionClass = Class.forName(
@@ -1072,6 +1068,11 @@ object TaskSurfaceCompat {
         transactionGuard.ownedTransaction {
             try {
                 writeFrame(transaction, taskId, leash, frame)
+                // Claim only once the transaction and all frame writes exist:
+                // a constructor/writeFrame failure must not consume the only
+                // chance to hear a compositor receipt for this generation.
+                val claimedListener=ticket!=null && presentation!=null &&
+                    presentation.commitProof.claimListener(ticket)
                 // A committed task transform is not a GPU mirror receipt or
                 // Binder ACK. Only the matching leash and move reservation
                 // can satisfy this gate; callback does not write any Surface.
