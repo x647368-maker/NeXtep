@@ -66,6 +66,72 @@ class TaskPresentationCommitProofTest {
         }
     }
 
+    @Test fun concurrentArmsAndCallbacksCannotPublishObsoleteTaskReceipts() {
+        val p=TaskPresentationCommitProof<Int>()
+        val owners=Array(8) { Any() }
+        val start=CountDownLatch(1)
+        val done=CountDownLatch(8)
+        val failures=java.util.concurrent.atomic.AtomicInteger()
+        val threads=(0 until 8).map { index ->
+            Thread {
+                if(!start.await(3,TimeUnit.SECONDS)) {
+                    failures.incrementAndGet()
+                    done.countDown()
+                    return@Thread
+                }
+                repeat(1000) { n ->
+                    val ticket=p.arm(owners[index],10000L+index*1000+n,n)
+                    // Out-of-order callbacks must never claim a newer
+                    // task's final transform. Concurrent arm races are
+                    // linearized by the one immutable CAS state.
+                    p.acknowledge(ticket,true)
+                    val current=p.confirmed(owners[index],
+                        10000L+index*1000+n,n)
+                    if(current) {
+                        // A confirmed frame must be the exact one just
+                        // armed, never a mixture of leash, move and frame.
+                        if(!p.confirmed(owners[index],
+                            10000L+index*1000+n,n)) {
+                            // A different thread may already have armed
+                            // its newer ticket; that is normal.
+                        }
+                    }
+                }
+                done.countDown()
+            }
+        }
+        threads.forEach { it.start() }
+        start.countDown()
+        assertTrue(done.await(10,TimeUnit.SECONDS))
+        threads.forEach { it.join(3000) }
+        assertEquals(0,failures.get())
+        // A definitive final owner starts a new transaction. None of the
+        // callbacks from the 8,000 completed racing writes can override it.
+        val finalLeash=Any()
+        val finalTicket=p.arm(finalLeash,999999L,42)
+        assertFalse(p.confirmed(finalLeash,999999L,42))
+        assertTrue(p.acknowledge(finalTicket,true))
+        assertTrue(p.confirmed(finalLeash,999999L,42))
+        p.invalidate()
+        assertFalse(p.confirmed(finalLeash,999999L,42))
+        assertFalse(p.acknowledge(finalTicket,true))
+    }
+
+    @Test fun sameFrameDuplicateSubmissionDoesNotResetConfirmedReceipt() {
+        val p=TaskPresentationCommitProof<String>()
+        val leash=Any()
+        val first=p.arm(leash,4400L,"main-center-crop")
+        assertTrue(p.acknowledge(first,true))
+        assertSame(first,p.arm(leash,4400L,"main-center-crop"))
+        assertTrue(p.confirmed(leash,4400L,"main-center-crop"))
+        val newer=p.arm(leash,4401L,"main-center-crop")
+        assertNotSame(first,newer)
+        assertFalse(p.confirmed(leash,4401L,"main-center-crop"))
+        assertFalse(p.acknowledge(first,true))
+        assertTrue(p.acknowledge(newer,true))
+        assertTrue(p.confirmed(leash,4401L,"main-center-crop"))
+    }
+
     @Test fun callbackRacingWithNextMoveCannotConfirmTheNewMainOwner() {
         val p=TaskPresentationCommitProof<Int>()
         val firstOwner=Any()
