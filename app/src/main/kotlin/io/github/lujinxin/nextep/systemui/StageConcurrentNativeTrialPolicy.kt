@@ -17,6 +17,11 @@ internal object StageConcurrentNativeTrialPolicy {
     private const val SEVERE_PREP_MS=80L
     private const val SLOW_COOLDOWN_MS=1500L
     private const val SEVERE_COOLDOWN_MS=4000L
+    // A successful-but-very-slow native flight must not repeatedly penalize
+    // rapid taps. The already-supported RenderThread path remains available.
+    // Retry the real GPU backend after a short on-demand pause; no timer.
+    private const val SLOW_GPU_COMPLETE_MS=620L
+    private const val SLOW_GPU_RETRY_MS=8000L
     @Volatile private var retryAtMs=0L
     @Volatile private var cooldownReason="none"
     private fun monotonicMs():Long = System.nanoTime()/1_000_000L
@@ -44,6 +49,23 @@ internal object StageConcurrentNativeTrialPolicy {
         !animationEnabled -> "system_animators_disabled"
         powerSave -> "power_saver"
         else -> "allowed"
+    }
+
+    /**
+     * Accept only a genuinely completed two-task GPU handoff. A timeout,
+     * rollback, partial mirror flight or slow fallback is not success and
+     * must never trigger the success-only latency circuit breaker.
+     *
+     * No task, Surface or display writes are made here. Normal swaps retry
+     * native automatically once this bounded monotonic deadline expires.
+     */
+    fun noteCompletedGpuHandoff(outcome:String, elapsedMs:Long,
+                                nowMs:Long=monotonicMs()):Boolean {
+        if (!outcome.startsWith("completed:gpu_transactions_and_live_handoff") ||
+            elapsedMs < SLOW_GPU_COMPLETE_MS || nowMs < 0L) return false
+        retryAtMs=maxOf(retryAtMs,nowMs+SLOW_GPU_RETRY_MS)
+        cooldownReason="slow_gpu_handoff_${elapsedMs}ms"
+        return true
     }
 
     fun fullScreenHost(x:Int,y:Int,width:Int,height:Int,physicalW:Int,physicalH:Int):Boolean =
