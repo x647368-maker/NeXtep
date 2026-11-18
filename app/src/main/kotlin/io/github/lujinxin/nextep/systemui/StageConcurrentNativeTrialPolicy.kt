@@ -96,6 +96,8 @@ internal object StageConcurrentNativeTrialPolicy {
         // not a permanent OEM refusal and must not eat all later animations.
         "fallback:slot_task_leash_not_ready",
         "fallback:mirror_source_changed",
+        "fallback:main_source_frame_unsettled",
+        "fallback:main_source_mapping_unrepresentable",
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false

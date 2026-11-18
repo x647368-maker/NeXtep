@@ -401,6 +401,23 @@ object TaskSurfaceCompat {
             " restoring=${presentation.restoring}"
     }
 
+    /** Cached task-local crop and requested stable root transform for mirror admission.
+     * This is not a compositor pixel receipt. Keep the identity and geometry together.
+     */
+    internal fun ownedMainMirrorFrame(stamp: MirrorSourceStamp): MirrorDestinationFrame? {
+        if (stamp.displayId != Display.DEFAULT_DISPLAY ||
+            !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId))) return null
+        val p=activePresentations[stamp.taskId] ?: return null
+        val frame=p.frame
+        val crop=frame.crop ?: return null
+        if (p.leash !== stamp.leash || !isPresentationSettled(stamp.taskId,p.geometry) ||
+            p.frame !== frame || activePresentations[stamp.taskId] !== p ||
+            frame.scaleX != frame.scaleY || !frame.scaleX.isFinite() || frame.scaleX<=0f ||
+            !frame.positionX.isFinite() || !frame.positionY.isFinite() || crop.isEmpty) return null
+        return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
+            Rect(crop),frame.scaleX,frame.positionX,frame.positionY)
+    }
+
     internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
         val active = activePresentations[taskId] ?: return null
         if (active.restoring || ownedTaskLeash(taskId) !== active.leash ||

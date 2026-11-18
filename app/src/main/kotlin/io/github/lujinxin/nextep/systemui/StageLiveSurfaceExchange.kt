@@ -81,6 +81,16 @@ internal class StageLiveSurfaceExchange private constructor(
     private val outgoingGeometryCrop = StageLiveSurfaceFlightGeometry.Crop(
         mainCrop.left,mainCrop.top,mainCrop.right,mainCrop.bottom)
     private var pairedRailPlan:SmoothPairedRailCandidate.Plan?=null
+    // Null only for the existing synthetic compositor fixtures; production
+    // create() always binds the settled, owned original task geometry.
+    private var mainSourceFrame:TaskSurfaceCompat.MirrorDestinationFrame?=null
+    private var mainFirstFrame:StageLiveSurfaceFlightGeometry.MirrorFrame?=null
+
+    private fun mainSourceStillMatches():Boolean {
+        val original=mainSourceFrame ?: return true
+        val now=TaskSurfaceCompat.ownedMainMirrorFrame(outgoingStamp) ?: return false
+        return now.leash===original.leash && now==original
+    }
     // Real ViewRoot instrumentation uses this explicit test seam. The ordinary
     // task factory still requires both private debug flags for route selection.
     internal fun preparePairedRailRuntimeTest(
@@ -401,9 +411,17 @@ internal class StageLiveSurfaceExchange private constructor(
                 StageExchangeTelemetry.nativeEvent("mirror_root=unknown")
                 return markUnavailable("mirror_root_unknown")
             }
-            val outgoingCrop=StageLiveSurfaceFlightGeometry.mainMirrorCrop(
-                to,fullScreenWidth,fullScreenHeight,detached)
-                ?: return markUnavailable("invalid_bounds")
+            val outgoingBefore=TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)
+                ?: return markUnavailable("main_source_frame_unsettled")
+            val originalMain=TaskSurfaceCompat.ownedMainMirrorFrame(outgoingBefore)
+                ?: return markUnavailable("main_source_frame_unsettled")
+            val sourceCropLocal=originalMain.crop
+            val firstMain=StageLiveSurfaceFlightGeometry.mainMirrorStart(
+                to,StageLiveSurfaceFlightGeometry.Crop(sourceCropLocal.left,sourceCropLocal.top,
+                    sourceCropLocal.right,sourceCropLocal.bottom),
+                originalMain.scale,originalMain.x,originalMain.y,detached)
+                ?: return markUnavailable("main_source_mapping_unrepresentable")
+            val outgoingCrop=firstMain.crop
             // Vendor APIs can throw after the first handle has been acquired.
             // Every early return and constructor failure must release all
             // locally owned surfaces independently; never release task leashes.
@@ -419,7 +437,6 @@ internal class StageLiveSurfaceExchange private constructor(
                 // which caused PR59 to show the new app twice while still flying.
                 StageExchangeTelemetry.nativeEvent(
                     TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
-                val outgoingBefore=TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0)
                 val incomingBefore=TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)
                 val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
                     ?: return markUnavailable("no_owned_main_task_mirror")
@@ -513,7 +530,8 @@ internal class StageLiveSurfaceExchange private constructor(
                 val stableOutgoing=outgoingBefore?.takeIf {
                     it.sameSource(TaskSurfaceCompat.mirrorSourceStamp(mainTaskId,0))
                 }
-                if (stableIncoming==null || stableOutgoing==null) {
+                if (stableIncoming==null || stableOutgoing==null ||
+                    TaskSurfaceCompat.ownedMainMirrorFrame(stableOutgoing)!=originalMain) {
                     return markUnavailable("mirror_source_changed")
                 }
                 // Borrow the texture only after every source/geometry gate.
@@ -541,6 +559,15 @@ internal class StageLiveSurfaceExchange private constructor(
                     detached,
                 )
                 exchange.pairedRailPlan=pairedPlan
+                // Do not substitute a different start into a certified motion
+                // envelope. Accept only if its existing first mapped content
+                // is already equivalent to the owned task's exact transform.
+                val plannedFirst=exchange.flightFrames(0f)?.second
+                    ?: return markUnavailable("main_source_mapping_unrepresentable")
+                if(!StageLiveSurfaceFlightGeometry.sameMirrorContent(firstMain,plannedFirst))
+                    return markUnavailable("main_source_mapping_unrepresentable")
+                exchange.mainSourceFrame=originalMain
+                exchange.mainFirstFrame=firstMain
                 exchange.traceMirrorAdmission(detached)
                 // Transfer ownership only once the exchange object exists.
                 lastOutcome="capable:two_owned_tasks_and_atomic_masks"
@@ -601,6 +628,11 @@ internal class StageLiveSurfaceExchange private constructor(
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
+        if(!mainSourceStillMatches()) {
+            finished.set(true)
+            cleanupWithoutCallback()
+            return false
+        }
         val finalIncoming = StageLiveSurfaceFlightGeometry.mirrorFrame(
             slotStart, mainStart, incomingGeometryCrop, 1f, coveredFlight)
         val finalOutgoing = StageLiveSurfaceFlightGeometry.mirrorFrame(
@@ -708,7 +740,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 { incomingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
                     incomingStamp.taskId,incomingStamp.displayId)) },
                 { outgoingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
-                    outgoingStamp.taskId,outgoingStamp.displayId)) })
+                    outgoingStamp.taskId,outgoingStamp.displayId)) && mainSourceStillMatches() })
         }.getOrElse {
             runCatching { NeXtepLog.warn("native_swap","Source preflight failed",it) }
             false
@@ -1048,7 +1080,7 @@ internal class StageLiveSurfaceExchange private constructor(
             StageLiveSurfaceFlightGeometry.mirrorPosition(fit.left,crop.left,scale),
             StageLiveSurfaceFlightGeometry.mirrorPosition(fit.top,crop.top,scale),crop,fit)
     }
-    private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
+    private fun flightFrames(p:Float):Pair<StageLiveSurfaceFlightGeometry.MirrorFrame,StageLiveSurfaceFlightGeometry.MirrorFrame>? {
         val paired=pairedRailPlan?.at(p)
         // At p=0 keep the original complete source; at every later frame
         // the planned viewport is independent of the uniformly scaled crop.
@@ -1057,13 +1089,19 @@ internal class StageLiveSurfaceExchange private constructor(
         else if(paired!=null && !coveredFlight)pairFrame(paired.incoming,incomingGeometryCrop)
         else StageLiveSurfaceFlightGeometry.mirrorFrame(
             slotStart,mainStart,incomingGeometryCrop,p,coveredFlight,
-        )) ?: error("Unsafe incoming GPU rail path")
+        )) ?: return null
         val outgoing=(if(paired!=null && coveredFlight && p>0f)
             StageAdaptiveCoveredRailRoute.frame(paired.outgoing,outgoingGeometryCrop)
         else if(paired!=null && !coveredFlight)pairFrame(paired.outgoing,outgoingGeometryCrop)
         else StageLiveSurfaceFlightGeometry.mirrorFrame(
             mainStart,slotStart,outgoingGeometryCrop,p,coveredFlight,
-        )) ?: error("Unsafe outgoing GPU rail path")
+        )) ?: return null
+        return incoming to outgoing
+    }
+
+    private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
+        val (incoming,plannedOutgoing)=flightFrames(p) ?: error("Unsafe GPU rail path")
+        val outgoing=if(p==0f) mainFirstFrame ?: plannedOutgoing else plannedOutgoing
         // Both task mirrors are updated by the same GPU transaction. Cover
         // mode changes only their transient crop, never original task bounds.
         if (coveredFlight) {

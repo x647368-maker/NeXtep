@@ -323,6 +323,46 @@ internal object StageLiveSurfaceFlightGeometry {
         else Crop(visible.left.toInt(),visible.top.toInt(),visible.right.toInt(),visible.bottom.toInt())
     }
 
+    /** Exact known-contract source mapping; crop rounding never exposes pixels
+     * outside the source. Reject mismatching visible geometry before attaching.
+     * The legacy width/height overload is retained for historical fixtures.
+     */
+    fun mainMirrorStart(visible:Box, local:Crop, producerScale:Float,
+                        producerX:Float, producerY:Float, detachedRoot:Boolean):MirrorFrame? {
+        if (!visible.valid() || local.right.toLong()-local.left<2L ||
+            local.bottom.toLong()-local.top<2L ||
+            !producerScale.isFinite() || producerScale<=0f || producerScale>10f ||
+            !producerX.isFinite() || !producerY.isFinite()) return null
+        val source=Box(local.left*producerScale+producerX,local.top*producerScale+producerY,
+            local.right*producerScale+producerX,local.bottom*producerScale+producerY)
+        if (!source.valid() || endpointGapPx(visible,source)>1f) return null
+        val crop=if(detachedRoot) local else {
+            val l=kotlin.math.ceil(source.left.toDouble())
+            val t=kotlin.math.ceil(source.top.toDouble())
+            val r=kotlin.math.floor(source.right.toDouble())
+            val b=kotlin.math.floor(source.bottom.toDouble())
+            if(listOf(l,t,r,b).any { it<Int.MIN_VALUE || it>Int.MAX_VALUE } ||
+                r-l<2.0 || b-t<2.0)return null
+            Crop(l.toInt(),t.toInt(),r.toInt(),b.toInt())
+        }
+        val scale=if(detachedRoot) producerScale else 1f
+        val x=if(detachedRoot) producerX else 0f
+        val y=if(detachedRoot) producerY else 0f
+        val box=Box(crop.left*scale+x,crop.top*scale+y,crop.right*scale+x,crop.bottom*scale+y)
+        if (!box.valid() || endpointGapPx(visible,box)>2f) return null
+        return MirrorFrame(scale,x,y,crop,box)
+    }
+
+    /** Same content coordinates, not merely the same outer viewport. Bound
+     * affine drift at all four crop corners (also bounds every interior point).
+     */
+    fun sameMirrorContent(a:MirrorFrame,b:MirrorFrame,tolerancePx:Float=1f):Boolean {
+        if(a.crop!=b.crop || !tolerancePx.isFinite() || tolerancePx<0f) return false
+        fun dx(x:Int)=kotlin.math.abs((a.scale-b.scale)*x+a.x-b.x)
+        fun dy(y:Int)=kotlin.math.abs((a.scale-b.scale)*y+a.y-b.y)
+        return maxOf(dx(a.crop.left),dx(a.crop.right),dy(a.crop.top),dy(a.crop.bottom))<=tolerancePx
+    }
+
     fun mirrorPosition(coordinate:Float,cropOrigin:Int,scale:Float):Float =
         coordinate-cropOrigin*scale
 

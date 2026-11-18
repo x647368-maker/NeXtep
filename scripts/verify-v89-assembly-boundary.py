@@ -151,17 +151,28 @@ def main():
     diagnostic = "5f70f77a81faffb368c98e3659ba701ae2e747fb"
     subprocess.run(["git", "merge-base", "--is-ancestor", diagnostic, "HEAD"], cwd=ROOT, check=True)
     equal(paths(evidence, diagnostic), {GATE}, "post-evidence gate-only delta")
-    equal(paths(diagnostic, "HEAD"), {
+    contract_fix = "2f4a6d3cefd0c86cd5339f562643dcb6c1028dad"
+    subprocess.run(["git", "merge-base", "--is-ancestor", contract_fix, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(diagnostic, contract_fix), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "explicit P0 mirror contract admission delta")
+    equal(paths(contract_fix, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"systemui/StageLiveSurfaceFlightGeometry.kt",
+        P+"framework/TaskSurfaceCompat.kt",
+        P+"systemui/StageConcurrentNativeTrialPolicy.kt",
+        T+"systemui/StageMainMirrorStartTest.kt",
+    }, "explicit owned source first-frame mapping delta")
     mirror_source = source("systemui/StageLiveSurfaceExchange.kt",
                            "DETACHED, RETAINED, UNKNOWN", "return markUnavailable(\"mirror_root_unknown\")")
     require("unknown_legacy" not in mirror_source, "no unknown-as-retained route")
     require(mirror_source.index("val detached=contract.detachedOrNull()") <
-            mirror_source.index("val outgoingCrop=StageLiveSurfaceFlightGeometry.mainMirrorCrop(") <
+            mirror_source.index("val firstMain=StageLiveSurfaceFlightGeometry.mainMirrorStart(") <
             mirror_source.index("TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)"),
             "unknown rejected before geometry and mirror acquisition")
+    source("framework/TaskSurfaceCompat.kt", "fun ownedMainMirrorFrame(", "p.frame !== frame")
+    source("systemui/StageLiveSurfaceExchange.kt", "sameMirrorContent(firstMain,plannedFirst)", "mainFirstFrame ?: plannedOutgoing", "mainSourceStillMatches()")
     source("logging/StageAttemptEvidence.kt", "max_scale_step=", "task_pair up=", "stage_overflow=")
     source("logging/StageSurfaceHandoffTrace.kt", "task_write_temporal", "fun bindPair(", "if(!evidence.hasOpenCapture())return")
     source("systemui/StageLiveSurfaceExchange.kt", "traceMirrorAdmission(detached)", '"held_mirror"')
