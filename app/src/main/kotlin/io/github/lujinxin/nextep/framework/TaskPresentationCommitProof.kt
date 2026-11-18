@@ -86,5 +86,23 @@ internal class TaskPresentationCommitProof<F> {
                                      committed:Boolean):Boolean =
             !needsReceipt(sdk,recordedReservation!=null,destinationDisplay,
                 currentlyOwned) || committed
+
+        /**
+         * A delayed compositor callback is still valid after the scheduling
+         * reservation's *deadline* provided its recorded move identity and
+         * task surface ownership have not changed. Using a current-time/TTL
+         * check here contradicts settledAfterRecordedMove: a real late
+         * transaction would be discarded and the handoff could only timeout.
+         *
+         * Cancellation clears the record; subsequent moves replace it and
+         * invalidate the old ticket. Neither case can reuse this receipt.
+         */
+        fun matchesCommittedReceipt(recordedReservation:Long?,
+                                    submittedReservation:Long,
+                                    destinationDisplay:Int?,
+                                    samePresentation:Boolean,
+                                    sameLeash:Boolean):Boolean =
+            recordedReservation==submittedReservation &&
+                destinationDisplay==0 && samePresentation && sameLeash
     }
 }
