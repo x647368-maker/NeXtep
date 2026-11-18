@@ -1,7 +1,7 @@
 name: Standalone surface evidence APK
 on:
   push:
-    branches: ['tools/surface-evidence-20261118']
+    branches: ['tools/surface-single-swap-20261118']
 permissions:
   contents: read
 jobs:
@@ -38,10 +38,10 @@ jobs:
           (cd build/dex && zip -q ../base.apk classes.dex)
           "$BT/zipalign" -f 4 build/base.apk build/aligned.apk
           keytool -genkeypair -keystore /tmp/probe.jks -storepass standalone-probe -keypass standalone-probe -alias probe -keyalg RSA -keysize 2048 -validity 3650 -dname 'CN=Standalone Surface Evidence Test' >/dev/null 2>&1
-          "$BT/apksigner" sign --ks /tmp/probe.jks --ks-pass pass:standalone-probe --key-pass pass:standalone-probe --out build/out/AtomicWorkbench-SurfaceProbe-v1.1.apk build/aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs build/out/AtomicWorkbench-SurfaceProbe-v1.1.apk > build/out/signature.txt
-          "$BT/aapt2" dump badging build/out/AtomicWorkbench-SurfaceProbe-v1.1.apk > build/out/badging.txt
-          grep -F "package: name='io.github.x647368maker.surfaceprobe.v2' versionCode='2'" build/out/badging.txt
+          "$BT/apksigner" sign --ks /tmp/probe.jks --ks-pass pass:standalone-probe --key-pass pass:standalone-probe --out build/out/AtomicWorkbench-SurfaceProbe-v1.2.apk build/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs build/out/AtomicWorkbench-SurfaceProbe-v1.2.apk > build/out/signature.txt
+          "$BT/aapt2" dump badging build/out/AtomicWorkbench-SurfaceProbe-v1.2.apk > build/out/badging.txt
+          grep -F "package: name='io.github.x647368maker.surfaceprobe.v3' versionCode='3'" build/out/badging.txt
           cat build/out/signature.txt
           grep -E 'Verified using v(2|3) scheme .*: true' build/out/signature.txt
           ! grep -F 'android.permission.INTERNET' build/out/badging.txt

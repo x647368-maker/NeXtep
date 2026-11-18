@@ -1,8 +1,10 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.x647368maker.surfaceprobe.v2" android:versionCode="2" android:versionName="1.1">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.x647368maker.surfaceprobe.v3" android:versionCode="3" android:versionName="1.2">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
-    <application android:label="图层取证 V1.1" android:icon="@android:drawable/ic_menu_info_details" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false">
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <application android:label="单次交换取证 V1.2" android:icon="@android:drawable/ic_menu_info_details" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false">
         <activity android:name="io.github.x647368maker.surfaceprobe.MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
