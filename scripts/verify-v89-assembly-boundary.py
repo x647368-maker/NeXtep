@@ -202,10 +202,25 @@ def main():
         GATE, P+"framework/TaskSurfaceCompat.kt", P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "verified demotion read only at final content check")
-    equal(paths(dest_read, "HEAD"), {
+    common_domain = "41adf07aa0d7a7e1b8de054c4feb0122fb6ed4bd"
+    subprocess.run(["git", "merge-base", "--is-ancestor", common_domain, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(dest_read, common_domain), {
         GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "conservative old/new common domain; no metadata-as-buffer expansion")
+    equal(paths(common_domain, "HEAD"), {
+        GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "bounded destination evidence retry only")
+    source("systemui/StageEndpointContentMapping.kt", "liveReady && read==DestinationRead.READY",
+           "StageConcurrentNativeTrialPolicy.handoffAction(elapsedMs,timeoutMs,")
+    source("systemui/StageLiveSurfaceExchange.kt", 'missing("main_identity")',
+           'missing("slot_texture_identity")', 'missing("main_geometry",pending=true)',
+           "content_geometry_pending", "content_target_geometry_rejected")
+    for rel in ("framework/TaskSurfaceCompat.kt","systemui/StageConcurrentNativeTrialPolicy.kt"):
+        path=P+rel
+        require((ROOT/path).read_bytes()==git("show",common_domain+":"+path),
+                "destination read retry changed task ownership or timing policy "+path)
     source("systemui/StageEndpointContentMapping.kt", "projected(common,sourceRoot)",
            "projected(overlap(local,a.commonLocal)", "val end=a.terminalAvailable")
     source("systemui/StageLiveSurfaceExchange.kt", "content_domain_gap", "buffer_latch_unobserved")
@@ -218,7 +233,7 @@ def main():
     source("systemui/StageEndpointContentMapping.kt", "fun compose(", "fun mapError(", "fun held(", "fun flight(")
     source("systemui/StageLiveSurfaceExchange.kt", "if(inEvidenceScope && diagnosticOptIn)",
            "endpoint_content_anchor_trial=both", "StageEndpointContentMapping.flight(",
-           "StageEndpointContentMapping.held(", 'destinationContentMatches("ready")',
+           "StageEndpointContentMapping.held(", 'destinationContentRead("ready")',
            'destinationContentMatches("reveal_end")', "content_terminal")
     source("display/TaskSwitcherView.kt", "internal fun mirrorLiveContentBounds()")
     source("framework/TaskSurfaceCompat.kt", "internal fun ownedSlotMirrorFrame(")

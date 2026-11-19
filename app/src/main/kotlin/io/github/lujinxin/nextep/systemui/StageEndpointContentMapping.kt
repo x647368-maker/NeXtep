@@ -14,6 +14,22 @@ private typealias MirrorFrame = StageLiveSurfaceFlightGeometry.MirrorFrame
  * after relayout, nor an observation of the actual latched buffer.
  */
 internal object StageEndpointContentMapping {
+    enum class DestinationRead { READY, PENDING, REJECTED }
+    enum class DestinationHandoff { WAIT, READY, EXPIRED, REJECTED }
+
+    // Reuse the original active handoff clock. Missing read evidence may
+    // recover at the next already-scheduled check, not on a new timer.
+    fun destinationHandoff(elapsedMs:Long,timeoutMs:Long,frameComplete:Boolean,
+                           releasable:Boolean,liveReady:Boolean,read:DestinationRead):DestinationHandoff {
+        if(read==DestinationRead.REJECTED)return DestinationHandoff.REJECTED
+        return when(StageConcurrentNativeTrialPolicy.handoffAction(elapsedMs,timeoutMs,
+                frameComplete,releasable,liveReady && read==DestinationRead.READY)) {
+            StageConcurrentNativeTrialPolicy.HandoffAction.WAIT -> DestinationHandoff.WAIT
+            StageConcurrentNativeTrialPolicy.HandoffAction.READY -> DestinationHandoff.READY
+            StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED -> DestinationHandoff.EXPIRED
+        }
+    }
+
     data class ContentMap(val scale:Float,val x:Float,val y:Float) {
         fun valid()=scale.isFinite() && scale>0f && x.isFinite() && y.isFinite()
     }

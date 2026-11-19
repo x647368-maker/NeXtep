@@ -187,25 +187,32 @@ internal class StageLiveSurfaceExchange private constructor(
     /** A cache/view geometry comparison, not an app buffer or visible-pixel receipt.
      * Only called at the existing ready/reveal boundaries, never by a new poller.
      */
-    private fun destinationContentMatches(phase:String):Boolean {
-        val up=incomingAnchor ?: return true
-        val down=outgoingAnchor ?: return false
+    private fun destinationContentMatches(phase:String):Boolean =
+        destinationContentRead(phase)==StageEndpointContentMapping.DestinationRead.READY
+
+    private fun destinationContentRead(phase:String):StageEndpointContentMapping.DestinationRead {
+        val up=incomingAnchor ?: return StageEndpointContentMapping.DestinationRead.READY
+        val down=outgoingAnchor ?: return StageEndpointContentMapping.DestinationRead.REJECTED
         val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
-        fun missing(reason:String):Boolean {
-            diag.detail(traceAttemptId,"content_real_"+phase) {
-                "content_real_$phase unconfirmed=$reason requested_geometry_only"
+        fun missing(reason:String,pending:Boolean=false):StageEndpointContentMapping.DestinationRead {
+            val status=if(pending)StageEndpointContentMapping.DestinationRead.PENDING
+                       else StageEndpointContentMapping.DestinationRead.REJECTED
+            diag.detail(traceAttemptId,"content_real_"+phase+"_"+status.name) {
+                "content_real_$phase unconfirmed=$reason status=$status requested_geometry_only"
             }
-            return false
+            return status
         }
-        if(endpointWriteFailed.get() || !incomingRebased.get() || !outgoingRebased.get())return missing("held_write")
+        if(endpointWriteFailed.get())return missing("held_write_failed")
+        // Do not extend the hold on a changed or unconfirmed task identity.
         val mapper=StageEndpointContentMapping
         val mainStamp=destinationStamp(incomingStamp,outgoingStamp.displayId) ?: return missing("main_identity")
         val slotStamp=destinationStamp(outgoingStamp,incomingStamp.displayId) ?: return missing("slot_identity")
-        val main=TaskSurfaceCompat.ownedMainMirrorFrame(mainStamp) ?: return missing("main_geometry")
-        val slot=TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp) ?: return missing("verified_slot_geometry")
         val slotView=slotSourceView ?: return missing("slot_view")
         if(slotView.textureView!==slotSourceTexture)return missing("slot_texture_identity")
-        val slotBounds=slotView.mirrorLiveContentBounds() ?: return missing("slot_view_geometry")
+        if(!incomingRebased.get() || !outgoingRebased.get())return missing("held_write",pending=true)
+        val main=TaskSurfaceCompat.ownedMainMirrorFrame(mainStamp) ?: return missing("main_geometry",pending=true)
+        val slot=TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp) ?: return missing("verified_slot_geometry",pending=true)
+        val slotBounds=slotView.mirrorLiveContentBounds() ?: return missing("slot_view_geometry",pending=true)
         val mainMap=StageEndpointContentMapping.ContentMap(main.scale,main.x,main.y)
         val slotMap=mapper.slotMap(localCrop(slot),StageLiveSurfaceFlightGeometry.Box(
             slotBounds.left,slotBounds.top,slotBounds.right,slotBounds.bottom)) ?: return missing("slot_content_map")
@@ -213,10 +220,12 @@ internal class StageLiveSurfaceExchange private constructor(
         val downDelta=mapper.mapError(down.target,slotMap,down.targetLocal)
         val upOk=localCrop(main)==up.targetLocal && upDelta<=1f
         val downOk=localCrop(slot)==down.targetLocal && downDelta<=1f
-        diag.detail(traceAttemptId,"content_real_"+phase) {
+        val status=if(upOk && downOk)StageEndpointContentMapping.DestinationRead.READY
+                   else StageEndpointContentMapping.DestinationRead.REJECTED
+        diag.detail(traceAttemptId,"content_real_"+phase+"_"+status.name) {
             "content_real_$phase up_err=$upDelta down_err=$downDelta crop_match=$upOk/$downOk requested_geometry_only"
         }
-        return upOk && downOk
+        return status
     }
 
     private fun mainSourceStillMatches():Boolean {
@@ -1441,30 +1450,33 @@ internal class StageLiveSurfaceExchange private constructor(
                 val now=SystemClock.uptimeMillis()
                 val releasable=frameComplete && runCatching { canRelease() }.getOrDefault(false)
                 val live=releasable && runCatching { liveReady() }.getOrDefault(false)
+                val contentRead=if(live && incomingAnchor!=null)
+                    runCatching { destinationContentRead("ready") }
+                        .getOrDefault(StageEndpointContentMapping.DestinationRead.REJECTED)
+                    else StageEndpointContentMapping.DestinationRead.READY
                 val reason=when {
                     !frameComplete -> "flight_end_missing"
                     !releasable -> "session_unsettled"
                     !live -> "target_not_ready"
+                    contentRead==StageEndpointContentMapping.DestinationRead.PENDING -> "content_geometry_pending"
+                    contentRead==StageEndpointContentMapping.DestinationRead.REJECTED -> "content_geometry_rejected"
                     else -> "ready"
                 }
                 if (reason != lastHandoffWait) {
                     lastHandoffWait=reason
                     trace("handoff_state=$reason host_attached=${host.isAttachedToWindow}")
                 }
-                when (StageConcurrentNativeTrialPolicy.handoffAction(
-                    now-moveCompletedAt,timeout,frameComplete,releasable,live)) {
-                    StageConcurrentNativeTrialPolicy.HandoffAction.WAIT ->
+                when (StageEndpointContentMapping.destinationHandoff(
+                    now-moveCompletedAt,timeout,frameComplete,releasable,live,contentRead)) {
+                    StageEndpointContentMapping.DestinationHandoff.REJECTED -> {
+                        trace("content_target_geometry_rejected")
+                        stop()
+                    }
+                    StageEndpointContentMapping.DestinationHandoff.WAIT ->
                         ui.postAtTime(this,StageConcurrentNativeTrialPolicy.nextHandoffCheck(
                             SystemClock.uptimeMillis(),deadline))
-                    StageConcurrentNativeTrialPolicy.HandoffAction.READY -> {
+                    StageEndpointContentMapping.DestinationHandoff.READY -> {
                         trace("handoff_target_ready@${now-startedAtMs}ms")
-                        // Do not extend the wait, change task owners, or call
-                        // an unverified content handoff successful.
-                        if(incomingAnchor!=null && !runCatching { destinationContentMatches("ready") }.getOrDefault(false)) {
-                            trace("content_target_geometry_unconfirmed")
-                            stop()
-                            return
-                        }
                         val gapReveal=endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted
                         // Identical outer boxes can still hide a crop/content
                         // discontinuity at the adaptive endpoint. Only blend
@@ -1485,7 +1497,7 @@ internal class StageLiveSurfaceExchange private constructor(
                             stop()
                         }
                     }
-                    StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED -> {
+                    StageEndpointContentMapping.DestinationHandoff.EXPIRED -> {
                         handoffTimedOut=true
                         trace("handoff_timeout:$reason@${now-startedAtMs}ms")
                         // Do not classify a timed-out visual handoff as ready.

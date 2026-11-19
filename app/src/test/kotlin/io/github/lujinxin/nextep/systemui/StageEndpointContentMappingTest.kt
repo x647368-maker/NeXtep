@@ -92,6 +92,26 @@ class StageEndpointContentMappingTest {
         assertNull(m.held(a,tall,map(Float.NaN,0f,0f)))
     }
 
+    @Test fun temporaryContentReadUsesOnlyExistingHandoffDeadline() {
+        val pending=StageEndpointContentMapping.DestinationRead.PENDING
+        val ready=StageEndpointContentMapping.DestinationRead.READY
+        val rejected=StageEndpointContentMapping.DestinationRead.REJECTED
+        val wait=StageEndpointContentMapping.DestinationHandoff.WAIT
+        val success=StageEndpointContentMapping.DestinationHandoff.READY
+        val expired=StageEndpointContentMapping.DestinationHandoff.EXPIRED
+        val deny=StageEndpointContentMapping.DestinationHandoff.REJECTED
+        assertEquals(wait,m.destinationHandoff(0,100,true,true,true,pending))
+        assertEquals(wait,m.destinationHandoff(16,100,true,true,true,pending))
+        assertEquals(success,m.destinationHandoff(32,100,true,true,true,ready))
+        assertEquals(wait,m.destinationHandoff(99,100,true,true,true,pending))
+        assertEquals(expired,m.destinationHandoff(100,100,true,true,true,pending))
+        assertEquals(deny,m.destinationHandoff(16,100,true,true,true,rejected))
+        assertEquals(wait,m.destinationHandoff(16,100,true,false,true,ready))
+        assertEquals(wait,m.destinationHandoff(16,100,true,true,false,ready))
+        assertEquals(expired,m.destinationHandoff(100,100,false,true,true,ready))
+        assertEquals(100L,StageConcurrentNativeTrialPolicy.nextHandoffCheck(99L,100L))
+    }
+
     @Test fun correctionCannotExpandTheExistingRouteFootprint() {
         val target=map(.75f,318f,460f)
         val first=frame(short,.19654088f,34f,1415.6533f)
