@@ -180,16 +180,177 @@ def main():
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "explicit private firmware-scoped evidence trial only")
-    equal(paths(evidence_trial, "HEAD"), {
+    diag_retry = "30498e1a5c5e5a0390e320e8fc6f629d560ff2a3"
+    subprocess.run(["git", "merge-base", "--is-ancestor", diag_retry, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(evidence_trial, diag_retry), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "isolated opt-in diagnostic retry delta")
+    content_candidate = "72bd16eeeba65ae31c151abeb59f7b8c1c061604"
+    subprocess.run(["git", "merge-base", "--is-ancestor", content_candidate, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(diag_retry, content_candidate), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"systemui/StageConcurrentNativeTrialPolicy.kt",
+        P+"framework/TaskSurfaceCompat.kt", P+"display/TaskSwitcherView.kt",
+        P+"systemui/StageEndpointContentMapping.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "isolated content endpoint trial delta")
+    dest_read = "bd6a1d3957b75605e2c64682e780386092281d72"
+    subprocess.run(["git", "merge-base", "--is-ancestor", dest_read, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(content_candidate, dest_read), {
+        GATE, P+"framework/TaskSurfaceCompat.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "verified demotion read only at final content check")
+    common_domain = "41adf07aa0d7a7e1b8de054c4feb0122fb6ed4bd"
+    subprocess.run(["git", "merge-base", "--is-ancestor", common_domain, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(dest_read, common_domain), {
+        GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "conservative old/new common domain; no metadata-as-buffer expansion")
+    read_retry = "ce4bd290a98402041e565266ef41e87b238c2551"
+    subprocess.run(["git", "merge-base", "--is-ancestor", read_retry, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(common_domain, read_retry), {
+        GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "bounded destination evidence retry only")
+    completed_demotion = "62ffa0db7e1633939c4b8a0e8a9c16ab5d707bbc"
+    subprocess.run(["git", "merge-base", "--is-ancestor", completed_demotion, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(read_retry, completed_demotion), {
+        GATE, P+"framework/TaskSurfaceCompat.kt", P+"framework/ObservedDemotionFitPolicy.kt",
+        P+"systemui/StageLiveSurfaceExchange.kt", T+"framework/ObservedDemotionFitPolicyTest.kt",
+    }, "read-only completed demotion mirror admission")
+    completion_recheck = "dad731855e22bde2c2acf2703b7289cc735798f4"
+    subprocess.run(["git", "merge-base", "--is-ancestor", completion_recheck, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(completed_demotion, completion_recheck), {
+        GATE, P+"framework/TaskSurfaceCompat.kt",
+    }, "revoke completion marker on failed final recheck")
+    rejected_candidate = "8132026a52215303bb1df27e97d03af0a9c0a1ea"
+    subprocess.run(["git", "merge-base", "--is-ancestor", rejected_candidate, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(completion_recheck, rejected_candidate), {GATE}, "gate literal alignment only")
+    recovery = "491fbcb8c12e01e410169860bd40c4147f7730d6"
+    subprocess.run(["git", "merge-base", "--is-ancestor", recovery, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(rejected_candidate, recovery), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"systemui/StageEndpointContentMapping.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "device-regression canvas/coverage admission recovery only")
+    pixel_gate = "9dd38c5ae701a84aebac89fff0ca267c720d4b5e"
+    subprocess.run(["git", "merge-base", "--is-ancestor", pixel_gate, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(recovery, pixel_gate), {
+        GATE, P+"systemui/StageEndpointContentMapping.kt", T+"systemui/StageEndpointContentMappingTest.kt",
+        "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt",
+        "scripts/run-native-mirror-regression.sh",
+    }, "same-canvas mapper preconditions and actual compositor endpoint regression")
+    marker_fixture = "4610a143649d05b43f3e9e803c9e5fc97384e8aa"
+    subprocess.run(["git", "merge-base", "--is-ancestor", marker_fixture, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(pixel_gate, marker_fixture), {
+        GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
+        "scripts/run-visual-regression.sh",
+    }, "owned real task generation-marker test only; no production code delta")
+    marker_epoch = "26ef21ce228914bcd2d06b39081ca05f88deeb31"
+    subprocess.run(["git", "merge-base", "--is-ancestor", marker_epoch, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(marker_fixture, marker_epoch), {
+        GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
+    }, "disjoint marker epochs and actual output dimensions only")
+    equal(paths(marker_epoch, "HEAD"), {
+        GATE, "scripts/run-visual-regression.sh",
+        "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt",
+    }, "API35 isolated test process reflection preflight only")
+    api35_runner=(ROOT/"scripts/run-visual-regression.sh").read_text()
+    require("am force-stop io.github.x647368maker.atomicworkbench" in api35_runner and
+            "status=${PIPESTATUS[0]}" in api35_runner and
+            "grep -F 'HWUI_RENDER_PASS'" in api35_runner,
+            "API35 fixture environment preflight and original result gates")
+    marker_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt").read_text()
+    for marker in ('draw.epoch==spec.epoch', 'pixels.sequence>previous', 'matchesMarker(pixels.colors,spec)',
+                   'matchesMarker(colors,spec)', 'check(promoted!=null', 'demoted.density==originalDraw.density',
+                   'pixels.width==720 && pixels.height==1120', 'Marker(4,0,Color.rgb(117,42,180)',
+                   'Marker(5,display,Color.rgb(200,32,110)'):
+        require(marker in marker_test, "missing actual producer generation test "+marker)
+    require("PASS real owned-task marker generations on both physical and virtual outputs" in
+            (ROOT/"scripts/run-visual-regression.sh").read_text(),
+            "actual producer content evidence gate missing")
+    source("systemui/StageEndpointContentMapping.kt", "if(!sameLocalCanvas(sourceLocal,targetLocal))return null",
+           ".takeIf(::fullEndpointCoverage)", "if(!sameLocalCanvas(local,a.targetLocal))return null",
+           "endpointGapPx(a.viewport,f.box)>2f")
+    require((ROOT/(P+"systemui/StageLiveSurfaceExchange.kt")).read_bytes()==
+            git("show",recovery+":"+P+"systemui/StageLiveSurfaceExchange.kt"),
+            "pixel gate must not alter engine ownership/trajectory")
+    native_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt").read_text()
+    for marker in ('if(adaptiveCovered)verifyMeasuredCanvasEndpoint(activity,host,out)',
+                   'apply.invoke(flight,tx,1f)', 'up==9 && down==9',
+                   'StageEndpointContentMapping.sameLocalCanvas(slotCrop,mainCrop)'):
+        require(marker in native_test, "missing measured actual pixels gate "+marker)
+    require("measured-canvas-endpoint-pixels.png" in
+            (ROOT/"scripts/run-native-mirror-regression.sh").read_text(),
+            "measured canvas evidence must be present")
+    source("systemui/StageLiveSurfaceExchange.kt", "val anchorTrial=anchorCanvas!=null",
+           "allowCompletedDemotion=anchorTrial", "if(anchorTrial)",
+           "endpoint_content_anchor_skipped:unproven_canvas_mapping",
+           "!mapper.fullEndpointCoverage(up) || !mapper.fullEndpointCoverage(down)")
+    source("systemui/StageEndpointContentMapping.kt", "source==target && source.left==0 && source.top==0",
+           "endpointGapPx(a.viewport,a.terminal.box)<=2f")
+    require("rejectedProductionCanvasCounterexampleKeepsCoordinateOnlyRoute" in
+            (ROOT/(T+"systemui/StageEndpointContentMappingTest.kt")).read_text(),
+            "measured 720x1120 to 1272x2772 regression test")
+    for rel in ("framework/TaskSurfaceCompat.kt","systemui/StageConcurrentNativeTrialPolicy.kt",
+                "systemui/StageLiveSurfaceFlightGeometry.kt","systemui/StageHeldEndpointPolicy.kt"):
+        path=P+rel
+        require((ROOT/path).read_bytes()==git("show",rejected_candidate+":"+path),
+                "regression recovery altered ownership or prior geometry "+path)
+    source("framework/TaskSurfaceCompat.kt", "if(!retained)slot.completedMirrorFit=null")
+    source("framework/ObservedDemotionFitPolicy.kt", "completedFit===currentFit",
+           "noConflictingPresentation && noHeldWriter")
+    source("framework/TaskSurfaceCompat.kt", "slot.completedMirrorFit=slot.confirmedDemotion",
+           "slot!==ticket || heldMirrorWriter.get()!=null", "completedSlotMirrorSource(stamp.taskId,slot,state)",
+           "fun recordSlotMirrorCompletion(", "fun captureSlotMirrorCompletion(")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "allowCompletedDemotion=anchorTrial",
+           "TaskSurfaceCompat.captureSlotMirrorCompletion(it)",
+           "TaskSurfaceCompat.recordSlotMirrorCompletion(completedSlotStamp,completedSlotTicket)",
+           "cleaned && completedSlotStamp!=null && completedSlotTicket!=null",
+           "firstTransactionCommitted && terminalTransactionCommitted && nativeFrameCount>1")
+    source("systemui/StageEndpointContentMapping.kt", "liveReady && read==DestinationRead.READY",
+           "StageConcurrentNativeTrialPolicy.handoffAction(elapsedMs,timeoutMs,")
+    source("systemui/StageLiveSurfaceExchange.kt", 'missing("main_identity")',
+           'missing("slot_texture_identity")', 'missing("main_geometry",pending=true)',
+           "content_geometry_pending", "content_target_geometry_rejected")
+    for rel in ("framework/TaskSurfaceCompat.kt","systemui/StageConcurrentNativeTrialPolicy.kt"):
+        path=P+rel
+        require(git("show",read_retry+":"+path)==git("show",common_domain+":"+path),
+                "destination read retry changed task ownership or timing policy "+path)
+    source("systemui/StageEndpointContentMapping.kt", "projected(common,sourceRoot)",
+           "projected(overlap(local,a.commonLocal)", "val end=a.terminalAvailable")
+    source("systemui/StageLiveSurfaceExchange.kt", "content_domain_gap", "buffer_latch_unobserved")
+    source("framework/TaskSurfaceCompat.kt", "readSlotMirrorFrame(stamp,allowVerifiedDestination=false,",
+           "allowCompletedDemotion=allowCompletedDemotion)",
+           "readSlotMirrorFrame(stamp,allowVerifiedDestination=true)",
+           "(allowVerifiedDestination && verifiedDemotedSlot(stamp.taskId,slot,state))")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp)",
+           "TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp,allowCompletedDemotion=true)")
+    source("systemui/StageEndpointContentMapping.kt", "fun compose(", "fun mapError(", "fun held(", "fun flight(")
+    source("systemui/StageLiveSurfaceExchange.kt", "if(anchorTrial)",
+           "endpoint_content_anchor_trial=both", "StageEndpointContentMapping.flight(",
+           "StageEndpointContentMapping.held(", 'destinationContentRead("ready")',
+           'destinationContentMatches("reveal_end")', "content_terminal")
+    source("display/TaskSwitcherView.kt", "internal fun mirrorLiveContentBounds()")
+    source("framework/TaskSurfaceCompat.kt", "internal fun ownedSlotMirrorFrame(")
+    for path in (P+"systemui/StageLiveSurfaceFlightGeometry.kt", P+"systemui/StageHeldEndpointPolicy.kt"):
+        require((ROOT/path).read_bytes()==git("show", diag_retry+":"+path),
+                "old coordinate/route policies changed "+path)
     source("systemui/StageLiveSurfaceExchange.kt",
            "StageMirrorEvidenceTrial.awaitingDiagnostic(observation,inEvidenceScope,diagnosticOptIn)",
            "return markUnavailable(StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED)")
-    retry_source = source("systemui/StageConcurrentNativeTrialPolicy.kt",
+    current_retry_source = source("systemui/StageConcurrentNativeTrialPolicy.kt",
                           '"fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED')
+    retry_source = git("show", diag_retry+":"+P+"systemui/StageConcurrentNativeTrialPolicy.kt").decode()
+    require(current_retry_source == retry_source.replace(
+        '        "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,',
+        '        "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,\n'
+        '        "fallback:slot_content_mapping_unavailable",\n'
+        '        "fallback:content_anchor_unrepresentable",', 1),
+        "only content geometry readiness may be newly transient")
     require(retry_source == git("show", evidence_trial+":"+P+"systemui/StageConcurrentNativeTrialPolicy.kt").decode().replace(
             '        "fallback:main_source_mapping_unrepresentable",',
             '        "fallback:main_source_mapping_unrepresentable",\n'
@@ -229,9 +390,10 @@ def main():
            "detached_evidence_trial")
     require("Build.MODEL" not in mirror_source and "Build.MANUFACTURER" not in mirror_source,
             "no brand/model root contract inference")
+    # The previous coordinate-only delta remains frozen at diag_retry.
     for unchanged in ("framework/TaskSurfaceCompat.kt", "systemui/StageLiveSurfaceFlightGeometry.kt"):
         path = P+unchanged
-        require((ROOT/path).read_bytes()==git("show", first_frame_fix+":"+path),
+        require(git("show", diag_retry+":"+path)==git("show", first_frame_fix+":"+path),
                 "coordinate-only stage unexpectedly changed "+unchanged)
     require("randomizedRebaseRespectsSourceBoundsAndUniformCenteredCover" in
             (ROOT/(T+"systemui/StageHeldEndpointPolicyTest.kt")).read_text(),

@@ -160,6 +160,74 @@ internal class StageLiveSurfaceExchange private constructor(
     // create() always binds the settled, owned original task geometry.
     private var mainSourceFrame:TaskSurfaceCompat.MirrorDestinationFrame?=null
     private var mainFirstFrame:StageLiveSurfaceFlightGeometry.MirrorFrame?=null
+    private var slotSourceFrame:TaskSurfaceCompat.MirrorDestinationFrame?=null
+    private var slotSourceView:io.github.x647368maker.atomicworkbench.display.TaskSwitcherView?=null
+    private var slotSourceBounds:RectF?=null
+    private var slotSourceTexture:android.view.TextureView?=null
+    private var incomingAnchor:StageEndpointContentMapping.Anchor?=null
+    private var outgoingAnchor:StageEndpointContentMapping.Anchor?=null
+
+    private fun slotSourceStillMatches():Boolean {
+        val original=slotSourceFrame ?: return true
+        // A bound slot source exists only for the exact opt-in content trial.
+        val now=TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp,allowCompletedDemotion=true) ?: return false
+        return now.leash===original.leash && now==original &&
+            slotSourceView?.textureView===slotSourceTexture &&
+            slotSourceView?.mirrorLiveContentBounds()==slotSourceBounds
+    }
+
+    private fun localCrop(frame:TaskSurfaceCompat.MirrorDestinationFrame)=
+        StageLiveSurfaceFlightGeometry.Crop(frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom)
+
+    private fun destinationStamp(original:TaskSurfaceCompat.MirrorSourceStamp,display:Int):
+        TaskSurfaceCompat.MirrorSourceStamp? =
+        TaskSurfaceCompat.mirrorSourceStamp(original.taskId,display)?.takeIf {
+            it.taskId==original.taskId && it.token==original.token && it.leash===original.leash
+        }
+
+    /** A cache/view geometry comparison, not an app buffer or visible-pixel receipt.
+     * Only called at the existing ready/reveal boundaries, never by a new poller.
+     */
+    private fun destinationContentMatches(phase:String):Boolean =
+        destinationContentRead(phase)==StageEndpointContentMapping.DestinationRead.READY
+
+    private fun destinationContentRead(phase:String):StageEndpointContentMapping.DestinationRead {
+        val up=incomingAnchor ?: return StageEndpointContentMapping.DestinationRead.READY
+        val down=outgoingAnchor ?: return StageEndpointContentMapping.DestinationRead.REJECTED
+        val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+        fun missing(reason:String,pending:Boolean=false):StageEndpointContentMapping.DestinationRead {
+            val status=if(pending)StageEndpointContentMapping.DestinationRead.PENDING
+                       else StageEndpointContentMapping.DestinationRead.REJECTED
+            diag.detail(traceAttemptId,"content_real_"+phase+"_"+status.name) {
+                "content_real_$phase unconfirmed=$reason status=$status requested_geometry_only"
+            }
+            return status
+        }
+        if(endpointWriteFailed.get())return missing("held_write_failed")
+        // Do not extend the hold on a changed or unconfirmed task identity.
+        val mapper=StageEndpointContentMapping
+        val mainStamp=destinationStamp(incomingStamp,outgoingStamp.displayId) ?: return missing("main_identity")
+        val slotStamp=destinationStamp(outgoingStamp,incomingStamp.displayId) ?: return missing("slot_identity")
+        val slotView=slotSourceView ?: return missing("slot_view")
+        if(slotView.textureView!==slotSourceTexture)return missing("slot_texture_identity")
+        if(!incomingRebased.get() || !outgoingRebased.get())return missing("held_write",pending=true)
+        val main=TaskSurfaceCompat.ownedMainMirrorFrame(mainStamp) ?: return missing("main_geometry",pending=true)
+        val slot=TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp) ?: return missing("verified_slot_geometry",pending=true)
+        val slotBounds=slotView.mirrorLiveContentBounds() ?: return missing("slot_view_geometry",pending=true)
+        val mainMap=StageEndpointContentMapping.ContentMap(main.scale,main.x,main.y)
+        val slotMap=mapper.slotMap(localCrop(slot),StageLiveSurfaceFlightGeometry.Box(
+            slotBounds.left,slotBounds.top,slotBounds.right,slotBounds.bottom)) ?: return missing("slot_content_map")
+        val upDelta=mapper.mapError(up.target,mainMap,up.targetLocal)
+        val downDelta=mapper.mapError(down.target,slotMap,down.targetLocal)
+        val upOk=localCrop(main)==up.targetLocal && upDelta<=1f
+        val downOk=localCrop(slot)==down.targetLocal && downDelta<=1f
+        val status=if(upOk && downOk)StageEndpointContentMapping.DestinationRead.READY
+                   else StageEndpointContentMapping.DestinationRead.REJECTED
+        diag.detail(traceAttemptId,"content_real_"+phase+"_"+status.name) {
+            "content_real_$phase up_err=$upDelta down_err=$downDelta crop_match=$upOk/$downOk requested_geometry_only"
+        }
+        return status
+    }
 
     private fun mainSourceStillMatches():Boolean {
         val original=mainSourceFrame ?: return true
@@ -282,31 +350,36 @@ internal class StageLiveSurfaceExchange private constructor(
             val mirror=if(incoming) sourceMirror else mainMirror
             if(!mirror.isValid) return@HeldMirrorWriter
             val target=if(incoming) mainStart else slotStart
-            // The running GPU route is cover-cropped. Its terminal geometry
-            // must not switch to CONTAIN merely because Shell supplies a new
-            // producer crop during reparent; that is a second zoom/letterbox
-            // while the old task mirror is still displayed.
-            // Coordinate-contract isolation only: when the incoming task
-            // already has a destination main presentation, reproduce its
-            // actual local-to-screen map. Do not refit it to the card. Leave
-            // the earlier flight curve/terminal scale and demotion unchanged.
-            val mainFit=if(incoming) StageHeldEndpointPolicy.mainDestinationFit(
+            val anchor=if(incoming)incomingAnchor else outgoingAnchor
+            val root=anchor?.let {
+                StageEndpointContentMapping.rootMap(frame.scale,frame.x,frame.y,detachedRoot)
+            }
+            val anchored=anchor?.let { StageEndpointContentMapping.held(it,localCrop(frame),checkNotNull(root)) }
+            if(anchor!=null && anchored==null) {
+                endpointWriteFailed.set(true)
+                trace("held_content_anchor_unrepresentable")
+                return@HeldMirrorWriter
+            }
+            // Preserve #173 for paths outside the exact, opt-in content trial.
+            val mainFit=if(anchor==null && incoming) StageHeldEndpointPolicy.mainDestinationFit(
                 target.left,target.top,target.right,target.bottom,
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
                 frame.scale,frame.x,frame.y,detachedRoot) else null
             if(incoming && mainFit==null) {
-                endpointWriteFailed.set(true)
-                trace("held_main_coordinate_unrepresentable")
-                return@HeldMirrorWriter
+                if(anchor==null) {
+                    endpointWriteFailed.set(true)
+                    trace("held_main_coordinate_unrepresentable")
+                    return@HeldMirrorWriter
+                }
             }
-            val covered=if(!incoming && coveredFlight) StageHeldEndpointPolicy.coveredFit(
+            val covered=if(anchor==null && !incoming && coveredFlight) StageHeldEndpointPolicy.coveredFit(
                 target.left,target.top,target.right,target.bottom,
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
                 frame.scale,frame.x,frame.y,detachedRoot) else null
-            val fit=mainFit ?: (covered ?: StageHeldEndpointPolicy.fit(
+            val fit=anchored ?: (mainFit ?: (covered ?: StageHeldEndpointPolicy.fit(
                 target.left,target.top,target.right,target.bottom,
                 frame.crop.left,frame.crop.top,frame.crop.right,frame.crop.bottom,
-                frame.scale,frame.x,frame.y,detachedRoot)) ?: return@HeldMirrorWriter
+                frame.scale,frame.x,frame.y,detachedRoot))) ?: return@HeldMirrorWriter
             runCatching {
                 if (finished.get() || hostDetached || !mirror.isValid) return@runCatching
                 // Crop and transform are submitted with the task's new frame.
@@ -322,7 +395,17 @@ internal class StageLiveSurfaceExchange private constructor(
                     fit.scale,fit.scale,fit.x,fit.y,fit.left,fit.top,fit.right,fit.bottom)
                 val rebaseFlag=if(incoming) incomingRebased else outgoingRebased
                 if(rebaseFlag.compareAndSet(false,true)) runCatching {
-                    trace("held_endpoint_fit_"+(if(mainFit!=null)"main_coordinates" else if(covered!=null)"cover" else "contain")+
+                    if(anchor!=null) {
+                        val phase=if(incoming)"up" else "down"
+                        val effective=StageEndpointContentMapping.compose(
+                            StageEndpointContentMapping.ContentMap(fit.scale,fit.x,fit.y),checkNotNull(root))
+                        val error=StageEndpointContentMapping.mapError(anchor.target,effective,anchor.commonLocal)
+                        diag.detail(traceAttemptId,"content_held_"+phase) {
+                            "content_held_$phase task=${frame.taskId} effective=${effective.scale},${effective.x},${effective.y} " +
+                                "terminal_delta_px=$error crop=${fit.left},${fit.top},${fit.right},${fit.bottom} intent_only"
+                        }
+                    }
+                    trace("held_endpoint_fit_"+(if(anchored!=null)"content_anchor" else if(mainFit!=null)"main_coordinates" else if(covered!=null)"cover" else "contain")+
                         "_"+(if(incoming)"incoming" else "outgoing")+
                         "_crop="+fit.left+","+fit.top+","+fit.right+","+fit.bottom)
                 }
@@ -568,11 +651,28 @@ internal class StageLiveSurfaceExchange private constructor(
                 StageExchangeTelemetry.nativeEvent(
                     TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
                 val incomingBefore=TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)
+                // #174 device regression: 720x1120 slot -> 1272x2772
+                // main. Identity of numeric local coordinates is NOT a
+                // change-of-canvas mapping. Keep the known coordinate-only
+                // GPU path when domains differ or cannot be established.
+                // Do this before acquiring any mirrors, including before
+                // the experimental repeated-demotion admission.
+                val slotForAnchor=if(inEvidenceScope && diagnosticOptIn)
+                    incomingBefore?.let { TaskSurfaceCompat.ownedSlotMirrorFrame(it,allowCompletedDemotion=true) }
+                    else null
+                val anchorCanvas=slotForAnchor?.crop
+                val anchorTrial=anchorCanvas!=null &&
+                    StageEndpointContentMapping.sameLocalCanvas(
+                        StageLiveSurfaceFlightGeometry.Crop(anchorCanvas.left,anchorCanvas.top,anchorCanvas.right,anchorCanvas.bottom),
+                        StageLiveSurfaceFlightGeometry.Crop(sourceCropLocal.left,sourceCropLocal.top,sourceCropLocal.right,sourceCropLocal.bottom))
+                if(inEvidenceScope && diagnosticOptIn && !anchorTrial)
+                    StageExchangeTelemetry.nativeEvent("endpoint_content_anchor_skipped:unproven_canvas_mapping")
                 val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
                     ?: return markUnavailable("no_owned_main_task_mirror")
                 ownedOutgoing=outgoing
                 val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
                     sourceTaskId, sourceDisplayId,
+                    allowCompletedDemotion=anchorTrial,
                 ) ?: return markUnavailable("slot_task_leash_not_ready")
                 val incoming = slotMirror.surface
                 ownedIncoming=incoming
@@ -698,6 +798,55 @@ internal class StageLiveSurfaceExchange private constructor(
                     return markUnavailable("main_source_mapping_unrepresentable")
                 exchange.mainSourceFrame=originalMain
                 exchange.mainFirstFrame=firstMain
+                // Phase 1 content-only experiment: same exact tested firmware,
+                // private debug/native opt-in as #173. Outside this scope keep
+                // the accepted coordinate-only implementation byte-for-byte.
+                if(anchorTrial) {
+                    val slotView=sourceSlotView as? io.github.x647368maker.atomicworkbench.display.TaskSwitcherView
+                        ?: return markUnavailable("slot_content_mapping_unavailable")
+                    val originalSlot=TaskSurfaceCompat.ownedSlotMirrorFrame(stableIncoming,allowCompletedDemotion=true)
+                        ?: return markUnavailable("slot_content_mapping_unavailable")
+                    if(originalSlot.crop!=localCrop || originalSlot!=slotForAnchor ||
+                        !StageEndpointContentMapping.sameLocalCanvas(
+                            StageLiveSurfaceFlightGeometry.Crop(localCrop.left,localCrop.top,localCrop.right,localCrop.bottom),
+                            exchange.localCrop(originalMain)))
+                        return markUnavailable("slot_content_mapping_unavailable")
+                    val slotRect=slotView.mirrorLiveContentBounds()
+                        ?: return markUnavailable("slot_content_mapping_unavailable")
+                    val slotBox=StageLiveSurfaceFlightGeometry.Box(slotRect.left,slotRect.top,slotRect.right,slotRect.bottom)
+                    val mapper=StageEndpointContentMapping
+                    val firstSlotMap=mapper.slotMap(incomingCrop,slotBox)
+                        ?: return markUnavailable("slot_content_mapping_unavailable")
+                    val firstSlot=StageLiveSurfaceFlightGeometry.mainMirrorStart(slotBox,incomingCrop,
+                        firstSlotMap.scale,firstSlotMap.x,firstSlotMap.y,true)
+                        ?: return markUnavailable("slot_content_mapping_unavailable")
+                    val rawFirst=exchange.rawFlightFrames(0f)
+                        ?: return markUnavailable("content_anchor_unrepresentable")
+                    if(!StageLiveSurfaceFlightGeometry.sameMirrorContent(firstSlot,rawFirst.first))
+                        return markUnavailable("slot_content_mapping_unavailable")
+                    val rawEnd=exchange.rawFlightFrames(1f)
+                        ?: return markUnavailable("content_anchor_unrepresentable")
+                    val mainMap=StageEndpointContentMapping.ContentMap(originalMain.scale,originalMain.x,originalMain.y)
+                    val mainLocal=exchange.localCrop(originalMain)
+                    val up=mapper.anchor(mapper.rootMap(originalSlot.scale,originalSlot.x,originalSlot.y,detached),
+                        incomingCrop,incomingCrop,mainLocal,mainMap,to,firstSlot,rawFirst.first,rawEnd.first)
+                        ?: return markUnavailable("content_anchor_unrepresentable")
+                    val down=mapper.anchor(mapper.rootMap(originalMain.scale,originalMain.x,originalMain.y,detached),
+                        outgoingCrop,mainLocal,incomingCrop,firstSlotMap,slotBox,firstMain,rawFirst.second,rawEnd.second)
+                        ?: return markUnavailable("content_anchor_unrepresentable")
+                    // Zero affine delta is insufficient: both projected
+                    // terminal footprints must actually cover their intended
+                    // role, within integer crop rounding, before adoption.
+                    if(!mapper.fullEndpointCoverage(up) || !mapper.fullEndpointCoverage(down))
+                        return markUnavailable("content_anchor_unrepresentable")
+                    exchange.slotSourceFrame=originalSlot
+                    exchange.slotSourceView=slotView
+                    exchange.slotSourceTexture=slotView.textureView
+                    exchange.slotSourceBounds=RectF(slotRect)
+                    exchange.incomingAnchor=up
+                    exchange.outgoingAnchor=down
+                    StageExchangeTelemetry.nativeEvent("endpoint_content_anchor_trial=both")
+                }
                 exchange.traceMirrorAdmission(detached)
                 // Transfer ownership only once the exchange object exists.
                 lastOutcome="capable:two_owned_tasks_and_atomic_masks"
@@ -758,7 +907,8 @@ internal class StageLiveSurfaceExchange private constructor(
     ): Boolean {
         if (finishCallback != null || finished.get()) return false
         concurrentHandoff = immediateMove
-        if(!mainSourceStillMatches()) {
+        if(!mainSourceStillMatches() || !slotSourceStillMatches() ||
+            (incomingAnchor!=null && !concurrentHandoff)) {
             finished.set(true)
             cleanupWithoutCallback()
             return false
@@ -774,10 +924,23 @@ internal class StageLiveSurfaceExchange private constructor(
         }
         val incomingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart, finalIncoming.box)
         val outgoingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart, finalOutgoing.box)
+        // Keep the historical reveal policy and original motion route. This
+        // compatibility metric is not evidence of a continuous content map.
         endpointGap = maxOf(incomingGap, outgoingGap)
         trace("endpoint_gap_px up=${incomingGap.toInt()} down=${outgoingGap.toInt()}" +
             " up_fit=${finalIncoming.box.width.toInt()}x${finalIncoming.box.height.toInt()}" +
-            " down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}")
+            " down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}" +
+            if(incomingAnchor!=null)" route_only" else "")
+        if(incomingAnchor!=null) {
+            val up=checkNotNull(incomingAnchor)
+            val down=checkNotNull(outgoingAnchor)
+            val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+            diag.detail(traceAttemptId,"content_domain_gap") {
+                val u=StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart,up.terminal.box)
+                val d=StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart,down.terminal.box)
+                "content_domain_gap up=$u down=$d common_crop_only buffer_latch_unobserved"
+            }
+        }
         startedAtMs = SystemClock.uptimeMillis()
         pairedRailPlan?.let {
             trace((if(coveredFlight)"paired_covered_adaptive" else "paired_contain_trial")+" bound="+it.bound+" trim="+it.trim)
@@ -868,7 +1031,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 host.isAttachedToWindow && !hostDetached,
                 sourceMirror.isValid && mainMirror.isValid,
                 { incomingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
-                    incomingStamp.taskId,incomingStamp.displayId)) },
+                    incomingStamp.taskId,incomingStamp.displayId)) && slotSourceStillMatches() },
                 { outgoingStamp.sameSource(TaskSurfaceCompat.mirrorSourceStamp(
                     outgoingStamp.taskId,outgoingStamp.displayId)) && mainSourceStillMatches() })
         }.getOrElse {
@@ -973,8 +1136,15 @@ internal class StageLiveSurfaceExchange private constructor(
                 unmaskedMove=true
                 trace("native_unmasked_fallback:first=$firstTransactionCommitted terminal=$terminalTransactionCommitted")
             }
+            if (concurrentHandoff && frameComplete && !unmaskedMove) {
+                armHeldEndpointWriter()
+                if(incomingAnchor!=null && heldWriter==null) {
+                    trace("native_move_rejected:content_writer_unavailable")
+                    stop()
+                    return
+                }
+            }
             sentMove = true
-            if (concurrentHandoff && frameComplete && !unmaskedMove) armHeldEndpointWriter()
             trace(
                 "real_move_requested@${SystemClock.uptimeMillis()-startedAtMs}ms frames=$nativeFrameCount")
             runCatching { trace("move_tasks up=${incomingStamp.taskId} down=${outgoingStamp.taskId}") }
@@ -1210,7 +1380,7 @@ internal class StageLiveSurfaceExchange private constructor(
             StageLiveSurfaceFlightGeometry.mirrorPosition(fit.left,crop.left,scale),
             StageLiveSurfaceFlightGeometry.mirrorPosition(fit.top,crop.top,scale),crop,fit)
     }
-    private fun flightFrames(p:Float):Pair<StageLiveSurfaceFlightGeometry.MirrorFrame,StageLiveSurfaceFlightGeometry.MirrorFrame>? {
+    private fun rawFlightFrames(p:Float):Pair<StageLiveSurfaceFlightGeometry.MirrorFrame,StageLiveSurfaceFlightGeometry.MirrorFrame>? {
         val paired=pairedRailPlan?.at(p)
         // At p=0 keep the original complete source; at every later frame
         // the planned viewport is independent of the uniformly scaled crop.
@@ -1229,12 +1399,21 @@ internal class StageLiveSurfaceExchange private constructor(
         return incoming to outgoing
     }
 
+    private fun flightFrames(p:Float):Pair<StageLiveSurfaceFlightGeometry.MirrorFrame,StageLiveSurfaceFlightGeometry.MirrorFrame>? {
+        val raw=rawFlightFrames(p) ?: return null
+        val up=incomingAnchor ?: return raw
+        val down=outgoingAnchor ?: return null
+        val first=StageEndpointContentMapping.flight(raw.first,up,p) ?: return null
+        val second=StageEndpointContentMapping.flight(raw.second,down,p) ?: return null
+        return first to second
+    }
+
     private fun applyFrame(transaction: SurfaceControl.Transaction, p: Float) {
         val (incoming,plannedOutgoing)=flightFrames(p) ?: error("Unsafe GPU rail path")
         val outgoing=if(p==0f) mainFirstFrame ?: plannedOutgoing else plannedOutgoing
         // Both task mirrors are updated by the same GPU transaction. Cover
         // mode changes only their transient crop, never original task bounds.
-        if (coveredFlight) {
+        if (coveredFlight || incomingAnchor!=null) {
             transaction.setCrop(sourceMirror,incoming.crop.toAndroidRect())
             transaction.setCrop(mainMirror,outgoing.crop.toAndroidRect())
         }
@@ -1250,6 +1429,17 @@ internal class StageLiveSurfaceExchange private constructor(
             }
             diag.detail(traceAttemptId,"flight_down_$phase") {
                 "flight_down_$phase task=${outgoingStamp.taskId} s=${outgoing.scale} xy=${outgoing.x},${outgoing.y} crop=${outgoing.crop}"
+            }
+            if(p==1f && incomingAnchor!=null) {
+                val up=checkNotNull(incomingAnchor)
+                val down=checkNotNull(outgoingAnchor)
+                val m=StageEndpointContentMapping
+                val u=m.compose(StageEndpointContentMapping.ContentMap(incoming.scale,incoming.x,incoming.y),up.sourceRoot)
+                val d=m.compose(StageEndpointContentMapping.ContentMap(outgoing.scale,outgoing.x,outgoing.y),down.sourceRoot)
+                diag.detail(traceAttemptId,"content_terminal") {
+                    "content_terminal up=${u.scale},${u.x},${u.y} down=${d.scale},${d.x},${d.y} " +
+                        "delta_px=${m.mapError(up.target,u,up.commonLocal)}/${m.mapError(down.target,d,down.commonLocal)} intent_only"
+                }
             }
         }
         // Preserve the previously accepted 24dp-equivalent round cards while
@@ -1287,22 +1477,32 @@ internal class StageLiveSurfaceExchange private constructor(
                 val now=SystemClock.uptimeMillis()
                 val releasable=frameComplete && runCatching { canRelease() }.getOrDefault(false)
                 val live=releasable && runCatching { liveReady() }.getOrDefault(false)
+                val contentRead=if(live && incomingAnchor!=null)
+                    runCatching { destinationContentRead("ready") }
+                        .getOrDefault(StageEndpointContentMapping.DestinationRead.REJECTED)
+                    else StageEndpointContentMapping.DestinationRead.READY
                 val reason=when {
                     !frameComplete -> "flight_end_missing"
                     !releasable -> "session_unsettled"
                     !live -> "target_not_ready"
+                    contentRead==StageEndpointContentMapping.DestinationRead.PENDING -> "content_geometry_pending"
+                    contentRead==StageEndpointContentMapping.DestinationRead.REJECTED -> "content_geometry_rejected"
                     else -> "ready"
                 }
                 if (reason != lastHandoffWait) {
                     lastHandoffWait=reason
                     trace("handoff_state=$reason host_attached=${host.isAttachedToWindow}")
                 }
-                when (StageConcurrentNativeTrialPolicy.handoffAction(
-                    now-moveCompletedAt,timeout,frameComplete,releasable,live)) {
-                    StageConcurrentNativeTrialPolicy.HandoffAction.WAIT ->
+                when (StageEndpointContentMapping.destinationHandoff(
+                    now-moveCompletedAt,timeout,frameComplete,releasable,live,contentRead)) {
+                    StageEndpointContentMapping.DestinationHandoff.REJECTED -> {
+                        trace("content_target_geometry_rejected")
+                        stop()
+                    }
+                    StageEndpointContentMapping.DestinationHandoff.WAIT ->
                         ui.postAtTime(this,StageConcurrentNativeTrialPolicy.nextHandoffCheck(
                             SystemClock.uptimeMillis(),deadline))
-                    StageConcurrentNativeTrialPolicy.HandoffAction.READY -> {
+                    StageEndpointContentMapping.DestinationHandoff.READY -> {
                         trace("handoff_target_ready@${now-startedAtMs}ms")
                         val gapReveal=endpointGap > ENDPOINT_GAP_PX && firstTransactionCommitted
                         // Identical outer boxes can still hide a crop/content
@@ -1324,7 +1524,7 @@ internal class StageLiveSurfaceExchange private constructor(
                             stop()
                         }
                     }
-                    StageConcurrentNativeTrialPolicy.HandoffAction.EXPIRED -> {
+                    StageEndpointContentMapping.DestinationHandoff.EXPIRED -> {
                         handoffTimedOut=true
                         trace("handoff_timeout:$reason@${now-startedAtMs}ms")
                         // Do not classify a timed-out visual handoff as ready.
@@ -1364,7 +1564,8 @@ internal class StageLiveSurfaceExchange private constructor(
             handoffReady=finalAlphaSubmitted &&
                 (!requireCommit || finalAlphaCommitted) &&
                 !hostDetached && host.isAttachedToWindow &&
-                runCatching { canRelease() && liveReady() }.getOrDefault(false)
+                runCatching { canRelease() && liveReady() &&
+                    destinationContentMatches("reveal_end") }.getOrDefault(false)
             trace(if(handoffReady) "endpoint_reveal_end" else "endpoint_reveal_unconfirmed")
             stop()
         }
@@ -1480,6 +1681,21 @@ internal class StageLiveSurfaceExchange private constructor(
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
             "terminal=$terminalTransactionCommitted unmasked=$unmaskedMove " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
+        // Only a normally completed anchored GPU handoff can certify this
+        // exact demotion for a subsequent tap inside the still-active
+        // reservation. Never certify fallback, timeout, cancellation, or the
+        // fake-task compositor tests. Proof is of admission, not pixel continuity.
+        val completedSlotStamp=if(notifyFinished && outcomeOverride==null &&
+            incomingAnchor!=null && outgoingAnchor!=null && !unmaskedMove &&
+            firstTransactionCommitted && terminalTransactionCommitted && nativeFrameCount>1 &&
+            moveComplete && handoffReady && !handoffTimedOut && !endpointWriteFailed.get() &&
+            !hostDetached && host.isAttachedToWindow &&
+            Looper.myLooper()==ui.looper)
+            runCatching { destinationStamp(outgoingStamp,incomingStamp.displayId) }.getOrNull()
+            else null
+        val completedSlotTicket=completedSlotStamp?.let {
+            runCatching { TaskSurfaceCompat.captureSlotMirrorCompletion(it) }.getOrNull()
+        }
         val flight=animator
         val reveal=revealAnimator
         animator=null
@@ -1510,14 +1726,23 @@ internal class StageLiveSurfaceExchange private constructor(
             { flight?.cancel() },
             { reveal?.removeAllListeners(); reveal?.removeAllUpdateListeners() },
             { reveal?.cancel() },
-            { cleanupWithoutCallback() },
+            {
+                val cleaned=cleanupWithoutCallback()
+                if(cleaned && completedSlotStamp!=null && completedSlotTicket!=null &&
+                    !hostDetached && host.isAttachedToWindow &&
+                    !sourceMirror.isValid && !mainMirror.isValid &&
+                    TaskSurfaceCompat.recordSlotMirrorCompletion(completedSlotStamp,completedSlotTicket)) {
+                    trace("slot_mirror_completed_demotion_verified")
+                }
+            },
             { if(notifyFinished) callback?.invoke() },
             onFailure={ NeXtepLog.warn("native_swap","Native animation teardown step failed",it) },
         )
         return callback
     }
 
-    private fun cleanupWithoutCallback() {
+    private fun cleanupWithoutCallback():Boolean {
+        var cleaned=true
         val ownedTransaction=frameTransaction
         frameTransaction=null
         StageConcurrentNativeTrialPolicy.cleanupSteps(
@@ -1538,7 +1763,11 @@ internal class StageLiveSurfaceExchange private constructor(
             { ownedTransaction?.close() },
             { occlusion.release() },
             { (background.parent as? FrameLayout)?.removeView(background) },
-            onFailure={ NeXtepLog.warn("native_swap","Native resource cleanup step failed",it) },
+            onFailure={
+                cleaned=false
+                NeXtepLog.warn("native_swap","Native resource cleanup step failed",it)
+            },
         )
+        return cleaned
     }
 }

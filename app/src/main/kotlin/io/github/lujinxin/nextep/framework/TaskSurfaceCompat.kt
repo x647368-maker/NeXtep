@@ -75,6 +75,7 @@ object TaskSurfaceCompat {
     private data class SlotSurface(val displayId: Int, val leash: Any, val crop: Rect,
                                    val confirmedDemotion: PendingDemotedFit? = null) {
         var lastAppliedAt = 0L
+        @Volatile var completedMirrorFit:PendingDemotedFit?=null
     }
     // Only a tapped, reserved demotion can opt in. The original owned main
     // leash is retained as an identity, never looked up again in this path.
@@ -439,10 +440,102 @@ object TaskSurfaceCompat {
         val crop: Rect,
     )
 
+    internal fun ownedSlotMirrorFrame(stamp:MirrorSourceStamp,
+                                      allowCompletedDemotion:Boolean=false):MirrorDestinationFrame? =
+        readSlotMirrorFrame(stamp,allowVerifiedDestination=false,
+            allowCompletedDemotion=allowCompletedDemotion)
+
+    private fun noConflictingSlotPresentation(taskId:Int):Boolean =
+        activePresentations[taskId]==null && preparedPresentations[taskId]==null &&
+            !presentationAnimators.containsKey(taskId) && !hasMainVisualHandoff(taskId)
+
+    private fun completedSlotMirrorSource(taskId:Int,slot:SlotSurface,state:TaskInfoCompat.WindowState):Boolean =
+        ObservedDemotionFitPolicy.completedMirrorSource(
+            verifiedDemotedSlot(taskId,slot,state),slot.confirmedDemotion,slot.completedMirrorFit,
+            noConflictingSlotPresentation(taskId),heldMirrorWriter.get()==null)
+
+    private fun slotMirrorReservationAllows(stamp:MirrorSourceStamp,slot:SlotSurface,
+                                           state:TaskInfoCompat.WindowState,allowVerifiedDestination:Boolean,
+                                           allowCompletedDemotion:Boolean):Boolean =
+        !isDisplayExchanging(stamp.taskId) ||
+            (allowVerifiedDestination && verifiedDemotedSlot(stamp.taskId,slot,state)) ||
+            (allowCompletedDemotion && completedSlotMirrorSource(stamp.taskId,slot,state))
+
+    // Capture only the prior generation's already observed/fitted demotion.
+    // The caller owns the active trial and has separately checked live output,
+    // main presentation, real move ACK and settled session. This ticket is
+    // not a buffer/pixel receipt. Do not retire the actual reservation.
+    internal fun captureSlotMirrorCompletion(stamp:MirrorSourceStamp):Any? {
+        val slot=slotSurfaces[stamp.taskId] ?: return null
+        val state=observedStates[stamp.taskId] ?: return null
+        if(!verifiedDemotedSlot(stamp.taskId,slot,state) ||
+            !noConflictingSlotPresentation(stamp.taskId) ||
+            readSlotMirrorFrame(stamp,allowVerifiedDestination=true)==null ||
+            slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state)return null
+        return slot
+    }
+
+    // Called only after normal visual cleanup, before returning the
+    // serialized exchange to the coordinator. Recheck the same cache object,
+    // reservation, token, leash, crop and density; reject replacement/ABA.
+    internal fun recordSlotMirrorCompletion(stamp:MirrorSourceStamp,ticket:Any):Boolean {
+        val slot=slotSurfaces[stamp.taskId] ?: return false
+        val state=observedStates[stamp.taskId] ?: return false
+        if(slot!==ticket || heldMirrorWriter.get()!=null ||
+            !verifiedDemotedSlot(stamp.taskId,slot,state) ||
+            !noConflictingSlotPresentation(stamp.taskId) ||
+            readSlotMirrorFrame(stamp,allowVerifiedDestination=true)==null ||
+            slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state)return false
+        slot.completedMirrorFit=slot.confirmedDemotion
+        val retained=completedSlotMirrorSource(stamp.taskId,slot,state) &&
+            slotSurfaces[stamp.taskId]===slot && observedStates[stamp.taskId]===state
+        // A raced observation must not leave a reusable permission behind.
+        if(!retained)slot.completedMirrorFit=null
+        return retained
+    }
+
+    // A real demotion's reservation deliberately outlives the visual handoff.
+    // Permit only the exact already verified destination, never a flying source.
+    internal fun heldDestinationSlotMirrorFrame(stamp:MirrorSourceStamp):MirrorDestinationFrame? =
+        readSlotMirrorFrame(stamp,allowVerifiedDestination=true)
+
+    private fun readSlotMirrorFrame(stamp:MirrorSourceStamp,
+                                    allowVerifiedDestination:Boolean,
+                                    allowCompletedDemotion:Boolean=false):MirrorDestinationFrame? {
+        if(stamp.displayId==Display.DEFAULT_DISPLAY ||
+            !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
+        val slot=slotSurfaces[stamp.taskId] ?: return null
+        val state=observedStates[stamp.taskId] ?: return null
+        if(!slotMirrorReservationAllows(stamp,slot,state,allowVerifiedDestination,allowCompletedDemotion))return null
+        if(slot.leash!==stamp.leash || slot.displayId!=stamp.displayId ||
+            slot.lastAppliedAt<=0L || slot.crop!=state.bounds ||
+            slot.crop.left!=0 || slot.crop.top!=0 || slot.crop.isEmpty ||
+            slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state ||
+            !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
+        if(!slotMirrorReservationAllows(stamp,slot,state,allowVerifiedDestination,allowCompletedDemotion))return null
+        return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
+            Rect(slot.crop),1f,0f,0f)
+    }
+
     internal fun createOwnedSlotTaskMirror(
         taskId: Int,
         expectedDisplayId: Int,
+        allowCompletedDemotion:Boolean=false,
     ): OwnedSlotTaskMirror? {
+        // Only the exact firmware-scoped opt-in content trial uses this
+        // stronger read-only path. Preserve other callers' strict admission.
+        if(allowCompletedDemotion) {
+            val stamp=mirrorSourceStamp(taskId,expectedDisplayId) ?: return null
+            val frame=ownedSlotMirrorFrame(stamp,allowCompletedDemotion=true) ?: return null
+            val source=stamp.leash as? android.view.SurfaceControl ?: return null
+            val mirror=mirrorObservedSurface(source) ?: return null
+            val after=ownedSlotMirrorFrame(stamp,allowCompletedDemotion=true)
+            if(after==null || after.leash!==frame.leash || after!=frame) {
+                runCatching { mirror.release() }
+                return null
+            }
+            return OwnedSlotTaskMirror(mirror,Rect(frame.crop))
+        }
         if (expectedDisplayId == Display.DEFAULT_DISPLAY ||
             isDisplayExchanging(taskId)) return null
         val state = observedStates[taskId] ?: return null
