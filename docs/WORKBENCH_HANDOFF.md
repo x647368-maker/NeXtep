@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十一阶段 H 最终本地超时实测（2026-11-20 新增）
+- 本轮在实际容器内执行与 a155ca2a 工作流完全相同的 GNU coreutils 9.7 timeout --kill-after=5s 30s adb logcat -d -s WB2SurfaceTest:I 命令和错误传播/文件重定向，临时 mock adb，不接触真实任务。三个断言实测：success exit=0 elapsed_ms=9 bytes=26；error exit=1 elapsed_ms=15 bytes=0；忽略 TERM 挂起 exit=137 elapsed_ms=35092 bytes=0；ALL_PASSED。原始 result.log SHA256 e4fd675d80ef4ba484a0bd8ffea05963f1491c301214b4b217a16eb02bf20187，临时 PID 等不作跨环境复现条件。另一次缩短参数 1s/0.5s 实测 17/8/1507ms，对应 exit 0/1/137。该次实际执行证据取代仅记载近似秒数的历史记录。不是 Android 测试、不是启动故障根因修复证明。生产 CI 门禁维持原样。
+- 当前容器实查无 adb/emulator/sdkmanager/gradle、ANDROID_HOME/ANDROID_SDK_ROOT 未设、无 /dev/kvm；有 kotlinc/java/timeout，不能把 JVM 或 mock 代作 Android 验收。不重复下载环境及编译旧已通过模型。
+- 实时核对旧 run 44561100008 仍 in_progress，目标 44564285630 pending，后者尚无 job 或 artifact。GitHub 工具无 cancel run 接口。自动 CI 监测已有任务记录，本轮查询动作返回 404 Action not found，无法核验其当前执行情况，不重复创建。继续等真实 CI 结果或新增可验证故障证据，不盲目改代码。严格原生 A 路线不变，仍缺有授权的真实任务承载及独立归还/死亡恢复契约。最新生产 HEAD a155ca2af092f512d69c63e0816aece8030e54ad 未变；无新生产修改、分支、PR、APK。下一轮优先读取实际 CI 最终结果及证据，再根据具体故障修复。
+
+---
+
+
 ## 第十一阶段 H 补充：实际失败路径回归与新 CI 定位（最新）
 - 新 CI 已实际出现 [44564285630](https://github.com/x647368-maker/NeXtep/actions/runs/44564285630)，准确 head a155ca2af092f512d69c63e0816aece8030e54ad，pending、无 job；旧 44561100008 仍 in_progress，旧 job 135690315916 的 provision failure、runtime skipped、pixel capture in_progress 未变化，日志 404 BlobNotFound，只有 compile artifact 14550975445。两次查询一致；连接器未提供取消 run 的写操作，因此不虚报取消、不重跑未结束 job，不发重复提交抢占队列。
 - 本地实际 Shell 故障注入回归（非 Android）：用临时 mock adb 和当前采证命令同样的 set -euo pipefail、重定向及 GNU timeout/kill-after 结构，测试时将 30s/5s 缩短为 1s/0.5s。实测 success exit=0 elapsed=0s bytes=26，正常模拟内容可读；error exit=1 elapsed=0s bytes=0；拒绝 TERM 的 hang exit=137 elapsed=1s bytes=0，三项断言通过，临时目录清除。说明命令保留错误状态且可强制限制挂起，不代表实际 adb 或模拟器已验证。实际工作流仍为 30s/5s、步骤上限2分钟，13项测试与五像素态门禁不变。
