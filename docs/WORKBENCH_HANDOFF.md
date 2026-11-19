@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 G：新负责人正式接任与 Android 17 角色/系统组织器定向排除（2026-11-20）
+
+- 机主已于本次独立新对话发出完整接任指令，按 F 生效，不再由旧窗口修改生产。实时 GitHub 核实治理起点 4e63c8fd7271eed8c4d8e92ba8851ebf5e2ca2ee、唯一生产 HEAD 67d71eb8a651eff06aa9b8e6927b27fe31a249ba、main 20ab39cf7e319898fcbc4028bc403df57a6c1a0b，开放仅冻结 #175/#176，2.0 PR 为 0。读取 AGENTS、交接 F/E/O、永久制度及 F01–F21、交接规范、实际工程树；确认 CI 44588386172 completed/success 且 head_sha 精确等于冻结核心，沿用原19项+5态实际证据，不重编译、不重复下载验收产物。
+- 实读冻结源码 ReceiptBridge.kt blob 40f1de8381aa5bc803e704b731dd32d8388b7e5c 与 HostRuntimeEntry.java blob 9321b3dd85d33c4f11c6da78398cc5b8b17c8b02。NativePort 尚无真实 OEM 实现，R2 仅只读白名单，无调用及 hook 注册；现有回执仅能由真实独立观察填充。当前容器无 adb/目标机连接；现有项目挂载附件是早期接管 ZIP 与隔离 CI ZIP，不覆盖新核心。
+- 新定向证据：Android 17 release 的 [权限声明 4850–4877 行](https://android.googlesource.com/platform/frameworks/base/+/android17-release/core/res/AndroidManifest.xml#4850) 确有 EMBED_ANY_APP_IN_UNTRUSTED_MODE（internal|role，注释限定用户选定的 Assistant），不能把它简单等同普通 Activity Embedding 自愿声明，但也不授予 MANAGE_ACTIVITY_TASKS（signature|recents）。[Android 17 r1 TaskFragment 842–964 行](https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-17.0.0_r1/services/core/java/com/android/server/wm/TaskFragment.java#842) 证实此能力受 feature flag、实际权限、父容器 bounds 与最小尺寸约束，只放宽 Activity 的不可信嵌入许可，不提供借用任意既有独立 task 或其归还证明；既有跨 task reparent 拒绝证据保留。该次 r1 WindowOrganizerController 页面抓取失败，不声称新版本跨 task 行为已复验。禁止为获取此角色而伪装助手或改变用户默认助手。
+- 新核查 [AOSP TaskFragmentOrganizer master 193–234 行](https://android.googlesource.com/platform/frameworks/base/+/master/core/java/android/window/TaskFragmentOrganizer.java#193)：系统组织器可获得 fragment SurfaceControl、注册时返回保存状态，但明确要求 MANAGE_ACTIVITY_TASKS；保存状态在系统重启或注销后丢失，不等于既有任务归还。Android 17 请求系统多任务控制权限为 signature|privileged 且受实验 Bubbles 开关约束；[REQUEST_TASK_HANDOFF 10320–10341 行](https://android.googlesource.com/platform/frameworks/base/+/android17-release/core/res/AndroidManifest.xml#10320) 属跨设备任务连续性、signature|privileged，不是本地任意任务容器。上述是新增 AOSP 源码证据，非目标 ColorOS 运行或权限证明；不改变 R2 授权，不使用角色、root、私有标志或竞品身份规避权限。
+- 本轮唯一有效新增成果为接任核验、定向排除以上新系统候选并保存具体可复查证据；没有可合法运行的 ColorOS NativePort 后端，未修改生产代码、编译、测试、签名、扩大 scope 或新增分支/PR，未取得新真机结果。没有联系厂商或竞品作者。在现有授权内继续调用受保护宿主不可行，不代表目标系统技术上绝对不可行。实际阻塞仍是生产身份可用的合法任务会话入口和独立异常归还能力。最短解阻为获取该固件系统允许的真实接口/授权契约（OEM 支持或其他可核验支持入口）；如需另行验证实际宿主调用，先明确范围及风险取得机主同意且满足 OS 权限，不能仅因授权同意解除系统限制。可控 AOSP 系统机制验证需另行授权及真实环境，不冒充 ColorOS 进展。不得重新启动 R2 或冻结 CI，不为报进度写虚假 backend。下一轮仅在新的具体合法接入证据出现时接续 NativePort 单任务承载/触控/焦点/同任务归还；暂无新证据则报告阻塞并节约额度。
+
+---
+
 ## 第十三阶段 F：完整无损交接、冻结核心与唯一生产负责人迁移（2026-11-20，最新生效）
 **本节覆盖所有旧接任/人员/续作状态，包括阶段 E 的执行前置安排、旧第0/4节及旧窗口名；历史事实、测试和 F01–F21 合同原文全部保留。** 机主本轮明确授权完整交接，原“接管安卓工程编译”窗口在此检查点写入并回读核验后转为只读历史档案，停止生产源码写入；唯一继任者为同一项目「台前调度2.0｜研发中心」内机主发送完整接任指令的一个新对话，建议窗口名「原生任务桥接接任」。接任指令生效且仓库核对通过后由该窗口承担唯一生产负责人；其他对话/工作模式仅只读辅助。同步 AGENTS.md 与 docs/workbench-registry.json 的负责人字段，不改变任何分支、PR、保护规则或访问控制。窗口名称本身不是技术授权，实际连接器权限仍受系统控制。
 
