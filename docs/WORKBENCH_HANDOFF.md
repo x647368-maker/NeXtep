@@ -1,6 +1,12 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第十一阶段 A：PMS110 真机公开宿主身份已取证（2026-11-19）
+- 机主在当前对话实际回传第九阶段 B 原签名独立宿主取证工具（collector io.github.x647368maker.atomicworkbench.hostevidence，source_sha ac4c2712a93f3d0fb2840f4ef82990606f1a298a）产生的 JSON 报告。已对照该 SHA 的 AndroidHostInventory 源码和既有 CI/交付记录，报告 schema、字段与只读契约一致；这是用户提供的实际设备报告，不是远程设备连接或独立硬件证明。
+- 固件 fingerprint: OnePlus/PMS110/OP64F1L1:17/CP2A.260605.016/C.147dc4b_1201fc3_11f9c73:user/release-keys；model PMS110；SDK 37；宿主 com.oplus.pscanvas，versionName 2.0.0，versionCode 20；system_or_updated_system_app=true，enabled=true；current signer SHA256 e49802409584ce53152a9000820a51e4fa8a723b7bcc263e335240acf100bf9e。result=VISIBLE_METADATA_ONLY；schema=1；kind=PUBLIC_PACKAGE_INVENTORY；read_only=true；oem_method_calls=0；authorized_embedding/native_return_verified/native_input_verified=null；production_admitted=false。没有设备唯一标识或用户数据；宿主 signer 不是台前调度 APK signer。
+- 该固件上的宿主存在且公开元数据可见这一 P0 事实已取得；不代表 FlexibleTaskView 类存在、公开入口存在、签名信任、可跨应用嵌入、真实任务归还、输入焦点或宿主死亡恢复。禁止把这些 null 转为 true 或绕过 OEM 权限。现有 probe AndroidHostEvidence 仅能在已有获授权宿主 worker 内读类元数据，普通进程无法调用；现有历史 scope 无 pscanvas，不加注入作为取证捷径。
+- 核心唯一 HEAD 717270dcd4ca0856f0f8126a78a7af2b25842706，第十阶段 C 的 CI 已验证；本节点仅更新权威治理档案，生产源码、签名及既有冻结功能不改，不触发重复 CI。下一步以精确 firmware/version/code/signer 为取证基线，审查同版宿主 APK/官方 SDK 或已授权入口的可取得性，静态核对实际符号及访问控制，之后必须独立验证安全单任务归还、输入和宿主死亡恢复。未获授权前不调 OEM，不扩大 Hook、不伪造获授权能力。机主可继续禁用旧模块，无须为本报告重启或再装诊断 APK。
+
 ## 第十阶段 C：双任务回执安全修复（2026-11-19）
 - 最新 HEAD 717270dcd4ca0856f0f8126a78a7af2b25842706，父 6976442738ce30ee24969532612df0ef0d23f1b2；唯一 workbench2/core，6 个文件仅引擎及专属 CI，0 新分支/PR，冻结 app、field APK、MotionMath、OwnedSurfaceBatch 不改。历史 stage-7 原件保持不变；本轮 UnifiedCore、ReceiptBridge 有意修订，不能再声称这两份与历史原件字节一致。
 - 实查两个缺陷：FRAME 只看 submissionVerified，无法阻断输入状态已失效/未知的回执；核心层非 request 资源 ACQUIRE/RELEASE 可接收未 runtimeVerified 的 PRESENT/ABSENT。新增 Evidence.inputBlockedObserved:Boolean?，输入门禁 PRESENT 需明确 true、ABSENT 需明确 false，未知保留在途义务。BLOCK/FRAME/VERIFY_VISUAL/QUIESCE 明确 true，VERIFY_FOCUS 明确 false 才可推进。全部资源获取/释放需 runtimeVerified；原 attach proof 仍保留。旧测试的 input gate release fixture 调整为显式 false，符合真实证据契约，不降低测试。新接口要求旧调用者提供真实三态观察；历史 JVM 参考测试未用新契约重跑，不能冒称历史断言仍全通过。无生产 backend / OEM 调用。
