@@ -2,6 +2,8 @@ plugins { id("com.android.application") }
 val revision = providers.environmentVariable("GITHUB_SHA").getOrElse("unknown")
     .takeIf { it.matches(Regex("[0-9a-f]{40}")) } ?: "unknown"
 android {
+    // Java-only probe: do not add unused Kotlin runtime to system host.
+    enableKotlin = false
     namespace = "workbench2.hostruntime"
     compileSdk { version = release(36) { minorApiLevel = 1 } }
     defaultConfig {
