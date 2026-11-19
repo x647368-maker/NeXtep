@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 Q：已授权的一次性框架定义定向导出实际工程提交（2026-11-20）
+
+- 机主明确批准 P 阶段的一次性公开可读框架文件导出范围，不扩大系统权限或 Vector scope。独立 field 工程已原子提交 ab62e52ee7daca435c8011aa7a6fcde269b45b30（父 9d385e9d2e8da1e2c90a0b737e45880f887df2fe，tree bdfd0a4fd976fb592173ed947039faf496d6c679），预期 HEAD 非强制更新，实际远端 HEAD 与 compare 一致，6文件+426/-5。FrameworkCodeArchive.kt blob 7d1162f6ef2a452162b0d42effdfc4bdf61cadf5；EvidenceActivity.kt 61952604f4379fba6c2666ad1a18011b997fae2c；ids.xml 96a0df0311e5a1d88a1205413a9f6488d1437b13；field build.gradle.kts 3d49ea1273331d58d8d60d88529d939d0938eb7d；FrameworkCodeArchiveTest.kt d2e977c571b72abc09fd4ffd831986ee56c95783；既有 probe workflow f95f10bfc58da5a7c00389472300a2e2d0e68149。独立包名不变，versionCode4/versionName 2.0-framework-export-1。冻结 engine/host-runtime、旧生产 app/main 未修改，不增分支/PR。
+- 直接从既有宿主 DEX 再核对目标描述符 Lcom/oplus/flexiblewindow/FlexibleTaskView; 与 Lcom/oplus/flexiblewindow/FlexibleWindowManager;。新增按钮“定向导出原生框架 ZIP”，仅精确 PMS110/SDK37/已验证 fingerprint 启用；手动触发，实际 BOOTCLASSPATH 优先，枚举固定系统框架目录下直接 JAR，规范路径检查、只读，APEX 仅限定 javalib JAR；不加载类或执行 OEM 代码、无 shell/root/Vector、权限/组件/网络不变。标准 DEX 035/037/038/039/040 的 class_defs→type_ids→string_ids 精确匹配定义（不是引用）。候选384、JAR单96MiB、DEX单32MiB、单JAR最多16个DEX、累计读取预算768MiB、导出累计128MiB、扫描/导出各有60s协作检查（非硬I/O超时），AtomicBoolean 防并发框架操作；有限线程按用户点击创建，非后台常驻。无命中不打开 SAF；命中才用户正常选择保存位置，匹配 JAR 原字节与 SHA256/路径/目标类/固件/扫描结果及两类完整性清单，写入时校验哈希及文件状态，末尾 manifest 为完整性标记。单类命中明确标记不完整亦可导出。不能读取的文件跳过，不提升权限；不支持无DEX、compact/041多header情况，不解析odex/vdex，不保证目标框架可读，扫描跳过/限额不能证明类不存在。源目录 listFiles 失败不等于目录无文件；实际扫描结果与 OEM 框架实现仍待真机。未获得主动原生接入或归还授权。
+- 新增三项 instrumentation：frameworkExportDisabledOffTarget、frameworkDexRequiresClassDefinition、frameworkArchiveMatchesBytesAndRejectsDigestChange。保留之前9项，当前共12项预计运行测试（3 probe +9 field）；新增测试为 stock emulator/合成DEX表及归档字节验证，不证明真机导出。CI 44603165617 https://github.com/x647368-maker/NeXtep/actions/runs/44603165617 已实际 in_progress 且 head 对应上述 SHA。新测试、编译、实际 APK、签名均未验收，无新 APK 可交付；不得以代码静态检查冒充通过。继续按实际 CI 结果定位失败；通过后验证12项 XML、manifest、版本、SHA及原证书，复用此前私密Library签名材料离线签署（若 CI secrets 仍缺），不更换证书。仅有原签名完整APK后交付：安装独立新版，点击上述按钮并使用系统保存对话框，发送生成的 PMS110-flexible-framework-code.zip；若无命中或限额，发送结果截图，不反复试探。无须重传旧pscanvas ZIP、运行终端或额外启用模块。
+- 当前模型 GPT-6 高推理，无需 Work；核心19+5不重复编译。下一步只核查该 CI 最终结果、签名与交付，随后分析实际框架材料，不先写猜测 NativePort。
+
+---
+
 ## 第十三阶段 P：目标框架实现缺失与定向导出决策（2026-11-20）
 
 - 已读取权威交接 O、实际容器当前附件及七份 ZIP 的目录。PMS110-pscanvas-2.0.0-code.zip 仅 base.apk 与 manifest.json；清单键 schema/kind/source_sha/inventory/components/requested_permissions/last_update_time/production_admitted/files，无框架文件。接管包、CI/测试归档没有 OEM framework JAR（仅签名输入内 apksigner.jar）。当前无 adb 工具或目标设备连接可用。实际 Library 分页检索8页1600条（仍有后页，非全库穷尽），仅见此前宿主 ZIP、vivo 资料及无关 APK，结合历史对话/研究记录定向搜索，未发现 PMS110 同 firmware C.147dc4b_1201fc3_11f9c73 的 FlexibleTaskView/Manager 定义归档。不能将宿主引用或其他厂商 ROM 当作目标机框架实现。未恢复原始框架，不伪称新增代码分析。
