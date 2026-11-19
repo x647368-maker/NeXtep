@@ -1,0 +1,6 @@
+<resources>
+    <item type="id" name="collect_evidence"/>
+    <item type="id" name="copy_evidence"/>
+    <item type="id" name="share_evidence"/>
+    <item type="id" name="evidence_report"/>
+</resources>

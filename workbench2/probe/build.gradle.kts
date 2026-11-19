@@ -1,4 +1,4 @@
-plugins { id("com.android.library") version "9.3.0" }
+plugins { id("com.android.library") }
 android {
     namespace = "workbench2.nativebridge"
     compileSdk { version = release(36) { minorApiLevel = 1 } }
