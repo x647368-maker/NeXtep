@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 X · 系统侧会话授权与宿主死亡归还（2026-11-20，独立审查）
+
+继承 W（`d6301b5c185fb03a3137104b88547b07c24ba8b1`）。本轮未取得与 PMS110 当前构建匹配的任务服务端，原签名调用方的限域会话和宿主死亡后的同任务归还均待证。以下是新增的静态证据和收敛后的材料请求，未执行 Android 编译或真机借用。
+
+- **授权边界。** OPPO 的第三方主动浮窗文档提供由 A 请求系统以指定模式启动 B 的适配方法。同文分屏段还说明框架会匹配管控名单。文档没有给出将既有任务借给 A 指定容器的会话凭据或撤销凭据。AOSP 的 Recents 服务从系统资源读取指定组件并匹配 UID，单独选择默认桌面也不能证明具备这一身份。公开的另一版 Oplus 服务源码中，ActivityStarter 将窗口逻辑交给扩展，所核对的 IActivityStarterExt 对应默认方法为空或返回 false。这三项都不能证明本机授权或拒绝，停止沿这些材料继续推断。[OPPO 适配文档](https://open.oppomobile.com/documentation/page/info?id=11171) · [AOSP RecentTasks](https://android.googlesource.com/platform/frameworks/base/+/android16-qpr2-release/services/core/java/com/android/server/wm/RecentTasks.java) · [Oplus 跨版 ActivityStarter](https://github.com/HBYShyw/AntiThermal/blob/db1169a3245a5bc7ab40d222478b97e7df0dda5f/oplus-services/sources/com/android/server/wm/ActivityStarter.java) · [对应扩展](https://github.com/HBYShyw/AntiThermal/blob/db1169a3245a5bc7ab40d222478b97e7df0dda5f/oplus-services/sources/com/android/server/wm/IActivityStarterExt.java)
+- **归还怎样独立核验。** AOSP 的 ActivityRecord token 在服务端创建，不能用它的存活推断宿主进程存活。RemoteCallbackList 默认死亡处理只注销回调，没有任务恢复动作。TaskInfo 的任务 token 来自该容器的 RemoteToken，适合让具备权限、且在宿主退出后仍存活的观察端保留原 Binder 身份并与新查询比较。但 Task.fillTaskInfo 只在直接父任务由 organizer 创建时填写 parentTaskId，前后都为无效值不能证明父容器恢复。实验需读真实 WM 层级，结合原用户、物理显示和窗口模式，另证本次借用已终结、旧请求不会再挂接。持有旧 token 本身也不能证明任务还活着。[ActivityRecord](https://android.googlesource.com/platform/frameworks/base/+/0a8f3dd2a8f47fee05a7cd499b42117bbae9a656/services/core/java/com/android/server/wm/ActivityRecord.java) · [回调死亡语义](https://android.googlesource.com/platform/frameworks/base/+/cf628c4/core/java/android/os/RemoteCallbackList.java) · [Task.fillTaskInfo](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/Task.java) · [Binder 身份](https://developer.android.com/reference/android/os/IBinder)
+- **只补一个输入。** 首选从当前 PMS110 只读复制 `/system/framework/oplus-services.jar`。该路径有 PJZ110 / ColorOS 16.1 的实物记录，在 PMS110 尚未证实。已见公开 PMS110 OTA 索引中的 `17.0.0.159(CN01)`，没有核对到与现有手机一致的完整构建指纹或该包内的目标 JAR。若主候选路径不存在，先只取 `/system/etc/classpaths/systemserverclasspath.pb` 定位系统分片列出的 JAR，另载 OEM 模块仍须实证。无需重发客户端 JAR、宿主 APK 或整包 ROM。[异机路径依据](https://github.com/Andrea-lyz/ColorOS-Assistant-Restore/blob/main/docs/technical-notes.zh.md) · [同型号索引](https://findmyrom.com/devices/oneplus-op64f1l1) · [AOSP 类路径分片](https://android.googlesource.com/platform/packages/modules/SdkExtensions/+/main/derive_classpath/derive_classpath.cpp)
+- **收到材料后的停止条件。** 先验来源和 DEX 具体实现，只追两条链。第一条从授权入口追到调用身份、允许的子任务和容器，区分仅观察与有权绑定。第二条从会话断连或实际宿主死亡追到仍存活的恢复方、撤销旧请求、还原同一任务和正向查询。若只有转发，按确切委托目标再定位。若本包不满足准入且无受支持委托，则停止本路径。只要权限明确、具备独立读取和可调用的外部恢复手段，就可在可隔离环境按 W 做单任务实验。正常退出、客户端断连和实际承载宿主死亡分项记录。失败时停止新操作，保留恢复义务。正式接线与多窗性能继续由唯一生产窗口决定。
+
+---
+
 ## 第十三阶段 W · PMS110 单任务接入与异常归还独立审查（2026-11-20）
 
 **结论。** 阶段 V 暂缓生产接入的判断成立。已定位系统宿主逐槽承载、匹配任务和请求全屏的代码。台前调度原签名应用取得限域会话的条件，以及宿主消失后由谁恢复任务，仍缺证据。实验可以先于生产准入，前提是已有获准的入口、宿主外观察和可执行的恢复手段。生产基线为 `ab62e52ee7daca435c8011aa7a6fcde269b45b30`。
