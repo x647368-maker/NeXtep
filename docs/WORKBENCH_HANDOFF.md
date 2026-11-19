@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 D：19项实际回归全通过证据、最终编译复核及独立架构攻关范围（2026-11-20）
+- 中间提交 6ca1ca2c5ea34a1362032f3fb68536153bfab188 的 CI 44588313920 job 135787178657 completed/failure 的真实原因已定位：实际 connectedDebugAndroidTest 完成19项，随后 Python 旧18项精确名单断言失败；并非 Android 测试用例失败。实际下载 artifact 14562087251，67484 bytes，SHA256 0117e82b0600f189cb61b74a92a525ab01038d3aefcc4552c0504e15677f076e，ZIP CRC 正常。原 XML SHA256 963034461ae2680f352889be0c856288978b962ffd84611f15bcba08b6fdaeb3，19 tests/0 failures/0 errors/0 skipped，7.995秒，包含 metadataOnlyAdmissionAndLegacyScenePathCannotBorrowTasks。独立日志确有5个 PIXELS_OK（initial/interrupted/rollback/swapped/detached）及4个 COMMIT_OK；模拟器 fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。手动复核五态成功，不把上次跳过的 CI 像素门禁说成已执行。
+- 最终 commit 67d71eb8a651eff06aa9b8e6927b27fe31a249ba 对上述中间提交仅修改 workflow 必测名单。实际下载 final run 44588386172 的 compile artifact 14562157533，86615 bytes，SHA256 6f7b2543eb1dfcdddf7f93698e8f430516c48a09d0fcb90b4c4e634ab266a0b1，ZIP/AAR/JAR CRC 正常、checkout SHA 正确、AAR 85222 bytes SHA256 b4d78c31049a9e73fda079765c5a284becdfbc02055c31236ed1ef774b8ef2c6 与中间构建逐字节一致，source-blobs 6个与已核实源码一致；实际 javap 仅存在 beginPending，旧 begin 已删除。最终完整 CI 本次保存为 in_progress/未定，仍须下载该 run 的 runtime XML 和像素日志验收才能冻结。不要重复提交、重跑或修改已修复的名单。
+- 根据机主要求准备一次独立高强度只读攻关，不启动第二生产负责人、不创建分支/PR。目标不是重构、复刻竞品或规避权限，而是由独立审查者寻找先前结论的有效反例：PMS110 精确固件上是否有受支持、系统或 OEM 明确认可的既有任务宿主接入契约；现有系统多窗能力是否存在满足原产品布局与五个真实任务的合法扩展；受控 AOSP 系统内可验证的独立归还服务是否有明确的 ColorOS 可部署关联。逐条注明证据、调用者身份与权限条件、可验证/未知事项。避免重跑 R2、重复 ROM 静态扫描、重复公开 TaskOrganizer/ActivityEmbedding 的已知限制、用 VirtualDisplay 或截图绕过产品要求。只读 R2 证实类和方法存在、并未证明业务授权。公开包的安全限制及真实宿主签名仍不允许借身份调用受保护接口。
+- 最小成功验收：可核验的许可与接入合同；单自有测试 Activity 的实际系统 task identity、触控焦点和内容连续；正常退出原任务归属复原；客户端及宿主异常退出时由独立授权系统机制确认归还，无遗留容器；明确不能证明的事项。只有实际证据与授权齐全，当前唯一负责人才能实施 NativePort 接入。若无满足条件的路径，给出明确阻塞与解除阻塞所需的外部接口/许可，不再追加无后端的模型和测试。独立攻关可用高强度思考，但本轮未启动；不得声称已经解决权限。无生产改动、无新CI、无APK、无系统调用、无手机操作。
+- 下一轮：最终 CI 完整通过才冻结 67d71eb8；独立审查窗口只读读取此检查点及阶段 O/第十三阶段 A-C，提交证据化接入决策给唯一研发窗口；不要求机主再安装或重启。
+
+---
+
+
 ## 第十三阶段 C：独立复核实际 Android 编译产物，限定下一次攻关目标（2026-11-20）
 - 实际下载中间提交 6ca1ca2c5ea34a1362032f3fb68536153bfab188 的 CI 44588313920 artifact 14562660767；归档 86614 bytes，SHA256 1bf8e12c1ede97d6830ba24e7489e0d431e183a56de00172d63e3702173b5c5b 与 GitHub 一致。独立核验 ZIP/AAR/classes.jar CRC、checkout SHA、AAR 自带 SHA256，AAR 85222 bytes，SHA256 b4d78c31049a9e73fda079765c5a284becdfbc02055c31236ed1ef774b8ef2c6。实际 javap 检查 UnifiedCore 仅公开 beginPending(Capability,StartPlan)，旧 begin 入口已经不存在；源码 blob 清单：UnifiedCore 07217f951e3d9b305a08b53f1ced5e66b90e0316，其他5个引擎源码保持阶段A之前的版本。最终 SHA 67d71eb8 的真实 GitHub diff 只有 workflow 精确必测名单新增1项，无生产源码差异。中间 AAR 不等于最终 CI 通过，不用于发布。
 - 本轮末实际 CI 状态：中间 44588313920 completed/failure；最终 44588386172 in_progress/未定。最终名单、19项实测、5态像素尚未完成独立验收，不提前冻结；已验收核心仍 76794025。没有新增生产源码、权限、分支、PR、APK 或 CI。
