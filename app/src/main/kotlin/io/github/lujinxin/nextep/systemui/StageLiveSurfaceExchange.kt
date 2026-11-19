@@ -21,6 +21,7 @@ import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import io.github.x647368maker.atomicworkbench.BuildConfig
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
+import io.github.x647368maker.atomicworkbench.framework.StageHeldGeometryReceipt
 import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
 import io.github.x647368maker.atomicworkbench.logging.NeXtepLog
 import java.util.concurrent.Executor
@@ -329,6 +330,21 @@ internal class StageLiveSurfaceExchange private constructor(
     private val outgoingRebaseReceiptArmed=AtomicBoolean(false)
     private val incomingRebaseCommitted=AtomicBoolean(false)
     private val outgoingRebaseCommitted=AtomicBoolean(false)
+    // Only the measured firmware + voluntary diagnostic trial opts into
+    // exact-current-geometry receipts. The ordinary path remains unchanged.
+    private var heldReceiptTrial=false
+    private val incomingHeldReceipt by lazy { StageHeldGeometryReceipt() }
+    private val outgoingHeldReceipt by lazy { StageHeldGeometryReceipt() }
+
+    private fun currentHeldGeometryCommitted(incoming:Boolean):Boolean {
+        if(!heldReceiptTrial)
+            return (if(incoming)incomingRebaseCommitted else outgoingRebaseCommitted).get()
+        val source=if(incoming)incomingStamp else outgoingStamp
+        val display=if(incoming)outgoingStamp.displayId else incomingStamp.displayId
+        val current=TaskSurfaceCompat.heldReceiptFrame(source,display) ?: return false
+        val proof=if(incoming)incomingHeldReceipt else outgoingHeldReceipt
+        return proof.confirmed(current.leash,current.moveReservation,current.receiptGeometry())
+    }
 
     // After the terminal frame, the source producer can change its bounds
     // AND its local root transform. Keep the mirror in the same destination
@@ -413,11 +429,24 @@ internal class StageLiveSurfaceExchange private constructor(
                 // per card, with no new transaction, thread or frame query.
                 // Do not retry registration on every unrelated Shell commit.
                 if(coveredFlight && pairedRailPlan!=null && Build.VERSION.SDK_INT>=33) {
-                    val armed=if(incoming) incomingRebaseReceiptArmed else outgoingRebaseReceiptArmed
-                    val committed=if(incoming) incomingRebaseCommitted else outgoingRebaseCommitted
-                    if(armed.compareAndSet(false,true)) runCatching {
-                        transaction.addTransactionCommittedListener(Executor { it.run() }) {
-                            if(!finished.get() && !hostDetached) committed.set(true)
+                    if(heldReceiptTrial) {
+                        // Track every distinct requested geometry, not just
+                        // the first callback. Bounded registration is on
+                        // existing transactions; no new draw or timer.
+                        val proof=if(incoming)incomingHeldReceipt else outgoingHeldReceipt
+                        val ticket=proof.observe(frame.leash,frame.moveReservation,frame.receiptGeometry())
+                        if(ticket!=null)runCatching {
+                            transaction.addTransactionCommittedListener(Executor { it.run() }) {
+                                proof.acknowledge(ticket,!finished.get() && !hostDetached)
+                            }
+                        }.onFailure { proof.failedRegistration(ticket) }
+                    } else {
+                        val armed=if(incoming) incomingRebaseReceiptArmed else outgoingRebaseReceiptArmed
+                        val committed=if(incoming) incomingRebaseCommitted else outgoingRebaseCommitted
+                        if(armed.compareAndSet(false,true)) runCatching {
+                            transaction.addTransactionCommittedListener(Executor { it.run() }) {
+                                if(!finished.get() && !hostDetached) committed.set(true)
+                            }
                         }
                     }
                 }
@@ -798,6 +827,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     return markUnavailable("main_source_mapping_unrepresentable")
                 exchange.mainSourceFrame=originalMain
                 exchange.mainFirstFrame=firstMain
+                exchange.heldReceiptTrial=inEvidenceScope && diagnosticOptIn
                 // Phase 1 content-only experiment: same exact tested firmware,
                 // private debug/native opt-in as #173. Outside this scope keep
                 // the accepted coordinate-only implementation byte-for-byte.
@@ -1509,11 +1539,16 @@ internal class StageLiveSurfaceExchange private constructor(
                         // discontinuity at the adaptive endpoint. Only blend
                         // when both matching target-transform receipts exist.
                         // Unsupported OEM receipts never cause extra waiting.
+                        val receiptEligible=concurrentHandoff && coveredFlight && pairedRailPlan!=null
+                        val upCommitted=receiptEligible &&
+                            runCatching { currentHeldGeometryCommitted(true) }.getOrDefault(false)
+                        val downCommitted=receiptEligible &&
+                            runCatching { currentHeldGeometryCommitted(false) }.getOrDefault(false)
+                        if(heldReceiptTrial && receiptEligible)
+                            trace("endpoint_current_geometry_receipts up=$upCommitted down=$downCommitted pixels_not_proven")
                         val adaptiveBlend=StageConcurrentNativeTrialPolicy.adaptiveHandoffBlend(
-                            concurrentHandoff && coveredFlight && pairedRailPlan!=null,
-                            firstTransactionCommitted,incomingRebaseCommitted.get(),
-                            outgoingRebaseCommitted.get(),endpointWriteFailed.get(),
-                            deadline-now,ValueAnimator.getDurationScale())
+                            receiptEligible,firstTransactionCommitted,upCommitted,downCommitted,
+                            endpointWriteFailed.get(),deadline-now,ValueAnimator.getDurationScale())
                         if (gapReveal || adaptiveBlend) {
                             val duration=if(gapReveal) READY_REVEAL_MS
                                 else StageConcurrentNativeTrialPolicy.ADAPTIVE_HANDOFF_REVEAL_MS
@@ -1715,7 +1750,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(nativeFrameCount>0) trace("gpu_unchanged_skipped=$unchangedFrameSkips")
                 if(concurrentHandoff) trace("endpoint_rebase up="+incomingRebased.get()+
                     " down="+outgoingRebased.get()+" fail="+endpointWriteFailed.get())
-                if(concurrentHandoff && coveredFlight && pairedRailPlan!=null)
+                if(concurrentHandoff && coveredFlight && pairedRailPlan!=null && !heldReceiptTrial)
                     trace("endpoint_rebase_receipts up="+incomingRebaseCommitted.get()+
                         " down="+outgoingRebaseCommitted.get()+" pixels_not_proven")
                 NeXtepLog.info("native_swap",

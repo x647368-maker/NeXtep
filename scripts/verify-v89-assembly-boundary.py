@@ -252,10 +252,33 @@ def main():
     equal(paths(marker_fixture, marker_epoch), {
         GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
     }, "disjoint marker epochs and actual output dimensions only")
-    equal(paths(marker_epoch, "HEAD"), {
+    green_recovery = "b625f22558c1d4127101f86e6c4f64a7b263d72f"
+    subprocess.run(["git", "merge-base", "--is-ancestor", green_recovery, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(marker_epoch, green_recovery), {
         GATE, "scripts/run-visual-regression.sh",
         "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt",
     }, "API35 isolated test process reflection preflight only")
+    equal(paths(green_recovery, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"framework/TaskSurfaceCompat.kt",
+        P+"framework/StageHeldGeometryReceipt.kt", T+"framework/StageHeldGeometryReceiptTest.kt",
+    }, "scoped current destination geometry receipt; no migration/clock/route change")
+    source("framework/StageHeldGeometryReceipt.kt", "proof.arm(leash,reservation,geometry)",
+           "proof.claimListener(ticket)", "MAX_REGISTRATIONS=4", "proof.confirmed(leash,reservation,geometry)")
+    source("framework/TaskSurfaceCompat.kt", "fun heldReceiptFrame(",
+           "displayExchanges[id]!=reservation", "state.densityDpi,reservation")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "exchange.heldReceiptTrial=inEvidenceScope && diagnosticOptIn",
+           "proof.observe(frame.leash,frame.moveReservation,frame.receiptGeometry())",
+           "currentHeldGeometryCommitted(true)", "currentHeldGeometryCommitted(false)",
+           "endpoint_current_geometry_receipts")
+    # Preserve the real owner, motion, crop and handoff policy source files.
+    for rel in ("systemui/StageHeldEndpointPolicy.kt", "systemui/StageEndpointContentMapping.kt",
+                "systemui/StageConcurrentNativeTrialPolicy.kt", "systemui/NeXtepWindowController.kt",
+                "display/SlotTaskCoordinator.kt", "display/VirtualDisplaySlot.kt",
+                "systemserver/WorkspaceTaskSurfaceHook.kt", "framework/TaskPresentationCommitProof.kt"):
+        path=P+rel
+        require((ROOT/path).read_bytes()==git("show",green_recovery+":"+path),
+                "receipt candidate changed preserved owner/motion policy "+path)
     api35_runner=(ROOT/"scripts/run-visual-regression.sh").read_text()
     require("am force-stop io.github.x647368maker.atomicworkbench" in api35_runner and
             "status=${PIPESTATUS[0]}" in api35_runner and
@@ -273,7 +296,7 @@ def main():
     source("systemui/StageEndpointContentMapping.kt", "if(!sameLocalCanvas(sourceLocal,targetLocal))return null",
            ".takeIf(::fullEndpointCoverage)", "if(!sameLocalCanvas(local,a.targetLocal))return null",
            "endpointGapPx(a.viewport,f.box)>2f")
-    require((ROOT/(P+"systemui/StageLiveSurfaceExchange.kt")).read_bytes()==
+    require(git("show",green_recovery+":"+P+"systemui/StageLiveSurfaceExchange.kt")==
             git("show",recovery+":"+P+"systemui/StageLiveSurfaceExchange.kt"),
             "pixel gate must not alter engine ownership/trajectory")
     native_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt").read_text()
@@ -296,7 +319,7 @@ def main():
     for rel in ("framework/TaskSurfaceCompat.kt","systemui/StageConcurrentNativeTrialPolicy.kt",
                 "systemui/StageLiveSurfaceFlightGeometry.kt","systemui/StageHeldEndpointPolicy.kt"):
         path=P+rel
-        require((ROOT/path).read_bytes()==git("show",rejected_candidate+":"+path),
+        require(git("show",green_recovery+":"+path)==git("show",rejected_candidate+":"+path),
                 "regression recovery altered ownership or prior geometry "+path)
     source("framework/TaskSurfaceCompat.kt", "if(!retained)slot.completedMirrorFit=null")
     source("framework/ObservedDemotionFitPolicy.kt", "completedFit===currentFit",
