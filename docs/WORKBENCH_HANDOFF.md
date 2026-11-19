@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 O：R2 真机只读接入完整成功，关闭日志故障专项（2026-11-20）
+- 纠正阶段 N：02:21 机主截图确认 Vector 2.2 (3114) / API102，但当时仍装 R1（2.0-host-runtime-1）；此前“R2 重启无日志”不是有效 R2 失败证据。02:22 截图确认 R2 覆盖安装成功并启用。02:24 机主新截图（4738.jpg，本会话私有附件，未上传仓库）经直接放大读取，R2 source=63ece8c9462eebfb0e7fad63272bf102a70e8ae2 与唯一 core SHA 一致。
+- 02:24:20.839 VectorContext/WB2HostRuntime LOADED targetProcess=true systemServer=false；.849 PACKAGE_LOADED first=true、PACKAGE_READY targetProcess=true systemServer=false first=true；.852 BEGIN model=PMS110 sdk=37 firmware 与阶段 H 精确一致；.860 完成符号记录及 END。BEGIN 到 END 日志时间差8ms，只是此次取证耗时，不是性能或任务交换基准。依据 HostMetadata.matches 原代码，BEGIN 意味着此次包/进程/first/systemApp/UID/model/sdk/firmware 基本检查通过，不代表实际宿主证书已经核验或 OEM 调用获得授权。
+- 真机公开实例方法描述符：FlexibleTaskView.init(Bundle)；init(int,float,float,Rect,Intent,int)；init(int,float,float,Rect,Intent,int,int)；init(int,float,float,Rect,int)；release()；resize(Rect)；setListener(Executor,FlexibleTaskView.Listener)，皆 void。Listener 返回 NO_MATCHING_PUBLIC_METHODS：本轮只读白名单为 init/setListener/resize/release，不能推断 Listener 不存在或没有回调。END metadata_only=true oem_calls=0 hooks=0 authorization=UNKNOWN return=UNKNOWN input=UNKNOWN production_admitted=false host_signer_runtime_verified=false。只读成功，不是任务创建、输入、回收、原生动画或性能验收。
+- 已复读 HostMetadata.java 与现有 ReceiptBridge.kt（blob 40f1de8381aa5bc803e704b731dd32d8388b7e5c）。保留现有 NativePort/NativeSnapshot、真实独立观察、宿主实例校验、TaskReturnProof 等核心门禁。符号存在不等于授权，禁止在受保护宿主身份下替普通应用绕过权限，禁止将返回 void、猜测标志位或回调当作可信任务归还证明。下一研发节点从已取得静态 OEM 证据及本次输入开始，对现有宿主合法公开/受授权接入方式、回调语义、独立任务生命周期与安全归还进行工程验证；优先限定自有测试 Activity，任何实际宿主调用/新增权限/作用域必须先得到明确授权且符合系统权限边界。现有只读授权不包含实际任务承载操作。若缺合法接入条件，明确阻塞，不用虚拟显示或截图冒充原生任务。无须再发 R3 只为重复已完成的元数据取证，不换 LSP，不再重启，机主可停用 R2，正常恢复日常使用（不要同时启用相互冲突的工作台）。
+- 本轮仅保存真实证据并核对现有桥接接口，无新增生产源码、分支、PR、CI、签名或真机调用。现有 core 63ece8c9 / engine 76794025 有效。下一条指令：“基于第十二阶段 O 的真机证据，停止日志专项，核查合法原生接入与单任务承载/归还方案，在已有权限内实施可验证工程，不擅自调用受保护接口或放宽门禁。”
+
+---
+
+
 ## 第十二阶段 N：R2 重启后仍无生命周期日志，停止盲目修改（2026-11-20）
 - 机主报告安装 R2；02:15–02:16 日志仍只有旧 02:04:45 加载记录；正常重启后 02:19 截图出现新加载三行（02:18:28.176 Loading module io.github.x647368maker.atomicworkbench.hostruntime；02:18:28.178 Loading class workbench2.hostruntime.HostRuntimeEntry；02:18:28.178 Loaded module ... successfully），没有 WB2HostRuntime LOADED/PACKAGE_LOADED/PACKAGE_READY/BEGIN/END/REFUSED/INCOMPLETE。说明单纯重启/标签修复尚未形成可见证据；不能判定回调没有执行，更不能判定 OEM 接口不存在。截图未显示设备上 Vector 精确版本、已安装取证 APK 版本或实际 DEX 身份；本轮没有要求再重启。
 - 本轮隔离容器实际复核交付 R2 文件 25388 bytes，SHA256 d9bd3a1be74ee7eaf48aa99ae14618be0433e814298a3525931b9f73a5783982，ZIP CRC 正常；直接解析 classes.dex 字符串表确认完整提交 SHA 63ece8c9462eebfb0e7fad63272bf102a70e8ae2、LOADED/PACKAGE_READY/REFUSED_PROCESS/REFUSED_IDENTITY、onModuleLoaded/onPackageReady 方法名及 WB2HostRuntime 标记。固定 scope com.oplus.pscanvas，min/target API102、staticScope=true、protective、autoHotReload=false。交付产物身份正确不等于实机安装身份已核实。
