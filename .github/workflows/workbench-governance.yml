@@ -1,0 +1,32 @@
+name: Workbench governance audit
+on:
+  push:
+    branches: ['atomic-workbench/v89-held-receipt-current-20261119']
+  pull_request:
+    branches: ['atomic-workbench/v89-held-receipt-current-20261119','atomic-workbench/v89-domain-regression-recovery-20261119']
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check governance entry and remote inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          test -s AGENTS.md
+          test -s docs/WORKBENCH_HANDOFF.md
+          gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name' > "$RUNNER_TEMP/heads"
+          count=$(wc -l < "$RUNNER_TEMP/heads")
+          echo "Remote branches: $count"
+          if [ "$count" -gt 20 ]; then echo "::warning::Remote branch count exceeds the long-term target"; fi
+          for ref in main atomic-update-feed; do grep -Fxq "$ref" "$RUNNER_TEMP/heads"; done
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq '.[].base.ref' > "$RUNNER_TEMP/bases"
+          if [ "$(wc -l < "$RUNNER_TEMP/bases")" -gt 3 ]; then echo "::warning::Open PR count exceeds three"; fi
+          while IFS= read -r ref; do grep -Fxq "$ref" "$RUNNER_TEMP/heads"; done < "$RUNNER_TEMP/bases"
