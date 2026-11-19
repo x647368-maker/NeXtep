@@ -1,5 +1,30 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 E：原生任务接入独立审查与最终核心证据（2026-11-20）
+
+### 最终 CI 与已验证边界
+
+- 已确认唯一研发分支 `workbench2/core` 实际 HEAD 为 `67d71eb8a651eff06aa9b8e6927b27fe31a249ba`。[最终 CI 44588386172](https://github.com/x647368-maker/NeXtep/actions/runs/44588386172) 的 engine job 135789962760 completed/success，测试、五态采样及像素门禁各步成功。实际下载并校验 runtime artifact 14562032134，71682 bytes，ZIP 全部 CRC 通过，SHA256 `79912439265e139c9a543fad0ca4aa1b8c019322f279b4a192dc509bd5495470`。XML SHA256 `1fc9e3ea062790e83b9b6a1df16a6602a5e4f343c7f291d8a7ef41237f707090`，19项用例与最终工作流必测名单逐名一致，0失败、0错误、0跳过；独立像素日志 SHA256 `975731efa0581a7566ccdebb214c9f892966d35d26fb9496316f2eba4ff5576d`，五态 initial/interrupted/rollback/swapped/detached 全部 PIXELS_OK。结合 D 的同一 run 编译产物复核，将该 SHA 登记为已验收的独立核心冻结基线。运行环境是 Android 15 模拟器，2.0 ColorOS 真实任务承载仍未验收。
+- 阶段 O 的 PMS110 实测只确认 FlexibleTaskView 类与公开签名在目标宿主可见，且日志显示 `metadata_only=true`、`oem_calls=0`、`authorization=UNKNOWN`、`host_signer_runtime_verified=false`。11C/D 的精确设备导出证实 pscanvas 的目标入口受 `com.oplus.permission.safe.WINDOW` 保护；普通取证应用未获授予。现有 Vector 授权范围是只读。WindowDeck 的公开描述支持“复用 OEM 原生宿主”作为架构方向，未提供适用于本项目、本固件和本签名的受支持接入契约或异常归还证据。Activity Embedding 仅适用于同意的目标 Activity，公开分屏没有本产品的一大四小与交换契约。
+
+### 路线与硬阻塞
+
+- **目标设备唯一推荐路线**是 OEM 正式允许的 FlexibleTaskView 会话入口，配合独立于工作台和承载宿主进程的系统端归还。优先通过 OEM 支持的接口直连，实际调用以生产身份的明确授权为前提。要求拿到匹配 PMS110 固件、宿主包/版本/证书、原签名客户端及调用者权限的书面接口契约或可核验集成文档，且契约覆盖已存在任务的接管、系统输入/焦点、可观测画面、原容器归还、双方进程死亡和取消竞态。任一项缺证按未准入处理。现有证据还没有这份契约，状态为 BLOCKED，禁止尝试用现有 R2 身份执行承载。OEM 开发者支持是当前解阻动作；有外联授权后由唯一研发窗口询证。
+- **备用仅用于机制验收**。在另获授权且完全可控的 AOSP 系统镜像中，由平台认可的 WM/Shell 扩展负责限定测试任务的归还；沿用系统 organizer，保留原生输入和合成；所得结果只适用于该镜像。源码证据显示 AOSP `WindowOrganizerController` 在事务和获取 organizer 入口进行权限检查，`TaskOrganizerController.dispose()` 对 organizer 创建的任务会执行删除，其他任务也有按配置移除的分支。标准 TaskView 的 `removeTask()` 会从 WM/最近任务删除。因而 release、onTaskVanished、Binder death、容器空或画面消失都不能单独签发归还证明。没有 OEM 契约时，这条路线不会给 PMS110 解除部署阻塞。[权限检查](https://android.googlesource.com/platform/frameworks/base/+/66921ff3adeb5ad78109a2a493dbc72b861a6291) · [organizer 销毁](https://android.googlesource.com/platform/frameworks/base/+/93fe4a8f70162ecb7f4a58fc3146d8d64eb61aad/services/core/java/com/android/server/wm/TaskOrganizerController.java#411) · [TaskView 移除](https://android.googlesource.com/platform/frameworks/base/+/ce27eff99247ce0cc9fe185db79c07553f24a1b7/libs/WindowManager/Shell/src/com/android/wm/shell/taskview/TaskViewTaskController.java)。
+
+### 给「接管安卓工程编译」的执行指令
+
+1. 继承上面的冻结 SHA 和 CI 实物，沿用唯一研发分支。先取得前述 OEM 契约并逐项确认当前生产身份、固件、宿主与观察端权限。证据缺失即记录缺项及待答问题，停止生产接入；无需重跑 R2、重复调查 ROM、制作新诊断包或增加空转模型。
+2. 契约齐备后，在宿主边界实现唯一真实 `NativePort`，保留现有 `AndroidFrameDriver → ReceiptBridge → UnifiedCore.beginPending`、单 owner Looper 和单 outstanding effect。能力来自授权及已核验的独立观察端。以已存在的自有测试 Activity 构建一个 `StartPlan`，`LaunchRequest.existing` 由系统观察取得。按固件/宿主版本/会话实例及 `epoch + serial + generation + requestId` 关联响应，底层绑定 user、taskId、不可复用的任务身份与专属容器。提交 ACK、合成呈现、系统焦点和归还分别验证。凭系统认可的任务输入区域与焦点路由处理点击、拖动、返回键及 IME。动画和清退期只门控本会话容器，按需结束当前手势；真实画面确认后，验证主任务焦点与输入恢复，再进入 ACTIVE。
+3. 接管前由独立授权系统端记录原 display、parent/root、windowing mode、bounds，以及契约要求恢复的顺序与可见性，先登记归还义务再发起变更。监听客户端和承载端各自的生命周期，任一死亡或主动退出都将会话标为关闭中，阻止迟到挂载；对已借用任务执行同一套幂等归还流程。由独立 WM/合成/输入观察证明原任务身份和归属复原、对应转移已终结、无迟到重挂、无残留宿主容器或门控。只有经过认证、归属于原会话的结果才可转成 `TaskReturnProof`；未知结果保留恢复义务，拒绝会话重开，直到得到权威终态。正常关闭和死亡都走这套事务语义。若原归属已消失，仅能使用 OEM 明确约定且可验收的恢复策略；否则记录失败，停止扩展。
+4. 先解决真实死亡链路再接 UI。当前 `ReceiptBridge.receive` 固定 `hostInstance` 并拒绝异实例回执，`UnifiedCore.timeout` 保留 pending。在确认新后端后，优先提供独立的原会话终态查询与结算通道：工作台存活时只消费独立端认证且绑定旧会话和原 effect 的证据，禁止新宿主冒领；工作台死亡时由系统端完成恢复，重启后先核对上一会话，再准入新会话。若宿主死亡连同 gate 已销毁，使当前 `QUIESCE` 无法得到真实 blocked=true，记录由独立端证实的旧会话终态，按实证新增最小独立恢复对接及针对性回归，不把 gate 已消失伪造为 blocked=true，也不放宽原回执检查。
+5. 单任务真机验收使用已打开的自有测试页，保留可见计数、滚动位置、输入文字和播放/暂停状态；附原任务身份和归属记录。证实挂载后合成器实际呈现同一任务、触摸命中正确坐标、输入与 IME 焦点正确，内容/播放连续；需重新布局时证明已显示新配置对应的真实 buffer。分别验证正常关闭、挂载未结算时取消并收到迟到结果、工作台进程死亡、承载宿主进程死亡。独立端记录原身份/归属、输入恢复、无残留、无迟到挂载；任何任务被删除、重启替代、悬空或缺失独立证据即失败。保留精确固件元数据、最少系统事件及测试页录屏，拒绝包含私人应用内容的取证。
+6. 单任务全部通过后再做双任务交换，验证两个任务独立归还、交换能以同一系统级批次提交或具有等效可验证同步边界。保持现有 `Flight`、事件驱动 Choreographer、合并中间帧，避免每帧远程调用、多次窗口重排或空闲轮询。若 OEM 在落点改变真实 canvas/leash，现有 `Scene.swap` 保留旧 Owner，视觉/焦点门禁以完整 Scene 相等比较，无法直接接纳合规的新 generation；此时只在证实后增加明确的终点重新绑定，核验同一任务、受约束的新 generation、真实画面和焦点，不改宽松相等比较。双任务通过再扩到五个，实测 OEM 同时可见数量、最小尺寸、分辨率/刷新率、进程重建与输入策略。比较同机同固件、同应用/刷新率/温度下 ColorOS 和可获得的 WindowDeck 基线，记录首帧/末帧与触控延迟 P50/P95/P99、掉帧、CPU/线程、内存及亮屏/空闲耗电。OTA、旋转/折叠、IME、非可调整窗口或安全内容触发的限制，按固件与能力实测收录；未匹配时不准入。保留冻结功能、签名和用户数据。
+
+本次仅同步权威交接，未改生产源码、分支布局或 PR，未构建或发 APK，未调用受保护接口。研发负责人只在获得授权接口与独立归还证据后进入单任务实施。
+
+---
+
 ## 第十三阶段 D：19项实际回归全通过证据、最终编译复核及独立架构攻关范围（2026-11-20）
 - 中间提交 6ca1ca2c5ea34a1362032f3fb68536153bfab188 的 CI 44588313920 job 135787178657 completed/failure 的真实原因已定位：实际 connectedDebugAndroidTest 完成19项，随后 Python 旧18项精确名单断言失败；并非 Android 测试用例失败。实际下载 artifact 14562087251，67484 bytes，SHA256 0117e82b0600f189cb61b74a92a525ab01038d3aefcc4552c0504e15677f076e，ZIP CRC 正常。原 XML SHA256 963034461ae2680f352889be0c856288978b962ffd84611f15bcba08b6fdaeb3，19 tests/0 failures/0 errors/0 skipped，7.995秒，包含 metadataOnlyAdmissionAndLegacyScenePathCannotBorrowTasks。独立日志确有5个 PIXELS_OK（initial/interrupted/rollback/swapped/detached）及4个 COMMIT_OK；模拟器 fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。手动复核五态成功，不把上次跳过的 CI 像素门禁说成已执行。
 - 最终 commit 67d71eb8a651eff06aa9b8e6927b27fe31a249ba 对上述中间提交仅修改 workflow 必测名单。实际下载 final run 44588386172 的 compile artifact 14562157533，86615 bytes，SHA256 6f7b2543eb1dfcdddf7f93698e8f430516c48a09d0fcb90b4c4e634ab266a0b1，ZIP/AAR/JAR CRC 正常、checkout SHA 正确、AAR 85222 bytes SHA256 b4d78c31049a9e73fda079765c5a284becdfbc02055c31236ed1ef774b8ef2c6 与中间构建逐字节一致，source-blobs 6个与已核实源码一致；实际 javap 仅存在 beginPending，旧 begin 已删除。最终完整 CI 本次保存为 in_progress/未定，仍须下载该 run 的 runtime XML 和像素日志验收才能冻结。不要重复提交、重跑或修改已修复的名单。
