@@ -76,7 +76,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           p = pathlib.Path('workbench2/engine/build/outputs/androidTest-results/connected')
-          required = {'noCapabilityMeansNoDispatch','cancellationAndLateReceiptRetainReturnBeforeHostRelease','mismatchedHostReceiptCannotSettleOutstandingEffect','ownedDualLayerCommitSwapAndRollback','swapCoalescesFramesAndPublishesOnlyAfterVisualAndFocus','lostOrUnknownInputDuringFrameDrainsWithoutPublishingSwap','wrongVisualOrFocusNeverPublishesSwap','cancelledFrameRetainsEveryLeaseUntilLateTerminalReceipt','unverifiedResourceAndUnknownGateCannotSettleAtReducer','inputGateReleaseRequiresExplicitReopenedEvidence'}
+          required = {'noCapabilityMeansNoDispatch','cancellationAndLateReceiptRetainReturnBeforeHostRelease','mismatchedHostReceiptCannotSettleOutstandingEffect','ownedDualLayerCommitSwapAndRollback','swapCoalescesFramesAndPublishesOnlyAfterVisualAndFocus','lostOrUnknownInputDuringFrameDrainsWithoutPublishingSwap','wrongVisualOrFocusNeverPublishesSwap','cancelledFrameRetainsEveryLeaseUntilLateTerminalReceipt','unverifiedResourceAndUnknownGateCannotSettleAtReducer','inputGateReleaseRequiresExplicitReopenedEvidence','unchangedCardsReusePosesWithoutChangingGeometryOrOrder'}
           cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
           assert {t.get('name') for t in cases} == required and len(cases) == len(required), [t.get('name') for t in cases]
           assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)

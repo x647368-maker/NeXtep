@@ -47,6 +47,9 @@ fun interpolate(a: Pose,b: Pose,p: Double): Pose {
     val u=ease(p)
     if(p==0.0) return a
     if(p==1.0) return b
+    return interpolateInterior(a,b,u)
+}
+private fun interpolateInterior(a: Pose,b: Pose,u: Double): Pose {
     // Linear convex combination of boxes and isotropic scales ensures the entire
     // source canvas remains inside the viewport, even when aspect ratios differ.
     val box=Box(blend(a.box.x,b.box.x,u),blend(a.box.y,b.box.y,u),blend(a.box.w,b.box.w,u),blend(a.box.h,b.box.h,u))
@@ -64,8 +67,26 @@ data class Scene(val owners: List<Owner>, val places: List<Box>, val displayEpoc
 class Flight(val generation: Long,val from: Scene,val side: Int,val mainRadius: Double,val sideRadius: Double) {
     init { require(generation>0 && mainRadius>=0 && sideRadius>=0 && mainRadius.isFinite() && sideRadius.isFinite()) }
     val to=from.swap(side)
-    private val start=from.owners.mapIndexed { i,o -> o to Pose.fit(from.places[i],o.canvas,if(i==0)mainRadius else sideRadius) }.toMap()
-    private val end=to.owners.mapIndexed { i,o -> o to Pose.fit(to.places[i],o.canvas,if(i==0)mainRadius else sideRadius) }.toMap()
-    fun sample(p: Double): Map<Owner,Pose> { ease(p);return start.mapValues { (o,a) -> interpolate(a,end.getValue(o),p) } }
-    val changedOwners=setOf(from.owners[0],from.owners[side])
+    val changedOwners=java.util.Collections.unmodifiableSet(setOf(from.owners[0],from.owners[side]))
+    private val start=java.util.Collections.unmodifiableMap(from.owners.mapIndexed { i,o ->
+        o to Pose.fit(from.places[i],o.canvas,if(i==0)mainRadius else sideRadius) }.toMap())
+    // Preserve source iteration order even at the final endpoint.
+    private val end=java.util.Collections.unmodifiableMap(start.mapValues { (o,a) ->
+        if(o !in changedOwners) a else { val i=to.owners.indexOf(o); Pose.fit(to.places[i],o.canvas,if(i==0)mainRadius else sideRadius) }
+    })
+    // Nonmoving cards have constant interior poses. Compute once, including
+    // the old interpolation's signed-zero behavior, rather than every frame.
+    private val interior=start.mapValues { (o,a) ->
+        if(o in changedOwners) a else interpolateInterior(a,a,0.5)
+    }
+    fun sample(p: Double): Map<Owner,Pose> {
+        val u=ease(p)
+        if(p==0.0)return start
+        if(p==1.0)return end
+        // mapValues creates only the new frame map, without copying a second
+        // map or wrapping each interior sample. Never expose the cached map.
+        return interior.mapValues { (o,a) ->
+            if(o in changedOwners) interpolateInterior(a,end.getValue(o),u) else a
+        }
+    }
 }
