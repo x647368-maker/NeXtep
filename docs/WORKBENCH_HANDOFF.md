@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 N：R2 重启后仍无生命周期日志，停止盲目修改（2026-11-20）
+- 机主报告安装 R2；02:15–02:16 日志仍只有旧 02:04:45 加载记录；正常重启后 02:19 截图出现新加载三行（02:18:28.176 Loading module io.github.x647368maker.atomicworkbench.hostruntime；02:18:28.178 Loading class workbench2.hostruntime.HostRuntimeEntry；02:18:28.178 Loaded module ... successfully），没有 WB2HostRuntime LOADED/PACKAGE_LOADED/PACKAGE_READY/BEGIN/END/REFUSED/INCOMPLETE。说明单纯重启/标签修复尚未形成可见证据；不能判定回调没有执行，更不能判定 OEM 接口不存在。截图未显示设备上 Vector 精确版本、已安装取证 APK 版本或实际 DEX 身份；本轮没有要求再重启。
+- 本轮隔离容器实际复核交付 R2 文件 25388 bytes，SHA256 d9bd3a1be74ee7eaf48aa99ae14618be0433e814298a3525931b9f73a5783982，ZIP CRC 正常；直接解析 classes.dex 字符串表确认完整提交 SHA 63ece8c9462eebfb0e7fad63272bf102a70e8ae2、LOADED/PACKAGE_READY/REFUSED_PROCESS/REFUSED_IDENTITY、onModuleLoaded/onPackageReady 方法名及 WB2HostRuntime 标记。固定 scope com.oplus.pscanvas，min/target API102、staticScope=true、protective、autoHotReload=false。交付产物身份正确不等于实机安装身份已核实。
+- 再读公开 Vector 固定提交 6f6b976e3315c158d501f743c3c609e80cae7ec8 的 VectorModuleManager.kt：先构造并 attachFramework，加入 activeModules 后调用 onModuleLoaded，回调异常会记录 Error in onModuleLoaded；成功行不能证明所有回调成功；旧版本可能实现不同。公开当前 master 的 VectorContext 默认标签与日志收录机制不能代替机主实际版本证据。下一步只需确认 Vector 主界面版本/构建号及已安装 R2 版本，按该精确版本查源码/日志通道与 API102 契约，再选择最小验证方式。不再反复重启、切换框架、扩大作用域或盲目发 R3。若确需日志，优先相关标签或少量截屏，不让机主上传完整含私人数据的系统日志。
+- 没有生产代码修改、新分支、PR、CI 或签名；保持最新有效 core 63ece8c9 与原自主核心 76794025。原生真实任务尚未承载；现阶段阻塞为实际 Vector 生命周期与日志通道的可观察性。取证后可以停用独立模块。只有明确缺陷及安全可行修复路径才进行下一次编译。
+
+---
+
+
 ## 第十二阶段 M：日志修复版 R2 完整 CI 验收及原签名私测交付（2026-11-20）
 - 唯一研发 HEAD 63ece8c9462eebfb0e7fad63272bf102a70e8ae2，[CI 44584407262](https://github.com/x647368-maker/NeXtep/actions/runs/44584407262) job 135773333379 completed/success，2026-11-19T18:11:58Z 完成。实际下载 validation artifact 14560533280（22745 bytes，SHA256 a499fe5d4b0a142a678ceafeab14ce2ac38ec0bdc45959b19c0ca1c5ce39cc83），ZIP CRC通过，XML SHA256 21a9630c7c3fbf8f118974b09301dcc3a5e8984a3ff6e971d3f742c8d498e928，3 tests/0 failures/errors/skipped，1.447秒，三项测试名与阶段 J 完全一致；仅 stock Android15 模拟器，不等于真实 Vector 回调或 ColorOS 原生任务验收。
 - 离线签名输入 14561431640（1010748 bytes，SHA256 ee15b0c6f08be5bd60ec82f70469bee28f788a9badbcc87fc76d5350b120a184），ZIP CRC、SHA256SUMS 5/5、checkout SHA 精确核验。实际 unsigned APK 10429 bytes，SHA256 073e7163093831f082e704e0504f90163dfb001b0a5aff92caabe602461b0b03；DEX class_defs_size=5、method_ids_size=64，无额外运行库；独立包名不变、versionCode=2、versionName=2.0-host-runtime-2，零权限/组件、单 scope com.oplus.pscanvas、入口 HostRuntimeEntry、无热重载。DEX 中核实完整提交 SHA 和 PACKAGE_LOADED/PACKAGE_READY/REFUSED_PROCESS/REFUSED_IDENTITY 等新诊断标记。CI 签名秘密仍缺，签名产物 skipped，安全归档未签名输入。
