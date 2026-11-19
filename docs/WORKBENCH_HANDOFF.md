@@ -1,6 +1,14 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第九阶段 A：公开宿主身份取证 + Android 运行时拒绝门禁（2026-11-19）
+- 实际远程 HEAD `e98464ef4eacc6f89bd991ec0cd9d62ec03054ad`（父 `236dfa7ec2d7de2b823905abc50979e44064d44d`），同一 workbench2/core；仅独立工程和其专属工作流共七个文件变更；旧 app 代码、scope、签名、配置及历史分支不改。源码：[提交](https://github.com/x647368-maker/NeXtep/commit/e98464ef4eacc6f89bd991ec0cd9d62ec03054ad)。
+- 实查旧 scope.list 没有 com.oplus.pscanvas，NeXtepHookEntry 没有已授权的 OEM 宿主诊断入口。不能把旧 Xposed 注入或普通应用包名当作授权。禁止新增注入/伪装或调用 OEM。
+- 新 AndroidHostInventory 在调用方既有 worker 上显式执行，只读 Android 公共 PackageManager；窄包可见性声明不要求新权限、无组件、计时器、上传或 OEM 调用。报告公开的宿主版本、当前证书哈希、系统应用属性/启用状态、固件；不可见/不存在不能区分，授权/输入/归还未知，production_admitted=false。原两探针未改。未接入旧 APP UI，未部署。编译后检查 AAR Manifest 和实际字节码，确认仅公开包信息及摘要等调用，没有 OEM 调用/启动/上传。
+- [CI 44537502993](https://github.com/x647368-maker/NeXtep/actions/runs/44537502993) 针对本 SHA：Android SDK 36.1 + assembleDebug 成功，三探针 class 核验及 artifact 上传成功；artifact 14537520111 实际下载，ZIP SHA256 `c0095c0674406d7b3f62e9e0aa235b2fb95e42c61801970460b6285637a464ed`；AAR SHA256 `83971b60c99ddbf5adf95ca0d3f2e6e989a87339247e438033c11c1f3572814a`。本地复验归档 CRC、checkout-sha、AAR hash、三类及合并 Manifest，均匹配。
+- API35 stock emulator 已成功启动；三个 instrumentation 拒绝测试正在运行，尚未取得通过结论。以该 run 实际最终日志及 XML 为准，不能冒充 OEM 或 PMS110 真机。若失败，先根据实际日志修复同一分支，不另建分支。此阶段不输出用户 APK。
+- 下一步：先核实此次运行结果；随后取得目标 PMS110 的现行固件/pscanvas 元数据和确切合法宿主授权入口。当前没有目标设备连接或经核实的授权入口；不得仅为了推进而硬编码准入、仿造原生证据或回到 V89。受控单任务承载、归还及输入前必须有独立证据。允许未来仅在已核实且用户授权的入口实施。原始有效第七阶段核心保留，不再造 JVM 模型。
+
 - 第八阶段首个真实 Android 工程检查点：`236dfa7ec2d7de2b823905abc50979e44064d44d`（[源码](https://github.com/x647368-maker/NeXtep/tree/workbench2/core/workbench2)），父 SHA `305f595220a6c193202d6acbdb2ac20f6e250df4`。新增七个文件 227 行，旧文件零改动。复用独立 Gradle Android library；接管包 31 个 SHA-256、current 11 个 SHA-256 和 7 个历史 ZIP 完整核验。两探针 blob 与原件字节一致。只接入只读探针，统一核心的其余参考文件尚未迁入 Android module。
 - [CI 44535052378](https://github.com/x647368-maker/NeXtep/actions/runs/44535052378) 对上述 SHA 真实成功：JDK 21、SDK 36.1、build-tools 36.0.0、compileDebugKotlin、assembleDebug、两类检查与上传全部成功。Artifact 14535701050 已实际下载，ZIP SHA-256 `400c168266567563c006e0bb4d468881a790c429fad812aafea094ae4aa4ecad`，AAR SHA-256 `201b84085f543dd886ddcac7b884a04dd427b3f4b1038bb4f89ec52a8131bfc9`；本地重新核对哈希、checkout-sha 和 jar 类名均一致。
 - AAR 非 APK；未部署、未调用 OEM 方法、未取得真实宿主授权、真实任务承载/归还/输入/性能均未验证。不得出安装包或将编译冒充真机验收。
