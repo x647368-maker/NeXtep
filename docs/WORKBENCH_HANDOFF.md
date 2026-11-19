@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 C：独立复核实际 Android 编译产物，限定下一次攻关目标（2026-11-20）
+- 实际下载中间提交 6ca1ca2c5ea34a1362032f3fb68536153bfab188 的 CI 44588313920 artifact 14562660767；归档 86614 bytes，SHA256 1bf8e12c1ede97d6830ba24e7489e0d431e183a56de00172d63e3702173b5c5b 与 GitHub 一致。独立核验 ZIP/AAR/classes.jar CRC、checkout SHA、AAR 自带 SHA256，AAR 85222 bytes，SHA256 b4d78c31049a9e73fda079765c5a284becdfbc02055c31236ed1ef774b8ef2c6。实际 javap 检查 UnifiedCore 仅公开 beginPending(Capability,StartPlan)，旧 begin 入口已经不存在；源码 blob 清单：UnifiedCore 07217f951e3d9b305a08b53f1ced5e66b90e0316，其他5个引擎源码保持阶段A之前的版本。最终 SHA 67d71eb8 的真实 GitHub diff 只有 workflow 精确必测名单新增1项，无生产源码差异。中间 AAR 不等于最终 CI 通过，不用于发布。
+- 本轮末实际 CI 状态：中间 44588313920 completed/failure；最终 44588386172 in_progress/未定。最终名单、19项实测、5态像素尚未完成独立验收，不提前冻结；已验收核心仍 76794025。没有新增生产源码、权限、分支、PR、APK 或 CI。
+- 决策：当前不再进行授权资料的重复搜索或新诊断包。若另开独立架构审查，只读使用阶段O至C，限定输出为能够核验的原生接入反例/合法入口与独立归还机制，明确区分系统支持、App同意、OEM授权和运行时可见性；不让模型编造权限、调用受保护宿主方法或改生产代码。没有新证据不反复提高模型档位。最终CI验收可通过单次自动状态检查减少机主重复指令；自动任务未创建，需机主明确选择。下轮只有 final run 完成后下载该 SHA 的 XML/AAR/像素证据，核验并冻结，或据实修复明确失败。
+
+---
+
+
 ## 第十三阶段 B：核实 CI 排队原因与真实接入决策门槛（2026-11-20）
 - 本轮实查 final CI 44588386172 pending，尚无 job 或产物；前置 run 44588313920（6ca1ca2c）job 135787178657 in_progress，编译及 AAR 来源核验成功，Android15 模拟器启动中。现有 workflow 明确 concurrency group workbench2-engine-${{ github.ref }}、cancel-in-progress:false，所以最终 run 串行排队。旧 run 不能代替最终19项名单及5态证据；保持已验收 76794025，不提前冻结新 SHA。无须新提交、重复触发 CI 或改变既有并发规则。
 - 本轮再核验官方 OPPO 文档中心 https://open.oppomobile.com/new/developmentDoc/info?id=10000 ，确有“系统能力/窗口能力”分类，但所访问文档显示“您暂无权限查看该文档”，不能推断该受限文档内容或授权存在。官方公开分屏 https://open.oppomobile.com/documentation/page/info?id=11171 属系统执行标准分屏，不等价五任务自定义宿主；Android https://developer.android.com/develop/ui/views/layout/activity-embedding 明确跨应用嵌入需目标应用 opt-in。至今无已验证适用于 PMS110 的授权承载/输入/独立异常归还契约。具体解阻条件为 OEM 提供或明确允许的系统级接入方式（可核验权限条件及生命周期契约）、或经机主另行授权的独立 AOSP 系统集成环境用于机制验证，不冒充目标手机部署；保持阶段 O 已验证原生类可见性与只读授权，不修改系统分区、不借宿主身份绕过权限、不改变严格原生路线。工单未发送，无新授权证据。不以更高模型替代客观权限、环境；若需独立模型审查，限定尚未穷尽的合规替代接口及反例，不复制其他项目、不重复研究或作生产修改。
