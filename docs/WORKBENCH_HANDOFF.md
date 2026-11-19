@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 P：目标框架实现缺失与定向导出决策（2026-11-20）
+
+- 已读取权威交接 O、实际容器当前附件及七份 ZIP 的目录。PMS110-pscanvas-2.0.0-code.zip 仅 base.apk 与 manifest.json；清单键 schema/kind/source_sha/inventory/components/requested_permissions/last_update_time/production_admitted/files，无框架文件。接管包、CI/测试归档没有 OEM framework JAR（仅签名输入内 apksigner.jar）。当前无 adb 工具或目标设备连接可用。实际 Library 分页检索8页1600条（仍有后页，非全库穷尽），仅见此前宿主 ZIP、vivo 资料及无关 APK，结合历史对话/研究记录定向搜索，未发现 PMS110 同 firmware C.147dc4b_1201fc3_11f9c73 的 FlexibleTaskView/Manager 定义归档。不能将宿主引用或其他厂商 ROM 当作目标机框架实现。未恢复原始框架，不伪称新增代码分析。
+- 最小必要新增范围建议：若机主同意，仅独立 field 工程增加一次性、本机、手动触发的公开可读系统框架文件定向导出。优先实际可读 BOOTCLASSPATH/系统共享库文件，只核查目标 class 定义并导出匹配文件与 firmware/SHA256/来源清单；直接打开真实路径而非猜测文件名，若 DEX 不存在或访问被拒即停止，不升级权限、不读私有数据、odex 提取工具未获许可不实施。不使用 root/Vector、不变更任何系统文件、不扩大宿主 scope、不联网自动上传、不采集无关 ROM、不后台轮询。该范围不同于已有宿主只读观察，需要机主明确批准其文件导出范围；若普通应用不可读或框架未在可读 JAR 中，可能无法取得，不能保证突破；仅在审批和实际工程/CI通过、原签名校验后作为一次性材料导出功能交付，不重复 R2 或无信息价值的诊断 APK。若无可行读取路径则明确停止，不循环制作工具。已有宿主 APK 不再请求重传。
+- 取得实际框架定义后才判定正常会话、输入、显示及独立归还契约是否足以实现 NativePort；不能通过静态定义自动获得权限，当前无合法主动接入及异常归还新证据。未修改生产代码、无新 CI/APK/分支/PR；workbench2/core 实际 HEAD 9d385e9d2e8da1e2c90a0b737e45880f887df2fe。既有19+5及9项测试保留。模型 GPT-6 高推理，当前无需 Work。
+
+---
+
 ## 第十三阶段 O：PMS110 宿主原始文件恢复、实际 DEX 生命周期调用路径核查（2026-11-20）
 
 - 机主已重新附上此前的 PMS110-pscanvas-2.0.0-code.zip；实际读取 9425879 bytes，SHA256 368871c78be2009c914106ebd9da3351872db409945fba2081a450946f72eb46、ZIP CRC 无错，base.apk 9413529 bytes、SHA256 d5d4bc23890d8473f670dc3ee528fe5f0a8f6f40ebd29b7324968dd5c8d096e7，均吻合阶段11C。N 的原始档案访问阻塞已解除。原始 APK 仅用户附件/隔离环境，不上传仓库，不复制 OEM 实现。
