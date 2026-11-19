@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.PopupWindow
 import io.github.x647368maker.atomicworkbench.framework.TaskSurfaceCompat
 import io.github.x647368maker.atomicworkbench.logging.StageExchangeTelemetry
+import io.github.x647368maker.atomicworkbench.systemui.StageEndpointContentMapping
 import io.github.x647368maker.atomicworkbench.systemui.StageGpuMirrorOcclusion
 import io.github.x647368maker.atomicworkbench.systemui.StageLiveSurfaceExchange
 import io.github.x647368maker.atomicworkbench.systemui.StageLiveSurfaceFlightGeometry
@@ -44,6 +45,162 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
         abs(Color.green(value)-Color.green(expected))<25 &&
         abs(Color.blue(value)-Color.blue(expected))<25
 
+    /**
+     * Reproduce the failed device's producer proportions at half size on
+     * two real independent ViewRoots. Invoke the actual native frame writer,
+     * with no fake Shell ownership and no real task move. Probe physical
+     * pixels across the INSIDE of each target, not just outer geometry.
+     * This catches the missing 60% of content in #174, but cannot certify
+     * app relayout, a new producer buffer, or a continuous real handoff.
+     */
+    private fun verifyMeasuredCanvasEndpoint(activity:Activity,host:FrameLayout,out:File) {
+        val sourceW=360;val sourceH=560
+        val mainW=636;val mainH=1386
+        val small=StageLiveSurfaceFlightGeometry.Box(4f,482f,139.5f,693f)
+        val main=StageLiveSurfaceFlightGeometry.Box(144f,219f,630.5f,1279f)
+        val slotCrop=StageLiveSurfaceFlightGeometry.Crop(0,0,sourceW,sourceH)
+        val mainCrop=StageLiveSurfaceFlightGeometry.Crop(0,0,mainW,mainH)
+        val cyan=Color.rgb(44,222,247)
+        val yellow=Color.rgb(253,224,50)
+        fun patterned(base:Int,marker:Int)=object:View(activity) {
+            private val brush=android.graphics.Paint()
+            override fun onDraw(canvas:android.graphics.Canvas) {
+                canvas.drawColor(base)
+                brush.color=marker
+                canvas.drawRect(0f,height*.45f,width.toFloat(),height*.55f,brush)
+            }
+        }
+        val first=patterned(blue,cyan)
+        val second=patterned(orange,yellow)
+        val origin=IntArray(2)
+        var p1:PopupWindow?=null
+        var p2:PopupWindow?=null
+        var a:SurfaceControl?=null
+        var b:SurfaceControl?=null
+        var masks:StageGpuMirrorOcclusion?=null
+        var engine:StageLiveSurfaceExchange?=null
+        val details=mutableListOf<String>()
+        val cls=StageLiveSurfaceExchange::class.java
+        val companion=StageLiveSurfaceExchange.Companion
+        val mirror=companion.javaClass.getDeclaredMethod("createWindowMirror",View::class.java)
+            .apply { isAccessible=true }
+        val ctor=cls.declaredConstructors.single { it.parameterCount==13 }.apply {isAccessible=true}
+        val apply=cls.getDeclaredMethod("applyFrame",SurfaceControl.Transaction::class.java,
+            Float::class.javaPrimitiveType!!).apply {isAccessible=true}
+        val commit=CountDownLatch(1)
+        try {
+            inst.runOnMainSync {
+                check(host.width>=1272 && host.height>=2150)
+                host.removeAllViews();host.setBackgroundColor(background)
+                host.getLocationOnScreen(origin)
+                p1=PopupWindow(first,sourceW,sourceH,false).apply {
+                    isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,host.width-sourceW,20)
+                }
+                p2=PopupWindow(second,mainW,mainH,false).apply {
+                    isTouchable=false;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    showAtLocation(host,Gravity.TOP or Gravity.LEFT,host.width-mainW,640)
+                }
+            }
+            inst.waitForIdleSync()
+            Thread.sleep(300L)
+            inst.runOnMainSync {
+                // Measured bounds, not requested popup offsets. No original
+                // producer may paint inside a sampled destination.
+                check(first.width==sourceW && first.height==sourceH &&
+                      second.width==mainW && second.height==mainH)
+                for(view in listOf(first,second)) {
+                    val xy=IntArray(2);view.getLocationOnScreen(xy)
+                    check(xy[0]-origin[0]>=main.right) {
+                        "Original source overlaps endpoint sample region"
+                    }
+                }
+                check(!StageEndpointContentMapping.sameLocalCanvas(slotCrop,mainCrop))
+                check(!StageEndpointContentMapping.sameLocalCanvas(mainCrop,slotCrop))
+                val ma=checkNotNull(mirror.invoke(companion,first) as? SurfaceControl)
+                a=ma
+                val mb=checkNotNull(mirror.invoke(companion,second) as? SurfaceControl)
+                b=mb
+                val covers=checkNotNull(StageGpuMirrorOcclusion.create())
+                masks=covers
+                val flight=ctor.newInstance(host,ma,mb,Rect(0,0,sourceW,sourceH),Rect(0,0,mainW,mainH),
+                    small,main,null,covers,true,
+                    TaskSurfaceCompat.MirrorSourceStamp(-1001,91,Any(),ma),
+                    TaskSurfaceCompat.MirrorSourceStamp(-1002,0,Any(),mb),true) as StageLiveSurfaceExchange
+                engine=flight
+                val paired=flight.preparePairedRailRuntimeTest(
+                    StageLiveSurfaceFlightGeometry.Box(0f,0f,host.width.toFloat(),host.height.toFloat()),emptyList())
+                details.add("actual roots 360x560 / 636x1386; half-scale device canvas; paired=$paired")
+                // Explicitly exercise the production anchor calculation too.
+                // A failed candidate previously accepted this local-domain
+                // identity even though the target had a different canvas.
+                val geom=StageLiveSurfaceFlightGeometry
+                val up0=checkNotNull(geom.mirrorFrame(small,main,slotCrop,0f,false))
+                val up1=checkNotNull(geom.mirrorFrame(small,main,slotCrop,1f,true))
+                val down0=checkNotNull(geom.mirrorFrame(main,small,mainCrop,0f,false))
+                val down1=checkNotNull(geom.mirrorFrame(main,small,mainCrop,1f,true))
+                val mapper=StageEndpointContentMapping
+                val identity=StageEndpointContentMapping.ContentMap(1f,0f,0f)
+                val targetUp=StageEndpointContentMapping.ContentMap(.7649371f,main.left,main.top)
+                val targetDown=StageEndpointContentMapping.ContentMap(.37638888f,small.left,small.top)
+                check(mapper.anchor(identity,slotCrop,slotCrop,mainCrop,targetUp,main,up0,up0,up1)==null)
+                check(mapper.anchor(identity,mainCrop,mainCrop,slotCrop,targetDown,small,down0,down0,down1)==null)
+                val root=checkNotNull(host.rootSurfaceControl)
+                val tx=checkNotNull(root.buildReparentTransaction(ma))
+                try {
+                    checkNotNull(root.buildReparentTransaction(mb)).use {tx.merge(it)}
+                    tx.setLayer(ma,65001);tx.setLayer(mb,65000)
+                    tx.setVisibility(ma,true);tx.setVisibility(mb,true)
+                    apply.invoke(flight,tx,1f)
+                    tx.addTransactionCommittedListener(activity.mainExecutor) {commit.countDown()}
+                    tx.apply()
+                } finally {tx.close()}
+            }
+            check(commit.await(3,TimeUnit.SECONDS)) { "No terminal layer transaction receipt" }
+            // Bounded sampling only in isolated instrumentation. Receipt
+            // alone does not prove the mirror pixels are actually visible.
+            var last:Bitmap?=null
+            var success=false
+            try {
+                for(i in 1..8) {
+                    Thread.sleep(140L)
+                    val shot=checkNotNull(inst.uiAutomation.takeScreenshot())
+                    last?.recycle();last=shot
+                    fun checkGrid(rect:StageLiveSurfaceFlightGeometry.Box,base:Int,marker:Int):Int {
+                        var count=0
+                        for(y in listOf(.2f,.5f,.8f))for(x in listOf(.2f,.5f,.8f)) {
+                            val px=(rect.left+rect.width*x).toInt()+origin[0]
+                            val py=(rect.top+rect.height*y).toInt()+origin[1]
+                            if(matches(shot.getPixel(px,py),if(y==.5f)marker else base))count++
+                        }
+                        return count
+                    }
+                    val up=checkGrid(main,blue,cyan)
+                    val down=checkGrid(small,orange,yellow)
+                    details.add("sample=$i promoted=$up/9 demoted=$down/9")
+                    if(up==9 && down==9) {success=true;break}
+                }
+                last?.let { frame ->
+                    File(out,if(success)"measured-canvas-endpoint-pixels.png" else "failed-measured-canvas-endpoint-pixels.png")
+                        .outputStream().use {frame.compress(Bitmap.CompressFormat.PNG,100,it)}
+                }
+                check(success) { "Measured canvas terminal coverage/marker regression: inspect measured-canvas-endpoint.txt" }
+                details.add("PASS measured distinct canvas endpoint: 18/18 physical pixel samples")
+            } finally {last?.recycle()}
+        } finally {
+            File(out,"measured-canvas-endpoint.txt").writeText(details.joinToString("\n"))
+            inst.runOnMainSync {
+                val flight=engine
+                if(flight!=null) flight.stop() else {
+                    runCatching {masks?.release()}
+                    runCatching {a?.release()}
+                    runCatching {b?.release()}
+                }
+                p1?.dismiss();p2?.dismiss();host.removeAllViews()
+            }
+        }
+    }
+
     fun run(activity:Activity,host:FrameLayout,out:File,pairedRail:Boolean=false,adaptiveCovered:Boolean=false):String {
         check(!adaptiveCovered || pairedRail)
         val sourceW=if(adaptiveCovered)424 else 180
@@ -52,6 +209,7 @@ internal class StageNativeFlightRuntimeRegression(private val inst:Instrumentati
         val mainH=if(adaptiveCovered)693 else 360
         check(Build.VERSION.SDK_INT>=37)
         check(ValueAnimator.getDurationScale()>=2f) { "Test requires extended system animation scale" }
+        if(adaptiveCovered)verifyMeasuredCanvasEndpoint(activity,host,out)
         val first=View(activity).apply { setBackgroundColor(blue) }
         val second=View(activity).apply { setBackgroundColor(orange) }
         var p1:PopupWindow?=null

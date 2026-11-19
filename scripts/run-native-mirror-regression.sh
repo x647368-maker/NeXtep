@@ -175,6 +175,8 @@ test -s visual-results/paired-flight/native-flight-clean-host-detach.png
 test -s visual-results/adaptive-flight/native-flight-first-moving-mid.png
 test -s visual-results/adaptive-flight/native-flight-moving-stale.png
 test -s visual-results/adaptive-flight/native-flight-clean-host-detach.png
+test -s visual-results/adaptive-flight/measured-canvas-endpoint-pixels.png
+grep -F 'PASS measured distinct canvas endpoint: 18/18 physical pixel samples' visual-results/adaptive-flight/measured-canvas-endpoint.txt
 grep -F 'paired_covered_adaptive bound=' visual-results/adaptive-flight/native-flight-trace.txt
 # Export bounded aggregated timing rows into CI logs as well as the raw artifacts.
 # This is evidence availability, not a synthetic performance threshold.

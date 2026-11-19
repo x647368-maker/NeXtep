@@ -128,6 +128,10 @@ internal object StageEndpointContentMapping {
     fun anchor(sourceRoot:ContentMap,sourceCrop:Crop,sourceLocal:Crop,targetLocal:Crop,
                target:ContentMap,viewport:Box,first:MirrorFrame,rawFirst:MirrorFrame,
                rawEnd:MirrorFrame):Anchor? {
+        // Defense in depth: no caller, including a future alternate route,
+        // may obtain an identity-coordinate anchor across different canvases.
+        // Equal bounds are necessary, not a semantic or buffer-latch proof.
+        if(!sameLocalCanvas(sourceLocal,targetLocal))return null
         val common=overlap(sourceLocal,targetLocal) ?: return null
         val endMap=inverseCompose(target,sourceRoot) ?: return null
         if(!StageLiveSurfaceFlightGeometry.sameMirrorContent(first,rawFirst) ||
@@ -151,6 +155,7 @@ internal object StageEndpointContentMapping {
         return Anchor(sourceRoot,sourceCrop,common,targetLocal,target,viewport,first,terminal,
             first.scale/rawFirst.scale,endMap.scale/rawEnd.scale,terminalAvailable,cx,cy,
             dx(start,rawFirst),dy(start,rawFirst),dx(endMap,rawEnd),dy(endMap,rawEnd))
+            .takeIf(::fullEndpointCoverage)
     }
 
     fun flight(raw:MirrorFrame,a:Anchor,p:Float):MirrorFrame? {
@@ -176,9 +181,14 @@ internal object StageEndpointContentMapping {
         // infer a newly latched buffer from its target crop. The common domain
         // remains visible until the existing real-destination reveal. App
         // reflow and the actual first real buffer remain device evidence gates.
+        // A partial or different requested crop must not silently turn a
+        // formerly full endpoint into a small card inside its outer frame.
+        // Leave failure cleanup to the existing bounded owner path.
+        if(!sameLocalCanvas(local,a.targetLocal))return null
         val available=projected(overlap(local,a.commonLocal) ?: return null,root) ?: return null
         val map=inverseCompose(a.target,root) ?: return null
         val f=fit(a.viewport,available,map) ?: return null
+        if(StageLiveSurfaceFlightGeometry.endpointGapPx(a.viewport,f.box)>2f)return null
         return StageHeldEndpointPolicy.Fit(f.crop.left,f.crop.top,f.crop.right,f.crop.bottom,f.scale,f.x,f.y)
     }
 }

@@ -228,10 +228,31 @@ def main():
     rejected_candidate = "8132026a52215303bb1df27e97d03af0a9c0a1ea"
     subprocess.run(["git", "merge-base", "--is-ancestor", rejected_candidate, "HEAD"], cwd=ROOT, check=True)
     equal(paths(completion_recheck, rejected_candidate), {GATE}, "gate literal alignment only")
-    equal(paths(rejected_candidate, "HEAD"), {
+    recovery = "491fbcb8c12e01e410169860bd40c4147f7730d6"
+    subprocess.run(["git", "merge-base", "--is-ancestor", recovery, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(rejected_candidate, recovery), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"systemui/StageEndpointContentMapping.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "device-regression canvas/coverage admission recovery only")
+    equal(paths(recovery, "HEAD"), {
+        GATE, P+"systemui/StageEndpointContentMapping.kt", T+"systemui/StageEndpointContentMappingTest.kt",
+        "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt",
+        "scripts/run-native-mirror-regression.sh",
+    }, "same-canvas mapper preconditions and actual compositor endpoint regression")
+    source("systemui/StageEndpointContentMapping.kt", "if(!sameLocalCanvas(sourceLocal,targetLocal))return null",
+           ".takeIf(::fullEndpointCoverage)", "if(!sameLocalCanvas(local,a.targetLocal))return null",
+           "endpointGapPx(a.viewport,f.box)>2f")
+    require((ROOT/(P+"systemui/StageLiveSurfaceExchange.kt")).read_bytes()==
+            git("show",recovery+":"+P+"systemui/StageLiveSurfaceExchange.kt"),
+            "pixel gate must not alter engine ownership/trajectory")
+    native_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt").read_text()
+    for marker in ('if(adaptiveCovered)verifyMeasuredCanvasEndpoint(activity,host,out)',
+                   'apply.invoke(flight,tx,1f)', 'up==9 && down==9',
+                   'StageEndpointContentMapping.sameLocalCanvas(slotCrop,mainCrop)'):
+        require(marker in native_test, "missing measured actual pixels gate "+marker)
+    require("measured-canvas-endpoint-pixels.png" in
+            (ROOT/"scripts/run-native-mirror-regression.sh").read_text(),
+            "measured canvas evidence must be present")
     source("systemui/StageLiveSurfaceExchange.kt", "val anchorTrial=anchorCanvas!=null",
            "allowCompletedDemotion=anchorTrial", "if(anchorTrial)",
            "endpoint_content_anchor_skipped:unproven_canvas_mapping",
