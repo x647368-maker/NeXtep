@@ -190,23 +190,29 @@ internal class StageLiveSurfaceExchange private constructor(
     private fun destinationContentMatches(phase:String):Boolean {
         val up=incomingAnchor ?: return true
         val down=outgoingAnchor ?: return false
-        if(endpointWriteFailed.get() || !incomingRebased.get() || !outgoingRebased.get())return false
+        val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+        fun missing(reason:String):Boolean {
+            diag.detail(traceAttemptId,"content_real_"+phase) {
+                "content_real_$phase unconfirmed=$reason requested_geometry_only"
+            }
+            return false
+        }
+        if(endpointWriteFailed.get() || !incomingRebased.get() || !outgoingRebased.get())return missing("held_write")
         val mapper=StageEndpointContentMapping
-        val mainStamp=destinationStamp(incomingStamp,outgoingStamp.displayId) ?: return false
-        val slotStamp=destinationStamp(outgoingStamp,incomingStamp.displayId) ?: return false
-        val main=TaskSurfaceCompat.ownedMainMirrorFrame(mainStamp) ?: return false
-        val slot=TaskSurfaceCompat.ownedSlotMirrorFrame(slotStamp) ?: return false
-        val slotView=slotSourceView ?: return false
-        if(slotView.textureView!==slotSourceTexture)return false
-        val slotBounds=slotView.mirrorLiveContentBounds() ?: return false
+        val mainStamp=destinationStamp(incomingStamp,outgoingStamp.displayId) ?: return missing("main_identity")
+        val slotStamp=destinationStamp(outgoingStamp,incomingStamp.displayId) ?: return missing("slot_identity")
+        val main=TaskSurfaceCompat.ownedMainMirrorFrame(mainStamp) ?: return missing("main_geometry")
+        val slot=TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp) ?: return missing("verified_slot_geometry")
+        val slotView=slotSourceView ?: return missing("slot_view")
+        if(slotView.textureView!==slotSourceTexture)return missing("slot_texture_identity")
+        val slotBounds=slotView.mirrorLiveContentBounds() ?: return missing("slot_view_geometry")
         val mainMap=StageEndpointContentMapping.ContentMap(main.scale,main.x,main.y)
         val slotMap=mapper.slotMap(localCrop(slot),StageLiveSurfaceFlightGeometry.Box(
-            slotBounds.left,slotBounds.top,slotBounds.right,slotBounds.bottom)) ?: return false
+            slotBounds.left,slotBounds.top,slotBounds.right,slotBounds.bottom)) ?: return missing("slot_content_map")
         val upDelta=mapper.mapError(up.target,mainMap,up.targetLocal)
         val downDelta=mapper.mapError(down.target,slotMap,down.targetLocal)
         val upOk=localCrop(main)==up.targetLocal && upDelta<=1f
         val downOk=localCrop(slot)==down.targetLocal && downDelta<=1f
-        val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
         diag.detail(traceAttemptId,"content_real_"+phase) {
             "content_real_$phase up_err=$upDelta down_err=$downDelta crop_match=$upOk/$downOk requested_geometry_only"
         }
@@ -335,8 +341,10 @@ internal class StageLiveSurfaceExchange private constructor(
             if(!mirror.isValid) return@HeldMirrorWriter
             val target=if(incoming) mainStart else slotStart
             val anchor=if(incoming)incomingAnchor else outgoingAnchor
-            val root=StageEndpointContentMapping.rootMap(frame.scale,frame.x,frame.y,detachedRoot)
-            val anchored=anchor?.let { StageEndpointContentMapping.held(it,localCrop(frame),root) }
+            val root=anchor?.let {
+                StageEndpointContentMapping.rootMap(frame.scale,frame.x,frame.y,detachedRoot)
+            }
+            val anchored=anchor?.let { StageEndpointContentMapping.held(it,localCrop(frame),checkNotNull(root)) }
             if(anchor!=null && anchored==null) {
                 endpointWriteFailed.set(true)
                 trace("held_content_anchor_unrepresentable")
@@ -380,7 +388,7 @@ internal class StageLiveSurfaceExchange private constructor(
                     if(anchor!=null) {
                         val phase=if(incoming)"up" else "down"
                         val effective=StageEndpointContentMapping.compose(
-                            StageEndpointContentMapping.ContentMap(fit.scale,fit.x,fit.y),root)
+                            StageEndpointContentMapping.ContentMap(fit.scale,fit.x,fit.y),checkNotNull(root))
                         val error=StageEndpointContentMapping.mapError(anchor.target,effective,anchor.commonLocal)
                         diag.detail(traceAttemptId,"content_held_"+phase) {
                             "content_held_$phase task=${frame.taskId} effective=${effective.scale},${effective.x},${effective.y} " +

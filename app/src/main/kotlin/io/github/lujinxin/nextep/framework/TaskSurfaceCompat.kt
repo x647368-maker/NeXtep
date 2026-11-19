@@ -439,16 +439,29 @@ object TaskSurfaceCompat {
         val crop: Rect,
     )
 
-    internal fun ownedSlotMirrorFrame(stamp:MirrorSourceStamp):MirrorDestinationFrame? {
-        if(stamp.displayId==Display.DEFAULT_DISPLAY || isDisplayExchanging(stamp.taskId) ||
+    internal fun ownedSlotMirrorFrame(stamp:MirrorSourceStamp):MirrorDestinationFrame? =
+        readSlotMirrorFrame(stamp,allowVerifiedDestination=false)
+
+    // A real demotion's reservation deliberately outlives the visual handoff.
+    // Permit only the exact already verified destination, never a flying source.
+    internal fun heldDestinationSlotMirrorFrame(stamp:MirrorSourceStamp):MirrorDestinationFrame? =
+        readSlotMirrorFrame(stamp,allowVerifiedDestination=true)
+
+    private fun readSlotMirrorFrame(stamp:MirrorSourceStamp,
+                                    allowVerifiedDestination:Boolean):MirrorDestinationFrame? {
+        if(stamp.displayId==Display.DEFAULT_DISPLAY ||
             !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
         val slot=slotSurfaces[stamp.taskId] ?: return null
         val state=observedStates[stamp.taskId] ?: return null
+        if(isDisplayExchanging(stamp.taskId) &&
+            (!allowVerifiedDestination || !verifiedDemotedSlot(stamp.taskId,slot,state)))return null
         if(slot.leash!==stamp.leash || slot.displayId!=stamp.displayId ||
             slot.lastAppliedAt<=0L || slot.crop!=state.bounds ||
             slot.crop.left!=0 || slot.crop.top!=0 || slot.crop.isEmpty ||
             slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state ||
             !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
+        if(isDisplayExchanging(stamp.taskId) &&
+            (!allowVerifiedDestination || !verifiedDemotedSlot(stamp.taskId,slot,state)))return null
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
             Rect(slot.crop),1f,0f,0f)
     }

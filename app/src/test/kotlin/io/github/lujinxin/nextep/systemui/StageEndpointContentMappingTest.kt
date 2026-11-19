@@ -32,6 +32,18 @@ class StageEndpointContentMappingTest {
             assertEquals(target.x,terminal.x,0f);assertEquals(target.y,terminal.y,0f)
             assertEquals(0f,m.mapError(effective(terminal,root),heldMap(held,root),short),.001f)
             assertEquals(0f,m.mapError(target,effective(terminal,root),short),.001f)
+            // Compare two distinguishable local marker coordinates and their
+            // separation, not the moving card's bounding box.
+            val before=effective(terminal,root)
+            val after=heldMap(held,root)
+            for((x,y) in listOf(200f to 400f,800f to 1800f)) {
+                assertEquals(before.x+before.scale*x,after.x+after.scale*x,.01f)
+                assertEquals(before.y+before.scale*y,after.y+after.scale*y,.01f)
+                assertEquals(target.x+target.scale*x,after.x+after.scale*x,.01f)
+                assertEquals(target.y+target.scale*y,after.y+after.scale*y,.01f)
+            }
+            assertEquals(600f*target.scale,600f*before.scale,.01f)
+            assertEquals(1400f*target.scale,1400f*after.scale,.01f)
             assertTrue(terminal.crop.bottom<=2517)
             assertTrue(viewport.bottom-terminal.box.bottom>130f)
             assertTrue(held.bottom>=2770)

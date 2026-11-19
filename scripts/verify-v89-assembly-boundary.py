@@ -187,13 +187,25 @@ def main():
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "isolated opt-in diagnostic retry delta")
-    equal(paths(diag_retry, "HEAD"), {
+    content_candidate = "72bd16eeeba65ae31c151abeb59f7b8c1c061604"
+    subprocess.run(["git", "merge-base", "--is-ancestor", content_candidate, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(diag_retry, content_candidate), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         P+"framework/TaskSurfaceCompat.kt", P+"display/TaskSwitcherView.kt",
         P+"systemui/StageEndpointContentMapping.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "isolated content endpoint trial delta")
+    equal(paths(content_candidate, "HEAD"), {
+        GATE, P+"framework/TaskSurfaceCompat.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "verified demotion read only at final content check")
+    source("framework/TaskSurfaceCompat.kt", "readSlotMirrorFrame(stamp,allowVerifiedDestination=false)",
+           "readSlotMirrorFrame(stamp,allowVerifiedDestination=true)",
+           "!allowVerifiedDestination || !verifiedDemotedSlot(stamp.taskId,slot,state)")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp)",
+           "TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp)")
     source("systemui/StageEndpointContentMapping.kt", "fun compose(", "fun mapError(", "fun held(", "fun flight(")
     source("systemui/StageLiveSurfaceExchange.kt", "if(inEvidenceScope && diagnosticOptIn)",
            "endpoint_content_anchor_trial=both", "StageEndpointContentMapping.flight(",
