@@ -159,4 +159,96 @@ class EngineLooperTest {
             core.invariant()
         }
     }
+
+    // Reducer admission on Android's main Looper. The owners/evidence below are
+    // synthetic; actual Binder identity and presentation observations belong to the authorized backend.
+    private fun pendingExistingAttach(): Pair<UnifiedCore, Effect> {
+        val core = UnifiedCore()
+        assertTrue(core.beginPending(fixture, plan))
+        for (kind in listOf(Kind.HOST, Kind.INPUT_GATE)) {
+            val e = core.next()!!
+            assertEquals(kind, e.resource!!.kind)
+            assertTrue(core.receipt(Evidence(e, true, Observation.PRESENT, true,
+                inputBlockedObserved = true)))
+        }
+        val e = core.next()!!
+        assertEquals(Kind.TASK_LEASE, e.resource!!.kind)
+        return core to e
+    }
+
+    private fun attachment(e: Effect, actual: Owner, component: String = request.component) =
+        Evidence(e, true, Observation.PRESENT, true,
+            attach = AttachProof(request.id, "fixture-container", actual, component, true, true))
+
+    @Test fun existingTaskReconfigurationUsesObservedOwner() = owner {
+        val candidates = listOf(
+            task, task.copy(leashEpoch = 2),
+            task.copy(canvas = Canvas(1200, 1800, 420, 2)),
+            task.copy(leashEpoch = 2, canvas = Canvas(1200, 1800, 420, 2))
+        )
+        for (actual in candidates) {
+            val (core, attachEffect) = pendingExistingAttach()
+            assertTrue(core.receipt(attachment(attachEffect, actual)))
+            assertEquals(Phase.STARTING, core.phase)
+            assertEquals(actual, core.resources().single { it.kind == Kind.TASK_LEASE }.owner)
+            val presentation = core.next()!!
+            assertEquals(Kind.BORROWED_PRESENTATION, presentation.resource!!.kind)
+            assertEquals(actual, presentation.resource!!.owner)
+            // No stale attachment can replace the new presentation while another effect is pending.
+            assertFalse(core.receipt(attachment(attachEffect, task)))
+            assertEquals(presentation, core.outstanding())
+            assertTrue(core.receipt(Evidence(presentation, true, Observation.PRESENT, true)))
+            val observer = core.next()!!
+            assertEquals(Kind.OBSERVER, observer.resource!!.kind)
+            assertTrue(core.receipt(Evidence(observer, true, Observation.PRESENT, true)))
+            val visual = core.next()!!
+            assertEquals(Op.VERIFY_VISUAL, visual.op)
+            val observed = workbench2.motion.Scene(listOf(actual), plan.places, plan.displayEpoch)
+            assertEquals(observed, visual.expected)
+            assertTrue(core.receipt(Evidence(visual, true, runtimeVerified = true,
+                observedScene = observed, blocked = true, inputBlockedObserved = true)))
+            val focus = core.next()!!
+            assertEquals(Op.VERIFY_FOCUS, focus.op)
+            assertTrue(core.receipt(Evidence(focus, true, runtimeVerified = true,
+                observedScene = observed, focused = actual, inputBlockedObserved = false)))
+            assertEquals(Phase.ACTIVE, core.phase)
+            assertEquals(observed, core.current())
+            core.invariant()
+        }
+    }
+
+    private fun assertRejectedAttachment(actual: Owner, component: String = request.component) {
+        val (core, attachEffect) = pendingExistingAttach()
+        assertTrue(core.receipt(attachment(attachEffect, actual, component)))
+        assertEquals(Phase.DRAINING, core.phase)
+        assertNull(core.current())
+        val obligation = core.resources().single { it.kind == Kind.TASK_LEASE }
+        assertNull(obligation.owner)
+        assertEquals(request, obligation.request)
+        assertEquals("fixture-container", obligation.container)
+        val quiesce = core.next()!!
+        assertEquals(Op.QUIESCE, quiesce.op)
+        assertTrue(core.receipt(Evidence(quiesce, true, runtimeVerified = true,
+            blocked = true, inputBlockedObserved = true)))
+        val release = core.next()!!
+        assertEquals(Op.RELEASE, release.op)
+        assertEquals(obligation, release.resource)
+        // A rejection is not a return receipt. Keep the lease and both outer resources.
+        assertEquals(3, core.resources().size)
+        core.invariant()
+    }
+
+    @Test fun existingTaskReplacementIdentityIsRejected() = owner {
+        assertRejectedAttachment(task.copy(token = 903))
+        assertRejectedAttachment(task.copy(task = 43))
+        assertRejectedAttachment(task.copy(user = 1))
+        assertRejectedAttachment(task, "fixture/.DifferentActivity")
+    }
+
+    @Test fun existingTaskStalePresentationIsRejected() = owner {
+        assertRejectedAttachment(task.copy(leashEpoch = 0))
+        assertRejectedAttachment(task.copy(canvas = task.canvas.copy(contentEpoch = 0)))
+        assertRejectedAttachment(task.copy(canvas = task.canvas.copy(width = 1200)))
+        assertRejectedAttachment(task.copy(canvas = task.canvas.copy(dpi = 420)))
+    }
 }

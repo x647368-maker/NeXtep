@@ -106,11 +106,22 @@ class UnifiedCore {
             Observation.UNKNOWN -> false
         }
     }
+    /** Existing-task admission compares identity separately from presentation. This is only
+     * a consistency check after independent, terminal, host-scoped attach evidence.
+     * Tokens must identify the same real task; generations never go backwards.
+     * A changed canvas needs a newer content generation, even when the leash is unchanged.
+     * Keep full Owner equality for scene, focus, animation and resource comparisons. */
+    private fun sameExistingTask(previous:Owner,actual:Owner):Boolean =
+        previous.task==actual.task && previous.user==actual.user && previous.token==actual.token &&
+            actual.leashEpoch>=previous.leashEpoch &&
+            actual.canvas.contentEpoch>=previous.canvas.contentEpoch &&
+            (actual.canvas==previous.canvas || actual.canvas.contentEpoch>previous.canvas.contentEpoch)
+
     private fun adopt(e:Effect,r:Evidence) {
         val old=e.resource!!;val req=old.request
         if(old.kind!=Kind.TASK_LEASE || req==null){held.add(old);return}
         val v=r.attach!!;val a=v.actualOwner
-        val valid=a!=null && a.user==req.user && v.actualComponent==req.component && (req.existing==null || req.existing==a)
+        val valid=a!=null && a.user==req.user && v.actualComponent==req.component && (req.existing==null || sameExistingTask(req.existing,a))
         // Even an invalid but positively correlated creation has a return obligation. Keep only
         // the request and observed container; don't adopt unrelated identity into the scene.
         val actual=old.copy(owner=if(valid)a else null,container=v.container)
