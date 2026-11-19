@@ -241,13 +241,20 @@ def main():
         "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt",
         "scripts/run-native-mirror-regression.sh",
     }, "same-canvas mapper preconditions and actual compositor endpoint regression")
-    equal(paths(pixel_gate, "HEAD"), {
+    marker_fixture = "4610a143649d05b43f3e9e803c9e5fc97384e8aa"
+    subprocess.run(["git", "merge-base", "--is-ancestor", marker_fixture, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(pixel_gate, marker_fixture), {
         GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
         "scripts/run-visual-regression.sh",
     }, "owned real task generation-marker test only; no production code delta")
+    equal(paths(marker_fixture, "HEAD"), {
+        GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
+    }, "disjoint marker epochs and actual output dimensions only")
     marker_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt").read_text()
     for marker in ('draw.epoch==spec.epoch', 'pixels.sequence>previous', 'matchesMarker(pixels.colors,spec)',
-                   'matchesMarker(colors,spec)', 'check(promoted!=null', 'demoted.density==originalDraw.density'):
+                   'matchesMarker(colors,spec)', 'check(promoted!=null', 'demoted.density==originalDraw.density',
+                   'pixels.width==720 && pixels.height==1120', 'Marker(4,0,Color.rgb(117,42,180)',
+                   'Marker(5,display,Color.rgb(200,32,110)'):
         require(marker in marker_test, "missing actual producer generation test "+marker)
     require("PASS real owned-task marker generations on both physical and virtual outputs" in
             (ROOT/"scripts/run-visual-regression.sh").read_text(),

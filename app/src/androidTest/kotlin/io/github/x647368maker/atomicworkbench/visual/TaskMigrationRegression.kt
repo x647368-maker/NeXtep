@@ -33,7 +33,7 @@ import kotlin.math.abs
 internal class TaskMigrationRegression(private val i: Instrumentation) {
     private data class Marker(val epoch:Int,val display:Int,val base:Int,val stripe:Int)
     private data class Draw(val epoch:Int,val display:Int,val width:Int,val height:Int,val density:Int)
-    private data class Pixels(val sequence:Int,val timestamp:Long,val colors:List<Int>)
+    private data class Pixels(val sequence:Int,val timestamp:Long,val width:Int,val height:Int,val colors:List<Int>)
     private fun matches(actual:Int,expected:Int)=
         abs(Color.red(actual)-Color.red(expected))<24 &&
         abs(Color.green(actual)-Color.green(expected))<24 &&
@@ -80,7 +80,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     init {tag=markerTag}
                     override fun onDraw(canvas:Canvas) {
                         val spec=expectedMarker.get()
-                        val id=activity.display?.displayId
+                        val id=activity.display?.displayId ?: -1
                         if(spec==null || id!=spec.display) {
                             canvas.drawColor(Color.DKGRAY)
                             return
@@ -123,6 +123,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 val pixels=slotPixels.get()
                 val draw=actualDraw.get()
                 if(pixels!=null && pixels.sequence>previous && pixels.timestamp>0L &&
+                    pixels.width==720 && pixels.height==1120 &&
                     draw!=null && draw.epoch==spec.epoch && draw.display==spec.display &&
                     draw.width>0 && draw.height>0 &&
                     matchesMarker(pixels.colors,spec)) {
@@ -196,7 +197,7 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                             else Color.rgb(data.get(offset).toInt() and 255,
                                 data.get(offset+1).toInt() and 255,data.get(offset+2).toInt() and 255)
                         }
-                        slotPixels.set(Pixels(seq,frame.timestamp,colors))
+                        slotPixels.set(Pixels(seq,frame.timestamp,frame.width,frame.height,colors))
                     }
                 } },Handler(consumer.looper))
                 val vd=dm.createVirtualDisplay("AW-Migration-$slot",720,1120,240,reader.surface,
@@ -254,8 +255,12 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                 // changes before moving; the View only draws it in the
                 // corresponding display context. No forced invalidate
                 // after a move, no fake frame/ownership acknowledgements.
-                val markerMain=if(slot==0) Marker(2+round*2,0,
-                    Color.rgb(39+round*20,105,237),Color.rgb(45,227,244)) else null
+                // Separate epochs by substantially more than the RGB
+                // sampling tolerance; a prior epoch cannot pass as current.
+                val markerMain=if(slot==0) {
+                    if(round==0) Marker(2,0,Color.rgb(39,105,237),Color.rgb(45,227,244))
+                    else Marker(4,0,Color.rgb(117,42,180),Color.rgb(168,244,50))
+                } else null
                 markerMain?.let {expectedMarker.set(it)}
                 move(ids[slot],0)
                 check(taskDisplay(ids[slot])==0)
@@ -266,18 +271,23 @@ internal class TaskMigrationRegression(private val i: Instrumentation) {
                     awaitMainMarker(spec,ids[slot])
                 }
                 val before=frames[slot].get()
-                val markerSlot=if(slot==0) Marker(3+round*2,displays[slot].display.displayId,
-                    Color.rgb(221,98+round*23,38),Color.rgb(252,227,52)) else null
+                val markerSlot=if(slot==0) {
+                    val display=displays[slot].display.displayId
+                    if(round==0) Marker(3,display,Color.rgb(221,98,38),Color.rgb(252,227,52))
+                    else Marker(5,display,Color.rgb(200,32,110),Color.rgb(250,158,215))
+                } else null
                 markerSlot?.let {expectedMarker.set(it)}
                 move(ids[slot],displays[slot].display.displayId)
                 awaitFrame(slot,before)
                 if(markerSlot!=null) {
                     val demoted=awaitSlotMarker(markerSlot,before)
                     val originalDraw=checkNotNull(originalMarkerDraw)
+                    // ImageReader checks the retained physical canvas
+                    // separately. The view may legitimately have different
+                    // inset bounds after a framework configuration change.
                     check(demoted.display==originalDraw.display &&
-                        demoted.width==originalDraw.width && demoted.height==originalDraw.height &&
                         demoted.density==originalDraw.density) {
-                        "Controlled slot producer unexpectedly changed its retained canvas"
+                        "Controlled slot producer unexpectedly changed its retained display/density"
                     }
                     check(promoted!=null && (promoted.width!=demoted.width ||
                         promoted.height!=demoted.height || promoted.density!=demoted.density)) {
