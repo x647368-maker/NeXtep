@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 2026-11-20 第十一阶段 H：严格原生路线正式授权与 CI 失败采证有界化
+- 机主明确选择 A：严格原生真实任务承载和最小系统接入，不使用旧 VD 过渡层，保持全部研发与验收门禁。此前第4节 B 候选不再是当前实施路线；不得继续询问是否选择 B，除非机主主动改变目标。不得扩大 Hook/权限、伪造授权、降低冻结功能、用自有 Activity 代替任意第三方任务。当前主责任窗口不变。
+- 本轮实际工程变更：workbench2/core 最新 HEAD a155ca2af092f512d69c63e0816aece8030e54ad，父 5e0a8e4828ccff202589dd886f608730163b97e3；远端提交读回证实仅 .github/workflows/workbench2-engine.yml 改动，blob 2d6d4da5835d9aa127f29515955b708af2920932。为失败后 always() 的 adb logcat 增加 GNU timeout 30s、kill grace 5s、step 上限 2 分钟，保留命令非零退出、原 13 项 Android 测试、五态像素及 4 个 commit 标记门禁、失败亦上传 evidence 的步骤。无生产 Kotlin/权限/签名/宿主/旧功能改动，无新分支/PR。此为已提交的 CI 可靠性修复，不是已验证的模拟器启动根因修复；没有重试旧 job，也未取消原 CI。
+- 本轮再次核实旧 run 44561100008 attempt 1 仍 in_progress，编译通过、Provision stock Android 15 emulator failure、测试 skipped、Capture independent compositor pixel evidence in_progress；job log 仍 404 BlobNotFound，runtime artifact 尚无。最新 CI-only SHA 的工作流按现有 push 触发与同分支 concurrency 排队规则运行；截至本轮查询未出现对应 run ID，不能宣称已开始或通过。最新完整运行验收依旧是 43130cbed554cd6922fda32e6d539d3e6429b155 / 44560206676，原 13/13 与五态合成像素证据保留，最新生产源码内容仍为 5e0a8e4 对应六 blob。
+- 严格原生接入阻塞不变：既有 11C/11D 已完成固件/宿主静态鉴别与公开接口排除，不重复研究/导出。当前无经过验证、受支持且获授权的任意第三方原生任务承载接口与独立任务归还、宿主死亡恢复契约。不得实现猜测 OEM adapter，不得以外围模型充当进度。下一实际节点：读取新 CI run 的最终结果和失败 evidence；如 provision 仍失败，按可证实原因进行最小修复，所有门禁不变；原生方面需取得厂商受支持授权接口或系统提供的等效合规能力及归还契约，才进入真实既有单任务承载/输入/正常和异常归还试验。无需用户重装取证工具或执行命令。未发 APK。
+
+---
+
+
 ## 2026-11-20 最新接任生效记录（覆盖下方旧窗口封存状态）
 - 机主明确指定本次新会话为台前调度2.0唯一生产研发窗口，原「接管安卓工程编译」窗口已转只读。接任起点治理 SHA 92da1a7859ff2f78d4308d8d14033b706b21dfbf，原封存资料全部保留。当前会话独任，未来换窗仍须机主明确授权。AGENTS.md 中旧窗口名按本项解释；本次仅更新此既有交接页，不新增分支/PR，不修改冻结引用。
 - 实际远程读取确认 workbench2/core HEAD 5e0a8e4828ccff202589dd886f608730163b97e3，完整 Git 树未截断；六生产源码 blob 与旧封存记录全匹配，已读取实际六文件、现有 Android 测试断言与三项只读宿主探针、专属 CI、AGENTS 和开发交接规范。开放 PR 仅 #175、#176，head 分别 b625f22558c1d4127101f86e6c4f64a7b263d72f、305f595220a6c193202d6acbdb2ac20f6e250df4，未变。规则集 27649939 再核实 active、七分支 deletion/non_fast_forward。
