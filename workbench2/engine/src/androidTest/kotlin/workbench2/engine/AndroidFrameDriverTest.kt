@@ -68,6 +68,11 @@ class AndroidFrameDriverTest {
         owner {
             driver=AndroidFrameDriver(port,"fixture","fixture","fixture-instance",600)
             assertFalse(driver.start(capability.copy(authorized=false),plan))
+            assertFalse(driver.start(capability.copy(firmware="different-firmware"),plan))
+            assertFalse(driver.start(capability.copy(hostVersion="different-host-version"),plan))
+            assertEquals(Phase.CLOSED,driver.phase())
+            assertNull(driver.outstanding())
+            assertEquals(0,port.calls)
             assertFalse(driver.frameScheduled())
             assertTrue(driver.start(capability,plan))
         }

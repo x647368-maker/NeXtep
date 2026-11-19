@@ -28,8 +28,8 @@ import workbench2.unified.UnifiedCore
  */
 class AndroidFrameDriver(
     delegate: NativePort,
-    firmware: String,
-    hostVersion: String,
+    private val firmware: String,
+    private val hostVersion: String,
     hostInstance: String,
     durationMillis: Long
 ) {
@@ -83,6 +83,9 @@ class AndroidFrameDriver(
 
     fun start(capability: Capability, plan: StartPlan): Boolean {
         checkOwner()
+        // Match the same build/host identity used to validate subsequent receipts.
+        // This is a consistency gate, not proof of OEM permission or host liveness.
+        if (capability.firmware != firmware || capability.hostVersion != hostVersion) return false
         val accepted = core.beginPending(capability, plan)
         if (accepted) kick()
         return accepted
