@@ -167,6 +167,34 @@ jobs:
           path: ${{ runner.temp }}/wb2-field-verified/
           if-no-files-found: error
           retention-days: 7
+      - name: Preserve non-installable offline signing input after all Android gates
+        if: steps.field-sign.outputs.ready == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find workbench2/probe/field/build/outputs/apk/release -name '*-unsigned.apk' -print -quit)
+          test -s "$apk"
+          sdk="$ANDROID_HOME/build-tools/36.0.0"
+          "$sdk/zipalign" -c -P 16 4 "$apk"
+          # No secret is passed to this step. Refuse an already signed input.
+          if "$sdk/apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo 'Unexpected signed input'; exit 1
+          fi
+          dir="$RUNNER_TEMP/wb2-offline-input"
+          mkdir -p "$dir"
+          cp "$apk" "$dir/HostEvidence-UNSIGNED.apk"
+          cp "$sdk/lib/apksigner.jar" "$dir/apksigner.jar"
+          cp "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$RUNNER_TEMP/wb2-field-evidence/checkout-sha.txt" "$dir/"
+          cp "$RUNNER_TEMP/wb2-field-evidence/signing-status.txt" "$dir/"
+          (cd "$dir"; sha256sum HostEvidence-UNSIGNED.apk apksigner.jar manifest.xml checkout-sha.txt signing-status.txt > SHA256SUMS)
+      - name: Upload unsigned offline input, not a device candidate
+        if: steps.field-sign.outputs.ready == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-host-evidence-UNSIGNED-offline-input
+          path: ${{ runner.temp }}/wb2-offline-input/
+          if-no-files-found: error
+          retention-days: 7
       - name: Preserve field test and signing evidence
         if: always()
         uses: actions/upload-artifact@v4
