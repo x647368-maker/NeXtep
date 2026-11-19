@@ -64,14 +64,6 @@ class UnifiedCore {
     fun current():Scene? { owner();return scene }
     fun outstanding():Effect? { owner();return pending }
     fun resources():Set<Resource> { owner();return held.toSet() }
-    fun begin(c:Capability,initial:Scene):Boolean {
-        owner(); if(phase!=Phase.CLOSED || !c.usable())return false
-        check(held.isEmpty() && pending==null)
-        val s=snapshot(initial); epoch++; generation++; scene=s;plan=null
-        order=listOf(Resource(Kind.HOST),Resource(Kind.INPUT_GATE))+s.owners.flatMap { listOf(Resource(Kind.TASK_LEASE,it),Resource(Kind.BORROWED_PRESENTATION,it)) }+
-            listOf(Resource(Kind.OBSERVER))
-        stopping=false;quiesced=false;blockedRecovery=false;phase=Phase.STARTING;return true
-    }
     /** Register all creation obligations before issuing the first native operation.
      * No placeholder Owner or scene exists while tasks are being created. */
     fun beginPending(c:Capability,initial:StartPlan):Boolean {
@@ -90,8 +82,8 @@ class UnifiedCore {
     /** Called only while a creation/return effect is outstanding. No guessed ownership. */
     private fun attachProofValid(e:Effect,r:Evidence):Boolean {
         val resource=e.resource?:return true
-        val req=resource.request?:return true
         if(resource.kind!=Kind.TASK_LEASE)return true
+        val req=resource.request?:return false
         val v=r.attach?:return false
         if(!r.runtimeVerified || !v.correlated || !v.terminal || v.requestId!=req.id)return false
         if(resource.container!=null && v.container!=resource.container)return false

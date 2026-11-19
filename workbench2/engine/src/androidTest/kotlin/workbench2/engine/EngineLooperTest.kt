@@ -57,6 +57,27 @@ class EngineLooperTest {
         core.invariant()
     }
 
+    @Test fun metadataOnlyAdmissionAndLegacyScenePathCannotBorrowTasks() = owner {
+        val core = UnifiedCore()
+        val raw = Port()
+        val bridge = ReceiptBridge(core, OwnerLooperPort(raw, Looper.getMainLooper()),
+            "fixture-fw", "fixture-host", "fixture-instance")
+        // Real R2 confirms host and symbols, but not authorization, embedding, input or release.
+        val metadataOnly = fixture.copy(authorized = false, embedding = false, input = false, release = false)
+        assertFalse(core.beginPending(metadataOnly, plan))
+        for (incomplete in listOf(fixture.copy(embedding = false), fixture.copy(input = false),
+            fixture.copy(authorized = false), fixture.copy(release = false))) {
+            assertFalse(core.beginPending(incomplete, plan))
+        }
+        assertFalse(bridge.pump())
+        assertNull(raw.sent)
+        assertEquals(Phase.CLOSED, core.phase)
+        assertTrue(core.resources().isEmpty())
+        // Do not permit the old public Scene admission which omitted LaunchRequest/return proof.
+        assertFalse(UnifiedCore::class.java.declaredMethods.any { it.name == "begin" })
+        core.invariant()
+    }
+
     @Test fun cancellationAndLateReceiptRetainReturnBeforeHostRelease() {
         lateinit var core: UnifiedCore
         lateinit var raw: Port
