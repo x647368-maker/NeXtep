@@ -50,6 +50,24 @@ internal object StageEndpointContentMapping {
         val endDx:Double,val endDy:Double,
     )
 
+    /** Necessary geometry prerequisite, not proof of shared semantic content
+     * or a latched producer. A task's local pixels cannot be identified with
+     * those of a different-sized canvas. Never admit a partial domain merely
+     * because its projected affine markers happen to match.
+     */
+    fun sameLocalCanvas(source:Crop,target:Crop):Boolean =
+        source==target && source.left==0 && source.top==0 &&
+            source.right>=2 && source.bottom>=2
+
+    /** Independently measure actual requested content extent against the
+     * destination viewport, not against another cropped fit. Reject gaps
+     * beyond the existing rounding allowance even if affine error is zero.
+     * This is a geometry gate, not presentation evidence.
+     */
+    fun fullEndpointCoverage(a:Anchor):Boolean =
+        a.viewport.valid() && a.terminal.box.valid() &&
+            StageLiveSurfaceFlightGeometry.endpointGapPx(a.viewport,a.terminal.box)<=2f
+
     fun rootMap(scale:Float,x:Float,y:Float,detached:Boolean)=
         if(detached)ContentMap(1f,0f,0f) else ContentMap(scale,x,y)
 

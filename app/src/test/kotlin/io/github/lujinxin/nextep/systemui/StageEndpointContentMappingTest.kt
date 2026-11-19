@@ -16,6 +16,49 @@ class StageEndpointContentMappingTest {
     private fun heldMap(f:StageHeldEndpointPolicy.Fit,r:StageEndpointContentMapping.ContentMap)=
         m.compose(map(f.scale,f.x,f.y),r)
 
+    @Test fun rejectedProductionCanvasCounterexampleKeepsCoordinateOnlyRoute() {
+        // Exact device evidence from #174, not an equal-width fixture.
+        val small=StageLiveSurfaceFlightGeometry.Crop(0,0,720,1120)
+        val root=map(1f,0f,0f)
+        val target=map(.7649371f,299f,438.79712f)
+        val main=box(299f,439f,1272f,2559f)
+        val slot=box(14f,965f,285f,1387f)
+        val first=checkNotNull(StageAdaptiveCoveredRailRoute.frame(slot,small))
+        val rawEnd=checkNotNull(StageAdaptiveCoveredRailRoute.frame(main,small))
+        assertFalse(m.sameLocalCanvas(small,tall))
+        assertFalse(m.sameLocalCanvas(tall,small))
+        assertFalse(m.sameLocalCanvas(short,tall))
+        assertFalse(m.sameLocalCanvas(tall,short))
+        // Show the former gate would still produce an affine-consistent
+        // anchor while leaving most of the intended main viewport empty.
+        val old=checkNotNull(m.anchor(root,small,small,tall,target,main,first,first,rawEnd))
+        assertTrue(main.bottom-old.terminal.box.bottom>1260f)
+        assertTrue(old.terminal.box.width<552f)
+        assertFalse(m.fullEndpointCoverage(old))
+        assertEquals(0f,m.mapError(target,effective(old.terminal,root),small),.001f)
+        // Non-admitted anchor must leave the existing GPU viewport route
+        // intact. Its full old producer coverage is geometry only, not
+        // evidence of a new buffer or continuity after relayout.
+        assertTrue(StageLiveSurfaceFlightGeometry.endpointGapPx(main,rawEnd.box)<=2f)
+        val reverseEnd=checkNotNull(StageAdaptiveCoveredRailRoute.frame(slot,tall))
+        assertTrue(StageLiveSurfaceFlightGeometry.endpointGapPx(slot,reverseEnd.box)<=2f)
+    }
+
+    @Test fun equalCanvasStillRequiresIndependentCoverage() {
+        val root=map(1f,0f,0f)
+        val target=map(.75f,318f,460f)
+        val bounds=frame(tall,target.scale,target.x,target.y).box
+        val start=frame(tall,.19654088f,34f,1415.6533f)
+        val end=frame(tall,target.scale,target.x,target.y)
+        val exact=checkNotNull(m.anchor(root,tall,tall,tall,target,bounds,start,start,end))
+        assertTrue(m.sameLocalCanvas(tall,tall))
+        assertTrue(m.fullEndpointCoverage(exact))
+        assertFalse(m.sameLocalCanvas(StageLiveSurfaceFlightGeometry.Crop(1,0,1273,2772),
+            StageLiveSurfaceFlightGeometry.Crop(1,0,1273,2772)))
+        assertFalse(m.sameLocalCanvas(StageLiveSurfaceFlightGeometry.Crop(0,0,1,1),
+            StageLiveSurfaceFlightGeometry.Crop(0,0,1,1)))
+    }
+
     @Test fun recordedSideAndTopPromotionRemoveTenPercentCoverRefit() {
         val cases=listOf(floatArrayOf(.75f,318f,460f,.8259833f,269.67462f),
             floatArrayOf(.54256856f,290.9264f,1156f,.59753674f,255.96664f))

@@ -225,7 +225,27 @@ def main():
     equal(paths(completed_demotion, completion_recheck), {
         GATE, P+"framework/TaskSurfaceCompat.kt",
     }, "revoke completion marker on failed final recheck")
-    equal(paths(completion_recheck, "HEAD"), {GATE}, "gate literal alignment only")
+    rejected_candidate = "8132026a52215303bb1df27e97d03af0a9c0a1ea"
+    subprocess.run(["git", "merge-base", "--is-ancestor", rejected_candidate, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(completion_recheck, rejected_candidate), {GATE}, "gate literal alignment only")
+    equal(paths(rejected_candidate, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"systemui/StageEndpointContentMapping.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "device-regression canvas/coverage admission recovery only")
+    source("systemui/StageLiveSurfaceExchange.kt", "val anchorTrial=anchorCanvas!=null",
+           "allowCompletedDemotion=anchorTrial", "if(anchorTrial)",
+           "endpoint_content_anchor_skipped:unproven_canvas_mapping",
+           "!mapper.fullEndpointCoverage(up) || !mapper.fullEndpointCoverage(down)")
+    source("systemui/StageEndpointContentMapping.kt", "source==target && source.left==0 && source.top==0",
+           "endpointGapPx(a.viewport,a.terminal.box)<=2f")
+    require("rejectedProductionCanvasCounterexampleKeepsCoordinateOnlyRoute" in
+            (ROOT/(T+"systemui/StageEndpointContentMappingTest.kt")).read_text(),
+            "measured 720x1120 to 1272x2772 regression test")
+    for rel in ("framework/TaskSurfaceCompat.kt","systemui/StageConcurrentNativeTrialPolicy.kt",
+                "systemui/StageLiveSurfaceFlightGeometry.kt","systemui/StageHeldEndpointPolicy.kt"):
+        path=P+rel
+        require((ROOT/path).read_bytes()==git("show",rejected_candidate+":"+path),
+                "regression recovery altered ownership or prior geometry "+path)
     source("framework/TaskSurfaceCompat.kt", "if(!retained)slot.completedMirrorFit=null")
     source("framework/ObservedDemotionFitPolicy.kt", "completedFit===currentFit",
            "noConflictingPresentation && noHeldWriter")
@@ -233,7 +253,7 @@ def main():
            "slot!==ticket || heldMirrorWriter.get()!=null", "completedSlotMirrorSource(stamp.taskId,slot,state)",
            "fun recordSlotMirrorCompletion(", "fun captureSlotMirrorCompletion(")
     source("systemui/StageLiveSurfaceExchange.kt",
-           "allowCompletedDemotion=inEvidenceScope && diagnosticOptIn",
+           "allowCompletedDemotion=anchorTrial",
            "TaskSurfaceCompat.captureSlotMirrorCompletion(it)",
            "TaskSurfaceCompat.recordSlotMirrorCompletion(completedSlotStamp,completedSlotTicket)",
            "cleaned && completedSlotStamp!=null && completedSlotTicket!=null",
@@ -258,7 +278,7 @@ def main():
            "TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp)",
            "TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp,allowCompletedDemotion=true)")
     source("systemui/StageEndpointContentMapping.kt", "fun compose(", "fun mapError(", "fun held(", "fun flight(")
-    source("systemui/StageLiveSurfaceExchange.kt", "if(inEvidenceScope && diagnosticOptIn)",
+    source("systemui/StageLiveSurfaceExchange.kt", "if(anchorTrial)",
            "endpoint_content_anchor_trial=both", "StageEndpointContentMapping.flight(",
            "StageEndpointContentMapping.held(", 'destinationContentRead("ready")',
            'destinationContentMatches("reveal_end")', "content_terminal")

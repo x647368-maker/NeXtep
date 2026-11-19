@@ -651,12 +651,28 @@ internal class StageLiveSurfaceExchange private constructor(
                 StageExchangeTelemetry.nativeEvent(
                     TaskSurfaceCompat.describeOwnedMainPresentation(mainTaskId))
                 val incomingBefore=TaskSurfaceCompat.mirrorSourceStamp(sourceTaskId,sourceDisplayId)
+                // #174 device regression: 720x1120 slot -> 1272x2772
+                // main. Identity of numeric local coordinates is NOT a
+                // change-of-canvas mapping. Keep the known coordinate-only
+                // GPU path when domains differ or cannot be established.
+                // Do this before acquiring any mirrors, including before
+                // the experimental repeated-demotion admission.
+                val slotForAnchor=if(inEvidenceScope && diagnosticOptIn)
+                    incomingBefore?.let { TaskSurfaceCompat.ownedSlotMirrorFrame(it,allowCompletedDemotion=true) }
+                    else null
+                val anchorCanvas=slotForAnchor?.crop
+                val anchorTrial=anchorCanvas!=null &&
+                    StageEndpointContentMapping.sameLocalCanvas(
+                        StageLiveSurfaceFlightGeometry.Crop(anchorCanvas.left,anchorCanvas.top,anchorCanvas.right,anchorCanvas.bottom),
+                        StageLiveSurfaceFlightGeometry.Crop(sourceCropLocal.left,sourceCropLocal.top,sourceCropLocal.right,sourceCropLocal.bottom))
+                if(inEvidenceScope && diagnosticOptIn && !anchorTrial)
+                    StageExchangeTelemetry.nativeEvent("endpoint_content_anchor_skipped:unproven_canvas_mapping")
                 val outgoing = TaskSurfaceCompat.createOwnedMainMirror(mainTaskId)
                     ?: return markUnavailable("no_owned_main_task_mirror")
                 ownedOutgoing=outgoing
                 val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
                     sourceTaskId, sourceDisplayId,
-                    allowCompletedDemotion=inEvidenceScope && diagnosticOptIn,
+                    allowCompletedDemotion=anchorTrial,
                 ) ?: return markUnavailable("slot_task_leash_not_ready")
                 val incoming = slotMirror.surface
                 ownedIncoming=incoming
@@ -785,12 +801,16 @@ internal class StageLiveSurfaceExchange private constructor(
                 // Phase 1 content-only experiment: same exact tested firmware,
                 // private debug/native opt-in as #173. Outside this scope keep
                 // the accepted coordinate-only implementation byte-for-byte.
-                if(inEvidenceScope && diagnosticOptIn) {
+                if(anchorTrial) {
                     val slotView=sourceSlotView as? io.github.x647368maker.atomicworkbench.display.TaskSwitcherView
                         ?: return markUnavailable("slot_content_mapping_unavailable")
                     val originalSlot=TaskSurfaceCompat.ownedSlotMirrorFrame(stableIncoming,allowCompletedDemotion=true)
                         ?: return markUnavailable("slot_content_mapping_unavailable")
-                    if(originalSlot.crop!=localCrop)return markUnavailable("slot_content_mapping_unavailable")
+                    if(originalSlot.crop!=localCrop || originalSlot!=slotForAnchor ||
+                        !StageEndpointContentMapping.sameLocalCanvas(
+                            StageLiveSurfaceFlightGeometry.Crop(localCrop.left,localCrop.top,localCrop.right,localCrop.bottom),
+                            exchange.localCrop(originalMain)))
+                        return markUnavailable("slot_content_mapping_unavailable")
                     val slotRect=slotView.mirrorLiveContentBounds()
                         ?: return markUnavailable("slot_content_mapping_unavailable")
                     val slotBox=StageLiveSurfaceFlightGeometry.Box(slotRect.left,slotRect.top,slotRect.right,slotRect.bottom)
@@ -814,6 +834,11 @@ internal class StageLiveSurfaceExchange private constructor(
                     val down=mapper.anchor(mapper.rootMap(originalMain.scale,originalMain.x,originalMain.y,detached),
                         outgoingCrop,mainLocal,incomingCrop,firstSlotMap,slotBox,firstMain,rawFirst.second,rawEnd.second)
                         ?: return markUnavailable("content_anchor_unrepresentable")
+                    // Zero affine delta is insufficient: both projected
+                    // terminal footprints must actually cover their intended
+                    // role, within integer crop rounding, before adoption.
+                    if(!mapper.fullEndpointCoverage(up) || !mapper.fullEndpointCoverage(down))
+                        return markUnavailable("content_anchor_unrepresentable")
                     exchange.slotSourceFrame=originalSlot
                     exchange.slotSourceView=slotView
                     exchange.slotSourceTexture=slotView.textureView
