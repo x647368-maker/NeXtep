@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段：严格原生接入的外部依赖与一次性官方技术询证（2026-11-20）
+- 当前生产 HEAD、完整 Android 运行验收仍为 a155ca2af092f512d69c63e0816aece8030e54ad / CI 44564285630，实时核实 completed/success。本轮不重编译、不重复测试、不改变严格 A 路线。
+- 官方渠道定向确认：https://open.oppomobile.com/ 首页提供开发者在线客服及商务合作；官方开发文档目录显示系统能力/窗口能力：https://open.oppomobile.com/new/developmentDoc/info?id=10000 （直接页面需 JavaScript，未获取其中新增 SDK 文档）；官方 https://open.oppomobile.com/documentation/page/info?id=11171 仍只证实条件化启动分屏/浮窗，不提供控制任意已有任务的五窗组织、原生输入与死亡归还契约。未确认存在公开第三方任务组织 SDK，也未证明厂商一定不开放合作。勿误用推送/应用审核专属邮箱。
+- 已备妥一次性正式询证文案（未发送、未注册、未申请权限、未获授权）：「您好，我正在研发一款由用户主动启动的多任务工作台，目标设备一加 Ace 7 Pro（PMS110），ColorOS 17 / Android 17。请问个人开发者是否有受支持的原生任务承载 SDK 或合作申请入口？需要将用户选定的既有应用任务呈现于自定义工作台容器，支持原生触控和焦点，切换主副窗时保留任务状态，退出或宿主崩溃后由系统安全归还任务，最终最多五个实际任务。希望不使用虚拟显示器、截图、权限绕过。烦请转接 ColorOS 窗口能力/多任务框架技术团队，告知可用接口、许可条件、支持机型和固件范围、单任务接入示例、独立正常/异常归还契约；若无对个人开发者开放的方案，也请明确告知。应用包名 io.github.x647368maker.atomicworkbench。」仅必要产品信息，不提交私钥、诊断私有内容、设备账号或 OEM 二进制。
+- 工具限制：当前无 OPPO 官方登录/工单写入连接，无法代为提交或声称已建立联系。需要用户在官方客服入口完成一次询证，或在有合法账号授权的工作环境中实际完成。无人确认权限前，不将旧注入或私有签名绕过当作正式方案。若官方明确否定且没有其他可证实的系统支持授权入口，严格 A 产品目标可能无法在当前固件实现，应明确停在依赖门槛，不无限消耗研发/高端模型额度，也不自行降级。
+- 本轮没有新增生产代码、CI 或 Android 运行结果；已有全部证据保留。下一次有效研发触发条件为新的、可核验的原生接入接口/授权/死亡归还证据；否则不重复提交同类报告和无效轮询。用户无需执行终端命令，不再重复取证，不制作假 APK。
+
+---
+
+
 ## 最新有效基线：第十一阶段 H 完整 Android 运行验收闭环（2026-11-20）
 - 本节覆盖旧节中的 pending/in_progress/旧验收基线。唯一生产 HEAD 及最新完整 Android 运行验收 SHA 均为 a155ca2af092f512d69c63e0816aece8030e54ad，父 5e0a8e4828ccff202589dd886f608730163b97e3；[CI 44564285630](https://github.com/x647368-maker/NeXtep/actions/runs/44564285630) 与 job 135714003322 均 completed/success，updated_at 2026-11-19T16:38:58Z。所有编译、provenance、模拟器准备、Android 测试、像素采集、五态门禁、证据上传均 success。旧 44561100008 cancelled 保留为历史失败证据，启动失败根因仍未知，勿重跑。
 - 本轮实际下载两个 GitHub artifact，在容器内独立计算哈希、解压检查 CRC、解析实际 XML/像素日志，断言全部 13 个现有测试名称精确匹配、无 failure/error/skipped、五个 PIXELS_OK 按序 initial/interrupted/rollback/swapped/detached、四个 COMMIT_OK 序号1/2/3/4。runtime artifact 14552104390：66410 bytes，ZIP SHA256 df0f629ec8dd182f115d225ab3a49875308e2e68799c9b9697b28bf8fc2401a4；XML tests=13 failures=0 errors=0 skipped=0 time=7.525，XML SHA256 8e577eb38b6bfe769441f6176b313fa9602ed1ddb36d0b19c3653e3357850621，exit-code=0；像素日志 SHA256 8ae9553a2effe64ca6fb168ff80299b303dd6f3764289edb5ccc6ef7a45806c5。设备 fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。13项含最新启动固件/宿主版本不一致拒绝断言。五态实际红绿黑像素日志分别 initial ffff0000,ff00ff00,ff000000；interrupted ffff0000,ff00ff00；rollback ffff0000,ff00ff00,ff000000；swapped ffff0000,ff00ff00,ff000000；detached ff000000,ff000000。不是任意第三方任务、真实 OEM 画面或物理真机完整逐帧验收。
