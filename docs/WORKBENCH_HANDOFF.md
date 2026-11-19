@@ -2,11 +2,13 @@
 
 ## 第十三阶段 M：PMS110 正常系统多窗真实设备观察通过（2026-11-20）
 
-- 机主提交 v3 JSON 真机报告，schema=1/kind=OWN_NORMAL_WINDOW_OBSERVATION/source_sha=9d385e9d2e8da1e2c90a0b737e45880f887df2fe，PMS110/SDK37/fingerprint 与 R2 匹配。全程 task_id=1135、display_id=0、discarded_events=0；三个 Activity 实例（一次 CREATE、两次 RECREATE）。计数0→1→2→3。进入多窗 RECREATE 3975588ms，363×371dp、clicks=1；自有 Surface 创建3975610ms、焦点 true 3975626ms、TOUCH_UP consumed=true 3986958ms、CLICK=2 3986961ms。退出 PAUSE 3994065ms、Surface destroyed 3994070ms、SAVE_STATE 3994071ms、新实例 RECREATE 3994087ms，363×792dp、clicks=2；Surface created 3994098ms、focus true 3994139ms、TOUCH_UP 3995729ms、CLICK=3 3995733ms；最终 COPY 4007130ms。退出 SAVE_STATE→RECREATE 16ms、RECREATE→focus 52ms 仅回调间隔，不是转场或呈现时延。原始报告留在对话，不公开 session UUID。报告未记录系统入口名称。
+- 机主提交 v3 JSON 真机报告，schema=1/kind=OWN_NORMAL_WINDOW_OBSERVATION/source_sha=9d385e9d2e8da1e2c90a0b737e45880f887df2fe，PMS110/SDK37/fingerprint 与 R2 匹配。全程 task_id=1135、display_id=0、discarded_events=0；三个 Activity 实例（一次 CREATE、两次 RECREATE）。计数0→1→2→3。进入多窗 RECREATE 3975588ms，363×371dp、clicks=1；自有 Surface 创建3975610ms、焦点 true 3975626ms、TOUCH_UP consumed=true 3986958ms、CLICK=2 3986961ms。退出 PAUSE 3994065ms、Surface destroyed 3994070ms、SAVE_STATE 3994071ms、新实例 RECREATE 3994087ms，363×792dp、clicks=2；Surface created 3994098ms、focus true 3994139ms、TOUCH_UP 3995729ms、CLICK=3 3995733ms；最终 COPY 4007130ms。退出 SAVE_STATE→RECREATE 16ms、RECREATE→focus 52ms 仅回调间隔，不是转场或呈现时延。原始报告留在对话，不公开 session UUID。报告原未记录系统入口名称；机主随后明确回复 A=系统上下分屏。本次是普通半屏对照，不能确认 pscanvas。
 - 正向证据：同一数值任务 ID 在正常多窗会话内连续、配置变化、测试状态恢复、自有触控接收、焦点/自有 Surface 恢复。反证：Activity 和 Surface 重建；taskId 不变不能证明第三方内容保留、稳定逻辑画布、同一 Binder token 或无重建交换。自有计数经 savedInstanceState 恢复，不能推及抖音/小红书。不测性能。host_observed=false、oem_method_calls=0、native_embedding_verified=null、native_return_verified=null、production_admitted=false 不变；正常全屏恢复不是 OEM 容器或宿主死亡归还。
 - 下一步先确认实际系统入口（分屏/浮窗/其他），机主仅需反馈此前使用的名称，无需重测；普通分屏不冒充 pscanvas。根据具体入口判断是否存在系统自身启动的合法 pscanvas 会话及可关联事件；若无证据，明确 NativePort 未准入，不重复元数据、盲加 Hook、身份替换、主动调用受保护接口或扩域。现有有限自有任务观察授权保持，不授权主动系统任务控制。无新代码、CI、APK、分支或 PR；冻结核心19+5和独立field9项不重跑。沿用工程 SHA 9d385e9d2e8da1e2c90a0b737e45880f887df2fe。当前窗口 GPT-6 高推理，不启用工作模式。
 
 ---
+
+- 入口确认后的唯一下一分叉：ColorOS 15 官网 https://www.coloros.com/version/coloros15 及一加13官网 https://www.oneplus.com/cn/13 明确描述直板机全景虚拟屏/全屏双开；不是目标 PMS110 固件内已验证功能，更不是可调用 pscanvas 的证明。优先在系统正常UI确认是否存在全景虚拟屏/全屏双开入口；如有，以已有 v3 仅观察独立的全尺寸切换场景，绝不重做此前普通半屏测试；若无，直接排除该公开入口，不要求反复试探或新诊断包。不预设其后端与 pscanvas 相同。下一轮依具体新证据决策；暂无新生产代码或 NativePort 准入。
 
 ## 第十三阶段 L：9项Android运行门禁通过、正常系统多窗验证包原签名交付（2026-11-20）
 
