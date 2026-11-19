@@ -26,7 +26,8 @@ data class Effect(val epoch:Long,val serial:Long,val op:Op,val resource:Resource
                   val generation:Long=0,val progress:Double?=null,val expected:Scene?=null)
 data class Evidence(val effect:Effect,val settled:Boolean,val observation:Observation=Observation.UNKNOWN,
                     val runtimeVerified:Boolean=false,val observedScene:Scene?=null,
-                    val focused:Owner?=null,val blocked:Boolean=false,val attach:AttachProof?=null)
+                    val focused:Owner?=null,val blocked:Boolean=false,val attach:AttachProof?=null,
+                    val inputBlockedObserved:Boolean?=null)
 
 /** Exactly one reducer, one thread owner, one outstanding backend effect.
  * No worker or timer is created here. Android adapters own real cancellation/receipts.
@@ -95,6 +96,16 @@ class UnifiedCore {
         if(e.op==Op.ACQUIRE && held.any { h -> h.kind==Kind.TASK_LEASE && (h.container==v.container || (v.actualOwner!=null && h.owner?.let{it.task==v.actualOwner.task || it.token==v.actualOwner.token}==true)) })return false
         return true
     }
+    /** Presence of the gate does not prove input is actually blocked; absence
+     * does not prove it reopened. An unknown observation never settles the lease. */
+    private fun inputGateProofValid(e:Effect,r:Evidence):Boolean {
+        if(e.resource?.kind!=Kind.INPUT_GATE)return true
+        return when(r.observation) {
+            Observation.PRESENT -> r.inputBlockedObserved==true
+            Observation.ABSENT -> r.inputBlockedObserved==false
+            Observation.UNKNOWN -> false
+        }
+    }
     private fun adopt(e:Effect,r:Evidence) {
         val old=e.resource!!;val req=old.request
         if(old.kind!=Kind.TASK_LEASE || req==null){held.add(old);return}
@@ -161,22 +172,22 @@ class UnifiedCore {
     fun receipt(r:Evidence):Boolean {
         owner();val e=pending?:return false;if(e!=r.effect)return false
         // A timeout does not settle an effect. Retain ownership even if the latest snapshot looks absent.
-        if(!r.settled || ((e.op==Op.ACQUIRE||e.op==Op.RELEASE)&&(r.observation==Observation.UNKNOWN||!attachProofValid(e,r)))) { holdForRecovery();return true }
+        if(!r.settled || ((e.op==Op.ACQUIRE||e.op==Op.RELEASE)&&(!r.runtimeVerified||r.observation==Observation.UNKNOWN||!attachProofValid(e,r)||!inputGateProofValid(e,r)))) { holdForRecovery();return true }
         pending=null;blockedRecovery=false
         when(e.op) {
             Op.ACQUIRE -> { if(r.observation==Observation.PRESENT)adopt(e,r) else drain() }
             Op.RELEASE -> { if(r.observation==Observation.ABSENT)held.remove(e.resource!!) else {holdForRecovery();return true} }
-            Op.QUIESCE -> { if(!r.runtimeVerified||!r.blocked){holdForRecovery();return true};quiesced=true }
+            Op.QUIESCE -> { if(!r.runtimeVerified||!r.blocked||r.inputBlockedObserved!=true){holdForRecovery();return true};quiesced=true }
             else -> {}
         }
         // Late settled acknowledgement after cancellation resolves the outstanding effect only.
         if(stopping){ phase=Phase.DRAINING;return true }
         when(e.op) {
             Op.ACQUIRE -> phase=Phase.STARTING
-            Op.BLOCK -> if(r.runtimeVerified&&r.blocked){phase=Phase.FLYING;serialFrameStarted=false;queuedProgress=0.0}else drain()
-            Op.FRAME -> if(r.runtimeVerified){progress=e.progress!!;serialFrameStarted=true;if(progress==1.0){queuedProgress=null;phase=Phase.VERIFY_VISUAL}}else drain()
-            Op.VERIFY_VISUAL -> if(r.runtimeVerified && r.blocked && r.observedScene==e.expected)phase=Phase.VERIFY_FOCUS else drain()
-            Op.VERIFY_FOCUS -> if(r.runtimeVerified && r.observedScene==e.expected && r.focused==e.expected!!.owners[0] && !r.blocked){
+            Op.BLOCK -> if(r.runtimeVerified&&r.blocked&&r.inputBlockedObserved==true){phase=Phase.FLYING;serialFrameStarted=false;queuedProgress=0.0}else drain()
+            Op.FRAME -> if(r.runtimeVerified && r.blocked && r.inputBlockedObserved==true){progress=e.progress!!;serialFrameStarted=true;if(progress==1.0){queuedProgress=null;phase=Phase.VERIFY_VISUAL}}else drain()
+            Op.VERIFY_VISUAL -> if(r.runtimeVerified && r.blocked && r.inputBlockedObserved==true && r.observedScene==e.expected)phase=Phase.VERIFY_FOCUS else drain()
+            Op.VERIFY_FOCUS -> if(r.runtimeVerified && r.observedScene==e.expected && r.focused==e.expected!!.owners[0] && !r.blocked && r.inputBlockedObserved==false){
                 scene=snapshot(e.expected);flight=null;phase=Phase.ACTIVE
                 val q=requested;requested=null;if(q!=null)request(q)
             }else drain()

@@ -40,8 +40,8 @@ class EngineLooperTest {
     }
 
     private fun receipt(observation: Observation, settled: Boolean = true, attach: AttachProof? = null,
-                        instance: String = "fixture-instance") =
-        NativeSnapshot("fixture-fw", "fixture-host", instance, null, null, true, observation,
+                        instance: String = "fixture-instance", inputBlocked: Boolean? = true) =
+        NativeSnapshot("fixture-fw", "fixture-host", instance, null, null, inputBlocked, observation,
             settled, true, false, true, attach)
 
     @Test fun noCapabilityMeansNoDispatch() = owner {
@@ -119,7 +119,7 @@ class EngineLooperTest {
             assertTrue(bridge.pump())
             assertEquals(Kind.INPUT_GATE, raw.sent!!.resource!!.kind)
         }
-        raw.completion!!(receipt(Observation.ABSENT))
+        raw.completion!!(receipt(Observation.ABSENT, inputBlocked = false))
         instr.waitForIdleSync()
         owner {
             assertTrue(bridge.pump())

@@ -45,14 +45,14 @@ class ReceiptBridge(private val core:UnifiedCore,private val port:NativePort,pri
         val verified=when(e.op){
             Op.ACQUIRE,Op.RELEASE->s.submissionVerified
             Op.BLOCK->s.inputBlocked==true&&s.submissionVerified
-            Op.FRAME->s.submissionVerified // only submission, never presentation
+            Op.FRAME->s.submissionVerified&&s.inputBlocked==true // only submission, never presentation
             Op.QUIESCE->s.callbacksStopped&&s.inputBlocked==true&&s.submissionVerified
             Op.VERIFY_VISUAL->s.contentReady&&s.inputBlocked==true&&s.scene!=null&&s.scene==e.expected
             Op.VERIFY_FOCUS->s.contentReady&&s.inputBlocked==false&&s.scene!=null&&s.scene==e.expected&&s.focused==e.expected.owners.first()
         }
         // Unknown or unsuccessful acquire/release observation must not become success.
         val effective=if(e.op in setOf(Op.ACQUIRE,Op.RELEASE)&&!verified) Observation.UNKNOWN else obs
-        val receipt=Evidence(e,s.settled,effective,verified,s.scene,s.focused,s.inputBlocked==true,s.attach)
+        val receipt=Evidence(e,s.settled,effective,verified,s.scene,s.focused,s.inputBlocked==true,s.attach,s.inputBlocked)
         core.receipt(receipt)
         if(core.outstanding()!=e){dispatched=null;cancelRequested=null}
         if(core.phase in setOf(Phase.DRAINING,Phase.RECOVERY))port.stopLocalCallbacks()
