@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 B：单任务挂载身份修正已接入生产分支（2026-11-20）
+- 实际接续专项交接 47748cca98f42dac69f8470356a30549c02eb3fe。其 14 项定向源码断言为专项报告的静态证据，不是生产窗口新运行测试。保留 AAOS 既有 ShellTaskOrganizer + 权限保护的会话架构，以及正常/死亡归还反例；不重复分析旧资料、不注册第二个全局组织器。
+- 已真实完成生产修复并以一次非强制、带 expected SHA 的 fast-forward 更新唯一分支 workbench2/core。最新 HEAD 7e02798c44d8cb30c5d91327e1863f1ee3893df3，唯一父 a155ca2af092f512d69c63e0816aece8030e54ad，tree 57281c42ad8e474fa08adf6e29999226a51656c7。远端 diff 核对恰为三文件：UnifiedCore.kt blob 8bf6e7c36ff5ffd29d210a47eaf715aa749aa1aa；EngineLooperTest.kt blob b42a6a2e93b02614958b5e63d411a04404f81cf6；.github/workflows/workbench2-engine.yml blob 4878381cdaa4a216697cff42d9e27147e740f111。其他生产文件/旧产品实现/权限/签名/部署均未改。无新分支或 PR。
+- 修复细节：仅在已经通过独立运行证据、关联/终结和宿主范围校验的既有任务挂载 adopt 路径，把 task/user/token 身份与 leash/canvas 展示区分。component 核验不变。leashEpoch/contentEpoch 不允许回退；保守要求画布内容状态变化须有更新的 contentEpoch，尺寸/dpi 变动但同 contentEpoch 拒绝（这是本窗口选定的适配契约约束，须由真实系统端生成并认证代际，不代表 OEM 已证明）。同身份合法新 Owner 写回租约、借用展示及后续 Scene，禁止复制旧 Owner 伪造。不改变 Owner.equals 或动画、视觉、焦点、资源等完整比对。非法但正向关联的 attach 仍保留原请求及容器的归还义务，不把陌生 Owner 纳入场景。既有迟到 effect 匹配门禁保留。
+- 增加三个 Android main Looper 上的 reducer 回归用例：existingTaskReconfigurationUsesObservedOwner（原样、仅 leash 更新、仅 canvas 更新、两者更新四种；贯穿 visual/focus 到 ACTIVE，并拒绝旧 attach effect）；existingTaskReplacementIdentityIsRejected（token、task、user、component 四种拒绝）；existingTaskStalePresentationIsRejected（旧 leash、旧 content、未升 content 的宽度/dpi 四种拒绝）。拒绝例均验证无场景、保留租约，先 quiesce 再释放请求，不把拒绝当归还。使用合成 Owner/回执，不代表 OEM 路径。CI 精确测试名门禁由 13 增至 16，原所有测试及五态像素/四提交门禁、证据上传规则未削弱。
+- 本轮实际核查提交父/精确三文件 diff、非强制 ref 更新成功、远端 HEAD 及三个 blob 读回一致；首次查询尚未列出新 SHA 的工作流 run。未执行/声称本轮 Android 编译或新增用例通过。最新完整已验收基线仍为 a155ca2a / 44564285630，13/13+5/5；新 SHA 是待 CI 验收候选而非已验收版本。下一步只按新 SHA 找到并验证新 CI（16/16+5/5、下载 XML/像素/编译 provenance），如失败按证据最小修复。无需重复跑旧基线。
+- 归还早发回调/迟到 reparent 尚未在目标机修复：原因是授权系统端尚不存在，现阶段不能实现或验证真实的独立 WM 归还契约，不能用容器 ABSENT 冒充同任务原归属已恢复。严格原生 A 与全部验收门禁不变。需 PMS110 当前固件对该包可用的系统承载授权，以及独立于工作台、承载端死亡仍可恢复的任务归还机制；拿到才实施单真实任务。无真机 APK、无新增注入、无需升级工作模式或再做相同研究。
+
+---
+
+
 ## 原生单任务专项｜既有 WM Shell 接入与归还验证（2026-11-20）
 
 - 实核起点：治理 `95f76cbef51808045fdd942a5e2c517a7a9018e8`，生产 `a155ca2af092f512d69c63e0816aece8030e54ad`。实际读取 AOSP/AAOS 八份源码和 2.0 对应实现，执行 14 项定向源码断言，全部通过。证据为源码行为及约束。没有 Android/ColorOS 运行结果，当前环境无 adb、SDK 或模拟器。沿用 CI 44564285630 的 13 项与五态证据。
