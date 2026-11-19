@@ -1,0 +1,95 @@
+name: Workbench 2 Android engine integration
+on:
+  push:
+    branches: ['workbench2/core']
+    paths:
+      - 'workbench2/engine/**'
+      - '.github/workflows/workbench2-engine.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+permissions:
+  contents: read
+concurrency:
+  group: workbench2-engine-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  engine:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - name: Compile isolated engine without a deployable app
+        run: bash gradlew -p workbench2/engine :assembleDebug --no-daemon --console=plain --stacktrace
+      - name: Verify compiled engine classes and source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=workbench2/engine/build/outputs/aar
+          aar=$(find "$dir" -name '*.aar' -print -quit)
+          test -s "$aar"
+          unzip -p "$aar" classes.jar > "$RUNNER_TEMP/engine-classes.jar"
+          jar tf "$RUNNER_TEMP/engine-classes.jar" > "$dir/classes.txt"
+          for clazz in workbench2/unified/UnifiedCore workbench2/motion/Flight workbench2/nativebridge/ReceiptBridge workbench2/engine/OwnerLooperPort; do
+            grep -Fx "$clazz.class" "$dir/classes.txt"
+          done
+          printf '%s\n' "$GITHUB_SHA" > "$dir/checkout-sha.txt"
+          (cd "$dir"; sha256sum *.aar > aar.sha256)
+          git ls-tree -r HEAD workbench2/engine/src/main/kotlin > "$dir/source-blobs.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-engine-compile
+          path: workbench2/engine/build/outputs/aar/
+          if-no-files-found: error
+      - name: Provision stock Android 15 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platform-tools' emulator 'system-images;android-35;google_apis;x86_64'
+          sudo chmod 666 /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-engine-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-engine --path "$ANDROID_AVD_HOME/wb2-engine.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_7
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/wb2-engine.avd" > "$ANDROID_AVD_HOME/wb2-engine.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd wb2-engine -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 2048 -cores 2 -gpu swiftshader_indirect > "$RUNNER_TEMP/wb2-emulator.log" 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb shell getprop ro.build.fingerprint > "$RUNNER_TEMP/wb2-emulator-fingerprint.txt"
+      - name: Execute actual Android Looper transport tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash gradlew -p workbench2/engine :connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          p = pathlib.Path('workbench2/engine/build/outputs/androidTest-results/connected')
+          required = {'noCapabilityMeansNoDispatch','cancellationAndLateReceiptRetainReturnBeforeHostRelease','mismatchedHostReceiptCannotSettleOutstandingEffect'}
+          cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
+          assert {t.get('name') for t in cases} == required and len(cases) == len(required), [t.get('name') for t in cases]
+          assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
+          print('All 3 Android Looper transport tests passed; synthetic backend only; zero OEM calls.')
+          PY
+      - name: Preserve Android execution evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-engine-api35-runtime
+          path: |
+            workbench2/engine/build/outputs/androidTest-results/connected/
+            workbench2/engine/build/reports/androidTests/connected/
+            ${{ runner.temp }}/wb2-emulator-fingerprint.txt
+            ${{ runner.temp }}/wb2-emulator.log
+          if-no-files-found: warn

@@ -2,6 +2,12 @@ name: Workbench 2 public inventory and Android boundary
 on:
   push:
     branches: ['workbench2/core']
+    paths:
+      - 'workbench2/probe/**'
+      - '.github/workflows/workbench2-probe-compile.yml'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'gradlew.bat'
 permissions:
   contents: read
 concurrency:
