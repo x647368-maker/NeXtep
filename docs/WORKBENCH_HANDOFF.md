@@ -10,6 +10,8 @@
 
 ---
 
+- K 阶段 CI 续查：44597034341 job 135817990741 的 probe assembleDebug、三类检查及 AAR 上传已真实 completed/success；AAR artifact 14565817941 未过期，远端记录 ZIP 23594 bytes、digest sha256:776dd9a9e054467906354f0a5530a69609ee1b486c894dc10720cd744e9935ed（仅服务端元数据，未下载复验）；最后模拟器 Provision in_progress，field 新代码编译、9项测试和原签名尚未完成。已在用户私密 Library 元数据中定位既有签名材料及对应密码文件（不公开文件标识、不读取密码、不导出密钥）；实际可解锁及证书匹配待有通过门禁的未签名 APK 后验证。当前没有失败，不重复触发 CI，不修改代码、不交付 APK。下一轮只跟进此 run 的实际结果。
+
 ## 第十三阶段 J：正常系统入口验证前的具体授权决策点（2026-11-20）
 
 - 继承 I，不复查竞品源码或冻结 CI。定向实读现有 HostMetadata.java blob 965d118022912cb88c8940b2b68dba42dccc534d、EvidenceActivity.kt 94c723e198fb1ac2a3634f54c372cacc5dfbfcc9、field Manifest c78d03f6177ca99a582606ab2a24c691c976e83d（均为 67d71eb8 冻结树）。R2 的方法白名单只采 init/setListener/resize/release 元数据，不观察真实生命周期。旧独立 field Activity 无任务控制，且报告仅内存保存、configuration 重建时可能丢失，不能将现有页面内容当作可信同任务归还见证。第11C/D 的目标 OEM manifest 9 个 exported 组件均受权限保护，collector 未获 safe.WINDOW；生产包授权状态仍未知。Library 定向检索未返回原始宿主 ZIP，未重复要求机主导出，沿用既有取证记录。没有新的目标机连接或实测，不能声称发现了可调用后端。
