@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 A：单任务接入前关闭旧无身份准入旁路（2026-11-20）
+- 继承阶段 O 已成功真机 R2 证据，停止真机日志、框架重构和重复取证。实际复读 UnifiedCore.kt、ReceiptBridge.kt、AndroidFrameDriver.kt、EngineLooperTest.kt、DualTaskReceiptTest.kt 及 engine 全部 Kotlin 源码中的 begin/beginPending 调用；AndroidFrameDriver 及现有 Android 测试仅使用 beginPending。发现未被调用的旧 public begin(Capability,Scene) 可建立不含 LaunchRequest 的 TASK_LEASE，attachProofValid 在 request==null 时直接返回 true，绕开既有任务身份关联及归还凭据要求。对真实后端接入前属于具体安全缺口，而非真机已发生故障。
+- 实际提交 6ca1ca2c5ea34a1362032f3fb68536153bfab188（父 63ece8c9）：删除未使用的 begin(Capability,Scene)，TASK_LEASE 缺 request 时拒绝结算；保留已验收 beginPending、状态机、动画、任务资源次序、原归还凭据逻辑。新增真实 Android Looper 回归 metadataOnlyAdmissionAndLegacyScenePathCannotBorrowTasks，验证 R2 只读能力（授权/嵌入/输入/归还未知按不允许处理）及各缺失能力不能触发任何后端操作，旧 Scene 入口不再暴露。UnifiedCore blob 07217f951e3d9b305a08b53f1ced5e66b90e0316，EngineLooperTest blob fd729f5af41228ad72e358e1210f44282c69f3e3。
+- 最终唯一 HEAD **67d71eb8a651eff06aa9b8e6927b27fe31a249ba**：第二提交仅更新 engine CI 精确测试名单，要求新增回归和全部原18项同时通过；五态独立像素门禁不变。workflow blob f67c89d753df7b3daff02dd1399d7ba6b38f9977。两次均预期父 SHA 非强制推送且回读一致。旧中间提交触发 CI 44588313920，因精确名单尚未更新不作为本轮验收，发现即修正，连接器未找到取消 workflow 的操作；最终 CI [44588386172](https://github.com/x647368-maker/NeXtep/actions/runs/44588386172) 状态 pending/未定，截至本次保存尚无新测试通过证据。不得把旧18项/5态归于新 SHA，最新已验收核心仍 76794025，R2 只读模块仍 63ece8c9。未发新版 APK。
+- 本次核实公开正式接口边界：https://developer.android.com/develop/ui/views/layout/activity-embedding （跨应用嵌入要求目标 app 明确 opt-in，不是任意既有任务容器）；https://developer.android.com/reference/android/app/ActivityManager.AppTask （自有任务操作，不能代替 arbitrary native embedding）；https://developer.android.com/develop/ui/views/layout/support-multi-window-mode 与 https://open.oppomobile.com/documentation/page/info?id=11171 （普通系统分屏能力，不承诺自定义五任务宿主）。R2 真机所证实的方法不构成 OEM 调用权限、生命周期契约或独立恢复证明。目标宿主既有 signature|privileged 限制及未知归还契约仍为关键阻塞。机主只读授权不等于系统授权；不借用受保护宿主身份越权、不扩大 scope、不猜测 init 参数、不写假 NativePort、不再增加纯参考模型。若开发者提供官方/经 OEM 认可的系统扩展入口与可验证归还契约，优先受控自有测试 Activity→单真实任务；如另行授权并具备可控 AOSP 系统集成环境，只能作为机制验证，不冒充 ColorOS 可部署。未知权限及异常恢复时不执行真实任务接入。没有新增分支、PR、权限、OEM 调用或手机操作。
+- 下轮明确任务：只核查最终 CI 44588386172 的19项实际 Android 回归及5态像素证据，下载核对并按真实失败修复；如通过则冻结核心，随后仅当出现可验证合法 native backend/独立归还新证据时实施受控单任务。不要求用户重复发 R2 日志、安装或重启；无授权入口时如实报告，不循环增加外围代码。
+
+---
+
+
 ## 第十二阶段 O：R2 真机只读接入完整成功，关闭日志故障专项（2026-11-20）
 - 纠正阶段 N：02:21 机主截图确认 Vector 2.2 (3114) / API102，但当时仍装 R1（2.0-host-runtime-1）；此前“R2 重启无日志”不是有效 R2 失败证据。02:22 截图确认 R2 覆盖安装成功并启用。02:24 机主新截图（4738.jpg，本会话私有附件，未上传仓库）经直接放大读取，R2 source=63ece8c9462eebfb0e7fad63272bf102a70e8ae2 与唯一 core SHA 一致。
 - 02:24:20.839 VectorContext/WB2HostRuntime LOADED targetProcess=true systemServer=false；.849 PACKAGE_LOADED first=true、PACKAGE_READY targetProcess=true systemServer=false first=true；.852 BEGIN model=PMS110 sdk=37 firmware 与阶段 H 精确一致；.860 完成符号记录及 END。BEGIN 到 END 日志时间差8ms，只是此次取证耗时，不是性能或任务交换基准。依据 HostMetadata.matches 原代码，BEGIN 意味着此次包/进程/first/systemApp/UID/model/sdk/firmware 基本检查通过，不代表实际宿主证书已经核验或 OEM 调用获得授权。
