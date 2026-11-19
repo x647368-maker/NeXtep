@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段补充：AOSP WM Shell 原生任务路径的定向证据
+- 新增实际公开源码证据（AOSP main，非 PMS110 固件接口证明）：https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/libs/WindowManager/Shell/src/com/android/wm/shell/taskview/TaskViewTaskController.java ，约249–281行包含既有任务重新承载及 moveToFullscreen；283–324行表明新任务启动具有 removeWithTaskOrganizer 标志，release 只清理监听与本地状态，不能当作安全归还。
+- https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/TaskOrganizerController.java ，约500–575行 registerTaskOrganizer 先 enforceTaskPermission 并遍历任务更新组织器，getTaskOrganizer 取最后注册者，存在与原系统组织器冲突风险；89–97及402–439行 Binder death -> dispose，对部分任务会移除而非归还。另见 https://android.googlesource.com/platform/frameworks/base/+/14ac35839a89/core/java/android/window/TaskOrganizer.java 的 MANAGE_ACTIVITY_TASKS 权限注解。禁止直接在真机注册第二个全局 organizer 或将 release ACK 当作任务完整归还。AOSP 自身可支持任务承载，不代表普通 APK 在 ColorOS 实际获得该入口。
+- 结论：原生候选收窄至已获系统支持、局部任务容器且不替换原组织器的集成入口；尚无该固件可验证入口。可在自行构建且合规授权的 AOSP 测试系统中验证机制，但不能证明 ColorOS 可部署，本轮不额外投入构建该环境。无新增生产代码/CI/真实设备证据，不再用重复研究和高端额度掩盖依赖阻塞。严格 A、原签名、五窗、冻结合同不变；当前 HEAD a155ca2af092f512d69c63e0816aece8030e54ad。真正可执行下一步是获取目标系统的受支持集成授权/接口依据，或经用户明确批准改变部署约束；否则暂停生产接入而非再作无效承诺。
+
+---
+
+
 ## 第十二阶段：严格原生接入的外部依赖与一次性官方技术询证（2026-11-20）
 - 当前生产 HEAD、完整 Android 运行验收仍为 a155ca2af092f512d69c63e0816aece8030e54ad / CI 44564285630，实时核实 completed/success。本轮不重编译、不重复测试、不改变严格 A 路线。
 - 官方渠道定向确认：https://open.oppomobile.com/ 首页提供开发者在线客服及商务合作；官方开发文档目录显示系统能力/窗口能力：https://open.oppomobile.com/new/developmentDoc/info?id=10000 （直接页面需 JavaScript，未获取其中新增 SDK 文档）；官方 https://open.oppomobile.com/documentation/page/info?id=11171 仍只证实条件化启动分屏/浮窗，不提供控制任意已有任务的五窗组织、原生输入与死亡归还契约。未确认存在公开第三方任务组织 SDK，也未证明厂商一定不开放合作。勿误用推送/应用审核专属邮箱。
