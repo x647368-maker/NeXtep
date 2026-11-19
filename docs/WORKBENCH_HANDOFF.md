@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十一阶段 H 补充：实际失败路径回归与新 CI 定位（最新）
+- 新 CI 已实际出现 [44564285630](https://github.com/x647368-maker/NeXtep/actions/runs/44564285630)，准确 head a155ca2af092f512d69c63e0816aece8030e54ad，pending、无 job；旧 44561100008 仍 in_progress，旧 job 135690315916 的 provision failure、runtime skipped、pixel capture in_progress 未变化，日志 404 BlobNotFound，只有 compile artifact 14550975445。两次查询一致；连接器未提供取消 run 的写操作，因此不虚报取消、不重跑未结束 job，不发重复提交抢占队列。
+- 本地实际 Shell 故障注入回归（非 Android）：用临时 mock adb 和当前采证命令同样的 set -euo pipefail、重定向及 GNU timeout/kill-after 结构，测试时将 30s/5s 缩短为 1s/0.5s。实测 success exit=0 elapsed=0s bytes=26，正常模拟内容可读；error exit=1 elapsed=0s bytes=0；拒绝 TERM 的 hang exit=137 elapsed=1s bytes=0，三项断言通过，临时目录清除。说明命令保留错误状态且可强制限制挂起，不代表实际 adb 或模拟器已验证。实际工作流仍为 30s/5s、步骤上限2分钟，13项测试与五像素态门禁不变。
+- OPPO 官方开发者平台 https://open.oppomobile.com/ 提供客服/商务合作入口；公开《主动分屏、主动浮窗适配文档》 https://open.oppomobile.com/documentation/page/info?id=11171 明确框架按管控名单匹配和应用分屏支持条件处理启动，未提供任意已运行第三方任务的五窗组织、独立归还或宿主死亡恢复契约；不是 NativePort 所需的授权证据。不实现该启动接口冒充工作台，不声称已得到厂商回复或许可。可向厂商确认受支持接口及许可条件；当前连接器未提供可直接提交该类官方工单的已授权入口。严格 A 路线不变。
+- 本轮未修改生产分支，未新增分支/PR，不重复取证，不发布。待 CI 44564285630 实际完成再检查日志与 runtime artifact，按证据修复；原生门槛未过前不堆外围代码。
+
+---
+
+
 ## 2026-11-20 第十一阶段 H：严格原生路线正式授权与 CI 失败采证有界化
 - 机主明确选择 A：严格原生真实任务承载和最小系统接入，不使用旧 VD 过渡层，保持全部研发与验收门禁。此前第4节 B 候选不再是当前实施路线；不得继续询问是否选择 B，除非机主主动改变目标。不得扩大 Hook/权限、伪造授权、降低冻结功能、用自有 Activity 代替任意第三方任务。当前主责任窗口不变。
 - 本轮实际工程变更：workbench2/core 最新 HEAD a155ca2af092f512d69c63e0816aece8030e54ad，父 5e0a8e4828ccff202589dd886f608730163b97e3；远端提交读回证实仅 .github/workflows/workbench2-engine.yml 改动，blob 2d6d4da5835d9aa127f29515955b708af2920932。为失败后 always() 的 adb logcat 增加 GNU timeout 30s、kill grace 5s、step 上限 2 分钟，保留命令非零退出、原 13 项 Android 测试、五态像素及 4 个 commit 标记门禁、失败亦上传 evidence 的步骤。无生产 Kotlin/权限/签名/宿主/旧功能改动，无新分支/PR。此为已提交的 CI 可靠性修复，不是已验证的模拟器启动根因修复；没有重试旧 job，也未取消原 CI。
