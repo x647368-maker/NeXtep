@@ -68,7 +68,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/wb2-field-evidence"
           analyzer=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort -V | tail -1)
           test "$("$analyzer" manifest application-id "$apk")" = io.github.x647368maker.atomicworkbench.hostruntime
-          test "$("$analyzer" manifest version-code "$apk")" = 1
+          test "$("$analyzer" manifest version-code "$apk")" = 2
           "$analyzer" manifest print "$apk" > "$RUNNER_TEMP/wb2-field-evidence/manifest.xml"
           python3 - "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$apk" <<'PY'
           import sys, xml.etree.ElementTree as E, zipfile
