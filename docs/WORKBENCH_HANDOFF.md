@@ -1,5 +1,30 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 W · PMS110 单任务接入与异常归还独立审查（2026-11-20）
+
+**结论。** 阶段 V 暂缓生产接入的判断成立。已定位系统宿主逐槽承载、匹配任务和请求全屏的代码。台前调度原签名应用取得限域会话的条件，以及宿主消失后由谁恢复任务，仍缺证据。实验可以先于生产准入，前提是已有获准的入口、宿主外观察和可执行的恢复手段。生产基线为 `ab62e52ee7daca435c8011aa7a6fcde269b45b30`。
+
+实际打开 PMS110 原始 JAR 与宿主 APK，内件 SHA-256 分别为 `76cfdaeedebbe8249090d563532a49abd5b2a16149726ca2af6ef31a8b437450`、`d5d4bc23890d8473f670dc3ee528fe5f0a8f6f40ebd29b7324968dd5c8d096e7`。以下编号对应各自 `classes.dex` 的 method index。核对两件内共四份 DEX 的类定义与继承链，未找到 `IOplusActivityTaskManager.Stub` 的具体服务实现。
+
+| 定向核查的新证据 | 工程结论 |
+| --- | --- |
+| 框架 #49063 转入 #49064 `startPocketStudio`，Intent 列表不足 2 项直接返回。APK 编译后 Manifest 将该方法发往 pscanvas 的 canvas action 配给受 `com.oplus.permission.safe.WINDOW` 保护的 ContainerActivity。 | 排除该入口承担第一个单任务。当前提交的 app 主 Manifest 也未声明此权限。此前实机权限比较中的普通调用方是采集包，生产包的运行时授权仍待证。 |
+| 宿主 #18716 `EmbeddedViewDecor.k0` 调单个 `FlexibleTaskView.init`。框架 #48672 用同一个 Binder cookie 关联待启动监听与 ActivityOptions，#48663 `onTaskAppeared` 接收 RunningTaskInfo 和任务 leash。外层 `onTaskCreated` 只传 taskId、component。#48365 `EmbeddedWindowTaskOrganizer.start` 忽略注册布尔返回值，正常返回即把本地标记置真。#49038 遇 RemoteException 可返回 false。 | 保留授权会话中的单槽作为候选。适配器须用系统侧请求关联、任务 token、user、容器及宿主实例确认借用。注册标志和外层回调均不足以放行。 |
+| 框架 #48513 从宿主可触区减去相应区域，宿主另行通知焦点切换。#48681 调整任务 leash 的父层、矩阵、位置和裁剪。#48689 通过 WCT.setBounds 改变任务逻辑尺寸。 | 单任务首测固定物理显示与逻辑画布，分别观察目标层新内容、实际输入窗口及手指点按后目标控件的响应。AOSP 的 WCT 权限不能直接外推到本机每个 OEM 调用。 |
+| 宿主 #16922/#16930 `ContainerActivity.r2/t2` 有以 taskId 调系统 `startActivityFromRecents` 请求全屏的分支。框架 #48344 `getRunningTaskInfo` 只读本地缓存。#48973/#48985 的两个嵌入任务列表查询在 RemoteException 时都返回空列表。#49039/#49042 的移除关联和 reset 请求在远端通信异常后可正常返回。 | 正常全屏归还有了源码定位。独立端必须正向观察原任务恢复。空列表、onReleased、正常返回、容器消失均不能结算。恢复全屏也不能外推为恢复任意原布局。 |
+
+**给生产窗口的实施位置。** 准入落实后，在 `workbench2/engine/src/main/kotlin/workbench2/nativebridge/` 增加会话适配器，实现 `NativePort.dispatch/stopLocalCallbacks`，授权接口支持按请求取消时再接 `requestAttachCancellation`。用系统观察填充 `NativeSnapshot/AttachProof/TaskReturnProof`，复用 `ReceiptBridge.kt`、`unified/UnifiedCore.kt` 和 `engine/AndroidFrameDriver.kt`。现有 `StartPlan` 支持 1 至 5 项。实验先在授权宿主的测试入口核实真值，保留 `Capability.usable()` 生产门。根 Gradle 当前仅纳入 `:app`，engine 是独立 Android 库，正式接线时还需从产品启动处传入适配器。Vector 的 `HostRuntimeEntry.java` 维持原有元数据观察范围。
+
+**最低成本解阻和验收。**
+
+1. 只核对同固件上哪个接口向原签名调用方授予一次会话、谁有权将任务绑定到指定容器、宿主断联后谁有权撤销和查询该笔借用。可凭现成的受支持委托接口，或相应服务端分支和匹配调用身份的授权记录核实。单有类名、源码或他方权限不能证明本包获准。无需再次导出这两份文件。
+2. 在能从宿主外恢复的授权环境，选同用户、不同 UID、无私有数据的既有第三方全屏任务，记录 taskId、稳定任务标识、原父容器、显示、窗口模式与可辨认的页面状态。仅借这一项。独立确认原物理屏上同一任务进入指定槽位、呈现新内容、获得焦点且真实点按有效。
+3. 分次验证正常退出及会话中断，分别登记客户端断连和承载宿主死亡。后者仅在可隔离、可恢复的宿主环境验证。独立端须看到同一任务恢复原归属、状态可继续操作，并确认旧请求已终结、不会再挂接。结果未知时停止新操作和本地回调，保留清理通道与归还义务，由授权方按原会话恢复。受控单任务通过后才评估正式接线、跨设备、五窗与性能。此次没有新增编译、模拟器或真机承载测试。
+
+平台权限对照见 [AOSP 窗口事务](https://android.googlesource.com/platform/frameworks/base/+/d8769634c8061b2e7a1d894fc524231c397da5be/services/core/java/com/android/server/wm/WindowOrganizerController.java) 和 [AOSP 按任务 ID 请求前台](https://android.googlesource.com/platform/frameworks/base/+/5843f61f8bf6/services/core/java/com/android/server/wm/ActivityTaskManagerService.java)。
+
+---
+
 ## 第十三阶段 V：路线 A 新接入分支的边界核查（2026-11-20）
 
 - 继承机主路线 A 决策 U。实际容器重新核验 PMS110 两份已上传 ZIP 的 SHA256/CRC、manifest；框架命中双方定义，production_admitted=false/oem_method_calls=0，宿主9个 exported 均有保护，MANAGE_ACTIVITY_TASKS、MONITOR_INPUT、safe.WINDOW 的 host_granted=true、collector_granted=false。没有再次导出或执行 OEM 方法。读取冻结旧版 b625f22558c1d4127101f86e6c4f64a7b263d72f 的 app/src/main/AndroidManifest.xml（blob c43c5caa444f25cd0f48cded2ec951822cc36c0e）：声明 REORDER_TASKS、签名级自有 CONTROL_WORKSPACE 等，未声明 MANAGE_ACTIVITY_TASKS/ACTIVITY_EMBEDDING/safe.WINDOW，不能将旧应用自身签名权限或现有 Vector 可加载当作原生组织器授权。此为源码检查，非生产应用当前运行时权限完整检查。
