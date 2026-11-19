@@ -234,11 +234,24 @@ def main():
         GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"systemui/StageEndpointContentMapping.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "device-regression canvas/coverage admission recovery only")
-    equal(paths(recovery, "HEAD"), {
+    pixel_gate = "9dd38c5ae701a84aebac89fff0ca267c720d4b5e"
+    subprocess.run(["git", "merge-base", "--is-ancestor", pixel_gate, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(recovery, pixel_gate), {
         GATE, P+"systemui/StageEndpointContentMapping.kt", T+"systemui/StageEndpointContentMappingTest.kt",
         "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/StageNativeFlightRuntimeRegression.kt",
         "scripts/run-native-mirror-regression.sh",
     }, "same-canvas mapper preconditions and actual compositor endpoint regression")
+    equal(paths(pixel_gate, "HEAD"), {
+        GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
+        "scripts/run-visual-regression.sh",
+    }, "owned real task generation-marker test only; no production code delta")
+    marker_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt").read_text()
+    for marker in ('draw.epoch==spec.epoch', 'pixels.sequence>previous', 'matchesMarker(pixels.colors,spec)',
+                   'matchesMarker(colors,spec)', 'check(promoted!=null', 'demoted.density==originalDraw.density'):
+        require(marker in marker_test, "missing actual producer generation test "+marker)
+    require("PASS real owned-task marker generations on both physical and virtual outputs" in
+            (ROOT/"scripts/run-visual-regression.sh").read_text(),
+            "actual producer content evidence gate missing")
     source("systemui/StageEndpointContentMapping.kt", "if(!sameLocalCanvas(sourceLocal,targetLocal))return null",
            ".takeIf(::fullEndpointCoverage)", "if(!sameLocalCanvas(local,a.targetLocal))return null",
            "endpointGapPx(a.viewport,f.box)>2f")

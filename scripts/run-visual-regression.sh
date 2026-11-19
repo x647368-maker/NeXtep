@@ -34,3 +34,5 @@ adb shell dumpsys statusbar > visual-results/final-statusbar.txt
 adb logcat -d > visual-results/logcat.txt
 
 grep -F 'HWUI_RENDER_PASS' visual-instrumentation.txt
+test -s visual-results/real-task-marker-main.png
+grep -Fx 'PASS real owned-task marker generations on both physical and virtual outputs' visual-results/real-task-marker-generations.txt
