@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十四阶段 E · 独立产品工程授权与首个实际布局模块（2026-11-20）
+
+- 机主明确授权独立原创产品工程实施，限当前唯一 workbench2/core，不改原生接入/数据/性能门禁，不重新设计历史满意效果，不制作模拟任务或空壳 APK。继承D和全部永久规则。实查旧冻结 WorkspaceLayoutProfile f030378a30803554c9daa4632fac0b31ddd01c33、WorkspaceGeometry 1ff35c15f4634b7db11e9e0a26ed8053599119ce、StageTopLayoutMetrics a90c9b750c6d0f2d9e21363e785fd30575e4bb7f、StageDisplayPolicy c4d4c8410243c610b08a372a6d61bb738dacd0fe、StageTopLayoutTest 12da4b9e789f1215bd977f0fda682ec35362e5bd、StageWorkspaceLayoutTest 68df808036e2953bf13c210fba9ff5b67aed629c；不继承VD画布/宿主代码。
+- 唯一生产 HEAD 74de6cf153fc4ea026bca3405649c3f397da0ca3，父 50287e5fa5b99e0f9d694671b7430586877f6e28，实际非强制更新且检查远端HEAD一致，compare ahead1/behind0、仅3文件+252/-2。WorkspaceLayout.kt blob d0df3a85fafc056339497c16413a982071708c2b，WorkspaceLayoutTest.kt e4a23aaa9e5f03894c48bcd36169c1ba83d19de9，既有 CI 3d24e54fbf40a4c1ae37d391082df1b37de834eb。旧app、6核心文件、兼容解析器、原签名、main和历史冻结引用不改，未新增分支/PR。一个未推送的早期候选对象 6e8892a12767d6e80934338636b6577afa5cf94b 被本提交取代，不是活跃分支/有效源码。
+- WorkspaceLayout 为真实 Android library 中可复用目的地布局模块，不新建线程/定时器/状态机，不依赖OEM。调用者提供已解析安全边界、控制区及侧栏尺寸；继承顶部8dp间距、1/2/3窗宽限制38/34/30%、9:14卡片视觉比例、56/64dp主窗优先/完整显示留白、48dp底部控制区与原三按钮矩形；近方形展开折叠屏24%和宽屏横向平板32%顶部深度上限。直立侧栏按有效显示比例居中堆叠，0..4活跃槽位保留原索引，允许稀疏工作组；主区按物理显示比例均匀拟合，隐藏侧栏仅计算1px保留区的主窗扩大几何，不改变任务生命周期。复用现有Box与StartPlan/LaunchRequest，按原槽位映射且拒绝遗漏/额外请求；实际任务画布仍由既有Pose.fit和真实后端独立决定，9:14只为历史卡型而非任务分辨率。非法/超窄/重叠布局拒绝，不偷偷减少窗口。未接入真实界面或运行时重布局。
+- 当前明确边界：仅TOP及直立左右侧栏；手机/非宽屏平板横屏旋转侧栏明确拒绝，后续先从冻结SidebarButtonLayout及旋转源码移植物理投影和原命中区。mainPriority目前仅TOP间距差异，历史完整主窗优先内容区域、重叠规则、侧栏隐藏恢复控件与动态重排、真实圆角、UI、精确旧显示效果仍未完整实现/验收。输入使用解析好的尺寸，实际WindowInsets及每设备配置来源仍待接入。不能将新几何测试当N5/Y700真机适配或真实任务承载。
+- 实际 CI [44620983088](https://github.com/x647368-maker/NeXtep/actions/runs/44620983088) 检查 head=74de6cf153fc4ea026bca3405649c3f397da0ca3，job135902246792 in_progress，android-actions/setup-android 正在执行，源码未完成编译，结论未出。已新增5项 Android instrumentation，计划总数29且保留原24和5态独立像素门禁；新增测试为 compactTopMatchesFrozenCardAndControlGeometry、uprightSidesRespectInsetsAndFocusRefitsWithoutTaskChanges、sparseSlotMappingUsesExistingCorePlanAndRealCanvasFit、invalidAndUnverifiedLayoutsFailWithoutChangingPolicy、topRailUsesFrozenFoldAndTabletDepthCaps。均未声称通过。无设备测试、APK、真实第三方任务、性能结论。
+- 下一轮先核对本次精确SHA CI最终结果与产物，若失败定位实际原因，修复后同一分支通过全部回归。通过后再进行一个有效工程节点：复用历史SidebarButtonLayout与旋转坐标契约，完善手机/折叠屏横屏旋转侧栏、其命中区、真实WindowInsets适配，验证四旋转及边界，不重写已有布局或擅自改变视觉。再推进真实Android界面与状态绑定。NativePort仍受Y/Z授权/死亡归还阻塞，无新证据不重新攻关；保留全部历史产品合同。普通GPT-6高推理，不需Work。
+
+---
+
 ## 第十四阶段 D · 唯一生产负责人正式接任、现行阻塞复核（2026-11-20）
 
 - 机主在本项目新聊天明确发出《永久无损接任与实际研发指令》，该聊天为唯一生产研发负责人；原生产聊天只读，独立审查不持有生产修改授权。以此记录和机主最新明确授权为准，非 GitHub 技术权限变更。继承 C 全文、永久制度、F01–F21/109项合同、路线A、签名与数据保护，不重开 V89/VD 路线。
