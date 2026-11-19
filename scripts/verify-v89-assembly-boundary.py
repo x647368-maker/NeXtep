@@ -196,10 +196,19 @@ def main():
         P+"systemui/StageEndpointContentMapping.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "isolated content endpoint trial delta")
-    equal(paths(content_candidate, "HEAD"), {
+    dest_read = "bd6a1d3957b75605e2c64682e780386092281d72"
+    subprocess.run(["git", "merge-base", "--is-ancestor", dest_read, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(content_candidate, dest_read), {
         GATE, P+"framework/TaskSurfaceCompat.kt", P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "verified demotion read only at final content check")
+    equal(paths(dest_read, "HEAD"), {
+        GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "conservative old/new common domain; no metadata-as-buffer expansion")
+    source("systemui/StageEndpointContentMapping.kt", "projected(common,sourceRoot)",
+           "projected(overlap(local,a.commonLocal)", "val end=a.terminalAvailable")
+    source("systemui/StageLiveSurfaceExchange.kt", "content_domain_gap", "buffer_latch_unobserved")
     source("framework/TaskSurfaceCompat.kt", "readSlotMirrorFrame(stamp,allowVerifiedDestination=false)",
            "readSlotMirrorFrame(stamp,allowVerifiedDestination=true)",
            "!allowVerifiedDestination || !verifiedDemotedSlot(stamp.taskId,slot,state)")

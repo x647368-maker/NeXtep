@@ -46,7 +46,9 @@ class StageEndpointContentMappingTest {
             assertEquals(1400f*target.scale,1400f*after.scale,.01f)
             assertTrue(terminal.crop.bottom<=2517)
             assertTrue(viewport.bottom-terminal.box.bottom>130f)
-            assertTrue(held.bottom>=2770)
+            // The metadata alone did not prove the expanded producer buffer.
+            // Never expose requested extra rows during the held stage.
+            assertTrue(held.bottom<=2517 && held.bottom>=2516)
             assertTrue(m.mapError(map(rawEnd.scale,rawEnd.x,rawEnd.y),target,short)>100f)
         }
     }
@@ -81,7 +83,11 @@ class StageEndpointContentMappingTest {
         assertEquals(0f,m.mapError(target,heldMap(h,changed),short),.001f)
         val partial=checkNotNull(m.held(a,short,changed))
         assertEquals(0f,m.mapError(target,heldMap(partial,changed),short),.001f)
-        assertTrue(partial.bottom<h.bottom)
+        assertEquals(partial,h) // larger requested crop is not a buffer receipt
+        val intermediate=checkNotNull(m.held(a,StageLiveSurfaceFlightGeometry.Crop(0,0,1272,2000),changed))
+        assertTrue(intermediate.bottom<h.bottom)
+        assertEquals(0f,m.mapError(target,heldMap(intermediate,changed),
+            StageLiveSurfaceFlightGeometry.Crop(0,0,1272,2000)),.001f)
         assertNull(m.held(a,StageLiveSurfaceFlightGeometry.Crop(2000,0,3000,1000),changed))
         assertNull(m.held(a,tall,map(Float.NaN,0f,0f)))
     }

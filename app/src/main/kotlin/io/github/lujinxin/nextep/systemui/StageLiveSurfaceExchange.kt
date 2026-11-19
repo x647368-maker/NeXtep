@@ -888,10 +888,23 @@ internal class StageLiveSurfaceExchange private constructor(
         }
         val incomingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart, finalIncoming.box)
         val outgoingGap = StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart, finalOutgoing.box)
+        // Keep the historical reveal policy and original motion route. This
+        // compatibility metric is not evidence of a continuous content map.
         endpointGap = maxOf(incomingGap, outgoingGap)
         trace("endpoint_gap_px up=${incomingGap.toInt()} down=${outgoingGap.toInt()}" +
             " up_fit=${finalIncoming.box.width.toInt()}x${finalIncoming.box.height.toInt()}" +
-            " down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}")
+            " down_fit=${finalOutgoing.box.width.toInt()}x${finalOutgoing.box.height.toInt()}" +
+            if(incomingAnchor!=null)" route_only" else "")
+        if(incomingAnchor!=null) {
+            val up=checkNotNull(incomingAnchor)
+            val down=checkNotNull(outgoingAnchor)
+            val diag=io.github.x647368maker.atomicworkbench.logging.StageSurfaceHandoffTrace
+            diag.detail(traceAttemptId,"content_domain_gap") {
+                val u=StageLiveSurfaceFlightGeometry.endpointGapPx(mainStart,up.terminal.box)
+                val d=StageLiveSurfaceFlightGeometry.endpointGapPx(slotStart,down.terminal.box)
+                "content_domain_gap up=$u down=$d common_crop_only buffer_latch_unobserved"
+            }
+        }
         startedAtMs = SystemClock.uptimeMillis()
         pairedRailPlan?.let {
             trace((if(coveredFlight)"paired_covered_adaptive" else "paired_contain_trial")+" bound="+it.bound+" trim="+it.trim)

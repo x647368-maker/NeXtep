@@ -28,6 +28,7 @@ internal object StageEndpointContentMapping {
         val terminal:MirrorFrame,
         val startRatio:Float,
         val endRatio:Float,
+        val terminalAvailable:Crop,
         val cx:Double,val cy:Double,
         val startDx:Double,val startDy:Double,
         val endDx:Double,val endDy:Double,
@@ -99,8 +100,14 @@ internal object StageEndpointContentMapping {
             !rawFirst.box.valid() || !rawEnd.box.valid() || rawFirst.scale<=0f || rawEnd.scale<=0f)return null
         // The certified route remains an upper bound on occupied pixels.
         // A shorter old buffer is allowed to leave a gap; never invent pixels.
-        val terminal=fit(intersection(rawEnd.box,viewport),sourceCrop,endMap) ?: return null
-        val ideal=fit(viewport,sourceCrop,endMap) ?: return null
+        // The local domain known on both sides is the conservative handoff
+        // domain. A TaskInfo/SurfaceFrame crop is not evidence that new pixels
+        // outside that domain have latched. Do not expose a newly requested
+        // extent on the held mirror merely because its metadata changed.
+        val commonRoot=projected(common,sourceRoot) ?: return null
+        val terminalAvailable=overlap(sourceCrop,commonRoot) ?: return null
+        val terminal=fit(intersection(rawEnd.box,viewport),terminalAvailable,endMap) ?: return null
+        val ideal=fit(viewport,terminalAvailable,endMap) ?: return null
         if(StageLiveSurfaceFlightGeometry.endpointGapPx(terminal.box,ideal.box)>2f)return null
         val cx=(sourceCrop.left.toDouble()+sourceCrop.right)*.5
         val cy=(sourceCrop.top.toDouble()+sourceCrop.bottom)*.5
@@ -108,7 +115,7 @@ internal object StageEndpointContentMapping {
         fun dy(map:ContentMap,raw:MirrorFrame)=(map.y+cy*map.scale-raw.y-cy*raw.scale)/raw.box.height
         val start=ContentMap(first.scale,first.x,first.y)
         return Anchor(sourceRoot,sourceCrop,common,targetLocal,target,viewport,first,terminal,
-            first.scale/rawFirst.scale,endMap.scale/rawEnd.scale,cx,cy,
+            first.scale/rawFirst.scale,endMap.scale/rawEnd.scale,terminalAvailable,cx,cy,
             dx(start,rawFirst),dy(start,rawFirst),dx(endMap,rawEnd),dy(endMap,rawEnd))
     }
 
@@ -120,13 +127,22 @@ internal object StageEndpointContentMapping {
         val z=raw.scale*(a.startRatio+(a.endRatio-a.startRatio)*u)
         val x=(raw.x+a.cx*(raw.scale-z)+raw.box.width*(a.startDx+(a.endDx-a.startDx)*u)).toFloat()
         val y=(raw.y+a.cy*(raw.scale-z)+raw.box.height*(a.startDy+(a.endDy-a.startDy)*u)).toFloat()
-        return fit(raw.box,a.sourceCrop,ContentMap(z,x,y))
+        val source=a.sourceCrop
+        val end=a.terminalAvailable
+        // Smooth the supported local domain toward the common terminal crop.
+        // This is internal crop evolution, not a change to route/clock.
+        fun edge(a:Int,b:Int)=a.toDouble()+(b.toDouble()-a)*u
+        val available=inward(edge(source.left,end.left),edge(source.top,end.top),
+            edge(source.right,end.right),edge(source.bottom,end.bottom)) ?: return null
+        return fit(raw.box,available,ContentMap(z,x,y))
     }
 
     fun held(a:Anchor,local:Crop,root:ContentMap):StageHeldEndpointPolicy.Fit? {
-        // Match the new writer's local crop and root together. A changed crop
-        // can expose more valid content, but cannot choose a different scale.
-        val available=projected(overlap(local,a.targetLocal) ?: return null,root) ?: return null
+        // Match the new writer's local crop and root together, but do not
+        // infer a newly latched buffer from its target crop. The common domain
+        // remains visible until the existing real-destination reveal. App
+        // reflow and the actual first real buffer remain device evidence gates.
+        val available=projected(overlap(local,a.commonLocal) ?: return null,root) ?: return null
         val map=inverseCompose(a.target,root) ?: return null
         val f=fit(a.viewport,available,map) ?: return null
         return StageHeldEndpointPolicy.Fit(f.crop.left,f.crop.top,f.crop.right,f.crop.bottom,f.scale,f.x,f.y)
