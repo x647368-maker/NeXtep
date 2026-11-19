@@ -1,6 +1,13 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第十阶段 B：自有 Android 图层事务和回滚（2026-11-19）
+- 用户手机暂不在身边，原签名 field APK 保持不变；继续独立 Android 引擎。实际 HEAD 6976442738ce30ee24969532612df0ef0d23f1b2（父 f58bfaeb7ba3fc94d2bf321fba8c1762e790c98b），同一 workbench2/core，6 个文件变更，仅 engine 与专属 CI，旧 app、取证工具、统一核心三个源文件均未改，新分支/PR 0。
+- OwnedSurfaceBatch 只管理自行创建的子 SurfaceControl，通过 API33+ 的公开 setBuffer/setCrop/setPosition/setScale/reparent/setVisibility 与 addTransactionCommittedListener，一笔事务变换多个自有图层，单一在途事务、显式回滚事务、detach commit 后释放自有句柄。无权限、线程、定时器、轮询、系统注入或真实任务接口；借用父图层和不可变 buffer 由调用方保有。commit 只证明 compositor 应用事务，不证明物理呈现、buffer 可复用、任务身份或输入/焦点。公开 SDK 缺少本路径的圆角设置，非零 radius 明确拒绝；不削弱产品圆角标准。参考 Android Developers SurfaceControl.Transaction 与 SurfaceView.getSurfaceControl 公共契约。
+- androidTest 独立 Activity 的 SurfaceView 下创建两块测试色彩 buffer，ImageReader 明确 GPU_SAMPLED_IMAGE+COMPOSER_OVERLAY；测试-only UiAutomation 截图读取实际合成像素，验证 initial/interrupted/rollback/swapped/detached 五个状态及四次 compositor commit，验证在途拒绝，保留原 3 Looper 回归。不是截图冒充真实任务，不用合成 task proof 作为准入。仅测试记录，不在运行产品中捕获屏幕。测试编译、运行及像素结论尚未验证。
+- CI [44545544874](https://github.com/x647368-maker/NeXtep/actions/runs/44545544874) job 135634988015 正在运行，本次仅触发 engine workflow；旧取证 CI 44543976251 completed/success，不需要重新交付旧取证 APK。
+- 接续：优先核实此次 CI、实际 AAR、XML 与 wb2-pixels.txt；根据具体失败根因修复同一分支，不提高假成功。仍需受控真机报告、合法原生宿主验证及真实任务承载/归还、焦点/输入和死亡恢复，当前不进入 OEM 调用。不得自有图层冒充原生任务，不降低圆角/画质/窗口数。后续统一 core 双任务错误回执回滚边界和真正授权 backend 是不同门禁，不能混淆。
+
 ## 第十阶段 A：统一核心实际 Android 工程接入（2026-11-19）
 - 用户明确说明 PMS110 暂不在身边；原签名 field 工具已交付，不等待机器而继续可执行的 Android 核心接入。唯一分支 workbench2/core HEAD f58bfaeb7ba3fc94d2bf321fba8c1762e790c98b，父 ac4c2712a93f3d0fb2840f4ef82990606f1a298a。12 个文件变更，旧 app、field 工具源代码、包名签名配置及历史分支不改，0 新研发分支/PR。
 - 独立 workbench2/engine Android library 接入 stage-7 current 三个原始源码，全部 SHA256SUMS.txt 原始校验通过，远程 Git blob 与接管包本地 git hash-object 逐一一致：UnifiedCore.kt 3fd3403c9d0d82c1d23f35827bf5ac47cc5a8885；MotionMath.kt 499d32e4d6cad80c1cd78904db48212819eaa1af；ReceiptBridge.kt d8439b4d04d18fb39e7dbac03908864302ce86a3。未重新造状态机或改动画数学；历史 87978 JVM 断言不是本轮 Android 或设备证据。
