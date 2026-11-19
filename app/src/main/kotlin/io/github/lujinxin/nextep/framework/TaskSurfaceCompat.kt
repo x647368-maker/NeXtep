@@ -487,8 +487,11 @@ object TaskSurfaceCompat {
             readSlotMirrorFrame(stamp,allowVerifiedDestination=true)==null ||
             slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state)return false
         slot.completedMirrorFit=slot.confirmedDemotion
-        return completedSlotMirrorSource(stamp.taskId,slot,state) &&
+        val retained=completedSlotMirrorSource(stamp.taskId,slot,state) &&
             slotSurfaces[stamp.taskId]===slot && observedStates[stamp.taskId]===state
+        // A raced observation must not leave a reusable permission behind.
+        if(!retained)slot.completedMirrorFit=null
+        return retained
     }
 
     // A real demotion's reservation deliberately outlives the visual handoff.

@@ -214,10 +214,16 @@ def main():
         GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "bounded destination evidence retry only")
-    equal(paths(read_retry, "HEAD"), {
+    completed_demotion = "62ffa0db7e1633939c4b8a0e8a9c16ab5d707bbc"
+    subprocess.run(["git", "merge-base", "--is-ancestor", completed_demotion, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(read_retry, completed_demotion), {
         GATE, P+"framework/TaskSurfaceCompat.kt", P+"framework/ObservedDemotionFitPolicy.kt",
         P+"systemui/StageLiveSurfaceExchange.kt", T+"framework/ObservedDemotionFitPolicyTest.kt",
     }, "read-only completed demotion mirror admission")
+    equal(paths(completed_demotion, "HEAD"), {
+        GATE, P+"framework/TaskSurfaceCompat.kt",
+    }, "revoke completion marker on failed final recheck")
+    source("framework/TaskSurfaceCompat.kt", "if(!retained)slot.completedMirrorFit=null")
     source("framework/ObservedDemotionFitPolicy.kt", "completedFit===currentFit",
            "noConflictingPresentation && noHeldWriter")
     source("framework/TaskSurfaceCompat.kt", "slot.completedMirrorFit=slot.confirmedDemotion",
