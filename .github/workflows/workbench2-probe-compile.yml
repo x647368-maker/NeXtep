@@ -1,0 +1,44 @@
+name: Workbench 2 native probe compile only
+on:
+  push:
+    branches: ['workbench2/core']
+permissions:
+  contents: read
+concurrency:
+  group: workbench2-probe-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compile-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - run: bash gradlew -p workbench2/probe assembleDebug --no-daemon --console=plain --stacktrace
+      - name: Verify both probe classes in the compiled AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          aar=$(find workbench2/probe/build/outputs/aar -name '*.aar' -print -quit)
+          test -n "$aar"
+          unzip -p "$aar" classes.jar > "$RUNNER_TEMP/probe-classes.jar"
+          jar tf "$RUNNER_TEMP/probe-classes.jar" > "$RUNNER_TEMP/probe-classes.txt"
+          grep -Fx 'workbench2/nativebridge/AndroidHostEvidence.class' "$RUNNER_TEMP/probe-classes.txt"
+          grep -Fx 'workbench2/nativebridge/NativeSymbolProbe.class' "$RUNNER_TEMP/probe-classes.txt"
+          printf '%s\n' "$GITHUB_SHA" > workbench2/probe/build/outputs/aar/checkout-sha.txt
+          sha256sum "$aar" > workbench2/probe/build/outputs/aar/aar.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-probe-compile-only
+          path: workbench2/probe/build/outputs/aar/
+          if-no-files-found: error

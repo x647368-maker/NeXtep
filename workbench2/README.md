@@ -1,0 +1,7 @@
+# Atomic Workbench 2.0 — compile-only checkpoint
+
+Single development branch: workbench2/core. Historical V89 work is frozen, parent reference 305f595220a6c193202d6acbdb2ac20f6e250df4. Preserve main, historical branches and PRs, original package, effective signing certificate, settings and workgroups, attribution and Apache-2.0 license. Original project NeXtep / Jensen Lu; secondary development ZMW小武 × GPT.
+
+This isolated Android library is based on the verified seventh-stage handoff, not a production engine or installable APK. The two source files are read-only metadata probes. No OEM invocation, task launch, hook registration, device deployment, signing key or release. Existing app and workflows are unchanged. CI is compile-only; neither symbols nor compilation prove native authorization, rendering, input or return. Production admission remains false. Historical unified reference core stays out of this compile target; do not duplicate it.
+
+Next: verify the Android AAR and exact commit, then review an authorized host diagnostic entry and collect one device metadata report. Prove controlled native single-task return and input before dual/five-task experiments. Preserve all frozen UX and measure real performance before integration. No background polling, screenshot substitution or degraded quality. No public APK release without original signing verification and owner device acceptance.
