@@ -1,5 +1,7 @@
 # 台前调度 · Atomic Workbench — 跨窗口交接硬规则
 
+接管本项目时，先读[权威研发交接](https://github.com/x647368-maker/NeXtep/blob/governance/workbench/docs/WORKBENCH_HANDOFF.md)及同分支 AGENTS.md，复查实际开放 PR、冻结基线、治理登记和设备证据，再开始工作。
+
 > 此文档由项目主窗口根据用户 2026-11-11 的真实安卓截图反馈写入。无功能改动，仅交付流程要求。仓库中多个开发分支/备用窗口都应主动核对本规则。
 
 ## P0：APK 直链不可失效（Library file not found）
