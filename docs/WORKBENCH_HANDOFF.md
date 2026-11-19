@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 T：NativePort 接入准入判定与替代架构决策门（2026-11-20）
+
+- 已重新打开机主两份实际档案而非仅引用历史摘要，framework ZIP SHA256 0b6a3eac17c8428017e0a9e46eefafa22b14de13cabb5e70c835f87636e85203、manifest 两定义命中、production_admitted=false、oem_method_calls=0；宿主 base.apk SHA256 d5d4bc23890d8473f670dc3ee528fe5f0a8f6f40ebd29b7324968dd5c8d096e7，实测 manifest 全9个 exported 组件均有保护；宿主 granted=true、独立 collector granted=false 的 MANAGE_ACTIVITY_TASKS/MONITOR_INPUT（raw 33554434）、safe.WINDOW（raw18）等记录明确存在。不能推定生产包的全部当前权限，也不能从此证明所有 OEM 接入方式不可能。S 已查明实际客户端与 Binder/事务边界，服务端权控和死亡归还契约仍未获得。不重复静态符号分析或导出。
+- 实际 HEAD ab62e52ee7daca435c8011aa7a6fcde269b45b30。重读 engine ReceiptBridge.kt、HostRuntimeEntry.java：前者要求每个 effect 的独立 NativeSnapshot/host身份/真实观察（尤其 ACQUIRE/RELEASE、VERIFY_VISUAL/VERIFY_FOCUS），后者仅 PMS110 精确匹配的元数据读取，明确 metadata_only=true、oem_calls=0、hooks=0、authorization/return/input UNKNOWN。不存在已准入的 NativePort 实现；Vector 可加载不证明系统认可任务控制或异常归还。维持准入门，不添加伪回执、猜测调用、借特权身份或绕过权限。机主此前授权限定只读导出，本轮请求具备合法可靠条件才实际实施，未满足故无源码/CI/APK改动。
+- 已核对被冻结旧版 PR175 固定 SHA b625f22558c1d4127101f86e6c4f64a7b263d72f 的 VirtualDisplayFactory.kt（50行，通过 DisplayManager.createVirtualDisplay、现有请求刷新率60f）、VirtualDisplaySlot.kt（370行，TextureView/Surface 生命周期与亮灭屏连接）、VirtualDisplayFlagsCompat.kt（55行，含 TRUSTED、OWN_FOCUS 等隐藏 flags 与普通 fallback）。这证明旧载体实际存在，但不能直接断言其全部路径无需系统权限、能通过新核心门禁或已具备低功耗无损交换。不能把重新使用 VD 冒充原生任务接入或自行恢复 V89 补丁路线、降低刷新率。若机主改变禁止 VD 规则，可考虑全新控制面 + 经审查验证的合法旧载体，先在同条件单/双任务做实际性能与安全对照、未改善则停止；这不是承诺达到原生性能，尚未批准且尚未实施。
+- Android 官方 Activity embedding 文档 https://developer.android.com/develop/ui/views/layout/activity-embedding 明确跨 app 嵌入需目标活动 opt-in（证书授权/allowUntrustedActivityEmbedding），故可做合作应用真实嵌入但不能保证任意抖音/小红书一大四小；不建议用自有测试 app 的成功充当产品突破。官方 DisplayManager API https://developer.android.com/reference/android/hardware/display/DisplayManager 亦明确特定虚拟屏 flags 受权限约束。正常系统分屏旧实测存在 Activity/Surface 重建，不能替代冻结产品。以上是路径边界核查，不是新增竞品工作。
+- 决策：原生任务接入当前 NO-GO（缺受支持/已授权的宿主会话及独立归还证据），不是全平台物理不可实现结论。原生路线只在获得实际支持/授权的宿主集成方式时重开，不再无限提取系统文件或新增诊断 APK。可选方向 A 保持全部严格目标与当前限制，保留已取得成果、暂停原生实施，等待确切合法接入条件；B 需机主明确批准重大架构方向调整，保留全部产品冻结体验、突破性重建控制面并仅使用经权限及稳定性核验的旧载体，先证实单/双任务与性能基线改善，不能承诺原生等效；C 公开 Activity embedding 仅合作应用，不能满足任意第三方应用产品目标，不建议。当前建议保留旧版可用产品及全部2.0成果，机主选择 A/B，不再让其反复操作取证或发送继续。生产 branch 与历史冻结不变，未新增 PR/分支；下一轮 GPT-6 高推理，无需 Work。
+
+---
+
 ## 第十三阶段 S：真实目标框架导出成功及客户端实现定向核查（2026-11-20）
 
 - 机主实际上传 PMS110-flexible-framework-code.zip（12311121 bytes，SHA256 0b6a3eac17c8428017e0a9e46eefafa22b14de13cabb5e70c835f87636e85203，ZIP CRC 全通过）。manifest schema1 PUBLIC_FRAMEWORK_DEFINITIONS_ONLY，source_sha ab62e52ee7daca435c8011aa7a6fcde269b45b30，PMS110/SDK37/固件 fingerprint 精确吻合 P/Q，scanned=candidates=301, skipped=0,no_dex=0,scan_limited=false,both_definitions_found=true,production_admitted=false,oem_method_calls=0。仅命中 /system/framework/oplus-framework.jar，12307995 bytes，SHA256 76cfdaeedebbe8249090d563532a49abd5b2a16149726ca2af6ef31a8b437450，与 manifest 一致。原始框架仅用户附件/隔离分析环境，严禁上传 OEM JAR 或反编译源码至 GitHub。此前框架客户端定义缺失已解除，V4 实机文件导出确实成功，不等于嵌入成功。
