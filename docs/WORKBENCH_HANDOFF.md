@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 H：获批独立单宿主只读运行模块，实际工程已提交（2026-11-20）
+- 机主本轮明确授权：「批准台前调度2.0进行隔离的ColorOS多窗口宿主最小化只读运行验证，保留全部安全门禁，不绕过系统权限，不修改系统分区，不扩大其他作用域。继续独立研发。」该授权仅允许以下独立诊断身份和单宿主观察，不允许生产任务调用、扩大权限、私有字段值访问、改系统/签名/任务归属，亦非 OEM 授权。
+- 唯一研发分支 workbench2/core 已使用非强制、预期父 SHA 更新到 **51295386902709cc3be26dc72be8f0ad9a338bed**（父 **767940256c93be9696c3e36332b58c3d87503182**，tree aa080a1899d52b379d7ccfac088dd71730e90573），远端读取确认。精确11个新文件（workbench2/host-runtime 内10个及独立 .github/workflows/workbench2-host-runtime.yml），无任何旧文件改动；独立引擎已验收基线仍为 76794025、18项 Android + 5项像素，未重复 CI。未创建分支或 PR，不动 main、旧工作流、历史 APP、原签名、个人数据及冻结功能。
+- 实际模块以独立 applicationId io.github.x647368maker.atomicworkbench.hostruntime，versionCode=1，minSdk35/target36，libxposed API 102 compileOnly；模块清单唯一 scope=com.oplus.pscanvas，staticScope=true，exceptionMode=protective，autoHotReload=false，唯一入口 HostRuntimeEntry；无 Activity、Service、Receiver、Provider、Android权限或 shared UID。默认安装不代表用户启用；本次仅隔离测试用途。依据 libxposed API102 官方 PackageReadyParam 文档使用 classloader ready 回调，不注册任何 Hook，不实施受保护方法调用，不写宿主文件、不触发重启、不读取任务、个人数据或私有字段值；仅一次有限工作线程对固定两种类型读取允许列表 public 方法签名，Class.forName(...,false,loader)，不初始化、不 invoke、不 setAccessible；每类型最多40条，输出模块日志，错误保留未决。不能保证 OEM 类加载没有内部开销或始终能返回，真实宿主影响仍待验证。
+- 严格入场条件：first package、包和进程相同且为目标多窗口宿主、非 system_server、系统/更新系统应用、UID匹配、PMS110、SDK37、精确历史固件 fingerprint。未在该回调核实宿主版本和证书，日志明确 host_signer_runtime_verified=false，授权/输入/归还 UNKNOWN、production_admitted=false。任何不匹配均不采集；运行环境 API102 兼容性仍未验证。不得把仅有 public 方法元数据等同厂商权限或调用可行性。
+- 关键源 blob HostMetadata.java 965d118022912cb88c8940b2b68dba42dccc534d、HostRuntimeEntry.java 7b55d3410c18f981d3f6c3b577aad0467b302672；三项实际 Android instrumentation 测试 HostMetadataTest.java 51edde0f173778a8e94f30c4a2b1ba767c36bd20，检查精确身份、公开元数据不初始化/调用 fixture、缺失类不伪造。独立工作流 blob e21ada99661be6abb0f105b87f7c93ccc4926e5f；实际 release APK 检查零权限/组件、独立身份、唯一 Xposed scope/entry、无热重载、API不打包；原证书 SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe 严格签名门禁、缺签名材料仅归档未签名输入，不发 release。
+- [独立 CI 44580486824](https://github.com/x647368-maker/NeXtep/actions/runs/44580486824) 已实际找到，head_sha与提交一致，当前 in_progress。尚未取得实际编译、测试、签名或真机结果，未交付 APK。下次先检查此次 run conclusion/steps/artifacts，失败定位具体原因，成功下载 XML、实际 APK、manifest、scope/entry、证书和哈希核验；仅在原签名核验通过后提供独立私测包。机主须保持历史/同行模块不同时启用，手动确认单 scope 和可撤销性，若需要进程重新加载须先安全退出当前工作台，不自动重启；通过 Vector 模块日志获取 BEGIN/END 或拒绝信息。未适配 API102 则先核实实际 API 能力，不擅自绕过。之后仅基于目标宿主实测元数据收束接口证据，不新增外围核心测试，不冒充原生桥接完成。完整授权入口、真实任务挂载/触控/归还及独立死亡恢复均仍未验证。
+
+---
+
+
 ## 第十二阶段 G：明确局部宿主验证边界（2026-11-20）
 - 依据公开 WindowDeck [README 固定提交](https://github.com/xitc/windowdeck/blob/2e3a14ea0f72b62fef79a130c597a8711fc47b16/README.md)，作者明确声明复用 ColorOS FlexibleTaskView，限定模块标记的容器启动接入，不改系统分区、签名校验或 system_server。README 同时明确私有接口和进程死亡恢复等限制。公开仓库未见独立许可文件，不能认定已获源码复用授权。该资料为作者描述，不是我方真机验收，不再把厂商开发者平台视为唯一渠道。
 - 本轮独立复核机主提供的同行安装包完整性与 Manifest 组件边界；未找到有文档支持、可直接作为我方原生任务会话后端的跨模块契约。私有构建细节仅存私人证据文件，不上传公开仓库、不调用其组件、不将第三方模块作为生产运行依赖。
