@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 K：正常系统多窗自有任务观察工程提交（2026-11-20）
+
+- 机主已在当前唯一生产研发窗口明确批准 J 的有限自有测试任务观察及必要的合法单 pscanvas 局部监听；不授权主动控制受保护任务、改变权限或扩大作用域。实施先从无注入、用户主动使用系统正常多窗入口的自有 Activity 开始，未找到可合法关联的宿主事件契约前不注册宿主 Hook。无需重新启用 R2、旧生产模块或向厂商/竞品等待回复。
+- 实际原子提交 9d385e9d2e8da1e2c90a0b737e45880f887df2fe，父 67d71eb8a651eff06aa9b8e6927b27fe31a249ba；已非强制快进推送唯一 workbench2/core，远端 HEAD 及 compare 复核成功。仅6文件，新增284行、删除7行：独立 field 工程新 NormalWindowSessionActivity.kt（blob c38014abb96576e9bcccb0766a3214b8204d8873）、其两项 Android instrumentation 测试（88507b1e4bbffd216f43de2b635504e4cca44257）、EvidenceActivity 增手动入口（2129cb4ce281610ce72f777c2b69e67f46c8029c）、Manifest 新增非 exported/resizable fixture（59fee4c89f4e85aca006f8705e0dbc3e0dd6539d）、版本升为 3/2.0-normal-session-1（6a2f573b23de0f2975f17995d28c9ca05cad7daf）、原 probe workflow 更新准确测试清单与组件门禁（91e648cf929b0981baabd86cd6bc8ab5d81aea7d）。不增加权限、外部入口、共享 UID、服务、接收器、网络、模块、后台线程、定时轮询或第三方输入注入。冻结 engine、host-runtime、V89、main 完全未改；19项核心 Android 测试和5态像素门禁不重复执行。
+- 实际 fixture 使用 Activity 真正生命周期及多窗回调、taskId/displayId、焦点、触控 UP 分发、点击计数、自有 SurfaceView 生命周期、尺寸；随机 session marker 与点击状态及有界事件通过 savedInstanceState 续接，最多64条、记录溢出量，区分 Activity instance；报告由用户手动复制，无私人输入内容采集。SurfaceView 仅观察本页拥有的 surface，不是 OEM task leash，不绘制或抓取第三方像素。记录可证明本页事件送达与状态表现，不证明物理输入来源、系统组织器身份、同一 Binder token、真实第三方任务嵌入、异常死亡归还或显示性能；销毁后未保存的尾部事件可能丢失，滚动日志溢出不可视为完整轨迹。报告 host_observed=false、native_embedding_verified=null、native_return_verified=null、production_admitted=false；无伪造回执。现阶段未进入真正 NativePort 后端。
+- 真实 CI 44597034341（job 135817990741）已由上述提交触发，head_sha 匹配；最后核实 in_progress，JDK/SDK 安装成功，probe assembleDebug 运行中，field 编译及新增测试尚未执行完成。链接 https://github.com/x647368-maker/NeXtep/actions/runs/44597034341 。维持原3+4项探针/field测试及新增2项，共9项；必须实际核验 XML 名单、结果、manifest、APK SHA/签名后再交付。新测试包含真实 Android Activity 重建与 bounded report，但 performClick 是 instrumentation UI test，不能算真机物理触控。无新 APK 交付、无真机结果、无新增分支/PR。CI 签名 secrets 历史缺失，若仍缺，按原证书核验的旧离线签名流程且实际可取得密钥才交付，不使用替代签名。
+- 下一步唯一任务：读取本次实际 CI 状态，若失败按首个真实错误最小修复，禁止重跑核心；若成功核验两项新测试及旧门禁、产物、原签名，交付独立 hostevidence 升级，仅机主正常应用操作：打开正常多窗验证页，点击计数，从系统最近任务/侧栏正常进入浮窗或分屏，恢复全屏后再次点击并复制报告。若该固件无正常入口，记录不支持，不诱导调用受保护组件。收取实际报告后才判断是否能关联具体合法宿主观测或替代路径，禁止连续发无信息价值的诊断包；若无法确认合法任务会话或独立死亡归还，明确 NativePort 未准入，不盲目添加 Hook。当前 GPT-6 高推理继续，暂不启用工作模式。
+
+---
+
 ## 第十三阶段 J：正常系统入口验证前的具体授权决策点（2026-11-20）
 
 - 继承 I，不复查竞品源码或冻结 CI。定向实读现有 HostMetadata.java blob 965d118022912cb88c8940b2b68dba42dccc534d、EvidenceActivity.kt 94c723e198fb1ac2a3634f54c372cacc5dfbfcc9、field Manifest c78d03f6177ca99a582606ab2a24c691c976e83d（均为 67d71eb8 冻结树）。R2 的方法白名单只采 init/setListener/resize/release 元数据，不观察真实生命周期。旧独立 field Activity 无任务控制，且报告仅内存保存、configuration 重建时可能丢失，不能将现有页面内容当作可信同任务归还见证。第11C/D 的目标 OEM manifest 9 个 exported 组件均受权限保护，collector 未获 safe.WINDOW；生产包授权状态仍未知。Library 定向检索未返回原始宿主 ZIP，未重复要求机主导出，沿用既有取证记录。没有新的目标机连接或实测，不能声称发现了可调用后端。
