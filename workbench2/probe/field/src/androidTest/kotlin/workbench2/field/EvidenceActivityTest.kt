@@ -20,6 +20,7 @@ class EvidenceActivityTest {
                 assertEquals("尚未取证", activity.findViewById<TextView>(R.id.evidence_report).text.toString())
                 assertFalse(activity.findViewById<Button>(R.id.copy_evidence).isEnabled)
                 assertFalse(activity.findViewById<Button>(R.id.share_evidence).isEnabled)
+                assertFalse(activity.findViewById<Button>(R.id.export_host_code).isEnabled)
                 assertTrue(activity.findViewById<Button>(R.id.collect_evidence).performClick())
             }
             val deadline = SystemClock.elapsedRealtime() + 12000L
@@ -44,6 +45,7 @@ class EvidenceActivityTest {
                 assertTrue(activity.findViewById<Button>(R.id.copy_evidence).isEnabled)
                 assertTrue(activity.findViewById<Button>(R.id.share_evidence).isEnabled)
                 assertTrue(activity.findViewById<Button>(R.id.collect_evidence).isEnabled)
+                assertFalse(activity.findViewById<Button>(R.id.export_host_code).isEnabled)
             }
         } finally {
             instr.runOnMainSync { activity.finish() }
