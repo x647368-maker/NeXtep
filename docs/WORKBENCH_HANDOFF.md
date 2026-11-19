@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 M：PMS110 正常系统多窗真实设备观察通过（2026-11-20）
+
+- 机主提交 v3 JSON 真机报告，schema=1/kind=OWN_NORMAL_WINDOW_OBSERVATION/source_sha=9d385e9d2e8da1e2c90a0b737e45880f887df2fe，PMS110/SDK37/fingerprint 与 R2 匹配。全程 task_id=1135、display_id=0、discarded_events=0；三个 Activity 实例（一次 CREATE、两次 RECREATE）。计数0→1→2→3。进入多窗 RECREATE 3975588ms，363×371dp、clicks=1；自有 Surface 创建3975610ms、焦点 true 3975626ms、TOUCH_UP consumed=true 3986958ms、CLICK=2 3986961ms。退出 PAUSE 3994065ms、Surface destroyed 3994070ms、SAVE_STATE 3994071ms、新实例 RECREATE 3994087ms，363×792dp、clicks=2；Surface created 3994098ms、focus true 3994139ms、TOUCH_UP 3995729ms、CLICK=3 3995733ms；最终 COPY 4007130ms。退出 SAVE_STATE→RECREATE 16ms、RECREATE→focus 52ms 仅回调间隔，不是转场或呈现时延。原始报告留在对话，不公开 session UUID。报告未记录系统入口名称。
+- 正向证据：同一数值任务 ID 在正常多窗会话内连续、配置变化、测试状态恢复、自有触控接收、焦点/自有 Surface 恢复。反证：Activity 和 Surface 重建；taskId 不变不能证明第三方内容保留、稳定逻辑画布、同一 Binder token 或无重建交换。自有计数经 savedInstanceState 恢复，不能推及抖音/小红书。不测性能。host_observed=false、oem_method_calls=0、native_embedding_verified=null、native_return_verified=null、production_admitted=false 不变；正常全屏恢复不是 OEM 容器或宿主死亡归还。
+- 下一步先确认实际系统入口（分屏/浮窗/其他），机主仅需反馈此前使用的名称，无需重测；普通分屏不冒充 pscanvas。根据具体入口判断是否存在系统自身启动的合法 pscanvas 会话及可关联事件；若无证据，明确 NativePort 未准入，不重复元数据、盲加 Hook、身份替换、主动调用受保护接口或扩域。现有有限自有任务观察授权保持，不授权主动系统任务控制。无新代码、CI、APK、分支或 PR；冻结核心19+5和独立field9项不重跑。沿用工程 SHA 9d385e9d2e8da1e2c90a0b737e45880f887df2fe。当前窗口 GPT-6 高推理，不启用工作模式。
+
+---
+
 ## 第十三阶段 L：9项Android运行门禁通过、正常系统多窗验证包原签名交付（2026-11-20）
 
 - 工程 SHA 9d385e9d2e8da1e2c90a0b737e45880f887df2fe，CI 44597034341 job 135817990741 实际 completed/success。下载并独立校验3份 artifact：runtime 14565863644 SHA256 f4661ec478a518d7f1bd712bc9fd9b1d452deb9c5aca7a00b837495606201b00；field 14565828619 SHA256 27df50b76ca007a1b782a099dbf09f693bcfd9bbfa4f01c8ba1d73f1238b6f9e；offline-input 14565743777 SHA256 f794eff408e129203b7eccaf9371dd31ff01478db701b6e597375be69d30cc09。CRC、内置SHA256SUMS、checkout-sha、APK scope 全核验。Android15 emulator fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。独立解析真实XML，3+6=9项全部通过、0失败/跳过：ordinaryProcessCannotEnterHostProbe、stockAndroidPackageManagerDoesNotAssertHostAvailability、bothCollectorsRejectMainThread、manualReadOnlyReportOnStockDevice、stockHostExportRefusesBeforeOpeningDocument、archiveContainsExactPublicFixtureCodeAndHash、incompleteArchiveCannotContainManifest、normalSessionRecordsOwnTaskAndBoundedEvents、normalSessionRecreationPreservesMarker。与冻结核心19+5门禁不同，不代表OEM真实任务或设备性能验收。
