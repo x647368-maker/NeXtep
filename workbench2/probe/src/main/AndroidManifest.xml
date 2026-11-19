@@ -1,1 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Narrow visibility only, not a permission or host entry. -->
+    <queries><package android:name="com.oplus.pscanvas" /></queries>
+</manifest>

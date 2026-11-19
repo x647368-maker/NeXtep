@@ -1,4 +1,4 @@
-name: Workbench 2 native probe compile only
+name: Workbench 2 native probe compile and runtime boundary
 on:
   push:
     branches: ['workbench2/core']
@@ -9,8 +9,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   compile-probe:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,7 +25,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
       - run: bash gradlew -p workbench2/probe assembleDebug --no-daemon --console=plain --stacktrace
-      - name: Verify both probe classes in the compiled AAR
+      - name: Verify three probe classes in the compiled AAR
         shell: bash
         run: |
           set -euo pipefail
@@ -35,6 +35,7 @@ jobs:
           jar tf "$RUNNER_TEMP/probe-classes.jar" > "$RUNNER_TEMP/probe-classes.txt"
           grep -Fx 'workbench2/nativebridge/AndroidHostEvidence.class' "$RUNNER_TEMP/probe-classes.txt"
           grep -Fx 'workbench2/nativebridge/NativeSymbolProbe.class' "$RUNNER_TEMP/probe-classes.txt"
+          grep -Fx 'workbench2/nativebridge/AndroidHostInventory.class' "$RUNNER_TEMP/probe-classes.txt"
           printf '%s\n' "$GITHUB_SHA" > workbench2/probe/build/outputs/aar/checkout-sha.txt
           sha256sum "$aar" > workbench2/probe/build/outputs/aar/aar.sha256
       - uses: actions/upload-artifact@v4
@@ -42,3 +43,49 @@ jobs:
           name: workbench2-probe-compile-only
           path: workbench2/probe/build/outputs/aar/
           if-no-files-found: error
+
+      - name: Provision stock Android 15 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platform-tools' emulator 'system-images;android-35;google_apis;x86_64'
+          sudo chmod 666 /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-android-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-boundary --path "$ANDROID_AVD_HOME/wb2-boundary.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_7
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/wb2-boundary.avd" > "$ANDROID_AVD_HOME/wb2-boundary.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd wb2-boundary -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 2048 -cores 2 -gpu swiftshader_indirect > "$RUNNER_TEMP/wb2-emulator.log" 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb shell getprop ro.build.fingerprint > "$RUNNER_TEMP/wb2-emulator-fingerprint.txt"
+      - name: Execute Android runtime boundary tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash gradlew -p workbench2/probe connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          p = pathlib.Path('workbench2/probe/build/outputs/androidTest-results/connected')
+          names = set()
+          required = {'ordinaryProcessCannotEnterHostProbe', 'stockAndroidPackageManagerDoesNotAssertHostAvailability', 'bothCollectorsRejectMainThread'}
+          for f in p.rglob('TEST-*.xml'):
+              for t in ET.parse(f).iter('testcase'):
+                  if t.get('name') in required:
+                      assert not any(t.find(s) is not None for s in ('failure','error','skipped')), (f,t.get('name'))
+                      names.add(t.get('name'))
+          assert names == required, (names, required)
+          print('Verified all three Android instrumentation cases:', sorted(names))
+          PY
+      - name: Preserve runtime evidence without APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-api35-runtime-boundary
+          path: |
+            workbench2/probe/build/outputs/androidTest-results/connected/
+            workbench2/probe/build/reports/androidTests/connected/
+            ${{ runner.temp }}/wb2-emulator-fingerprint.txt
+            ${{ runner.temp }}/wb2-emulator.log
+          if-no-files-found: warn
