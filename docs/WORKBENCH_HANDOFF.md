@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 L：真机加载成功、定位 Vector 模块日志筛选并修复（2026-11-20）
+- 机主真机截图（02:03–02:05，四组反馈）确认独立 APK 安装、API102 模块被 Vector 识别并启用，唯一固定 scope com.oplus.pscanvas；旧台前调度与同行模块未见启用。02:04 正常系统分屏后，日志 02:04:45.347 Loading module io.github.x647368maker.atomicworkbench.hostruntime；02:04:45.349 Loading class workbench2.hostruntime.HostRuntimeEntry；同毫秒 Loaded module ... successfully。仅能证明框架加载入口，不能证明采集回调、worker、OEM 接口或真实任务承载成功。无 WB2HostRuntime 记录；不假定是用户操作问题。未公开上传用户截图或其他模块信息。
+- 实读 Vector 公开源码 master 固定提交 6f6b976e3315c158d501f743c3c609e80cae7ec8：daemon/src/main/jni/logcat.cpp 第39-42、177-193行 kModuleTags 只收录 VectorContext、VectorLegacyBridge、VectorModuleManager、XSharedPreferences；旧自定义 tag WB2HostRuntime 不会进入这个版本的模块日志。xposed/src/main/kotlin/org/matrix/vector/impl/VectorContext.kt 的 log(priority,tag,msg,tr) 在 tag=null 时使用 VectorContext；VectorModuleManager.kt 先调用 onModuleLoaded 再写 Loaded module success（回调失败也可能写 success），VectorLifecycleManager.kt 分别派发 PackageLoaded/Ready。此为与截图高度一致的具体可复现源码级日志过滤缺陷，不代表已确定机主安装框架的精确版本或回调实际执行。来源 https://github.com/JingMatrix/Vector/blob/6f6b976e3315c158d501f743c3c609e80cae7ec8/daemon/src/main/jni/logcat.cpp 及对应 VectorContext.kt。
+- 实际修复 HEAD **63ece8c9462eebfb0e7fad63272bf102a70e8ae2**（父 db5d3df49ad6078fd7a792393993b778e02ddd06；tree bcfe0b6fc50e9e8eca50610868bdedef57ddb1dc），预期父 SHA 非强制更新、远端回读一致。仅3个文件：HostRuntimeEntry.java blob 9321b3dd85d33c4f11c6da78398cc5b8b17c8b02；独立 build.gradle.kts blob 1384732f20fcdf0156fd8f2bdfc74fa585160d87；独立 CI blob a7a1f136c7e24027a91edb8a45c682859ffeb2fd。evidence() 调用框架 log(level,null,"WB2HostRuntime "+message)，新增 LOADED/PACKAGE_LOADED/PACKAGE_READY 阶段标记及 REFUSED_PROCESS/REFUSED_IDENTITY 布尔原因，非目标包不采集；只新增诊断，不放宽 HostMetadata.matches，不改反射范围、不调用OEM方法、不新增 Hook、权限、进程或线程。独立包版本2（2.0-host-runtime-2）覆盖旧独立取证包，继续原证书；不影响正式APP。原三项Android门禁、DEX定义白名单、单scope及原签名检查完整保留。
+- 新 CI：44584407262 in_progress https://github.com/x647368-maker/NeXtep/actions/runs/44584407262。当前未验收新版，不签发未经验证的 APK。下次按 SHA 查 CI 最终状态及产物，成功后验证实际 XML、DEX、manifest/scope/version、SHA、原签名，再私测覆盖验证。复用本轮用户已提供的签名材料（不再要求发送，前提当前隔离环境可访问）；不保留密钥工作副本、不上传密钥。仅在新版交付之后依框架正常加载取证，不要求现在反复重启或扩大 scope。如果日志 LOADED/PACKAGE_READY 到达且元数据可见仍不能当成授权或任务归还证明。真实原生任务桥接尚未实现。原自主核心 76794025 的18项Android/5态像素、旧独立包3项及原签名验收保留，不重复纯框架研究。没有新分支或PR，不动正式APP、冻结功能、main。
+
+---
+
+
 ## 第十二阶段 K：独立宿主只读验证包原签名交付（2026-11-20）
 - 机主本轮提供既有有效签名材料。隔离环境解锁并核对唯一证书 SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe，与历史有效签名精确一致。未将密钥、密码或签名材料上传 GitHub；临时签名工作目录已自动清理，用户原文件不改。CI Secrets 仍缺，不宣称永久修复。
 - 使用验收通过 CI 44581543773 的 artifact 14560565177，实际复核整个归档 SHA256 6291a69e0aa515a89a6a8b35bffb1de1bb2de9de5d558c97dd9eb8ff70b6a7ad、ZIP CRC、SHA256SUMS 5/5、checkout SHA db5d3df49ad6078fd7a792393993b778e02ddd06；未签名 APK SHA256 f4a65d332dc505327edb936bb3a3849fb488289dcb06f3dd1211f4dd05e252b2。使用该归档官方 SDK apksigner.jar 离线签名，完整 verify --verbose --print-certs 返回 Verifies、v3=true、唯一 signer 指纹完全一致。签前签后非签名 ZIP payload 8/8 哈希完全一致、CRC 通过；唯一 scope com.oplus.pscanvas。
