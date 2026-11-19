@@ -1,6 +1,12 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第九阶段 B 验收及原签名离线交付恢复（2026-11-19）
+- 上轮 CI [44539030424 attempt 2](https://github.com/x647368-maker/NeXtep/actions/runs/44539030424) 最终 completed/success，源码 SHA b28173b9269d8522282126c41781a45554b43b43。独立下载 artifact 14537253019（SHA256 edf912c5eb5b3cbd5bc5faacb4f2347ac1337371aa384608a3b34e113d2ead77）与 14538330840（SHA256 8ecb4ece81b029aaab9cbee6768afd6e14a0a360641f750722db002208bd11f6），本地 CRC 和摘要一致；XML 4/4，failures/errors/skipped=0，真实 stock API35 的三项拒绝态和 manualReadOnlyReportOnStockDevice 全通过。Release manifest 独立检查确认包 io.github.x647368maker.atomicworkbench.hostevidence、无 uses-permission / shared UID / module entry，唯一 launcher activity，非 debuggable、禁止备份。未签名 APK SHA256 0c021758d1c54a32aebd490bd75885b5b6bbf375fb8d8a328a882f2b47e1b95d；签名状态文件明确 MISSING_ORIGINAL_SIGNING_SECRET，没有签名 APK 产物。
+- 当前隔离环境已实际找到并解锁用户既有原签名材料，经 keytool 证书 SHA256 独立比对为 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe；PrivateKeyEntry 确认。密钥/密码不进仓库、产物、交接文档或日志，不上传到第三方；仅一次性离线签名，结束清除工作副本。GitHub Secrets 仍未配置，不把此状态误认为永久恢复。
+- 新 HEAD ac4c2712a93f3d0fb2840f4ef82990606f1a298a，父 b28173b9269d8522282126c41781a45554b43b43；唯一改动为既有 2.0 CI 增加签名配置缺失时经所有门禁的未签名 APK、官方 SDK apksigner.jar、manifest、checkout SHA 及哈希清单的短期离线签名输入归档；保留所有测试，验证 zipalign、拒绝已签名输入，不发布 release。旧 app 和所有探针、界面源码零改动。新 CI [44540541263](https://github.com/x647368-maker/NeXtep/actions/runs/44540541263) 已触发，尚未确认最终结果及离线签名。
+- 下一步接续：检查新 CI 最终结果、artifact 精确 SHA 和 SHA256SUMS，下载后在隔离环境用已核实的原私钥签名；核验同一原证书、APK 内容一致、包名与版本、签名完整性，才交付诊断 APK，不替换正常生产 APP。真机回报仅是公开宿主包/固件元数据，不等于授权、原生任务承载、归还或引擎性能；无授权证据继续禁止 OEM 调用。
+
 ## 第九阶段 B：独立真机公开取证工具（2026-11-19）
 - 最新远程 HEAD `b28173b9269d8522282126c41781a45554b43b43`，父 `e98464ef4eacc6f89bd991ec0cd9d62ec03054ad`；同一 workbench2/core，仅九个独立工程/专属 CI 文件变更。3 项上一阶段运行门禁需随 Gradle 多模块接入重新验证。无新分支、PR、注入点、旧 app 变更或正式发布。
 - 选择独立证据工具而不覆盖历史 V89：:field applicationId io.github.x647368maker.atomicworkbench.hostevidence 只用于真机手动取证，正式 APP applicationId、证书、个人数据及工作组完全不改。不启用 Hook、不启动 OEM、不增权限、服务、接收器、持久化或上传；普通应用可见性不是授权。点击后在有限 worker 查询公开 PackageManager 信息，报告含 checkout SHA，复制/分享需另一次显式操作；未授权、未证实的生产准入继续 false。
