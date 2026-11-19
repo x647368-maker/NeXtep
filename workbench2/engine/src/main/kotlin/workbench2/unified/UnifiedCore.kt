@@ -18,7 +18,13 @@ data class StartPlan(val requests:List<LaunchRequest>,val places:List<Box>,val d
 }
 /** The backend must independently establish the request/container relationship and terminality.
  * "terminal" means no later creation can occur for this exact operation, not a Binder ACK. */
-data class AttachProof(val requestId:Long,val container:String?,val actualOwner:Owner?,val actualComponent:String?,val correlated:Boolean,val terminal:Boolean)
+/** Independent system-side observation of the original borrowed task, scoped to this
+ * request, host and effect by the adapter. A missing task, transition enqueue, or a
+ * container becoming empty is not proof. These fields are not self-authenticating. */
+data class TaskReturnProof(val task:Int,val user:Int,val token:Long,
+                           val originalOwnershipRestored:Boolean,val noPendingReattach:Boolean)
+data class AttachProof(val requestId:Long,val container:String?,val actualOwner:Owner?,val actualComponent:String?,val correlated:Boolean,val terminal:Boolean,
+                       val returnedTask:TaskReturnProof?=null)
 data class Resource(val kind:Kind,val owner:Owner?=null,val request:LaunchRequest?=null,val container:String?=null)
 enum class Op { ACQUIRE, RELEASE, QUIESCE, BLOCK, FRAME, VERIFY_VISUAL, VERIFY_FOCUS }
 enum class Observation { PRESENT, ABSENT, UNKNOWN }
@@ -89,7 +95,18 @@ class UnifiedCore {
         val v=r.attach?:return false
         if(!r.runtimeVerified || !v.correlated || !v.terminal || v.requestId!=req.id)return false
         if(resource.container!=null && v.container!=resource.container)return false
-        if(r.observation==Observation.ABSENT)return v.actualOwner==null
+        if(r.observation==Observation.ABSENT) {
+            if(v.actualOwner!=null)return false
+            // A borrowed task must still exist in its original WM ownership. Apply this
+            // to cancelled/failed acquire as well as release: either can leave a task
+            // detached, deleted or awaiting an old reparent. New-task requests have
+            // no pre-existing identity; their terminal creation/cleanup proof is unchanged.
+            val original=req.existing?:return true
+            val returned=v.returnedTask?:return false
+            return returned.task==original.task && returned.user==original.user &&
+                returned.token==original.token && returned.originalOwnershipRestored &&
+                returned.noPendingReattach
+        }
         if(r.observation!=Observation.PRESENT || v.container.isNullOrBlank())return false
         // A second request cannot borrow the same native container or task/token. Uncertain attribution
         // requires authoritative settlement, not an automatic return of somebody else's task.

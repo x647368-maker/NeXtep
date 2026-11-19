@@ -113,7 +113,7 @@ class EngineLooperTest {
             assertTrue(bridge.pump())
             assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)
         }
-        raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null)))
+        raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null, returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true))))
         instr.waitForIdleSync()
         owner {
             assertTrue(bridge.pump())
@@ -250,5 +250,79 @@ class EngineLooperTest {
         assertRejectedAttachment(task.copy(canvas = task.canvas.copy(contentEpoch = 0)))
         assertRejectedAttachment(task.copy(canvas = task.canvas.copy(width = 1200)))
         assertRejectedAttachment(task.copy(canvas = task.canvas.copy(dpi = 420)))
+    }
+
+    private fun returnProofForTask() = TaskReturnProof(task.task, task.user, task.token, true, true)
+
+    @Test fun borrowedTaskAbsenceDuringAcquireRequiresReturnProof() = owner {
+        val (core, e) = pendingExistingAttach()
+        val empty = AttachProof(request.id, null, null, null, true, true)
+        val valid = returnProofForTask()
+        val invalid = listOf(null, valid.copy(token = 903), valid.copy(task = 43),
+            valid.copy(user = 1), valid.copy(originalOwnershipRestored = false),
+            valid.copy(noPendingReattach = false))
+        for (returned in invalid) {
+            assertTrue(core.receipt(Evidence(e, true, Observation.ABSENT, true,
+                attach = empty.copy(returnedTask = returned))))
+            assertEquals(Phase.RECOVERY, core.phase)
+            assertEquals(e, core.outstanding())
+            assertEquals(2, core.resources().size)
+            assertNull(core.next())
+            assertFalse(core.retryCleanup())
+            core.invariant()
+        }
+        assertTrue(core.receipt(Evidence(e, true, Observation.ABSENT, true,
+            attach = empty.copy(returnedTask = valid))))
+        assertEquals(Phase.DRAINING, core.phase)
+        assertEquals(Op.QUIESCE, core.next()!!.op)
+        core.invariant()
+    }
+
+    @Test fun borrowedTaskReleaseWaitsForOriginalOwnershipAndTerminalReparent() = owner {
+        val (core, acquire) = pendingExistingAttach()
+        assertTrue(core.receipt(attachment(acquire, task)))
+        core.stop()
+        val q = core.next()!!
+        assertEquals(Op.QUIESCE, q.op)
+        core.receipt(Evidence(q, true, runtimeVerified = true, blocked = true, inputBlockedObserved = true))
+        val release = core.next()!!
+        assertEquals(Kind.TASK_LEASE, release.resource!!.kind)
+        val valid = returnProofForTask()
+        val empty = AttachProof(request.id, "fixture-container", null, null, true, true)
+        val bad = listOf(empty, empty.copy(returnedTask = valid.copy(token = 903)),
+            empty.copy(returnedTask = valid.copy(task = 43)), empty.copy(returnedTask = valid.copy(user = 1)),
+            empty.copy(returnedTask = valid.copy(originalOwnershipRestored = false)),
+            empty.copy(returnedTask = valid.copy(noPendingReattach = false)),
+            empty.copy(container = "other-container", returnedTask = valid),
+            empty.copy(terminal = false, returnedTask = valid),
+            empty.copy(correlated = false, returnedTask = valid),
+            empty.copy(requestId = 99, returnedTask = valid),
+            empty.copy(actualOwner = task, returnedTask = valid))
+        for (proof in bad) {
+            assertTrue(core.receipt(Evidence(release, true, Observation.ABSENT, true, attach = proof)))
+            assertEquals(Phase.RECOVERY, core.phase)
+            assertEquals(release, core.outstanding())
+            assertEquals(3, core.resources().size)
+            assertNull(core.next())
+            assertFalse(core.retryCleanup())
+            core.invariant()
+        }
+        assertFalse(core.receipt(attachment(acquire, task)))
+        assertTrue(core.receipt(Evidence(release, true, Observation.ABSENT, false,
+            attach = empty.copy(returnedTask = valid))))
+        assertEquals(release, core.outstanding())
+        assertTrue(core.receipt(Evidence(release, true, Observation.ABSENT, true,
+            attach = empty.copy(returnedTask = valid))))
+        assertEquals(Phase.DRAINING, core.phase)
+        assertEquals(2, core.resources().size)
+        val gate = core.next()!!
+        assertEquals(Kind.INPUT_GATE, gate.resource!!.kind)
+        core.receipt(Evidence(gate, true, Observation.ABSENT, true, inputBlockedObserved = false))
+        val host = core.next()!!
+        assertEquals(Kind.HOST, host.resource!!.kind)
+        core.receipt(Evidence(host, true, Observation.ABSENT, true))
+        assertNull(core.next())
+        assertEquals(Phase.CLOSED, core.phase)
+        core.invariant()
     }
 }

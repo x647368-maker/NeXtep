@@ -55,7 +55,8 @@ class DualTaskReceiptTest {
         }
         fun proof(e:Effect,returned:Boolean=false):AttachProof {
             val r=e.resource!!.request!!
-            return AttachProof(r.id,"container-"+r.id,if(returned)null else r.existing,r.component,true,true)
+            return AttachProof(r.id,"container-"+r.id,if(returned)null else r.existing,r.component,true,true,
+                if(returned)r.existing?.let { TaskReturnProof(it.task,it.user,it.token,true,true) } else null)
         }
         fun activate() {
             for (kind in listOf(Kind.HOST,Kind.INPUT_GATE,Kind.TASK_LEASE,Kind.BORROWED_PRESENTATION,
