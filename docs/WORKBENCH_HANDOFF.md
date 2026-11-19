@@ -1,6 +1,12 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第十阶段 C：双任务回执安全修复（2026-11-19）
+- 最新 HEAD 717270dcd4ca0856f0f8126a78a7af2b25842706，父 6976442738ce30ee24969532612df0ef0d23f1b2；唯一 workbench2/core，6 个文件仅引擎及专属 CI，0 新分支/PR，冻结 app、field APK、MotionMath、OwnedSurfaceBatch 不改。历史 stage-7 原件保持不变；本轮 UnifiedCore、ReceiptBridge 有意修订，不能再声称这两份与历史原件字节一致。
+- 实查两个缺陷：FRAME 只看 submissionVerified，无法阻断输入状态已失效/未知的回执；核心层非 request 资源 ACQUIRE/RELEASE 可接收未 runtimeVerified 的 PRESENT/ABSENT。新增 Evidence.inputBlockedObserved:Boolean?，输入门禁 PRESENT 需明确 true、ABSENT 需明确 false，未知保留在途义务。BLOCK/FRAME/VERIFY_VISUAL/QUIESCE 明确 true，VERIFY_FOCUS 明确 false 才可推进。全部资源获取/释放需 runtimeVerified；原 attach proof 仍保留。旧测试的 input gate release fixture 调整为显式 false，符合真实证据契约，不降低测试。新接口要求旧调用者提供真实三态观察；历史 JVM 参考测试未用新契约重跑，不能冒称历史断言仍全通过。无生产 backend / OEM 调用。
+- androidTest 六项新增门禁：正常双任务交换与帧合并（视觉和焦点均独立确认才公布新 scene）、帧中输入 false/null 停止、错误视觉/焦点拒绝、取消后迟到帧及旧回调拒绝与逆序归还、直接 reducer 未验证资源/未知 gate 拒绝、gate 释放缺失明确恢复证据时保留 host。失败路径 drain/return，不声称任务原地画面恢复；所有 native receipts 为测试合成值，真实 Android Looper 执行。原 4 个实际 Android 测试与 5 个像素采样门禁保留。实际 CI [44546970179](https://github.com/x647368-maker/NeXtep/actions/runs/44546970179) 已触发，尚未确认结果。
+- 接续先核实本轮 CI、10 项 XML 和现有 5 态独立合成像素的实测结果，修复具体失败、不新建分支；不再无限增加测试模型。如手机仍不可用，评估能直接落地的 Android 实现与物理任务入口证据缺口，避免堆积非 OEM 模块。目标 PMS110 公开报告、经核实授权的 native port、真实任务承载/归还/死亡恢复、圆角/输入/焦点及性能为生产门禁，尚未解决。原签名 field APK 保持有效。
+
 ## 第十阶段 B：自有 Android 图层事务和回滚（2026-11-19）
 - 用户手机暂不在身边，原签名 field APK 保持不变；继续独立 Android 引擎。实际 HEAD 6976442738ce30ee24969532612df0ef0d23f1b2（父 f58bfaeb7ba3fc94d2bf321fba8c1762e790c98b），同一 workbench2/core，6 个文件变更，仅 engine 与专属 CI，旧 app、取证工具、统一核心三个源文件均未改，新分支/PR 0。
 - OwnedSurfaceBatch 只管理自行创建的子 SurfaceControl，通过 API33+ 的公开 setBuffer/setCrop/setPosition/setScale/reparent/setVisibility 与 addTransactionCommittedListener，一笔事务变换多个自有图层，单一在途事务、显式回滚事务、detach commit 后释放自有句柄。无权限、线程、定时器、轮询、系统注入或真实任务接口；借用父图层和不可变 buffer 由调用方保有。commit 只证明 compositor 应用事务，不证明物理呈现、buffer 可复用、任务身份或输入/焦点。公开 SDK 缺少本路径的圆角设置，非零 radius 明确拒绝；不削弱产品圆角标准。参考 Android Developers SurfaceControl.Transaction 与 SurfaceView.getSurfaceControl 公共契约。
