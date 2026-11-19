@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 H：Launcher/Recents 与公开窗口 API 证据、厂商可执行询证渠道（2026-11-20）
+
+- 承接 G 检查点 60ca4ef0dc2e83e591eb443d0c0223834ee513c5，不重复接任核验及冻结 CI。新定向核查 AOSP Android 17 release Manifest 3816–3819 行（https://android.googlesource.com/platform/frameworks/base/+/android17-release/core/res/AndroidManifest.xml#3816），START_TASKS_FROM_RECENTS 为 signature|privileged|recents；AOSP master LauncherApps 827–839 行（https://android.googlesource.com/platform/frameworks/base/+/master/core/java/android/content/pm/LauncherApps.java#827）及 LauncherAppsService 1693–1698 行（https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/pm/LauncherAppsService.java#1693）明确启动令牌的权限注解与服务端拒绝。因此默认桌面角色并不当然获得系统 Recents 权限，现有普通客户端无证据可取得任务组织能力。即使有启动令牌也不是任意既有任务控制或归还契约。禁止擅改默认桌面、系统角色或权限。
+- 官方 ActivityOptions.setLaunchBounds 文档 https://developer.android.com/reference/android/app/ActivityOptions#setLaunchBounds(android.graphics.Rect) 只是请求启动几何，支持依赖设备与显示能力；AppTask https://developer.android.com/reference/android/app/ActivityManager.AppTask 官方文档（2026-08-14 更新）限定本应用任务，API37 moveTaskTo 需要 REPOSITION_SELF_WINDOWS，requestWindowingLayer 是 Z 序控制，pinned 层还有数量、尺寸、系统装饰及可移动性等限制。不证明目标固件五窗能力；不能拿公开浮窗、启动新 Activity 或自己任务的显示当作既有第三方任务嵌入与归还。上述新证据不等于目标 OEM 实机权限测试。
+- 新确认可操作的独立外部依赖渠道：OPPO 官方全球开发者主页 https://developers.oppomobile.com/home/index/index 102–105 行明确通用支持邮箱 devservice@oppo.com（不是推送/审核专用地址）。官方远程真机服务 https://developers.oppomobile.com/newservice/capability?pagename=cloudmachine 说明浏览器操作、实时日志、多机型支持；精确 PMS110/API37 固件、授权 SDK、远程机是否可用及权限均未确认。当前环境实际只挂载早期接管包及隔离 CI ZIP，只有 Java，没有 adb/Gradle 或已连接目标真机。无需另行要求机主执行命令。该官方渠道可用于申请受支持的集成方式和同固件测试环境，不视为已取得能力。
+- 推荐由本窗口在机主明确授权后，通过已连接 Gmail 发送一次最小必要技术询证到上述官方邮箱：目标 PMS110/ColorOS17/Android17、生产包名，询问 OEM 支持的任意既有任务局部容器、系统原生输入与焦点、真实画面和内容连续性、正常退出/客户端死亡/承载端死亡的独立归还、SDK/合作资格及远程测试环境；不发送密钥、日志、个人数据、竞品材料或 OEM 二进制。不等 WindowDeck 回复，也不把厂商回复作为唯一准入证据。未获外联授权，本次未发送邮件、注册、申请权限或设备。
+- 本轮没有新生产源码、Android 运行、真机、分支、PR 或 APK；保存真实新增证据及可执行解阻方案，不冒充工程突破。既有冻结 67d71eb8a651eff06aa9b8e6927b27fe31a249ba 与19+5证据不变。下一轮不能机械重复“继续搜索”：有具体新接口/授权或可控环境才验证该入口及 NativePort，或经明确授权落实上述厂商询证。高等级模型不能代替系统授权、目标设备或执行环境；暂不启用工作模式。若用户批准外联，先核对准确发件账户，再发一次询证；继续独立寻找新证据，不盲目重复旧路线。
+
+---
+
 ## 第十三阶段 G：新负责人正式接任与 Android 17 角色/系统组织器定向排除（2026-11-20）
 
 - 机主已于本次独立新对话发出完整接任指令，按 F 生效，不再由旧窗口修改生产。实时 GitHub 核实治理起点 4e63c8fd7271eed8c4d8e92ba8851ebf5e2ca2ee、唯一生产 HEAD 67d71eb8a651eff06aa9b8e6927b27fe31a249ba、main 20ab39cf7e319898fcbc4028bc403df57a6c1a0b，开放仅冻结 #175/#176，2.0 PR 为 0。读取 AGENTS、交接 F/E/O、永久制度及 F01–F21、交接规范、实际工程树；确认 CI 44588386172 completed/success 且 head_sha 精确等于冻结核心，沿用原19项+5态实际证据，不重编译、不重复下载验收产物。
