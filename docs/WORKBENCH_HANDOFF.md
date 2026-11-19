@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 V：路线 A 新接入分支的边界核查（2026-11-20）
+
+- 继承机主路线 A 决策 U。实际容器重新核验 PMS110 两份已上传 ZIP 的 SHA256/CRC、manifest；框架命中双方定义，production_admitted=false/oem_method_calls=0，宿主9个 exported 均有保护，MANAGE_ACTIVITY_TASKS、MONITOR_INPUT、safe.WINDOW 的 host_granted=true、collector_granted=false。没有再次导出或执行 OEM 方法。读取冻结旧版 b625f22558c1d4127101f86e6c4f64a7b263d72f 的 app/src/main/AndroidManifest.xml（blob c43c5caa444f25cd0f48cded2ec951822cc36c0e）：声明 REORDER_TASKS、签名级自有 CONTROL_WORKSPACE 等，未声明 MANAGE_ACTIVITY_TASKS/ACTIVITY_EMBEDDING/safe.WINDOW，不能将旧应用自身签名权限或现有 Vector 可加载当作原生组织器授权。此为源码检查，非生产应用当前运行时权限完整检查。
+- 新的独立 AOSP 对照：固定源码 https://android.googlesource.com/platform/frameworks/base/+/964d297792e5e044bc57c226ec5ecb1f736702e9/services/core/java/com/android/server/wm/TaskOrganizerController.java 注册/任务查询等有 enforceTaskPermission；DeathRecipient.binderDied 进入 dispose，已有任务会尝试重新组织，剩余路径依据 mRemoveWithTaskOrganizer 可能 removeTask，故不能把进程死亡清理当成同任务安全归还保证。Manifest 固定源码 https://android.googlesource.com/platform/frameworks/base/+/c60281bd2144/core/res/AndroidManifest.xml 中 MANAGE_ACTIVITY_TASKS 为 signature|recents、ACTIVITY_EMBEDDING 为 signature|privileged；不是可由普通运行时权限申请自动取得。仅为 AOSP 对照，不推定 ColorOS 私有服务实现完全相同。Android ActivityOptions.setLaunchBounds 官方 API 仅启动时请求窗口大小/位置、受设备/显示能力限制，不赋予长期任务组织、独立归还或完整工作台承载能力。没有发现可满足路线 A 的新增系统委托契约。公开 OEM 开发平台检索未获得目标能力的可用文档；不据此宣称 OEM 全部机制不存在，不要求用户重复联系客服或提取系统文件。
+- 当前 NativePort NO-GO 保持：只有实际受支持/已授权的目标设备会话，且能独立核验任务归还时才实施。机主批准路线 A 不等于新增受限任务权限；不采用借用宿主身份、权限绕过、全局 Hook、旧 VD、普通分屏或合作应用嵌入假装全产品实现。现有工程无需创建新的占位实现、CI、APK 或诊断。若下一窗口开展独立审查，必须限定一次、要求提供新的具体可核验的合法接入契约及归还证据；缺少新证据则明确终止，不循环转发“继续寻找”的指令。另一种平台开发环境需真正获授权的系统集成（例如 OEM 支持的集成构建），目前无此条件，且不自动等价于 PMS110 原签名 APK 交付。无需用户再做手机操作。远端生产 HEAD ab62e52ee7daca435c8011aa7a6fcde269b45b30 实际未变，冻结成果完整；本轮无生产源码/CI/APK/PR/分支变更。
+
+---
+
 ## 第十三阶段 U：机主正式选择路线 A（2026-11-20）
 
 - 机主明确回复“A”：坚持 ColorOS 原生真实任务引擎，不接受 VirtualDisplay 替代，不批准路线 B 或 C。此前禁止回退 V89、截图替代、降低画质/刷新率/窗口数量、伪回执及新增无意义诊断的全部约束继续有效。
