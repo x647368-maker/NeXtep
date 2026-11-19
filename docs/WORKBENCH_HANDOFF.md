@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 J：精简单宿主只读工程 CI 完整通过，唯一交付阻塞为原签名（2026-11-20）
+- 唯一研发 HEAD db5d3df49ad6078fd7a792393993b778e02ddd06，原核心完整验收仍为 767940256c93be9696c3e36332b58c3d87503182（18项Android/5态像素）。[CI 44581543773](https://github.com/x647368-maker/NeXtep/actions/runs/44581543773) job 135763198785 completed/success，updated 2026-11-19T17:55:19Z；release 编译、API35模拟器、3项Android测试、APK安全及类定义白名单、离线未签名输入归档全部通过。签名步骤因秘密缺失走安全分支，签名产物上传 skipped；不等于签名通过。
+- 本轮实际下载两份产物并以容器独立复核字节数、SHA256、ZIP CRC。validation 14558773968（22475 bytes，c7360739db8b178bfe9bf29b6e109c202a55d836b429a9b4ad6ab20c6ee6c29c），原XML SHA256 80d2f712994b54b49fd666238fbfd7f451be730eec6eeceb76dc01adde638f61，3 tests/0 failures/errors/skipped，1.127s；unavailableMetadataDoesNotAdmitOrFabricateSymbols、publicMetadataDoesNotInitializeOrInvokeFixture、onlyExactAuthorizedObservationTargetMatches。fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys；不属于ColorOS真机验证。
+- offline input 14560565177（1010292 bytes，6291a69e0aa515a89a6a8b35bffb1de1bb2de9de5d558c97dd9eb8ff70b6a7ad），SHA256SUMS 5/5吻合；实际 HostRuntime-UNSIGNED.apk 9325 bytes，SHA256 f4a65d332dc505327edb936bb3a3849fb488289dcb06f3dd1211f4dd05e252b2，APK CRC 通过，DEX 内 checkout SHA 精确一致；直接解析 DEX header 与 class_defs/type_ids/string_ids，5个类全为 Lworkbench2/hostruntime/，classes.dex 7360 bytes、method_ids 59（13个定义方法，不推断其余分类）。旧 1084个定义类到5个，1079个外部依赖定义全部清除；不将体积减少冒充 CPU/功耗实测。实际 manifest 独立包 io.github.x647368maker.atomicworkbench.hostruntime，versionCode1，无 Android 权限/组件/shared UID；scope 唯一 com.oplus.pscanvas，唯一入口 HostRuntimeEntry，staticScope=true，exceptionMode=protective，autoHotReload=false，API102。无生产任务调用、无新权限。
+- signing-status.txt 实际内容 MISSING_ORIGINAL_SIGNING_SECRET: no installable APK delivered。官方 SDK apksigner.jar 在离线输入归档内。当前 /mnt/data 已实际检查，没有原私钥文件，现有zip成员未见 .p12/.jks/.keystore/.pfx。机主已确认持有原密钥，下一步只需机主提供原加密密钥文件或配置已授权的安全签名途径；不要求明文粘贴密码，不上传公开仓库、不改签名。可用既有获授权密钥材料时才离线验签、签前后payload一致、唯一证书SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe；清理临时副本，交付独立APK。未获密钥前不要反复运行CI、修改无关代码或重复索取资料。真机日志回来前不能宣称原生桥接完成，不绕过系统权限，不扩大作用域。
+- 本轮实际完成测试/产物验收及本档案更新，没有源码改动、额外分支/PR、生产部署或新的APK签名。唯一下一工程触发：原签名材料到位，完成私测包交付并进行已批准的单宿主只读验证。其后根据实际证据实施获授权的真实单任务承载、输入、正常归还及独立异常恢复。
+
+---
+
+
 ## 第十二阶段 I：单宿主 Android 三项运行通过，修复 DEX 误判并精简依赖（2026-11-20）
 - 机主确认持有之前保存的有效密钥。不要要求重复上传，签名到实际产物验收后再处理，若无法访问既有密钥才提示安全交付方式；禁止临时换证书或公开密钥。本轮未读取私钥/密码、未签名、未交付 APK。
 - [原 CI 44580486824](https://github.com/x647368-maker/NeXtep/actions/runs/44580486824) job 135759484027，head 51295386902709cc3be26dc72be8f0ad9a338bed，completed/failure。实际 release 编译、stock Android 15 启动、三项运行均 success；APK manifest/唯一 scope/entry/无热重载检查成功；仅 DEX 检查步骤后段 failure；签名及 APK 上传因该门禁失败 skipped。不能称整条 CI 通过。
