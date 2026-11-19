@@ -451,8 +451,11 @@ object TaskSurfaceCompat {
             p.frame !== frame || activePresentations[stamp.taskId] !== p ||
             frame.scaleX != frame.scaleY || !frame.scaleX.isFinite() || frame.scaleX<=0f ||
             !frame.positionX.isFinite() || !frame.positionY.isFinite() || crop.isEmpty) return null
+        val density=observedStates[stamp.taskId]?.takeIf {
+            it.displayId==stamp.displayId && it.token==stamp.token
+        }?.densityDpi ?: 0
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
-            Rect(crop),frame.scaleX,frame.positionX,frame.positionY)
+            Rect(crop),frame.scaleX,frame.positionX,frame.positionY,densityDpi=density)
     }
 
     internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
@@ -550,7 +553,7 @@ object TaskSurfaceCompat {
             !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
         if(!slotMirrorReservationAllows(stamp,slot,state,allowVerifiedDestination,allowCompletedDemotion))return null
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
-            Rect(slot.crop),1f,0f,0f)
+            Rect(slot.crop),1f,0f,0f,densityDpi=state.densityDpi)
     }
 
     internal fun createOwnedSlotTaskMirror(

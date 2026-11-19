@@ -258,10 +258,29 @@ def main():
         GATE, "scripts/run-visual-regression.sh",
         "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt",
     }, "API35 isolated test process reflection preflight only")
-    equal(paths(green_recovery, "HEAD"), {
+    geometry_receipt = "6d68e0a5110d028f741bfcc51fc6ea17923869b9"
+    subprocess.run(["git", "merge-base", "--is-ancestor", geometry_receipt, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(green_recovery, geometry_receipt), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"framework/TaskSurfaceCompat.kt",
         P+"framework/StageHeldGeometryReceipt.kt", T+"framework/StageHeldGeometryReceiptTest.kt",
     }, "scoped current destination geometry receipt; no migration/clock/route change")
+    equal(paths(geometry_receipt, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt", P+"framework/TaskSurfaceCompat.kt",
+        P+"systemui/StageEndpointContentMapping.kt", T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "known density prerequisite for opt-in content anchors only")
+    source("systemui/StageEndpointContentMapping.kt", "sourceDpi>0 && sourceDpi==targetDpi")
+    source("framework/TaskSurfaceCompat.kt", "densityDpi=density", "densityDpi=state.densityDpi")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "sameKnownDensity(slotForAnchor.densityDpi,originalMain.densityDpi)",
+           "sameKnownDensity(frame.densityDpi,expectedDensity)",
+           "sameKnownDensity(main.densityDpi,expectedMainDensity)",
+           "sameKnownDensity(slot.densityDpi,expectedSlotDensity)")
+    require("equalPixelsDoNotAuthorizeIdentityMappingAcrossDensityDomains" in
+            (ROOT/(T+"systemui/StageEndpointContentMappingTest.kt")).read_text(),
+            "equal pixel different density regression case")
+    require(git("show",geometry_receipt+":"+P+"systemui/StageEndpointContentMapping.kt")==
+            git("show",green_recovery+":"+P+"systemui/StageEndpointContentMapping.kt"),
+            "prior receipt candidate must preserve mapper")
     source("framework/StageHeldGeometryReceipt.kt", "proof.arm(leash,reservation,geometry)",
            "proof.claimListener(ticket)", "MAX_REGISTRATIONS=4", "proof.confirmed(leash,reservation,geometry)")
     source("framework/TaskSurfaceCompat.kt", "fun heldReceiptFrame(",
@@ -272,7 +291,7 @@ def main():
            "currentHeldGeometryCommitted(true)", "currentHeldGeometryCommitted(false)",
            "endpoint_current_geometry_receipts")
     # Preserve the real owner, motion, crop and handoff policy source files.
-    for rel in ("systemui/StageHeldEndpointPolicy.kt", "systemui/StageEndpointContentMapping.kt",
+    for rel in ("systemui/StageHeldEndpointPolicy.kt",
                 "systemui/StageConcurrentNativeTrialPolicy.kt", "systemui/NeXtepWindowController.kt",
                 "display/SlotTaskCoordinator.kt", "display/VirtualDisplaySlot.kt",
                 "systemserver/WorkspaceTaskSurfaceHook.kt", "framework/TaskPresentationCommitProof.kt"):

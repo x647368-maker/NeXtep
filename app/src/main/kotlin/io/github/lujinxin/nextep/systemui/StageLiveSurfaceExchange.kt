@@ -214,6 +214,10 @@ internal class StageLiveSurfaceExchange private constructor(
         if(!incomingRebased.get() || !outgoingRebased.get())return missing("held_write",pending=true)
         val main=TaskSurfaceCompat.ownedMainMirrorFrame(mainStamp) ?: return missing("main_geometry",pending=true)
         val slot=TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp) ?: return missing("verified_slot_geometry",pending=true)
+        val expectedMainDensity=mainSourceFrame?.densityDpi ?: 0
+        val expectedSlotDensity=slotSourceFrame?.densityDpi ?: 0
+        if(!mapper.sameKnownDensity(main.densityDpi,expectedMainDensity) ||
+            !mapper.sameKnownDensity(slot.densityDpi,expectedSlotDensity))return missing("content_density_changed_or_unknown")
         val slotBounds=slotView.mirrorLiveContentBounds() ?: return missing("slot_view_geometry",pending=true)
         val mainMap=StageEndpointContentMapping.ContentMap(main.scale,main.x,main.y)
         val slotMap=mapper.slotMap(localCrop(slot),StageLiveSurfaceFlightGeometry.Box(
@@ -367,6 +371,14 @@ internal class StageLiveSurfaceExchange private constructor(
             if(!mirror.isValid) return@HeldMirrorWriter
             val target=if(incoming) mainStart else slotStart
             val anchor=if(incoming)incomingAnchor else outgoingAnchor
+            if(anchor!=null) {
+                val expectedDensity=(if(incoming)mainSourceFrame else slotSourceFrame)?.densityDpi ?: 0
+                if(!StageEndpointContentMapping.sameKnownDensity(frame.densityDpi,expectedDensity)) {
+                    endpointWriteFailed.set(true)
+                    trace("held_content_density_changed_or_unknown")
+                    return@HeldMirrorWriter
+                }
+            }
             val root=anchor?.let {
                 StageEndpointContentMapping.rootMap(frame.scale,frame.x,frame.y,detachedRoot)
             }
@@ -690,7 +702,8 @@ internal class StageLiveSurfaceExchange private constructor(
                     incomingBefore?.let { TaskSurfaceCompat.ownedSlotMirrorFrame(it,allowCompletedDemotion=true) }
                     else null
                 val anchorCanvas=slotForAnchor?.crop
-                val anchorTrial=anchorCanvas!=null &&
+                val anchorTrial=anchorCanvas!=null && slotForAnchor!=null &&
+                    StageEndpointContentMapping.sameKnownDensity(slotForAnchor.densityDpi,originalMain.densityDpi) &&
                     StageEndpointContentMapping.sameLocalCanvas(
                         StageLiveSurfaceFlightGeometry.Crop(anchorCanvas.left,anchorCanvas.top,anchorCanvas.right,anchorCanvas.bottom),
                         StageLiveSurfaceFlightGeometry.Crop(sourceCropLocal.left,sourceCropLocal.top,sourceCropLocal.right,sourceCropLocal.bottom))
