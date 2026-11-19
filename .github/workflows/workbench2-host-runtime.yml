@@ -1,0 +1,184 @@
+name: Workbench 2 isolated host metadata runtime
+on:
+  push:
+    branches: ['workbench2/core']
+    paths:
+      - 'workbench2/host-runtime/**'
+      - '.github/workflows/workbench2-host-runtime.yml'
+permissions:
+  contents: read
+concurrency:
+  group: wb2-host-runtime-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+      - name: Build isolated host module
+        run: bash gradlew -p workbench2/host-runtime :assembleRelease --no-daemon --console=plain --stacktrace
+      - name: Provision stock Android 15 emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platform-tools' emulator 'system-images;android-35;google_apis;x86_64'
+          sudo chmod 666 /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-android-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-boundary --path "$ANDROID_AVD_HOME/wb2-boundary.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_7
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/wb2-boundary.avd" > "$ANDROID_AVD_HOME/wb2-boundary.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd wb2-boundary -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 2048 -cores 2 -gpu swiftshader_indirect > "$RUNNER_TEMP/wb2-emulator.log" 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb shell getprop ro.build.fingerprint > "$RUNNER_TEMP/wb2-emulator-fingerprint.txt"
+      - name: Verify Android metadata-only behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --kill-after=15s 600s bash gradlew -p workbench2/host-runtime :connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          p = pathlib.Path('workbench2/host-runtime/build/outputs/androidTest-results/connected')
+          required = {'onlyExactAuthorizedObservationTargetMatches','publicMetadataDoesNotInitializeOrInvokeFixture','unavailableMetadataDoesNotAdmitOrFabricateSymbols'}
+          cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
+          assert len(cases) == len(required) and {t.get('name') for t in cases} == required
+          assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
+          print('Verified stock Android metadata-only tests:', sorted(required))
+          PY
+      - name: Verify isolated APK and single scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find workbench2/host-runtime/build/outputs/apk/release -name '*-unsigned.apk' -print -quit)
+          test -s "$apk"
+          mkdir -p "$RUNNER_TEMP/wb2-field-evidence"
+          analyzer=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort -V | tail -1)
+          test "$("$analyzer" manifest application-id "$apk")" = io.github.x647368maker.atomicworkbench.hostruntime
+          test "$("$analyzer" manifest version-code "$apk")" = 1
+          "$analyzer" manifest print "$apk" > "$RUNNER_TEMP/wb2-field-evidence/manifest.xml"
+          python3 - "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$apk" <<'PY'
+          import sys, xml.etree.ElementTree as E, zipfile
+          root=E.parse(sys.argv[1]).getroot()
+          a='{http://schemas.android.com/apk/res/android}'
+          assert root.get('package')=='io.github.x647368maker.atomicworkbench.hostruntime'
+          assert not root.get(a+'sharedUserId')
+          assert not [t for t in root if t.tag.startswith('uses-permission') or t.tag == 'permission']
+          app=root.find('application')
+          assert app is not None and app.get(a+'allowBackup')=='false'
+          assert not [x for x in app if x.tag in ('activity','activity-alias','service','receiver','provider')]
+          assert app.get(a+'debuggable')!='true'
+          with zipfile.ZipFile(sys.argv[2]) as z:
+              assert z.testzip() is None
+              prefix='META-INF/xposed/'
+              assert set(n for n in z.namelist() if n.startswith(prefix) and not n.endswith('/'))=={prefix+x for x in ('java_init.list','scope.list','module.prop')}
+              assert z.read(prefix+'scope.list').decode().splitlines()==['com.oplus.pscanvas']
+              assert z.read(prefix+'java_init.list').decode().splitlines()==['workbench2.hostruntime.HostRuntimeEntry']
+              props=dict(l.split('=',1) for l in z.read(prefix+'module.prop').decode().splitlines() if l)
+              assert props=={'minApiVersion':'102','targetApiVersion':'102','staticScope':'true','exceptionMode':'protective','autoHotReload':'false'}
+              assert 'assets/xposed_init' not in z.namelist()
+          print('Verified zero permissions, zero components, exact single scope, no hot reload')
+          PY
+          # Confirm the framework API is provided by the loader, not bundled.
+          "$analyzer" dex packages --defined-only "$apk" > "$RUNNER_TEMP/wb2-field-evidence/dex-packages.txt"
+          grep -F 'HostRuntimeEntry' "$RUNNER_TEMP/wb2-field-evidence/dex-packages.txt"
+          grep -F 'HostMetadata' "$RUNNER_TEMP/wb2-field-evidence/dex-packages.txt"
+          if grep -F 'io.github.libxposed.api' "$RUNNER_TEMP/wb2-field-evidence/dex-packages.txt"; then
+            echo 'Unexpected bundled framework'; exit 1
+          fi
+          sha256sum "$apk" > "$RUNNER_TEMP/wb2-field-evidence/unsigned.sha256"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/wb2-field-evidence/checkout-sha.txt"
+      - name: Sign field companion only with verified existing certificate
+        id: field-sign
+        env:
+          ATOMIC_KEYSTORE_BASE64: ${{ secrets.ATOMIC_KEYSTORE_BASE64 }}
+          ATOMIC_KEYSTORE_PASSWORD: ${{ secrets.ATOMIC_KEYSTORE_PASSWORD }}
+          ATOMIC_KEY_PASSWORD: ${{ secrets.ATOMIC_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          evidence="$RUNNER_TEMP/wb2-field-evidence"
+          if [ -z "$ATOMIC_KEYSTORE_BASE64" ] || [ -z "$ATOMIC_KEYSTORE_PASSWORD" ] || [ -z "$ATOMIC_KEY_PASSWORD" ]; then
+            printf '%s\n' 'MISSING_ORIGINAL_SIGNING_SECRET: no installable APK delivered' > "$evidence/signing-status.txt"
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          key=$(mktemp "$RUNNER_TEMP/wb2-key-XXXXXX")
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$ATOMIC_KEYSTORE_BASE64" | base64 --decode > "$key"
+          apk=$(find workbench2/host-runtime/build/outputs/apk/release -name '*-unsigned.apk' -print -quit)
+          mkdir -p "$RUNNER_TEMP/wb2-field-verified"
+          out="$RUNNER_TEMP/wb2-field-verified/AtomicWorkbench2-HostRuntime.apk"
+          signer="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$signer" sign --ks "$key" --ks-type PKCS12 --ks-key-alias androiddebugkey --ks-pass env:ATOMIC_KEYSTORE_PASSWORD --key-pass env:ATOMIC_KEY_PASSWORD --out "$out" "$apk"
+          "$signer" verify --verbose --print-certs "$out" > "$evidence/certificate.txt"
+          test "$(grep -c 'certificate SHA-256 digest:' "$evidence/certificate.txt")" = 1
+          grep -Fx 'Signer #1 certificate SHA-256 digest: 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe' "$evidence/certificate.txt"
+          test "$(find "$ANDROID_HOME/build-tools/36.0.0" -name zipalign -type f | wc -l)" = 1
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$out"
+          sha256sum "$out" > "$RUNNER_TEMP/wb2-field-verified/APK.sha256"
+          cp "$evidence/certificate.txt" "$evidence/checkout-sha.txt" "$RUNNER_TEMP/wb2-field-verified/"
+          printf '%s\n' 'ORIGINAL_CERTIFICATE_VERIFIED: isolated host metadata module only' > "$evidence/signing-status.txt"
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - name: Upload verified companion only; never a release
+        if: steps.field-sign.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-host-runtime-original-certificate
+          path: ${{ runner.temp }}/wb2-field-verified/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve non-installable offline signing input after all Android gates
+        if: steps.field-sign.outputs.ready == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find workbench2/host-runtime/build/outputs/apk/release -name '*-unsigned.apk' -print -quit)
+          test -s "$apk"
+          sdk="$ANDROID_HOME/build-tools/36.0.0"
+          "$sdk/zipalign" -c -P 16 4 "$apk"
+          # No secret is passed to this step. Refuse an already signed input.
+          if "$sdk/apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo 'Unexpected signed input'; exit 1
+          fi
+          dir="$RUNNER_TEMP/wb2-offline-input"
+          mkdir -p "$dir"
+          cp "$apk" "$dir/HostRuntime-UNSIGNED.apk"
+          cp "$sdk/lib/apksigner.jar" "$dir/apksigner.jar"
+          cp "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$RUNNER_TEMP/wb2-field-evidence/checkout-sha.txt" "$dir/"
+          cp "$RUNNER_TEMP/wb2-field-evidence/signing-status.txt" "$dir/"
+          (cd "$dir"; sha256sum HostRuntime-UNSIGNED.apk apksigner.jar manifest.xml checkout-sha.txt signing-status.txt > SHA256SUMS)
+      - name: Upload unsigned offline input, not a device candidate
+        if: steps.field-sign.outputs.ready == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-host-runtime-UNSIGNED-offline-input
+          path: ${{ runner.temp }}/wb2-offline-input/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve module validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench2-host-runtime-validation
+          path: |
+            workbench2/host-runtime/build/outputs/androidTest-results/connected/
+            workbench2/host-runtime/build/reports/androidTests/connected/
+            ${{ runner.temp }}/wb2-field-evidence/
+            ${{ runner.temp }}/wb2-emulator-fingerprint.txt
+            ${{ runner.temp }}/wb2-emulator.log
+          if-no-files-found: warn

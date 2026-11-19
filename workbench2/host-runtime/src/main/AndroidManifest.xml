@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="台前调度 · 宿主只读取证"
+        android:allowBackup="false" android:hasCode="true"/>
+</manifest>
