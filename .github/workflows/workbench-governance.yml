@@ -46,6 +46,8 @@ jobs:
           repo = os.environ['GITHUB_REPOSITORY']
           register = json.loads(pathlib.Path('docs/workbench-registry.json').read_text())
           heads = {item['name']:item['commit']['sha'] for item in api('branches?per_page=100')}
+          resurrected = set(heads) & set(register['retired'])
+          assert not resurrected, f'Retired references recreated: {sorted(resurrected)}'
           unknown = set(heads) - set(register['baseline']) - set(register['tasks'])
           for name in sorted(unknown):
               warning('Unregistered branch: ' + name)
@@ -57,6 +59,22 @@ jobs:
           for pr in prs:
               if pr['head']['repo'] and pr['head']['repo']['full_name']==repo:
                   assert heads.get(pr['head']['ref']) == pr['head']['sha'], pr['html_url']
+          production = register['production']
+          production_ref = production['branch']
+          production_prs = [
+              pr for pr in prs if production_ref in (pr['head']['ref'],pr['base']['ref'])
+          ]
+          assert len(production_prs) <= production['max_open_prs'], 'Multiple PRs for the production line'
+          unexpected_prs = {
+              pr['number'] for pr in prs
+              if pr not in production_prs and pr['number'] not in production['historical_open_prs']
+          }
+          if unexpected_prs:
+              warning(f'Review unregistered PRs: {sorted(unexpected_prs)}')
+          alternate_production_refs = [
+              name for name in heads if name.startswith('workbench2/') and name != production_ref
+          ]
+          assert not alternate_production_refs, f'Duplicate 2.0 branches: {alternate_production_refs}'
           tags = {item['name']:item['commit']['sha'] for item in api('tags?per_page=100')}
           for name,sha in register['tags'].items(): assert tags.get(name)==sha, name
           for name,sha in register['frozen'].items(): assert heads.get(name)==sha, name

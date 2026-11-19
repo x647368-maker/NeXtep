@@ -86,12 +86,9 @@
     "atomic-workbench/v89-adaptive-animation",
     "atomic-workbench/v89-adaptive-gpu-evidence",
     "atomic-workbench/v89-adaptive-handoff-receipts",
-    "atomic-workbench/v89-adaptive-legacy-exemption-20261117",
     "atomic-workbench/v89-adversarial-gpu-sample-throughput-20261117",
     "atomic-workbench/v89-api37-boot-memory-guard-20261117",
     "atomic-workbench/v89-api37-real-pixel-sampling-20261118",
-    "atomic-workbench/v89-assembly-continuity-gate-20261118",
-    "atomic-workbench/v89-attempt-evidence-20261118",
     "atomic-workbench/v89-audit-consolidated",
     "atomic-workbench/v89-build-revision-diagnostic-20261118",
     "atomic-workbench/v89-content-anchor-p0-20261118",
@@ -101,10 +98,8 @@
     "atomic-workbench/v89-device-menu-pinned-dual",
     "atomic-workbench/v89-domain-regression-recovery-20261119",
     "atomic-workbench/v89-endpoint-content-p0-20261119",
-    "atomic-workbench/v89-endpoint-reveal-loss-gate-20261117",
     "atomic-workbench/v89-final-preview-shared-motion",
     "atomic-workbench/v89-final-quality-fixes",
-    "atomic-workbench/v89-fixture-production-route-parity-20261117",
     "atomic-workbench/v89-gpu-handoff-minimal-20261118",
     "atomic-workbench/v89-gpu-held-cover-continuity-20261118",
     "atomic-workbench/v89-gpu-slow-handoff-cooldown-20261118",
@@ -127,7 +122,6 @@
     "atomic-workbench/v89-preserve-real-handoff-waits-20261117",
     "atomic-workbench/v89-private-test-build",
     "atomic-workbench/v89-reapply-main-single-animator-20261118",
-    "atomic-workbench/v89-revision-release-gate-20261118",
     "atomic-workbench/v89-rt-main-endpoint-blend-20261118",
     "atomic-workbench/v89-single-pass-hidden-rail-layout-20261117",
     "atomic-workbench/v89-systemserver-geometry-snapshot-20261118",
@@ -157,10 +151,22 @@
     "atomic-workbench/dev",
     "atomic-workbench/v89-domain-regression-recovery-20261119",
     "atomic-workbench/v89-coordinate-only-20261118",
-    "atomic-workbench/v89-held-receipt-current-20261119"
+    "atomic-workbench/v89-held-receipt-current-20261119",
+    "workbench2/core",
+    "governance/workbench"
   ],
   "frozen": {
-    "main": "20ab39cf7e319898fcbc4028bc403df57a6c1a0b"
+    "main": "20ab39cf7e319898fcbc4028bc403df57a6c1a0b",
+    "atomic-workbench/v89-held-receipt-current-20261119": "305f595220a6c193202d6acbdb2ac20f6e250df4",
+    "atomic-workbench/v89-domain-regression-recovery-20261119": "b625f22558c1d4127101f86e6c4f64a7b263d72f",
+    "atomic-workbench/v89-coordinate-only-20261118": "30498e1a5c5e5a0390e320e8fc6f629d560ff2a3",
+    "atomic-workbench/v89-audit-consolidated": "c95a880ecd03f42abe47973e31ea745c6c976ba0",
+    "atomic-workbench/v89-endpoint-content-p0-20261119": "8132026a52215303bb1df27e97d03af0a9c0a1ea",
+    "atomic-workbench/v87-final-integration-candidate": "27f7845e5f9419359170dcf9e15c5fccfbcffcae",
+    "atomic-workbench/v87-close-replace-lifecycle-frozen-eac1021": "eac1021cee66cd9f386ec4556ee79b7ef112e1ce",
+    "atomic-workbench/v88-animation-first": "e35b99c39f0fda9f8e40fa807c2b8afb0b462270",
+    "atomic-workbench/pr92-async-task-queries-private": "0e0733fe88efe9ceae82990873f960ab279c05c0",
+    "atomic-workbench/v0.9.8": "273c4d61d3a70b16ec7bdc5a266d19e416a7be41"
   },
   "tags": {
     "atomic-v0.1.0-dev-071be647": "071be647f0768fcaa57d5e36e4b34cc7714e9110",
@@ -169,17 +175,33 @@
     "atomic-v0.9.33-dev": "dc469274b876453aac0ba36d38572ba7bab30aa0"
   },
   "tasks": {
-    "atomic-workbench/v89-held-receipt-current-20261119": {
-      "topic": "V89 动画交接",
-      "base": "b625f22558c1d4127101f86e6c4f64a7b263d72f",
-      "owner": "动画主窗口",
-      "exit": "同机双向交换验证，出现负优化即隔离"
-    },
     "governance/workbench": {
       "topic": "仓库治理",
       "owner": "协调窗口",
       "base": "305f595220a6c193202d6acbdb2ac20f6e250df4",
       "exit": "治理替代入口已验证后可退役"
+    },
+    "workbench2/core": {
+      "topic": "当前唯一生产研发",
+      "owner": "台前调度2.0｜研发中心／接管安卓工程编译",
+      "base": "305f595220a6c193202d6acbdb2ac20f6e250df4",
+      "exit": "机主授权更换负责人或正式研发线后更新登记"
     }
+  },
+  "production": {
+    "branch": "workbench2/core",
+    "max_open_prs": 1,
+    "historical_open_prs": [
+      175,
+      176
+    ]
+  },
+  "retired": {
+    "atomic-workbench/v89-attempt-evidence-20261118": "5f70f77a81faffb368c98e3659ba701ae2e747fb",
+    "atomic-workbench/v89-fixture-production-route-parity-20261117": "bcf8167da187916725f2798a84bd2c868adcb327",
+    "atomic-workbench/v89-revision-release-gate-20261118": "235c0cea0a3a50ae3bfeec9b1b1aad56b319499f",
+    "atomic-workbench/v89-endpoint-reveal-loss-gate-20261117": "5305c5eba12e209f4ccec8a56e6ea5121cfb1897",
+    "atomic-workbench/v89-adaptive-legacy-exemption-20261117": "f2d529a52836b848bd0b9eb419a0587b47162aa6",
+    "atomic-workbench/v89-assembly-continuity-gate-20261118": "026f07b95b214e227267a174ccb674c44afd2e45"
   }
 }
