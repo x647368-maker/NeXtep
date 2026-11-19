@@ -1,6 +1,13 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第九阶段 B：独立真机公开取证工具（2026-11-19）
+- 最新远程 HEAD `b28173b9269d8522282126c41781a45554b43b43`，父 `e98464ef4eacc6f89bd991ec0cd9d62ec03054ad`；同一 workbench2/core，仅九个独立工程/专属 CI 文件变更。3 项上一阶段运行门禁需随 Gradle 多模块接入重新验证。无新分支、PR、注入点、旧 app 变更或正式发布。
+- 选择独立证据工具而不覆盖历史 V89：:field applicationId io.github.x647368maker.atomicworkbench.hostevidence 只用于真机手动取证，正式 APP applicationId、证书、个人数据及工作组完全不改。不启用 Hook、不启动 OEM、不增权限、服务、接收器、持久化或上传；普通应用可见性不是授权。点击后在有限 worker 查询公开 PackageManager 信息，报告含 checkout SHA，复制/分享需另一次显式操作；未授权、未证实的生产准入继续 false。
+- [CI 44539030424](https://github.com/x647368-maker/NeXtep/actions/runs/44539030424) attempt 1 真实失败（job 135612120324，Gradle classpath 在源码编译前无法解析多个 Maven 依赖，含 kotlin-stdlib/reflect 2.3.20、annotations 13.0、httpmime 4.5.6、ASM 9.9），不是运行时或源码通过。此前同 AGP/SDK 已成功。已触发原 SHA attempt 2，一次重试，当前 in_progress；不降依赖版本、不做盲目修补。
+- CI 包含 3 个原拒绝态回归 + 1 个新真实 Activity 手动取证测试，release APK 必须独立检查 package、零权限、单 launcher activity、无 module entry、无 shared UID；原签名秘密缺失则记录 MISSING_ORIGINAL_SIGNING_SECRET，不上传安装包；配置存在时仅用已知有效证书 SHA-256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe 签名及校验，绝不临时替换签名或发布 release。该工具不能视作原生引擎或真机验收，签名和实际 OEM 授权仍待证据。
+- 既有 PMS110 故障报告只能确认 Android 17/API37 和旧 V89 实际运行，不含该宿主包元数据/授权；无须重复历史动画研究。下步先读取此次 CI 最终状态、XML、Manifest 及签名产物；通过且原证书验证后才提供真机公开身份取证工具。若无法签名，明确阻塞，不绕过签名。目标宿主真实授权仍需另行独立证据；禁止硬编码准入、私有标志、root 指令和未经核实注入。
+
 ## 第九阶段 A：公开宿主身份取证 + Android 运行时拒绝门禁（2026-11-19）
 - 实际远程 HEAD `e98464ef4eacc6f89bd991ec0cd9d62ec03054ad`（父 `236dfa7ec2d7de2b823905abc50979e44064d44d`），同一 workbench2/core；仅独立工程和其专属工作流共七个文件变更；旧 app 代码、scope、签名、配置及历史分支不改。源码：[提交](https://github.com/x647368-maker/NeXtep/commit/e98464ef4eacc6f89bd991ec0cd9d62ec03054ad)。
 - 实查旧 scope.list 没有 com.oplus.pscanvas，NeXtepHookEntry 没有已授权的 OEM 宿主诊断入口。不能把旧 Xposed 注入或普通应用包名当作授权。禁止新增注入/伪装或调用 OEM。
