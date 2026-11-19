@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 B：核实 CI 排队原因与真实接入决策门槛（2026-11-20）
+- 本轮实查 final CI 44588386172 pending，尚无 job 或产物；前置 run 44588313920（6ca1ca2c）job 135787178657 in_progress，编译及 AAR 来源核验成功，Android15 模拟器启动中。现有 workflow 明确 concurrency group workbench2-engine-${{ github.ref }}、cancel-in-progress:false，所以最终 run 串行排队。旧 run 不能代替最终19项名单及5态证据；保持已验收 76794025，不提前冻结新 SHA。无须新提交、重复触发 CI 或改变既有并发规则。
+- 本轮再核验官方 OPPO 文档中心 https://open.oppomobile.com/new/developmentDoc/info?id=10000 ，确有“系统能力/窗口能力”分类，但所访问文档显示“您暂无权限查看该文档”，不能推断该受限文档内容或授权存在。官方公开分屏 https://open.oppomobile.com/documentation/page/info?id=11171 属系统执行标准分屏，不等价五任务自定义宿主；Android https://developer.android.com/develop/ui/views/layout/activity-embedding 明确跨应用嵌入需目标应用 opt-in。至今无已验证适用于 PMS110 的授权承载/输入/独立异常归还契约。具体解阻条件为 OEM 提供或明确允许的系统级接入方式（可核验权限条件及生命周期契约）、或经机主另行授权的独立 AOSP 系统集成环境用于机制验证，不冒充目标手机部署；保持阶段 O 已验证原生类可见性与只读授权，不修改系统分区、不借宿主身份绕过权限、不改变严格原生路线。工单未发送，无新授权证据。不以更高模型替代客观权限、环境；若需独立模型审查，限定尚未穷尽的合规替代接口及反例，不复制其他项目、不重复研究或作生产修改。
+- 本轮没有新生产代码、编译触发、APK、分支、PR 或实际单任务挂载。后续唯一 CI 验收对象 44588386172。成功下载 XML/AAR/像素证据后冻结最终核心；若仍未取得授权接入证据，不循环新增外围代码。下一轮指令仅执行最终 CI 完整验收/真实失败修复/核心冻结；原生承载须在新证据或明确批准的独立系统集成环境到位后实施。机主无需操作手机。
+
+---
+
+
 ## 第十三阶段 A：单任务接入前关闭旧无身份准入旁路（2026-11-20）
 - 继承阶段 O 已成功真机 R2 证据，停止真机日志、框架重构和重复取证。实际复读 UnifiedCore.kt、ReceiptBridge.kt、AndroidFrameDriver.kt、EngineLooperTest.kt、DualTaskReceiptTest.kt 及 engine 全部 Kotlin 源码中的 begin/beginPending 调用；AndroidFrameDriver 及现有 Android 测试仅使用 beginPending。发现未被调用的旧 public begin(Capability,Scene) 可建立不含 LaunchRequest 的 TASK_LEASE，attachProofValid 在 request==null 时直接返回 true，绕开既有任务身份关联及归还凭据要求。对真实后端接入前属于具体安全缺口，而非真机已发生故障。
 - 实际提交 6ca1ca2c5ea34a1362032f3fb68536153bfab188（父 63ece8c9）：删除未使用的 begin(Capability,Scene)，TASK_LEASE 缺 request 时拒绝结算；保留已验收 beginPending、状态机、动画、任务资源次序、原归还凭据逻辑。新增真实 Android Looper 回归 metadataOnlyAdmissionAndLegacyScenePathCannotBorrowTasks，验证 R2 只读能力（授权/嵌入/输入/归还未知按不允许处理）及各缺失能力不能触发任何后端操作，旧 Scene 入口不再暴露。UnifiedCore blob 07217f951e3d9b305a08b53f1ced5e66b90e0316，EngineLooperTest blob fd729f5af41228ad72e358e1210f44282c69f3e3。
