@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 R：定向框架导出工具 V4 实际 CI 与原签名交付（2026-11-20）
+
+- CI 44603165617 job 135839712205 completed/success，head ab62e52ee7daca435c8011aa7a6fcde269b45b30，实际下载三份 artifact 并本地校验 SHA256/ZIP CRC：runtime 14570201854 sha256 884b214ef261ee8f8bbcd5946e389a6c4e6876493c372571d3bf1267c9f589ec；field 14569202951 f4e14a0b61e3018da4748f8c0576cf255f564943319fd4afb18f0c197db6b796；offline-input 14568958366 f34202c3ee205e17acb09b0cf1bf995329cd9d4f7d77e9eea9911d9846de63f4。实际读取 instrumentation XML：3 probe cases、9 field cases 全部无 failure/error/skipped，新增 frameworkArchiveMatchesBytesAndRejectsDigestChange、frameworkExportDisabledOffTarget、frameworkDexRequiresClassDefinition 通过。实际校验 checkout-sha.txt、内部 SHA256SUMS、manifest 独立包名/versionCode4/零权限；CI 原签名 secrets 缺失，unsigned 专供离线签署。
+- 本地通过用户既有授权签名档案验证原证书及别名、使用 CI apksigner.jar 对同一无签名 APK 离线签署，私密材料未上传仓库、临时私密副本已清理。实际 apksigner verify 成功，v3=true，单签名，证书 SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe，与 V3 及原有效签名一致。unsigned/signed 非 META-INF ZIP 内容逐项字节一致，两 APK CRC 无错。实际交付 AtomicWorkbench2-FrameworkExport-v4.apk，2184453 bytes，SHA256 88447f1c2b75f8b73f1e24cb545c34b46e76cc23b9fe2acbf4089c91bfa351c6，versionName 2.0-framework-export-1，独立 hostevidence 包，非生产产品/非公开 release。原签名通过不代表真机导出通过。
+- 用户操作仅覆盖独立工具 V3→V4，手动点击“定向导出原生框架 ZIP”，系统保存 PMS110-flexible-framework-code.zip 并附回对话；无命中/失败则截图报告，禁止反复导出、增加权限或重传旧宿主。真实 ColorOS17 框架定义仍未取得，NativePort 未准入。本轮未改任何源码/分支/PR，不重复核心构建。取得实际 ZIP 后核验 manifest/来源/firmware/每份 SHA256/目标 class_defs，定向分析合法系统会话及独立归还，再决定是否可以实施真实单任务承载；无可读定义则标明证据限制，终止重复试探。模型 GPT-6 高推理，当前无需 Work。
+
+---
+
 ## 第十三阶段 Q：已授权的一次性框架定义定向导出实际工程提交（2026-11-20）
 
 - 机主明确批准 P 阶段的一次性公开可读框架文件导出范围，不扩大系统权限或 Vector scope。独立 field 工程已原子提交 ab62e52ee7daca435c8011aa7a6fcde269b45b30（父 9d385e9d2e8da1e2c90a0b737e45880f887df2fe，tree bdfd0a4fd976fb592173ed947039faf496d6c679），预期 HEAD 非强制更新，实际远端 HEAD 与 compare 一致，6文件+426/-5。FrameworkCodeArchive.kt blob 7d1162f6ef2a452162b0d42effdfc4bdf61cadf5；EvidenceActivity.kt 61952604f4379fba6c2666ad1a18011b997fae2c；ids.xml 96a0df0311e5a1d88a1205413a9f6488d1437b13；field build.gradle.kts 3d49ea1273331d58d8d60d88529d939d0938eb7d；FrameworkCodeArchiveTest.kt d2e977c571b72abc09fd4ffd831986ee56c95783；既有 probe workflow f95f10bfc58da5a7c00389472300a2e2d0e68149。独立包名不变，versionCode4/versionName 2.0-framework-export-1。冻结 engine/host-runtime、旧生产 app/main 未修改，不增分支/PR。
