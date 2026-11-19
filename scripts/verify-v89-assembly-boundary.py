@@ -220,9 +220,12 @@ def main():
         GATE, P+"framework/TaskSurfaceCompat.kt", P+"framework/ObservedDemotionFitPolicy.kt",
         P+"systemui/StageLiveSurfaceExchange.kt", T+"framework/ObservedDemotionFitPolicyTest.kt",
     }, "read-only completed demotion mirror admission")
-    equal(paths(completed_demotion, "HEAD"), {
+    completion_recheck = "dad731855e22bde2c2acf2703b7289cc735798f4"
+    subprocess.run(["git", "merge-base", "--is-ancestor", completion_recheck, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(completed_demotion, completion_recheck), {
         GATE, P+"framework/TaskSurfaceCompat.kt",
     }, "revoke completion marker on failed final recheck")
+    equal(paths(completion_recheck, "HEAD"), {GATE}, "gate literal alignment only")
     source("framework/TaskSurfaceCompat.kt", "if(!retained)slot.completedMirrorFit=null")
     source("framework/ObservedDemotionFitPolicy.kt", "completedFit===currentFit",
            "noConflictingPresentation && noHeldWriter")
@@ -247,7 +250,8 @@ def main():
     source("systemui/StageEndpointContentMapping.kt", "projected(common,sourceRoot)",
            "projected(overlap(local,a.commonLocal)", "val end=a.terminalAvailable")
     source("systemui/StageLiveSurfaceExchange.kt", "content_domain_gap", "buffer_latch_unobserved")
-    source("framework/TaskSurfaceCompat.kt", "readSlotMirrorFrame(stamp,allowVerifiedDestination=false)",
+    source("framework/TaskSurfaceCompat.kt", "readSlotMirrorFrame(stamp,allowVerifiedDestination=false,",
+           "allowCompletedDemotion=allowCompletedDemotion)",
            "readSlotMirrorFrame(stamp,allowVerifiedDestination=true)",
            "(allowVerifiedDestination && verifiedDemotedSlot(stamp.taskId,slot,state))")
     source("systemui/StageLiveSurfaceExchange.kt",
