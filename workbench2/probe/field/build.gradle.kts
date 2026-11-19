@@ -11,8 +11,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench.hostevidence"
         minSdk = 35
         targetSdk = 36
-        versionCode = 3
-        versionName = "2.0-normal-session-1"
+        versionCode = 4
+        versionName = "2.0-framework-export-1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SOURCE_SHA", "\"$revision\"")
     }

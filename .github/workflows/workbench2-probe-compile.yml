@@ -92,7 +92,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           p = pathlib.Path('workbench2/probe/field/build/outputs/androidTest-results/connected')
-          required = {'manualReadOnlyReportOnStockDevice','stockHostExportRefusesBeforeOpeningDocument','archiveContainsExactPublicFixtureCodeAndHash','incompleteArchiveCannotContainManifest','normalSessionRecordsOwnTaskAndBoundedEvents','normalSessionRecreationPreservesMarker'}
+          required = {'manualReadOnlyReportOnStockDevice','stockHostExportRefusesBeforeOpeningDocument','archiveContainsExactPublicFixtureCodeAndHash','incompleteArchiveCannotContainManifest','normalSessionRecordsOwnTaskAndBoundedEvents','normalSessionRecreationPreservesMarker','frameworkExportDisabledOffTarget','frameworkDexRequiresClassDefinition','frameworkArchiveMatchesBytesAndRejectsDigestChange'}
           cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
           assert {t.get('name') for t in cases} == required and len(cases) == len(required), [t.get('name') for t in cases]
           assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
@@ -107,7 +107,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/wb2-field-evidence"
           analyzer=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort -V | tail -1)
           test "$("$analyzer" manifest application-id "$apk")" = io.github.x647368maker.atomicworkbench.hostevidence
-          test "$("$analyzer" manifest version-code "$apk")" = 3
+          test "$("$analyzer" manifest version-code "$apk")" = 4
           "$analyzer" manifest print "$apk" > "$RUNNER_TEMP/wb2-field-evidence/manifest.xml"
           python3 - "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$apk" <<'PY'
           import sys, xml.etree.ElementTree as E, zipfile

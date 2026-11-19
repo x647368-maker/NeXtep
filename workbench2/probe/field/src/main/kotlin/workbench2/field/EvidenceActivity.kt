@@ -31,7 +31,12 @@ class EvidenceActivity : Activity() {
     private lateinit var export: Button
     private lateinit var exportStatus: TextView
     private var selectingDocument = false
-    private companion object { const val SAVE_HOST_CODE = 2301 }
+    private lateinit var framework: Button
+    private var pendingFramework: FrameworkCodeArchive.Scan? = null
+    private companion object {
+        const val SAVE_HOST_CODE = 2301
+        const val SAVE_FRAMEWORK = 2302
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,6 +101,13 @@ class EvidenceActivity : Activity() {
             textSize = 14f
             setTextIsSelectable(true)
         }
+        framework = Button(this).apply {
+            id = R.id.export_framework_code
+            text = "定向导出原生框架 ZIP"
+            isEnabled = FrameworkCodeArchive.isTarget()
+            setOnClickListener { scanFramework() }
+        }
+        body.addView(framework)
         for (view in listOf(collect, copy, share, export, exportStatus, output)) body.addView(view)
         body.addView(Button(this).apply {
             text = "正常多窗任务验证"
@@ -112,6 +124,7 @@ class EvidenceActivity : Activity() {
         if (running || selectingDocument || isFinishing || isDestroyed) return
         running = true
         report = null
+        framework.isEnabled = false
         collect.isEnabled = false
         copy.isEnabled = false
         share.isEnabled = false
@@ -132,6 +145,7 @@ class EvidenceActivity : Activity() {
                 running = false
                 report = result
                 collect.isEnabled = true
+                framework.isEnabled = FrameworkCodeArchive.isTarget()
                 copy.isEnabled = result != null
                 share.isEnabled = result != null
                 export.isEnabled = canExport()
@@ -147,6 +161,7 @@ class EvidenceActivity : Activity() {
     private fun chooseExport() {
         if (!canExport() || isFinishing || isDestroyed) return
         selectingDocument = true
+        framework.isEnabled = false
         collect.isEnabled = false
         export.isEnabled = false
         try {
@@ -155,6 +170,7 @@ class EvidenceActivity : Activity() {
                 .putExtra(Intent.EXTRA_TITLE,"PMS110-pscanvas-2.0.0-code.zip"),SAVE_HOST_CODE)
         } catch (_: Exception) {
             selectingDocument=false
+            framework.isEnabled=FrameworkCodeArchive.isTarget()
             collect.isEnabled=true
             export.isEnabled=canExport()
             exportStatus.text="无法打开系统保存界面，未读取安装文件。"
@@ -164,10 +180,22 @@ class EvidenceActivity : Activity() {
     @Deprecated("Platform Activity result is retained to avoid an extra dependency")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if (requestCode==SAVE_FRAMEWORK) {
+            val scan=pendingFramework
+            pendingFramework=null
+            val requested=selectingDocument
+            selectingDocument=false
+            resetButtons()
+            val uri=data?.data
+            if (requested && scan!=null && resultCode==RESULT_OK && uri?.scheme==ContentResolver.SCHEME_CONTENT &&
+                FrameworkCodeArchive.isTarget() && !running && !isFinishing && !isDestroyed) exportFramework(scan,uri)
+            return
+        }
         if (requestCode!=SAVE_HOST_CODE) return
         val requested = selectingDocument
         selectingDocument=false
         collect.isEnabled=!running
+        framework.isEnabled=!running && FrameworkCodeArchive.isTarget()
         export.isEnabled=canExport()
         val uri=data?.data
         if (!requested || resultCode!=RESULT_OK || !canExport() || uri?.scheme!=ContentResolver.SCHEME_CONTENT) return
@@ -176,6 +204,7 @@ class EvidenceActivity : Activity() {
 
     private fun exportOnce(uri: Uri) {
         running=true
+        framework.isEnabled=false
         collect.isEnabled=false
         export.isEnabled=false
         exportStatus.text="正在导出公开安装文件…"
@@ -190,11 +219,76 @@ class EvidenceActivity : Activity() {
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 running=false
+                framework.isEnabled=FrameworkCodeArchive.isTarget()
                 collect.isEnabled=true
                 export.isEnabled=canExport()
                 exportStatus.text=if(ok) "导出完成，请将刚保存的 ZIP 发给研发。无需安装其中 APK。"
                     else "导出失败：身份不匹配、文件不可读或保存失败。请勿发送不完整 ZIP。"
             }
         },"Workbench2-ExplicitCodeExport").start()
+    }
+
+    private fun resetButtons() {
+        collect.isEnabled=!running && !selectingDocument
+        export.isEnabled=canExport()
+        framework.isEnabled=!running && !selectingDocument && FrameworkCodeArchive.isTarget()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun scanFramework() {
+        if (running || selectingDocument || isDestroyed || isFinishing || !FrameworkCodeArchive.isTarget()) return
+        running=true
+        resetButtons()
+        exportStatus.text="正在一次性扫描公开框架文件（不加载框架代码）…"
+        Thread({
+            val scan=try { FrameworkCodeArchive.scan() } catch (_: Exception) { null }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                running=false
+                resetButtons()
+                if (scan==null) {
+                    exportStatus.text="框架扫描失败或身份不匹配。未导出。"
+                    return@runOnUiThread
+                }
+                exportStatus.text=scan.summary()
+                if (scan.matches.isEmpty()) {
+                    exportStatus.append("；没有可确认定义的可读文件，未创建 ZIP。")
+                    return@runOnUiThread
+                }
+                pendingFramework=scan
+                selectingDocument=true
+                resetButtons()
+                try {
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip")
+                        .putExtra(Intent.EXTRA_TITLE,"PMS110-flexible-framework-code.zip"),SAVE_FRAMEWORK)
+                } catch (_: Exception) {
+                    pendingFramework=null
+                    selectingDocument=false
+                    resetButtons()
+                    exportStatus.append("；无法打开保存界面。")
+                }
+            }
+        },"Workbench2-ExplicitFrameworkScan").start()
+    }
+
+    private fun exportFramework(scan: FrameworkCodeArchive.Scan,uri: Uri) {
+        running=true
+        resetButtons()
+        exportStatus.text="正在保存命中的框架文件…"
+        val app=applicationContext
+        Thread({
+            val ok=try {
+                FrameworkCodeArchive.export(scan) { requireNotNull(app.contentResolver.openOutputStream(uri,"w")) }
+                true
+            } catch (_: Exception) { false }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                running=false
+                resetButtons()
+                exportStatus.text=if(ok) scan.summary()+"；导出完成，请发送 ZIP（即使只命中一类）。"
+                    else "导出失败或文件变化，请勿发送不完整 ZIP。"
+            }
+        },"Workbench2-ExplicitFrameworkExport").start()
     }
 }

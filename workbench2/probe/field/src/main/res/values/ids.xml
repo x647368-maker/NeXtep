@@ -4,4 +4,5 @@
     <item type="id" name="share_evidence"/>
     <item type="id" name="evidence_report"/>
     <item type="id" name="export_host_code"/>
+    <item type="id" name="export_framework_code"/>
 </resources>
