@@ -1,5 +1,24 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 Y · 系统服务授权与宿主死亡后的任务去向（2026-11-20）
+
+继承 X（`4ec5d78cd46a16b569d7092ea75ed3ad9ae8c91b`）。已实际读取机主提供的 `oplus-services.jar`，30,503,412 字节，SHA-256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`，ZIP 校验通过，含三份 DEX。以下是该文件的静态控制流证据。未独立比对 OTA 指纹，本轮没有编译、模拟器或真机任务操作。
+
+| 范围 | 可复核位置和结果 |
+| --- | --- |
+| 原签名应用能否直接建立会话 | `classes3.dex` 的 `ActivityTaskManagerServiceExtImpl` #5226 实例化 `OplusActivityTaskManagerServiceEnhance`，其构造方法 #20810 将这个 `IOplusActivityTaskManager.Stub` 实现安装为 ATMS 的 Binder 扩展。注册任务观察者 #20958、注册容器回调 #20954、预绑定 #21019、绑定子任务 #21002、查询子任务 #20847、重置 #20992 和退出 #20834 均先通过 `ActivityManagerInternal.enforceCallingPermission` 检查 `com.oplus.permission.safe.WINDOW`，再委托给窗口服务。已核入口没有向普通调用者签发单任务授权。 |
+| 哪个身份有授权 | 既有 PMS110 宿主采集包的 `manifest.json` 记录该权限保护级别为 18（`signature\|privileged`），pscanvas 已获准，采集应用未获准。工程 `ab62e52` 的 `app/src/main/AndroidManifest.xml` 也未声明该权限。采集应用与正式包各有自己的身份。当前没有台前调度原签名 UID 已获准的记录，添加声明或 Vector 可加载也不能产生这项授权。[Android 权限定义](https://developer.android.com/guide/topics/manifest/permission-element) |
+| 任务观察者 Binder 死亡 | 服务构造方法 #13944 为 `mFlexibleWindowObservers` 建立专用回调列表，容器回调使用另一份普通列表。`FlexibleWindowObserverMaps.onCallbackDied`（#13872，`code_item 0x2685a8`）逐项读取该观察者名下的任务，在 WM 锁内重新查找仍存在的 Task（`+0x6f`）。它可解除嵌入关系，还会读取该 Task 的 `isRemoveTaskWhenDetach()`（`+0x85`）。该值为真时，服务向 `ActivityTaskSupervisor.removeTask` 传入所查到的 Task（`+0x103`）。移除的是任务本身。仅在该观察者名下登记的任务才进入这段处理。 |
+| 实际承载宿主进程死亡 | `classes.dex` 的 `ActivityManagerServiceExtImpl.handleAppDiedLocked` #7840 调用 `classes3.dex` 的窗口服务 #14153。附着清理 #14152 可移除 `mAttachLeash` 及其登记项。pscanvas 专用分支还会清理分屏状态、释放显示的 Insets 控制，特定切换状态才安排超时处理。在这些处理里未找到能证明原任务已回到借用前父容器、旧借用也已失效的回执。 |
+
+**审查决定。** W 暂缓生产接线的判断成立。X 引用的 AOSP 默认死亡行为不能套用在 ColorOS 任务观察者上。使用同款观察者登记目标任务会影响任务生命周期，不能当作只读旁证。系统能感知宿主死亡，但解除关联、释放图层或未命中移除分支，都不能单独确认同一任务已安全归还。当前原签名普通安装的直连路径到此停止。
+
+**交给唯一生产窗口。** 最小解阻条件是能举证的系统授权或受支持的按任务委托，允许原签名调用方使用指定容器，并有在宿主和客户端均退出后仍能撤销这次借用、保留并恢复该任务的授权方。优先核对已有系统集成或授权记录中的调用身份、任务范围和死亡策略。没有这项凭据时，无需再提取框架或试装 APK。实际授权到位后，才在 `workbench2/engine/src/main/kotlin/workbench2/nativebridge/` 新增对应的 `NativePort` 适配实现，复用 `ReceiptBridge.kt` 的 `dispatch`、`stopLocalCallbacks`、独立快照及归还校验。`requestAttachCancellation` 只对接服务端确实支持的撤销操作。
+
+**首个受控实验。** 在隔离的获准环境选一个已打开、内容可丢弃的第三方全屏任务。从宿主外以只读方式记下原 user、taskId、任务 token、物理显示与 WM 父容器。只借这一项，分次验证客户端断连和实际宿主死亡。独立端须核实原 token 对应的任务恢复原归属、原页面可操作，且旧会话已失效。任务消失、token 改变或归属未知，立即停止新借用，交由存活的授权方撤销并恢复可恢复的原任务。任务已被移除的样本记失败，重开应用不得计为恢复。单任务实验结果不能直接放行正式发布或五窗性能。
+
+---
+
 ## 第十三阶段 X · 系统侧会话授权与宿主死亡归还（2026-11-20，独立审查）
 
 继承 W（`d6301b5c185fb03a3137104b88547b07c24ba8b1`）。本轮未取得与 PMS110 当前构建匹配的任务服务端，原签名调用方的限域会话和宿主死亡后的同任务归还均待证。以下是新增的静态证据和收敛后的材料请求，未执行 Android 编译或真机借用。
