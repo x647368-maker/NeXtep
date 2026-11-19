@@ -31,3 +31,43 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" --jq '.[].base.ref' > "$RUNNER_TEMP/bases"
           if [ "$(wc -l < "$RUNNER_TEMP/bases")" -gt 3 ]; then echo "::warning::Open PR count exceeds three"; fi
           while IFS= read -r ref; do grep -Fxq "$ref" "$RUNNER_TEMP/heads"; done < "$RUNNER_TEMP/bases"
+      - name: Verify registered branches and frozen references
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import collections, datetime, json, pathlib, subprocess
+          def api(path):
+              result = subprocess.check_output(['gh','api','--paginate','--slurp',f'repos/{repo}/{path}'], text=True)
+              return [item for page in json.loads(result) for item in page]
+          def warning(message):
+              print('::warning::' + message)
+          import os
+          repo = os.environ['GITHUB_REPOSITORY']
+          register = json.loads(pathlib.Path('docs/workbench-registry.json').read_text())
+          heads = {item['name']:item['commit']['sha'] for item in api('branches?per_page=100')}
+          unknown = set(heads) - set(register['baseline']) - set(register['tasks'])
+          for name in sorted(unknown):
+              warning('Unregistered branch: ' + name)
+          active = {name:task for name,task in register['tasks'].items() if name in heads}
+          if len(active)>5: warning('More than five active branches')
+          for topic,count in collections.Counter(t['topic'] for t in active.values()).items():
+              if count>1: warning('Multiple active candidates for ' + topic)
+          prs = api('pulls?state=open&per_page=100')
+          for pr in prs:
+              if pr['head']['repo'] and pr['head']['repo']['full_name']==repo:
+                  assert heads.get(pr['head']['ref']) == pr['head']['sha'], pr['html_url']
+          tags = {item['name']:item['commit']['sha'] for item in api('tags?per_page=100')}
+          for name,sha in register['tags'].items(): assert tags.get(name)==sha, name
+          for name,sha in register['frozen'].items(): assert heads.get(name)==sha, name
+          for name in register['required']: assert name in heads, name
+          recent = set()
+          cutoff = datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=1)
+          for event in api('events?per_page=100'):
+              if datetime.datetime.fromisoformat(event['created_at'].replace('Z','+00:00'))<cutoff: continue
+              p = event['payload']
+              if event['type']=='CreateEvent' and p.get('ref_type')=='branch' and p.get('ref') in unknown:
+                  recent.add(p['ref'])
+          if len(recent)>=3: warning('Three or more unregistered branches observed in 24 hours')
+          print(f'{len(heads)} branches, {len(active)} registered active tasks, {len(prs)} open PRs')
+          PY
