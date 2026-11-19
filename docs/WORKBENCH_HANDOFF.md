@@ -1,6 +1,13 @@
 # 2026-11-19 最新有效接任检查点：Atomic Workbench 2.0
 **本节优先于下方历史 V89 研发方向。** 机主明确授权本窗口独任研发负责人，旧窗口/PR 仅供只读参考；停止 V89 补丁路线。唯一生产研发分支 `workbench2/core`，目前 2.0 PR 0 个，最多允许 1 个。禁止历史分支变更、删除、合并或发布。保护原包名、实际有效签名、配置/工作组数据、成熟产品及设备适配成果。永久研发规则继续有效。此治理文件仅记录事实，不是产品代码。
 
+## 第十阶段 A：统一核心实际 Android 工程接入（2026-11-19）
+- 用户明确说明 PMS110 暂不在身边；原签名 field 工具已交付，不等待机器而继续可执行的 Android 核心接入。唯一分支 workbench2/core HEAD f58bfaeb7ba3fc94d2bf321fba8c1762e790c98b，父 ac4c2712a93f3d0fb2840f4ef82990606f1a298a。12 个文件变更，旧 app、field 工具源代码、包名签名配置及历史分支不改，0 新研发分支/PR。
+- 独立 workbench2/engine Android library 接入 stage-7 current 三个原始源码，全部 SHA256SUMS.txt 原始校验通过，远程 Git blob 与接管包本地 git hash-object 逐一一致：UnifiedCore.kt 3fd3403c9d0d82c1d23f35827bf5ac47cc5a8885；MotionMath.kt 499d32e4d6cad80c1cd78904db48212819eaa1af；ReceiptBridge.kt d8439b4d04d18fb39e7dbac03908864302ce86a3。未重新造状态机或改动画数学；历史 87978 JVM 断言不是本轮 Android 或设备证据。
+- 新 OwnerLooperPort 使用调用方现有 Android Looper/Handler，跨线程回执快照复制并投递，不创建常驻线程、轮询、定时器或 OEM 调用。保留迟到回执，不因取消清空收据。Looper 死亡时不能将无法投递视作释放；需要独立宿主死亡归还证明，当前未解决。核心没有生产入口、真实 NativePort 或准入证据；androidTest 假后端仅用于验证 Android 实际消息传递与统一核心状态变更。不得使用 Capability 全 true 测试值、预置身份 begin(scene) 或合成 scene 充当真实任务授权/归还。
+- 实际 CI [44543976145](https://github.com/x647368-maker/NeXtep/actions/runs/44543976145) 已触发，job 135629464152；Android SDK 安装完成，正在 compile；运行时三项门禁为 noCapabilityMeansNoDispatch、cancellationAndLateReceiptRetainReturnBeforeHostRelease、mismatchedHostReceiptCannotSettleOutstandingEffect。新旧专属 workflow 增加 path 过滤，之后 engine 改动不需重复构建 probe/field。本次变更 probe workflow 本身触发一次旧完整 CI [44543976251](https://github.com/x647368-maker/NeXtep/actions/runs/44543976251)，不改变上一轮交付 APK，不重新签名交付。不把未完成 CI 当作通过。
+- 接续：先核实本轮 Android AAR/classes/source blobs 及实际 XML；失败按实际日志修复同一分支。已有原签名取证工具无需重做。下一工程任务为在 Android 真实图层上验证无权限的自有 surface 回执边界（如适用）与统一 core 的双任务交换失败/回滚，不能替代原生任务。用户手机回来后取得公开身份/固件报告，独立核实合法宿主入口和任务归还/宿主死亡恢复，再实现实际 native port 的受控单任务，不以 stock 模拟器或参考模型为 ColorOS 证据。禁止重复 V89 或增加全局 Hook。
+
 ## 第九阶段 B 最终闭环：独立真机取证 APK 原签名交付（2026-11-19）
 - 唯一生产研发分支 workbench2/core HEAD ac4c2712a93f3d0fb2840f4ef82990606f1a298a。此次仅改专属 CI 离线签名输入归档，生产 app、其包名/配置/用户数据及历史分支不改。
 - [CI 44540541263](https://github.com/x647368-maker/NeXtep/actions/runs/44540541263) completed/success，实际下载并独立校验 field-validation 14539236000 SHA256 f93cb4339c027183ebb035fe735318d213152931768931632dc23dc614c8db22、runtime-boundary 14538981487 SHA256 40464608406f678f21bc1715dd34a187a85a59417ffa5f51e320b0339e347860；XML 4/4、0 failure/error/skipped，原三项拒绝态及一次手动界面取证测试通过。只在 stock Android 15 模拟器，不是 ColorOS 验收。
