@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 最新有效基线：第十一阶段 H 完整 Android 运行验收闭环（2026-11-20）
+- 本节覆盖旧节中的 pending/in_progress/旧验收基线。唯一生产 HEAD 及最新完整 Android 运行验收 SHA 均为 a155ca2af092f512d69c63e0816aece8030e54ad，父 5e0a8e4828ccff202589dd886f608730163b97e3；[CI 44564285630](https://github.com/x647368-maker/NeXtep/actions/runs/44564285630) 与 job 135714003322 均 completed/success，updated_at 2026-11-19T16:38:58Z。所有编译、provenance、模拟器准备、Android 测试、像素采集、五态门禁、证据上传均 success。旧 44561100008 cancelled 保留为历史失败证据，启动失败根因仍未知，勿重跑。
+- 本轮实际下载两个 GitHub artifact，在容器内独立计算哈希、解压检查 CRC、解析实际 XML/像素日志，断言全部 13 个现有测试名称精确匹配、无 failure/error/skipped、五个 PIXELS_OK 按序 initial/interrupted/rollback/swapped/detached、四个 COMMIT_OK 序号1/2/3/4。runtime artifact 14552104390：66410 bytes，ZIP SHA256 df0f629ec8dd182f115d225ab3a49875308e2e68799c9b9697b28bf8fc2401a4；XML tests=13 failures=0 errors=0 skipped=0 time=7.525，XML SHA256 8e577eb38b6bfe769441f6176b313fa9602ed1ddb36d0b19c3653e3357850621，exit-code=0；像素日志 SHA256 8ae9553a2effe64ca6fb168ff80299b303dd6f3764289edb5ccc6ef7a45806c5。设备 fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。13项含最新启动固件/宿主版本不一致拒绝断言。五态实际红绿黑像素日志分别 initial ffff0000,ff00ff00,ff000000；interrupted ffff0000,ff00ff00；rollback ffff0000,ff00ff00,ff000000；swapped ffff0000,ff00ff00,ff000000；detached ff000000,ff000000。不是任意第三方任务、真实 OEM 画面或物理真机完整逐帧验收。
+- compile artifact 14553430441：84308 bytes，ZIP SHA256 cc2455cbf1114d2d904c5c30963a8a77b12e2d0586f563475384c851671726ea；AAR SHA256 a32256aadbf93c89d191655bace1a2d4ca1116216fa677a576750971876bcecf 与旧 5e0a8e4 AAR 字节一致；ZIP/AAR/classes.jar CRC 全通过；checkout-sha.txt 精确匹配最新 SHA，source-blobs.txt 与远端未截断树六源文件精确6/6，六个核心类实际存在，Manifest minSdk35、无组件和权限。AAR 不是安装包。无须再重复编译或模拟器验证当前基线。
+- 本轮实际闭环为 CI 恢复及最新 Android 基线独立验收；无新生产源码修改、分支、PR、APK。严格原生 A 已授权，不再询问旧 VD 过渡方案。下一唯一关键节点是取得系统支持且有授权的真实第三方任务承载入口与独立归还/host death 恢复契约。11C/D 已有静态证据和公开路线排除；不能以更高推理、盲写 NativePort、继续外围测试或重复取证替代缺失权限。若无新证据，暂停低收益代码变动。可执行的解锁动作是向 OEM 官方开发支持确认具体固件与包名适用的任务组织接口、授权条件、原生输入及独立异常归还契约；未发出工单、未获回复，不声称获得许可。只有收到可验证的授权/接口能力后，才实施单真实任务最小接入，然后双任务及一大四小。仍需全部 F01–F21/109项验收、原签名及真机验证；不得正式发布。
+- 既有 CI 自动监测目标已经达到最终状态；无需重复监测或新建任务。本窗口不主动启动最高模型工作模式，权限/工具障碍并非推理不足。用户不需要重新安装诊断工具或运行命令。
+
+---
+
+
 ## 第十一阶段 H：CI 阻塞解除、最新 Android 运行已启动（2026-11-20）
 - GitHub 实时核实旧 run 44561100008（5e0a8e4）completed/cancelled，updated_at 2026-11-19T16:35:07Z。未查得取消操作者，不声称由本窗口取消；原日志仍返回 404 BlobNotFound，仅有旧 compile artifact 14550975445，原 provision failure 的具体根因仍未知。
 - 新 run [44564285630](https://github.com/x647368-maker/NeXtep/actions/runs/44564285630)，head a155ca2af092f512d69c63e0816aece8030e54ad，job 135714003322。实际两次核查：compile、source provenance、artifact upload、Provision stock Android 15 emulator 均 completed/success；Execute actual Android Looper and owned Surface tests 已 in_progress，后续像素采样及证据上传尚 pending。compile artifact 14553430441，84308 bytes，GitHub metadata digest sha256:cc2455cbf1114d2d904c5c30963a8a77b12e2d0586f563475384c851671726ea，尚未独立下载计算；不得提前宣称 13/13 或五态像素通过。旧完整验收基线仍是 43130cbe / 44560206676。
