@@ -14,6 +14,8 @@
 
 - K 阶段新增实际产物证据：44597034341 的 AAR artifact 14565817941 已实际下载并在隔离环境核验，ZIP SHA256 776dd9a9e054467906354f0a5530a69609ee1b486c894dc10720cd744e9935ed，ZIP/AAR/classes.jar 三层 CRC 全过，checkout-sha=9d385e9d2e8da1e2c90a0b737e45880f887df2fe，AAR SHA256 83971b60c99ddbf5adf95ca0d3f2e6e989a87339247e438033c11c1f3572814a 与内部清单一致，三必需 class 均存在，并与第11阶段既有 probe AAR 字节相同。Android 15 emulator Provision 实际 completed/success，Execute Android runtime boundary tests in_progress；field 新代码编译、整体9项运行测试、APK与原签名尚未验收。没有失败，不修改代码、不重启CI。不提前解锁/导出私钥；有合格未签名 APK 后再执行隔离签名。不得将 AAR 视为 APK 或新 field 通过。下一执行任务仅为当前 CI 最终结果并按实际失败或验签处理。
 
+- K 阶段新增可复核进展：CI 44597034341 中 Execute Android runtime boundary tests 已 completed/success，工作流明确检查3项指定 instrumentation case，field assembleRelease/connectedDebugAndroidTest（含另外6项）尚 in_progress；无失败，未重跑 CI。原签名材料已从用户私密 Library 实际隔离取回，使用 PKCS12 解锁并确认私钥存在；证书 SHA256 实测 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe 与既定交付门禁匹配。未显示密码、未提交密钥或上传 secrets；本次临时密钥和密码副本已清理，Library 原件不变。待 CI 完成并核验 9 项测试、manifest、unsigned artifact 再按原离线流程签名及 apksigner 校验，不等同已签署 APK 或已核验当前真机生产包。下一步只处理本次实际 CI 最终状态与交付。
+
 ## 第十三阶段 J：正常系统入口验证前的具体授权决策点（2026-11-20）
 
 - 继承 I，不复查竞品源码或冻结 CI。定向实读现有 HostMetadata.java blob 965d118022912cb88c8940b2b68dba42dccc534d、EvidenceActivity.kt 94c723e198fb1ac2a3634f54c372cacc5dfbfcc9、field Manifest c78d03f6177ca99a582606ab2a24c691c976e83d（均为 67d71eb8 冻结树）。R2 的方法白名单只采 init/setListener/resize/release 元数据，不观察真实生命周期。旧独立 field Activity 无任务控制，且报告仅内存保存、configuration 重建时可能丢失，不能将现有页面内容当作可信同任务归还见证。第11C/D 的目标 OEM manifest 9 个 exported 组件均受权限保护，collector 未获 safe.WINDOW；生产包授权状态仍未知。Library 定向检索未返回原始宿主 ZIP，未重复要求机主导出，沿用既有取证记录。没有新的目标机连接或实测，不能声称发现了可调用后端。
