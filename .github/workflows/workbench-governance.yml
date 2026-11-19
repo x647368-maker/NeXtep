@@ -3,6 +3,7 @@ on:
   push:
     branches: ['atomic-workbench/v89-held-receipt-current-20261119']
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     branches: ['atomic-workbench/v89-held-receipt-current-20261119','atomic-workbench/v89-domain-regression-recovery-20261119']
 permissions:
   contents: read
