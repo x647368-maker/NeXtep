@@ -379,6 +379,38 @@ class TaskSwitcherView(
         return transform
     }
 
+    /** Read-only exact axis-aligned TextureView content bound for native mirror admission.
+     * Refuse clipped, animated, rotated or disagreeing geometry, never alter the view.
+     */
+    internal fun mirrorLiveContentBounds():RectF? {
+        if(!hasVisibleContent() || !textureView.isAvailable || liveBounds.isEmpty ||
+            textureView.left!=0 || textureView.top!=0 ||
+            textureView.width!=width || textureView.height!=height ||
+            !textureView.matrix.isIdentity || kotlin.math.abs(textureView.alpha-1f)>.001f)return null
+        fun axisAligned(matrix:android.graphics.Matrix):Boolean {
+            val m=FloatArray(9)
+            matrix.getValues(m)
+            return m.all { it.isFinite() } && m[0]>0f && m[4]>0f &&
+                kotlin.math.abs(m[1])<.0001f && kotlin.math.abs(m[3])<.0001f &&
+                kotlin.math.abs(m[6])<.0001f && kotlin.math.abs(m[7])<.0001f &&
+                kotlin.math.abs(m[8]-1f)<.0001f
+        }
+        val texture=textureView.getTransform(android.graphics.Matrix())
+        if(!axisAligned(texture))return null
+        val box=RectF(0f,0f,width.toFloat(),height.toFloat())
+        texture.mapRect(box)
+        if(maxOf(kotlin.math.abs(box.left-liveBounds.left),kotlin.math.abs(box.top-liveBounds.top),
+                kotlin.math.abs(box.right-liveBounds.right),kotlin.math.abs(box.bottom-liveBounds.bottom))>1f)return null
+        val screen=localToScreenMatrix() ?: return null
+        if(!axisAligned(screen))return null
+        screen.mapRect(box)
+        val visible=Rect()
+        if(!getScreenVisibleRect(visible) || box.width()<2f || box.height()<2f ||
+            box.left<visible.left-1f || box.top<visible.top-1f ||
+            box.right>visible.right+1f || box.bottom>visible.bottom+1f)return null
+        return box
+    }
+
     fun screenQuad(): FloatArray? {
         val transform = localToScreenMatrix() ?: return null
         val points = floatArrayOf(0f, 0f, width.toFloat(), 0f, width.toFloat(), height.toFloat(), 0f, height.toFloat())

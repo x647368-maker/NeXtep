@@ -439,6 +439,20 @@ object TaskSurfaceCompat {
         val crop: Rect,
     )
 
+    internal fun ownedSlotMirrorFrame(stamp:MirrorSourceStamp):MirrorDestinationFrame? {
+        if(stamp.displayId==Display.DEFAULT_DISPLAY || isDisplayExchanging(stamp.taskId) ||
+            !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
+        val slot=slotSurfaces[stamp.taskId] ?: return null
+        val state=observedStates[stamp.taskId] ?: return null
+        if(slot.leash!==stamp.leash || slot.displayId!=stamp.displayId ||
+            slot.lastAppliedAt<=0L || slot.crop!=state.bounds ||
+            slot.crop.left!=0 || slot.crop.top!=0 || slot.crop.isEmpty ||
+            slotSurfaces[stamp.taskId]!==slot || observedStates[stamp.taskId]!==state ||
+            !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
+        return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
+            Rect(slot.crop),1f,0f,0f)
+    }
+
     internal fun createOwnedSlotTaskMirror(
         taskId: Int,
         expectedDisplayId: Int,

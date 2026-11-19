@@ -101,6 +101,8 @@ internal object StageConcurrentNativeTrialPolicy {
         // Only the precisely scoped evidence candidate can emit this reason.
         // Re-evaluate on the next user tap; never clear a prior OEM denial.
         "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,
+        "fallback:slot_content_mapping_unavailable",
+        "fallback:content_anchor_unrepresentable",
         "fallback:invalid_native_handles",
         "fallback:rail_corridor_blocked" -> true
         else -> false

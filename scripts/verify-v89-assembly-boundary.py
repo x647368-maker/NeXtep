@@ -180,16 +180,42 @@ def main():
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "explicit private firmware-scoped evidence trial only")
-    equal(paths(evidence_trial, "HEAD"), {
+    diag_retry = "30498e1a5c5e5a0390e320e8fc6f629d560ff2a3"
+    subprocess.run(["git", "merge-base", "--is-ancestor", diag_retry, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(evidence_trial, diag_retry), {
         GATE, P+"systemui/StageLiveSurfaceExchange.kt",
         P+"systemui/StageConcurrentNativeTrialPolicy.kt",
         T+"systemui/StageMirrorRootContractTest.kt",
     }, "isolated opt-in diagnostic retry delta")
+    equal(paths(diag_retry, "HEAD"), {
+        GATE, P+"systemui/StageLiveSurfaceExchange.kt",
+        P+"systemui/StageConcurrentNativeTrialPolicy.kt",
+        P+"framework/TaskSurfaceCompat.kt", P+"display/TaskSwitcherView.kt",
+        P+"systemui/StageEndpointContentMapping.kt",
+        T+"systemui/StageEndpointContentMappingTest.kt",
+    }, "isolated content endpoint trial delta")
+    source("systemui/StageEndpointContentMapping.kt", "fun compose(", "fun mapError(", "fun held(", "fun flight(")
+    source("systemui/StageLiveSurfaceExchange.kt", "if(inEvidenceScope && diagnosticOptIn)",
+           "endpoint_content_anchor_trial=both", "StageEndpointContentMapping.flight(",
+           "StageEndpointContentMapping.held(", 'destinationContentMatches("ready")',
+           'destinationContentMatches("reveal_end")', "content_terminal")
+    source("display/TaskSwitcherView.kt", "internal fun mirrorLiveContentBounds()")
+    source("framework/TaskSurfaceCompat.kt", "internal fun ownedSlotMirrorFrame(")
+    for path in (P+"systemui/StageLiveSurfaceFlightGeometry.kt", P+"systemui/StageHeldEndpointPolicy.kt"):
+        require((ROOT/path).read_bytes()==git("show", diag_retry+":"+path),
+                "old coordinate/route policies changed "+path)
     source("systemui/StageLiveSurfaceExchange.kt",
            "StageMirrorEvidenceTrial.awaitingDiagnostic(observation,inEvidenceScope,diagnosticOptIn)",
            "return markUnavailable(StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED)")
-    retry_source = source("systemui/StageConcurrentNativeTrialPolicy.kt",
+    current_retry_source = source("systemui/StageConcurrentNativeTrialPolicy.kt",
                           '"fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED')
+    retry_source = git("show", diag_retry+":"+P+"systemui/StageConcurrentNativeTrialPolicy.kt").decode()
+    require(current_retry_source == retry_source.replace(
+        '        "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,',
+        '        "fallback:"+StageMirrorEvidenceTrial.DIAGNOSTIC_REQUIRED,\n'
+        '        "fallback:slot_content_mapping_unavailable",\n'
+        '        "fallback:content_anchor_unrepresentable",', 1),
+        "only content geometry readiness may be newly transient")
     require(retry_source == git("show", evidence_trial+":"+P+"systemui/StageConcurrentNativeTrialPolicy.kt").decode().replace(
             '        "fallback:main_source_mapping_unrepresentable",',
             '        "fallback:main_source_mapping_unrepresentable",\n'
@@ -229,9 +255,10 @@ def main():
            "detached_evidence_trial")
     require("Build.MODEL" not in mirror_source and "Build.MANUFACTURER" not in mirror_source,
             "no brand/model root contract inference")
+    # The previous coordinate-only delta remains frozen at diag_retry.
     for unchanged in ("framework/TaskSurfaceCompat.kt", "systemui/StageLiveSurfaceFlightGeometry.kt"):
         path = P+unchanged
-        require((ROOT/path).read_bytes()==git("show", first_frame_fix+":"+path),
+        require(git("show", diag_retry+":"+path)==git("show", first_frame_fix+":"+path),
                 "coordinate-only stage unexpectedly changed "+unchanged)
     require("randomizedRebaseRespectsSourceBoundsAndUniformCenteredCover" in
             (ROOT/(T+"systemui/StageHeldEndpointPolicyTest.kt")).read_text(),
