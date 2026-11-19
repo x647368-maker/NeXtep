@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 K：独立宿主只读验证包原签名交付（2026-11-20）
+- 机主本轮提供既有有效签名材料。隔离环境解锁并核对唯一证书 SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe，与历史有效签名精确一致。未将密钥、密码或签名材料上传 GitHub；临时签名工作目录已自动清理，用户原文件不改。CI Secrets 仍缺，不宣称永久修复。
+- 使用验收通过 CI 44581543773 的 artifact 14560565177，实际复核整个归档 SHA256 6291a69e0aa515a89a6a8b35bffb1de1bb2de9de5d558c97dd9eb8ff70b6a7ad、ZIP CRC、SHA256SUMS 5/5、checkout SHA db5d3df49ad6078fd7a792393993b778e02ddd06；未签名 APK SHA256 f4a65d332dc505327edb936bb3a3849fb488289dcb06f3dd1211f4dd05e252b2。使用该归档官方 SDK apksigner.jar 离线签名，完整 verify --verbose --print-certs 返回 Verifies、v3=true、唯一 signer 指纹完全一致。签前签后非签名 ZIP payload 8/8 哈希完全一致、CRC 通过；唯一 scope com.oplus.pscanvas。
+- 实际私测交付文件 AtomicWorkbench2-HostRuntime-2.0-ORIGINAL-SIGNED.apk，21292 bytes，SHA256 28e9e79cd5f44d48c82f56500e4093dc98157b897806038154adffc57cb6f5fa；独立包 io.github.x647368maker.atomicworkbench.hostruntime，versionCode1、versionName 2.0-host-runtime-1，非正式APP。仅用户本轮对话下载，不发布 Release。源码保持 db5d3df4、原核心已验收 76794025，无新增源码、分支、PR或权限。
+- 下一步唯一实际节点：机主先正常退出运行中的工作台，在 Vector 停用旧台前调度和同行模块，安装独立验证 APK 后仅在框架确认支持 API102 且可安全撤销时启用此模块，单作用域多窗口宿主；不授予额外 Root、不改系统、不增其他作用域、不强制结束系统进程。按框架正常加载方式或用户自愿正常重启手机取得 WB2HostRuntime 模块日志，只回传该标记的 BEGIN/END/REFUSED/INCOMPLETE 相关行，不上传其他私人日志。如框架不识别或固件不匹配则停用并报告，不绕过。取证后停用独立模块。真实宿主 API 可见性、授权、输入、归还及异常恢复均依实机证据判断，不能把此次签名和模拟器测试当成任务承载已完成。
+
+---
+
+
 ## 第十二阶段 J：精简单宿主只读工程 CI 完整通过，唯一交付阻塞为原签名（2026-11-20）
 - 唯一研发 HEAD db5d3df49ad6078fd7a792393993b778e02ddd06，原核心完整验收仍为 767940256c93be9696c3e36332b58c3d87503182（18项Android/5态像素）。[CI 44581543773](https://github.com/x647368-maker/NeXtep/actions/runs/44581543773) job 135763198785 completed/success，updated 2026-11-19T17:55:19Z；release 编译、API35模拟器、3项Android测试、APK安全及类定义白名单、离线未签名输入归档全部通过。签名步骤因秘密缺失走安全分支，签名产物上传 skipped；不等于签名通过。
 - 本轮实际下载两份产物并以容器独立复核字节数、SHA256、ZIP CRC。validation 14558773968（22475 bytes，c7360739db8b178bfe9bf29b6e109c202a55d836b429a9b4ad6ab20c6ee6c29c），原XML SHA256 80d2f712994b54b49fd666238fbfd7f451be730eec6eeceb76dc01adde638f61，3 tests/0 failures/errors/skipped，1.127s；unavailableMetadataDoesNotAdmitOrFabricateSymbols、publicMetadataDoesNotInitializeOrInvokeFixture、onlyExactAuthorizedObservationTargetMatches。fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys；不属于ColorOS真机验证。
