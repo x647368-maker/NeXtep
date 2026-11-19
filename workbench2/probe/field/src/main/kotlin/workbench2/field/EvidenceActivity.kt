@@ -97,6 +97,13 @@ class EvidenceActivity : Activity() {
             setTextIsSelectable(true)
         }
         for (view in listOf(collect, copy, share, export, exportStatus, output)) body.addView(view)
+        body.addView(Button(this).apply {
+            text = "正常多窗任务验证"
+            tag = "open_normal_session"
+            setOnClickListener {
+                startActivity(Intent(this@EvidenceActivity, NormalWindowSessionActivity::class.java))
+            }
+        })
         setContentView(scroll)
         scroll.requestApplyInsets()
     }

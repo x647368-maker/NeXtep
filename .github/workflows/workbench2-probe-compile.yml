@@ -92,7 +92,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           p = pathlib.Path('workbench2/probe/field/build/outputs/androidTest-results/connected')
-          required = {'manualReadOnlyReportOnStockDevice','stockHostExportRefusesBeforeOpeningDocument','archiveContainsExactPublicFixtureCodeAndHash','incompleteArchiveCannotContainManifest'}
+          required = {'manualReadOnlyReportOnStockDevice','stockHostExportRefusesBeforeOpeningDocument','archiveContainsExactPublicFixtureCodeAndHash','incompleteArchiveCannotContainManifest','normalSessionRecordsOwnTaskAndBoundedEvents','normalSessionRecreationPreservesMarker'}
           cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
           assert {t.get('name') for t in cases} == required and len(cases) == len(required), [t.get('name') for t in cases]
           assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
@@ -107,7 +107,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/wb2-field-evidence"
           analyzer=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort -V | tail -1)
           test "$("$analyzer" manifest application-id "$apk")" = io.github.x647368maker.atomicworkbench.hostevidence
-          test "$("$analyzer" manifest version-code "$apk")" = 2
+          test "$("$analyzer" manifest version-code "$apk")" = 3
           "$analyzer" manifest print "$apk" > "$RUNNER_TEMP/wb2-field-evidence/manifest.xml"
           python3 - "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$apk" <<'PY'
           import sys, xml.etree.ElementTree as E, zipfile
@@ -119,13 +119,20 @@ jobs:
           app = root.find('application')
           assert app is not None and app.get(a+'allowBackup') == 'false'
           components = [x for x in app if x.tag in ('activity','activity-alias','service','receiver','provider')]
-          assert len(components) == 1 and components[0].tag == 'activity'
-          assert components[0].get(a+'name') == 'workbench2.field.EvidenceActivity'
+          assert len(components) == 2 and all(c.tag == 'activity' for c in components)
+          by_name = {c.get(a+'name'): c for c in components}
+          assert set(by_name) == {'workbench2.field.EvidenceActivity', 'workbench2.field.NormalWindowSessionActivity'}
+          launcher = by_name['workbench2.field.EvidenceActivity']
+          fixture = by_name['workbench2.field.NormalWindowSessionActivity']
+          assert launcher.get(a+'exported') == 'true'
+          assert fixture.get(a+'exported') == 'false'
+          assert fixture.get(a+'resizeableActivity') == 'true'
+          assert fixture.find('intent-filter') is None
           assert not app.get(a+'debuggable') == 'true'
           assert [e.get(a+'name') for e in root.findall('queries/package')] == ['com.oplus.pscanvas']
           with zipfile.ZipFile(sys.argv[2]) as z:
               assert not any(n.startswith('META-INF/xposed/') or n.startswith('assets/xposed') for n in z.namelist())
-          print('Verified: separate identity, zero permissions, one launcher, no module entry')
+          print('Verified: separate identity, zero permissions, one launcher, non-exported own-task fixture, no module entry')
           PY
           sha256sum "$apk" > "$RUNNER_TEMP/wb2-field-evidence/unsigned.sha256"
           printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/wb2-field-evidence/checkout-sha.txt"
