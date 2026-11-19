@@ -8,7 +8,7 @@
 
 ---
 
-- 入口确认后的唯一下一分叉：ColorOS 15 官网 https://www.coloros.com/version/coloros15 及一加13官网 https://www.oneplus.com/cn/13 明确描述直板机全景虚拟屏/全屏双开；不是目标 PMS110 固件内已验证功能，更不是可调用 pscanvas 的证明。优先在系统正常UI确认是否存在全景虚拟屏/全屏双开入口；如有，以已有 v3 仅观察独立的全尺寸切换场景，绝不重做此前普通半屏测试；若无，直接排除该公开入口，不要求反复试探或新诊断包。不预设其后端与 pscanvas 相同。下一轮依具体新证据决策；暂无新生产代码或 NativePort 准入。
+- 入口确认后的唯一下一分叉：ColorOS 15 官方 https://www.coloros.com/version/coloros15 明确直板机全尺寸双开；2025-03-10 官方 https://www.coloros.com/article/A00000089/ 说明全景分屏和全局控制器，但未说明后端类型或可调用会话接口。ColorOS17 官网 https://www.coloros.com/version/coloros17/ 与 Ace7 Pro 官网 https://www.oneplus.com/cn/ace-7-pro 未取得此目标固件具体全尺寸入口的明确说明。OPPO 社区 https://www.oppo.cn/thread-402467691-1 及历史 Ace3 Pro OTA 更新说明佐证旧系统分屏内扩大窗口、点按切换的用户操作，不证明 PMS110 必然支持。先让机主在普通分屏界面确认是否存在可把一应用放大至接近全屏、保留另一应用边缘并可切回的系统正常形态（不是拖出另一任务并结束分屏），只需截图或是否支持反馈；若确有该形态，才用已有 v3 对照稳定任务配置及重建次数。现有宿主证据仅见外部框架符号、受保护 ContainerActivity，不能连接全景产品名与 pscanvas/FlexibleTaskView 实际调用路径。当前容器未挂载原宿主ZIP，也无目标设备执行连接；沿用历史已核实记录，不重新要求导出。暂无新生产代码或 NativePort 准入。不将全景虚拟屏名称解释为 VirtualDisplay 技术，不从 UI 特征推定后端；无新证据则停止此探索，不连续发诊断包。
 
 ## 第十三阶段 L：9项Android运行门禁通过、正常系统多窗验证包原签名交付（2026-11-20）
 
