@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十二阶段 I：单宿主 Android 三项运行通过，修复 DEX 误判并精简依赖（2026-11-20）
+- 机主确认持有之前保存的有效密钥。不要要求重复上传，签名到实际产物验收后再处理，若无法访问既有密钥才提示安全交付方式；禁止临时换证书或公开密钥。本轮未读取私钥/密码、未签名、未交付 APK。
+- [原 CI 44580486824](https://github.com/x647368-maker/NeXtep/actions/runs/44580486824) job 135759484027，head 51295386902709cc3be26dc72be8f0ad9a338bed，completed/failure。实际 release 编译、stock Android 15 启动、三项运行均 success；APK manifest/唯一 scope/entry/无热重载检查成功；仅 DEX 检查步骤后段 failure；签名及 APK 上传因该门禁失败 skipped。不能称整条 CI 通过。
+- 实际下载 validation artifact 14559565276（134142 bytes，SHA256 fad0c7f165e42645ba5e45c2c72c7b765171c40a0381e55e1e1997434c5274c0，CRC通过），XML SHA256 2bd2937658a0f35ea91b11b4e845b0b73b51a1368723f60145ff9278d6f00f4a，3 tests/0 errors/failures/skipped，1.186s；测试 unavailableMetadataDoesNotAdmitOrFabricateSymbols、publicMetadataDoesNotInitializeOrInvokeFixture、onlyExactAuthorizedObservationTargetMatches 均实际通过。原始 manifest 为独立 package、versionCode1、无权限/组件，无 sharedUserId。只证明 stock API35 的测试，不证明 ColorOS 宿主运行或 OEM 授权。
+- 实际 job log 和 artifact 的 dex-packages.txt 显示误判根因：apkanalyzer --defined-only 也输出方法签名，原 grep 匹配到两个 M d 行的 libxposed 参数类型，非 C d 类定义。并确认 Java-only APK 自动打包 Kotlin/注解依赖（总定义方法10391，kotlin10355）；这是可消除的无用宿主加载负担，不等于已测得 CPU 或功耗改善。
+- 已提交新 HEAD **db5d3df49ad6078fd7a792393993b778e02ddd06**，父 51295386902709cc3be26dc72be8f0ad9a338bed，tree 1799691b2f00567b072be3725959a197c20b49f7，预期父 SHA 非强制更新并回读核验。仅两文件改动：.github/workflows/workbench2-host-runtime.yml blob 05e21b7fdb64c8d8845ee28751cb6c9ef36fa116；workbench2/host-runtime/build.gradle.kts blob 3a681fd9996f06700cb352de0142e3cfb550630a。CI 改为解析 C d 类定义、精确要求本模块两个核心类并拒绝所有外部定义，内置正反样例验证参数引用不算定义、真实 API 定义会被识别。按 Android Developers https://developer.android.com/build/migrate-to-built-in-kotlin#selectively-disable-built-in-kotlin 的 Java-only module 选项 enableKotlin=false 去掉自动 stdlib；不移除测试或降级门禁。此精简的实际构建效果待新 CI 验证。
+- 新 CI 由同分支 push 触发，首次查询尚未返回本 SHA run；下次仅查该 SHA 的独立 CI，确认具体 run、步骤及产物。失败按真实日志处理，成功下载 XML、APK/离线签名输入、校验 class definition 白名单、manifest/scope、签名和哈希。获取原签名后交付独立只读验证包，由机主在既有授权范围获取 Vector 模块日志。不增加诊断外围，无生产源码变动、旧核心 76794025 的18项 Android/5态像素验收保留。所有冻结功能、原签名、唯一分支和权限规则不变。真实任务后端仍未实现。
+
+---
+
+
 ## 第十二阶段 H：获批独立单宿主只读运行模块，实际工程已提交（2026-11-20）
 - 机主本轮明确授权：「批准台前调度2.0进行隔离的ColorOS多窗口宿主最小化只读运行验证，保留全部安全门禁，不绕过系统权限，不修改系统分区，不扩大其他作用域。继续独立研发。」该授权仅允许以下独立诊断身份和单宿主观察，不允许生产任务调用、扩大权限、私有字段值访问、改系统/签名/任务归属，亦非 OEM 授权。
 - 唯一研发分支 workbench2/core 已使用非强制、预期父 SHA 更新到 **51295386902709cc3be26dc72be8f0ad9a338bed**（父 **767940256c93be9696c3e36332b58c3d87503182**，tree aa080a1899d52b379d7ccfac088dd71730e90573），远端读取确认。精确11个新文件（workbench2/host-runtime 内10个及独立 .github/workflows/workbench2-host-runtime.yml），无任何旧文件改动；独立引擎已验收基线仍为 76794025、18项 Android + 5项像素，未重复 CI。未创建分支或 PR，不动 main、旧工作流、历史 APP、原签名、个人数据及冻结功能。
