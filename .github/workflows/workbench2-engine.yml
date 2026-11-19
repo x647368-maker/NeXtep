@@ -41,7 +41,7 @@ jobs:
           test -s "$aar"
           unzip -p "$aar" classes.jar > "$RUNNER_TEMP/engine-classes.jar"
           jar tf "$RUNNER_TEMP/engine-classes.jar" > "$dir/classes.txt"
-          for clazz in workbench2/unified/UnifiedCore workbench2/motion/Flight workbench2/nativebridge/ReceiptBridge workbench2/engine/OwnerLooperPort; do
+          for clazz in workbench2/unified/UnifiedCore workbench2/motion/Flight workbench2/nativebridge/ReceiptBridge workbench2/engine/OwnerLooperPort workbench2/engine/OwnedSurfaceBatch; do
             grep -Fx "$clazz.class" "$dir/classes.txt"
           done
           printf '%s\n' "$GITHUB_SHA" > "$dir/checkout-sha.txt"
@@ -68,7 +68,7 @@ jobs:
           timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
           test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
           adb shell getprop ro.build.fingerprint > "$RUNNER_TEMP/wb2-emulator-fingerprint.txt"
-      - name: Execute actual Android Looper transport tests
+      - name: Execute actual Android Looper and owned Surface tests
         shell: bash
         run: |
           set -euo pipefail
@@ -76,12 +76,22 @@ jobs:
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           p = pathlib.Path('workbench2/engine/build/outputs/androidTest-results/connected')
-          required = {'noCapabilityMeansNoDispatch','cancellationAndLateReceiptRetainReturnBeforeHostRelease','mismatchedHostReceiptCannotSettleOutstandingEffect'}
+          required = {'noCapabilityMeansNoDispatch','cancellationAndLateReceiptRetainReturnBeforeHostRelease','mismatchedHostReceiptCannotSettleOutstandingEffect','ownedDualLayerCommitSwapAndRollback'}
           cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
           assert {t.get('name') for t in cases} == required and len(cases) == len(required), [t.get('name') for t in cases]
           assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
-          print('All 3 Android Looper transport tests passed; synthetic backend only; zero OEM calls.')
+          print('All Android Looper and owned Surface tests passed; no OEM task proof.')
           PY
+      - name: Capture independent compositor pixel evidence
+        if: always()
+        run: adb logcat -d -s WB2SurfaceTest:I > "$RUNNER_TEMP/wb2-pixels.txt"
+      - name: Require all five independently sampled compositor states
+        run: |
+          set -euo pipefail
+          for phase in initial interrupted rollback swapped detached; do
+            grep -F "PIXELS_OK $phase " "$RUNNER_TEMP/wb2-pixels.txt"
+          done
+          test "$(grep -c 'COMMIT_OK ' "$RUNNER_TEMP/wb2-pixels.txt")" = 4
       - name: Preserve Android execution evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,4 +102,5 @@ jobs:
             workbench2/engine/build/reports/androidTests/connected/
             ${{ runner.temp }}/wb2-emulator-fingerprint.txt
             ${{ runner.temp }}/wb2-emulator.log
+            ${{ runner.temp }}/wb2-pixels.txt
           if-no-files-found: warn
