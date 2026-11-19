@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 N：恢复目标宿主原始档案的真实访问阻塞（2026-11-20）
+
+- 远端唯一生产分支 workbench2/core 实时 HEAD 9d385e9d2e8da1e2c90a0b737e45880f887df2fe，未变。现有普通/全景分屏支线终止，9项独立 Android 测试与19+5冻结核心结果不重复。
+- 实际在用户 Library 定位此前 PMS110-pscanvas-2.0.0-code.zip，9425879 bytes；对原 file_id 和 canonical library_file_id 分别请求原始字节，均返回 “This Project file does not have an authorized raw-byte materialization path.” 当前容器 ls 与接管包 ZIP 清单实际核实：只有旧参考模型/交接资料与本轮 CI/诊断 APK，没有 OEM 宿主原始 ZIP，adb 未安装/未发现目标机连接。不能把历史静态结论伪称本轮重新分析。现有 11C/D、12O、13I/J 的历史证据仍有效；OEM APK/源码不得上传 GitHub。没有新增受支持的任务会话、权限或独立异常归还证据。
+- 最低成本解阻：仅把 Library 中既有 PMS110-pscanvas-2.0.0-code.zip 直接附到当前对话，无需再从手机导出、安装模块、重启、运行命令或上传全部 ROM。如附件确实无法恢复，则停止这条静态探索，不循环发相同指令。取得原始字节后以历史 SHA256 368871c78be2009c914106ebd9da3351872db409945fba2081a450946f72eb46 核验，严格定向检查宿主实际支持的正常任务会话入口、状态与归还边界，而非重复符号清单、竞品、SDK；文件不一定含外部 Framework 实现，也不保证存在合法接入契约。仅在实际新证据支持时才实施 NativePort，既有只读授权不扩大，不借宿主身份规避权限或伪造回执。任何新主动系统控制或重大架构变更需明确必要范围、风险及机主授权。此次无生产源码、APK、CI、分支/PR改动。模型保持 GPT-6 高推理；Work 或换模型不能保证解除文件访问权限。
+
+---
+
 ## 第十三阶段 M：PMS110 正常系统多窗真实设备观察通过（2026-11-20）
 
 - 机主提交 v3 JSON 真机报告，schema=1/kind=OWN_NORMAL_WINDOW_OBSERVATION/source_sha=9d385e9d2e8da1e2c90a0b737e45880f887df2fe，PMS110/SDK37/fingerprint 与 R2 匹配。全程 task_id=1135、display_id=0、discarded_events=0；三个 Activity 实例（一次 CREATE、两次 RECREATE）。计数0→1→2→3。进入多窗 RECREATE 3975588ms，363×371dp、clicks=1；自有 Surface 创建3975610ms、焦点 true 3975626ms、TOUCH_UP consumed=true 3986958ms、CLICK=2 3986961ms。退出 PAUSE 3994065ms、Surface destroyed 3994070ms、SAVE_STATE 3994071ms、新实例 RECREATE 3994087ms，363×792dp、clicks=2；Surface created 3994098ms、focus true 3994139ms、TOUCH_UP 3995729ms、CLICK=3 3995733ms；最终 COPY 4007130ms。退出 SAVE_STATE→RECREATE 16ms、RECREATE→focus 52ms 仅回调间隔，不是转场或呈现时延。原始报告留在对话，不公开 session UUID。报告原未记录系统入口名称；机主随后明确回复 A=系统上下分屏。本次是普通半屏对照，不能确认 pscanvas。
