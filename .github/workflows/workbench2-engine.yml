@@ -84,7 +84,13 @@ jobs:
           PY
       - name: Capture independent compositor pixel evidence
         if: always()
-        run: adb logcat -d -s WB2SurfaceTest:I > "$RUNNER_TEMP/wb2-pixels.txt"
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A failed emulator boot can leave adb waiting for a transport.
+          # Bound collection without converting missing pixel evidence into success.
+          timeout --kill-after=5s 30s adb logcat -d -s WB2SurfaceTest:I > "$RUNNER_TEMP/wb2-pixels.txt"
       - name: Require all five independently sampled compositor states
         run: |
           set -euo pipefail
