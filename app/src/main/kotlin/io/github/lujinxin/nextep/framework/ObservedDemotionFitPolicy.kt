@@ -14,4 +14,13 @@ internal object ObservedDemotionFitPolicy {
             fullscreen && notVendorWindowed && exactBounds && exactDensity &&
             activeReservation == reservation && activeDestination == expectedDisplay &&
             now <= reservation
+
+    /** A read-only mirror exception, NOT permission to move/clear a task or
+     * stop the existing demotion writers. Identity of the fit (not just its
+     * expiration timestamp) binds the completion to one observed generation.
+     */
+    fun completedMirrorSource(verifiedDemotion:Boolean,currentFit:Any?,completedFit:Any?,
+                              noConflictingPresentation:Boolean,noHeldWriter:Boolean):Boolean =
+        verifiedDemotion && currentFit!=null && completedFit===currentFit &&
+            noConflictingPresentation && noHeldWriter
 }

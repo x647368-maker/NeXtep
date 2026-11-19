@@ -169,7 +169,8 @@ internal class StageLiveSurfaceExchange private constructor(
 
     private fun slotSourceStillMatches():Boolean {
         val original=slotSourceFrame ?: return true
-        val now=TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp) ?: return false
+        // A bound slot source exists only for the exact opt-in content trial.
+        val now=TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp,allowCompletedDemotion=true) ?: return false
         return now.leash===original.leash && now==original &&
             slotSourceView?.textureView===slotSourceTexture &&
             slotSourceView?.mirrorLiveContentBounds()==slotSourceBounds
@@ -655,6 +656,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 ownedOutgoing=outgoing
                 val slotMirror = TaskSurfaceCompat.createOwnedSlotTaskMirror(
                     sourceTaskId, sourceDisplayId,
+                    allowCompletedDemotion=inEvidenceScope && diagnosticOptIn,
                 ) ?: return markUnavailable("slot_task_leash_not_ready")
                 val incoming = slotMirror.surface
                 ownedIncoming=incoming
@@ -786,7 +788,7 @@ internal class StageLiveSurfaceExchange private constructor(
                 if(inEvidenceScope && diagnosticOptIn) {
                     val slotView=sourceSlotView as? io.github.x647368maker.atomicworkbench.display.TaskSwitcherView
                         ?: return markUnavailable("slot_content_mapping_unavailable")
-                    val originalSlot=TaskSurfaceCompat.ownedSlotMirrorFrame(stableIncoming)
+                    val originalSlot=TaskSurfaceCompat.ownedSlotMirrorFrame(stableIncoming,allowCompletedDemotion=true)
                         ?: return markUnavailable("slot_content_mapping_unavailable")
                     if(originalSlot.crop!=localCrop)return markUnavailable("slot_content_mapping_unavailable")
                     val slotRect=slotView.mirrorLiveContentBounds()
@@ -1654,6 +1656,21 @@ internal class StageLiveSurfaceExchange private constructor(
         else "ended:committed=$firstTransactionCommitted frames=$nativeFrameCount " +
             "terminal=$terminalTransactionCommitted unmasked=$unmaskedMove " +
             "move=$moveComplete liveReady=$handoffReady timedOut=$handoffTimedOut"
+        // Only a normally completed anchored GPU handoff can certify this
+        // exact demotion for a subsequent tap inside the still-active
+        // reservation. Never certify fallback, timeout, cancellation, or the
+        // fake-task compositor tests. Proof is of admission, not pixel continuity.
+        val completedSlotStamp=if(notifyFinished && outcomeOverride==null &&
+            incomingAnchor!=null && outgoingAnchor!=null && !unmaskedMove &&
+            firstTransactionCommitted && terminalTransactionCommitted && nativeFrameCount>1 &&
+            moveComplete && handoffReady && !handoffTimedOut && !endpointWriteFailed.get() &&
+            !hostDetached && host.isAttachedToWindow &&
+            Looper.myLooper()==ui.looper)
+            runCatching { destinationStamp(outgoingStamp,incomingStamp.displayId) }.getOrNull()
+            else null
+        val completedSlotTicket=completedSlotStamp?.let {
+            runCatching { TaskSurfaceCompat.captureSlotMirrorCompletion(it) }.getOrNull()
+        }
         val flight=animator
         val reveal=revealAnimator
         animator=null
@@ -1684,14 +1701,23 @@ internal class StageLiveSurfaceExchange private constructor(
             { flight?.cancel() },
             { reveal?.removeAllListeners(); reveal?.removeAllUpdateListeners() },
             { reveal?.cancel() },
-            { cleanupWithoutCallback() },
+            {
+                val cleaned=cleanupWithoutCallback()
+                if(cleaned && completedSlotStamp!=null && completedSlotTicket!=null &&
+                    !hostDetached && host.isAttachedToWindow &&
+                    !sourceMirror.isValid && !mainMirror.isValid &&
+                    TaskSurfaceCompat.recordSlotMirrorCompletion(completedSlotStamp,completedSlotTicket)) {
+                    trace("slot_mirror_completed_demotion_verified")
+                }
+            },
             { if(notifyFinished) callback?.invoke() },
             onFailure={ NeXtepLog.warn("native_swap","Native animation teardown step failed",it) },
         )
         return callback
     }
 
-    private fun cleanupWithoutCallback() {
+    private fun cleanupWithoutCallback():Boolean {
+        var cleaned=true
         val ownedTransaction=frameTransaction
         frameTransaction=null
         StageConcurrentNativeTrialPolicy.cleanupSteps(
@@ -1712,7 +1738,11 @@ internal class StageLiveSurfaceExchange private constructor(
             { ownedTransaction?.close() },
             { occlusion.release() },
             { (background.parent as? FrameLayout)?.removeView(background) },
-            onFailure={ NeXtepLog.warn("native_swap","Native resource cleanup step failed",it) },
+            onFailure={
+                cleaned=false
+                NeXtepLog.warn("native_swap","Native resource cleanup step failed",it)
+            },
         )
+        return cleaned
     }
 }

@@ -208,10 +208,27 @@ def main():
         GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "conservative old/new common domain; no metadata-as-buffer expansion")
-    equal(paths(common_domain, "HEAD"), {
+    read_retry = "ce4bd290a98402041e565266ef41e87b238c2551"
+    subprocess.run(["git", "merge-base", "--is-ancestor", read_retry, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(common_domain, read_retry), {
         GATE, P+"systemui/StageEndpointContentMapping.kt", P+"systemui/StageLiveSurfaceExchange.kt",
         T+"systemui/StageEndpointContentMappingTest.kt",
     }, "bounded destination evidence retry only")
+    equal(paths(read_retry, "HEAD"), {
+        GATE, P+"framework/TaskSurfaceCompat.kt", P+"framework/ObservedDemotionFitPolicy.kt",
+        P+"systemui/StageLiveSurfaceExchange.kt", T+"framework/ObservedDemotionFitPolicyTest.kt",
+    }, "read-only completed demotion mirror admission")
+    source("framework/ObservedDemotionFitPolicy.kt", "completedFit===currentFit",
+           "noConflictingPresentation && noHeldWriter")
+    source("framework/TaskSurfaceCompat.kt", "slot.completedMirrorFit=slot.confirmedDemotion",
+           "slot!==ticket || heldMirrorWriter.get()!=null", "completedSlotMirrorSource(stamp.taskId,slot,state)",
+           "fun recordSlotMirrorCompletion(", "fun captureSlotMirrorCompletion(")
+    source("systemui/StageLiveSurfaceExchange.kt",
+           "allowCompletedDemotion=inEvidenceScope && diagnosticOptIn",
+           "TaskSurfaceCompat.captureSlotMirrorCompletion(it)",
+           "TaskSurfaceCompat.recordSlotMirrorCompletion(completedSlotStamp,completedSlotTicket)",
+           "cleaned && completedSlotStamp!=null && completedSlotTicket!=null",
+           "firstTransactionCommitted && terminalTransactionCommitted && nativeFrameCount>1")
     source("systemui/StageEndpointContentMapping.kt", "liveReady && read==DestinationRead.READY",
            "StageConcurrentNativeTrialPolicy.handoffAction(elapsedMs,timeoutMs,")
     source("systemui/StageLiveSurfaceExchange.kt", 'missing("main_identity")',
@@ -219,17 +236,17 @@ def main():
            "content_geometry_pending", "content_target_geometry_rejected")
     for rel in ("framework/TaskSurfaceCompat.kt","systemui/StageConcurrentNativeTrialPolicy.kt"):
         path=P+rel
-        require((ROOT/path).read_bytes()==git("show",common_domain+":"+path),
+        require(git("show",read_retry+":"+path)==git("show",common_domain+":"+path),
                 "destination read retry changed task ownership or timing policy "+path)
     source("systemui/StageEndpointContentMapping.kt", "projected(common,sourceRoot)",
            "projected(overlap(local,a.commonLocal)", "val end=a.terminalAvailable")
     source("systemui/StageLiveSurfaceExchange.kt", "content_domain_gap", "buffer_latch_unobserved")
     source("framework/TaskSurfaceCompat.kt", "readSlotMirrorFrame(stamp,allowVerifiedDestination=false)",
            "readSlotMirrorFrame(stamp,allowVerifiedDestination=true)",
-           "!allowVerifiedDestination || !verifiedDemotedSlot(stamp.taskId,slot,state)")
+           "(allowVerifiedDestination && verifiedDemotedSlot(stamp.taskId,slot,state))")
     source("systemui/StageLiveSurfaceExchange.kt",
            "TaskSurfaceCompat.heldDestinationSlotMirrorFrame(slotStamp)",
-           "TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp)")
+           "TaskSurfaceCompat.ownedSlotMirrorFrame(incomingStamp,allowCompletedDemotion=true)")
     source("systemui/StageEndpointContentMapping.kt", "fun compose(", "fun mapError(", "fun held(", "fun flight(")
     source("systemui/StageLiveSurfaceExchange.kt", "if(inEvidenceScope && diagnosticOptIn)",
            "endpoint_content_anchor_trial=both", "StageEndpointContentMapping.flight(",
