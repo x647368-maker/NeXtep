@@ -46,6 +46,17 @@ class LivePreviewInstrumentation : Instrumentation() {
     override fun onStart() {
         val result=Bundle()
         try {
+            // Verify the fixture process's actual reflection access before
+            // executing the full API35 SystemUI-style input-region tests.
+            // This is not a production fallback or policy modification.
+            if(android.os.Build.VERSION.SDK_INT==35 && !nativeMirrorOnly &&
+                !nativeFlightOnly && !pairedFlightOnly && !diagnosticOnly && !uiVisualOnly) {
+                val info=Class.forName("android.view.ViewTreeObserver\$InternalInsetsInfo")
+                check(info.getField("touchableRegion").type==android.graphics.Region::class.java) {
+                    "API35 fixture lacks required touchableRegion reflection access"
+                }
+                check(info.getMethod("setTouchableInsets",Int::class.javaPrimitiveType!!)!=null)
+            }
             check(!adaptiveCoveredFlight || pairedFlightOnly)
             check(listOf(nativeMirrorOnly, nativeFlightOnly, pairedFlightOnly, diagnosticOnly, uiVisualOnly).count { it } <= 1) { "Choose exactly one dedicated instrumentation mode" }
             if(uiVisualOnly) {

@@ -14,15 +14,26 @@ for pair in "$target_apk:target" "$test_apk:tests"; do
 done
 adb shell wm size 1272x2772
 adb shell wm density 512
+# Instrumentation emulates SystemUI's privileged framework access only in
+# this disposable guest. Settings observers are asynchronous, and a process
+# started during install/boot can retain the previous per-process ART policy.
+# Do not silently accept denied members or modify production input handling.
 adb shell settings put global hidden_api_policy 1
+sleep 5
+test "$(adb shell settings get global hidden_api_policy | tr -d '\r')" = 1
+adb shell am force-stop io.github.x647368maker.atomicworkbench
+adb shell am force-stop io.github.x647368maker.atomicworkbench.test
 adb shell settings put global window_animation_scale 0
 adb shell settings put global transition_animation_scale 0
 # Exercise real app compositor animations, while system window/transition animations stay disabled.
 adb shell settings put global animator_duration_scale 1
 adb shell input keyevent 82
+# Recheck immediately before a fresh instrumentation process is created.
+test "$(adb shell settings get global hidden_api_policy | tr -d '\r')" = 1
 adb logcat -c
 set +e
 timeout --signal=TERM --kill-after=20s 720s adb shell am instrument -w io.github.x647368maker.atomicworkbench.test/io.github.x647368maker.atomicworkbench.visual.LivePreviewInstrumentation | tee visual-instrumentation.txt
+status=${PIPESTATUS[0]}
 set -e
 adb logcat -d -s NeXtep > virtual-display-log.txt
 mkdir -p visual-results
@@ -33,6 +44,10 @@ adb shell dumpsys window > visual-results/final-window.txt
 adb shell dumpsys statusbar > visual-results/final-statusbar.txt
 adb logcat -d > visual-results/logcat.txt
 
+if [ "$status" -ne 0 ]; then
+  echo "::error::API35 instrumentation exit=$status; inspect retained evidence"
+  exit "$status"
+fi
 grep -F 'HWUI_RENDER_PASS' visual-instrumentation.txt
 test -s visual-results/real-task-marker-main.png
 grep -Fx 'PASS real owned-task marker generations on both physical and virtual outputs' visual-results/real-task-marker-generations.txt

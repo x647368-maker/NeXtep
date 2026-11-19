@@ -247,9 +247,20 @@ def main():
         GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
         "scripts/run-visual-regression.sh",
     }, "owned real task generation-marker test only; no production code delta")
-    equal(paths(marker_fixture, "HEAD"), {
+    marker_epoch = "26ef21ce228914bcd2d06b39081ca05f88deeb31"
+    subprocess.run(["git", "merge-base", "--is-ancestor", marker_epoch, "HEAD"], cwd=ROOT, check=True)
+    equal(paths(marker_fixture, marker_epoch), {
         GATE, "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt",
     }, "disjoint marker epochs and actual output dimensions only")
+    equal(paths(marker_epoch, "HEAD"), {
+        GATE, "scripts/run-visual-regression.sh",
+        "app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/LivePreviewInstrumentation.kt",
+    }, "API35 isolated test process reflection preflight only")
+    api35_runner=(ROOT/"scripts/run-visual-regression.sh").read_text()
+    require("am force-stop io.github.x647368maker.atomicworkbench" in api35_runner and
+            "status=${PIPESTATUS[0]}" in api35_runner and
+            "grep -F 'HWUI_RENDER_PASS'" in api35_runner,
+            "API35 fixture environment preflight and original result gates")
     marker_test=(ROOT/"app/src/androidTest/kotlin/io/github/x647368maker/atomicworkbench/visual/TaskMigrationRegression.kt").read_text()
     for marker in ('draw.epoch==spec.epoch', 'pixels.sequence>previous', 'matchesMarker(pixels.colors,spec)',
                    'matchesMarker(colors,spec)', 'check(promoted!=null', 'demoted.density==originalDraw.density',
