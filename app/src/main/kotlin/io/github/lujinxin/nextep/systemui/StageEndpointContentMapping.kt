@@ -59,6 +59,13 @@ internal object StageEndpointContentMapping {
         source==target && source.left==0 && source.top==0 &&
             source.right>=2 && source.bottom>=2
 
+    // Pixel dimensions alone do not identify an Android app layout domain.
+    // For example 1272x2772 at 320dpi and at 512dpi have very different
+    // dp sizes. Matching known density is another necessary condition only;
+    // it still does not prove identical layout or a latched child buffer.
+    fun sameKnownDensity(sourceDpi:Int,targetDpi:Int):Boolean =
+        sourceDpi>0 && sourceDpi==targetDpi
+
     /** Independently measure actual requested content extent against the
      * destination viewport, not against another cropped fit. Reject gaps
      * beyond the existing rounding allowance even if affine error is zero.

@@ -111,7 +111,11 @@ object TaskSurfaceCompat {
     internal data class MirrorDestinationFrame(
         val taskId: Int, val displayId: Int, val token: Any, val leash: Any,
         val crop: Rect, val scale: Float, val x: Float, val y: Float,
-    )
+        val densityDpi:Int=0,val moveReservation:Long?=null,
+    ) {
+        fun receiptGeometry()=StageHeldReceiptGeometry(taskId,displayId,token,densityDpi,
+            crop.left,crop.top,crop.right,crop.bottom,scale,x,y)
+    }
 
     internal fun mirrorSourceStamp(taskId: Int, displayId: Int): MirrorSourceStamp? {
         val state=observedStates[taskId] ?: return null
@@ -146,9 +150,41 @@ object TaskSurfaceCompat {
             state.bounds!=crop || crop.isEmpty || observedLeashes[taskId]!==leash ||
             !isValid(leash) || frame.scaleX!=frame.scaleY) return
         if (heldMirrorWriter.get() !== writer) return
+        // Capture the ownership metadata only for an already active writer.
+        // If the reservation changed during observation, the optional receipt
+        // is unknown. Do not interfere with the original owned transform.
+        val reservation=displayExchanges[taskId]?.takeIf {
+            observedStates[taskId]===state && exchangeDisplays[taskId]==state.displayId &&
+                observedLeashes[taskId]===leash
+        }
         // Endpoint fitting is optional; never abort a real task transaction.
         runCatching { writer.append(tx,MirrorDestinationFrame(
-            taskId,state.displayId,token,leash,crop,frame.scaleX,frame.positionX,frame.positionY)) }
+            taskId,state.displayId,token,leash,Rect(crop),frame.scaleX,frame.positionX,frame.positionY,
+            state.densityDpi,reservation)) }
+    }
+
+    /**
+     * Cache-only recheck at the existing visual ready boundary. Do not
+     * manufacture a destination receipt from TaskInfo. If the move record
+     * has already retired, the optional geometry proof is unavailable.
+     * No change to reservation lifetime, task ownership or readiness.
+     */
+    internal fun heldReceiptFrame(source:MirrorSourceStamp,destination:Int):MirrorDestinationFrame? {
+        val id=source.taskId
+        val reservation=displayExchanges[id] ?: return null
+        val state=observedStates[id] ?: return null
+        val target=mirrorSourceStamp(id,destination) ?: return null
+        if(target.token!=source.token || target.leash!==source.leash ||
+            state.displayId!=destination || state.token!=source.token ||
+            state.densityDpi<=0 || exchangeDisplays[id]!=destination)return null
+        val current=if(destination==Display.DEFAULT_DISPLAY)ownedMainMirrorFrame(target)
+            else heldDestinationSlotMirrorFrame(target)
+        if(current==null || current.crop!=state.bounds ||
+            observedStates[id]!==state || displayExchanges[id]!=reservation ||
+            exchangeDisplays[id]!=destination ||
+            !target.sameSource(mirrorSourceStamp(id,destination)))return null
+        return current.copy(crop=Rect(current.crop),densityDpi=state.densityDpi,
+            moveReservation=reservation)
     }
     private data class MethodKey(val type: Class<*>, val name: String, val arguments: List<Class<*>?>)
     private val methodCache = ConcurrentHashMap<MethodKey, Method>()
@@ -415,8 +451,11 @@ object TaskSurfaceCompat {
             p.frame !== frame || activePresentations[stamp.taskId] !== p ||
             frame.scaleX != frame.scaleY || !frame.scaleX.isFinite() || frame.scaleX<=0f ||
             !frame.positionX.isFinite() || !frame.positionY.isFinite() || crop.isEmpty) return null
+        val density=observedStates[stamp.taskId]?.takeIf {
+            it.displayId==stamp.displayId && it.token==stamp.token
+        }?.densityDpi ?: 0
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
-            Rect(crop),frame.scaleX,frame.positionX,frame.positionY)
+            Rect(crop),frame.scaleX,frame.positionX,frame.positionY,densityDpi=density)
     }
 
     internal fun createOwnedMainMirror(taskId: Int): android.view.SurfaceControl? {
@@ -514,7 +553,7 @@ object TaskSurfaceCompat {
             !stamp.sameSource(mirrorSourceStamp(stamp.taskId,stamp.displayId)))return null
         if(!slotMirrorReservationAllows(stamp,slot,state,allowVerifiedDestination,allowCompletedDemotion))return null
         return MirrorDestinationFrame(stamp.taskId,stamp.displayId,stamp.token,stamp.leash,
-            Rect(slot.crop),1f,0f,0f)
+            Rect(slot.crop),1f,0f,0f,densityDpi=state.densityDpi)
     }
 
     internal fun createOwnedSlotTaskMirror(

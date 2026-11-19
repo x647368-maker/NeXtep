@@ -43,6 +43,17 @@ class StageEndpointContentMappingTest {
         assertTrue(StageLiveSurfaceFlightGeometry.endpointGapPx(slot,reverseEnd.box)<=2f)
     }
 
+    @Test fun equalPixelsDoNotAuthorizeIdentityMappingAcrossDensityDomains() {
+        assertTrue(m.sameLocalCanvas(tall,tall))
+        assertFalse(m.sameKnownDensity(320,512))
+        assertFalse(m.sameKnownDensity(512,320))
+        assertFalse(m.sameKnownDensity(240,512))
+        assertFalse(m.sameKnownDensity(0,0))
+        assertFalse(m.sameKnownDensity(-1,-1))
+        assertFalse(m.sameKnownDensity(512,0))
+        assertTrue(m.sameKnownDensity(512,512))
+    }
+
     @Test fun equalCanvasStillRequiresIndependentCoverage() {
         val root=map(1f,0f,0f)
         val target=map(.75f,318f,460f)
