@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十三阶段 L：9项Android运行门禁通过、正常系统多窗验证包原签名交付（2026-11-20）
+
+- 工程 SHA 9d385e9d2e8da1e2c90a0b737e45880f887df2fe，CI 44597034341 job 135817990741 实际 completed/success。下载并独立校验3份 artifact：runtime 14565863644 SHA256 f4661ec478a518d7f1bd712bc9fd9b1d452deb9c5aca7a00b837495606201b00；field 14565828619 SHA256 27df50b76ca007a1b782a099dbf09f693bcfd9bbfa4f01c8ba1d73f1238b6f9e；offline-input 14565743777 SHA256 f794eff408e129203b7eccaf9371dd31ff01478db701b6e597375be69d30cc09。CRC、内置SHA256SUMS、checkout-sha、APK scope 全核验。Android15 emulator fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。独立解析真实XML，3+6=9项全部通过、0失败/跳过：ordinaryProcessCannotEnterHostProbe、stockAndroidPackageManagerDoesNotAssertHostAvailability、bothCollectorsRejectMainThread、manualReadOnlyReportOnStockDevice、stockHostExportRefusesBeforeOpeningDocument、archiveContainsExactPublicFixtureCodeAndHash、incompleteArchiveCannotContainManifest、normalSessionRecordsOwnTaskAndBoundedEvents、normalSessionRecreationPreservesMarker。与冻结核心19+5门禁不同，不代表OEM真实任务或设备性能验收。
+- CI 缺签名 secrets，正确输出 unsigned artifact；unsigned APK SHA256 151691b52618722288aac84303464f887baabb15785f3031512aa06578f3084b。已实际从私密Library取回既有PKCS12和密码，使用本地 cryptography 解锁核实私钥及证书，离线使用CI的 apksigner.jar（SHA256 3716d9311e55d2b0918a2fd9d54ba9e406c5f6abeea700b287f11259bc163dec）签署并验证。最终 AtomicWorkbench2-NormalWindowSession-v3.apk，2163973 bytes，SHA256 fc053f0e456fe1fbca1e37f9e555c45216a27e3f73b3a1a0ec2c0ab1e617f50e，apksigner Verifies / v3=true / 1 signer，证书SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe 与既定诊断签名一致。最终ZIP CRC通过，原unsigned全部条目字节未变，无删除，新增3个META-INF签名条目（v1验证结果false，不宣称v1/v2通过）。无另行本地zipalign工具复验，CI unsigned zipalign门禁通过。私密临时副本已删除，原Library不变；无密码/私钥上传或提交。
+- 独立诊断包名 io.github.x647368maker.atomicworkbench.hostevidence，versionCode 3，versionName 2.0-normal-session-1；不替换生产包，无新权限、模块、网络或后台工作。当前窗口sandbox交付，签名匹配既定诊断证书，不等同已实测覆盖设备生产包，不发布GitHub正式Release。保留最终APK SHA及CI离线重建路径，若未来附件失效按同一产物及既有密钥可重签并重新验签，不重复编译。生产冻结engine/host-runtime、main无修改，无新分支/PR。
+- 下一步仅机主正常系统UI操作：安装此独立APK，打开“正常多窗任务验证”，先点击测试计数1次，从系统最近任务或智能侧栏的正常浮窗/分屏入口操作此验证应用，如可用则在多窗内再点击1次，恢复全屏后再点击1次，复制本次观察报告发回。无需开Root模块或终端命令；若入口不支持，记录界面/提示，不强行操作或重启系统。报告到手先核对SHA、session、task ID、instance、clicks、multi_window、focus、own surface、discarded events，明确本页观察与OEM宿主证据不同。只有可独立核验的系统支持入口及合法会话证据才进入下一原生桥接验证，禁止用本次自有任务通过证明第三方NativePort或异常归还。真机与正式产品验收仍缺。下一轮只分析真机证据及后续具体接入条件，不重复研究/编译。
+
+---
+
 ## 第十三阶段 K：正常系统多窗自有任务观察工程提交（2026-11-20）
 
 - 机主已在当前唯一生产研发窗口明确批准 J 的有限自有测试任务观察及必要的合法单 pscanvas 局部监听；不授权主动控制受保护任务、改变权限或扩大作用域。实施先从无注入、用户主动使用系统正常多窗入口的自有 Activity 开始，未找到可合法关联的宿主事件契约前不注册宿主 Hook。无需重新启用 R2、旧生产模块或向厂商/竞品等待回复。
