@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 G · 驻留实验续编遭 Maven Central 限流，执行停止制度（2026-11-20）
+
+- 继承F aae02096b04bb41a0b23aa82c91b6c579bd8350c。实查CI44681254780/job136104941808 attempt1 最终completed/failure，绑定428b618b35ccd5db67d8e66abe6616bff23feeae。实际读取原始job日志860632字符：05:29:15Z根工程Workbench2ResidentLab配置classpath依赖解析失败；Maven Central https://repo.maven.apache.org/maven2/ 返回HTTP 429 Too Many Requests，涉及kotlin-gradle-plugin:2.2.10、httpmime:4.5.6、commons-io:2.16.1、asm:9.9等；MavenRepo因前序错误禁用影响kotlin-stdlib:2.3.20等解析。BUILD FAILED in 21s。Java/SDK步骤成功，源码编译尚未发生，模拟器和单任务测试skipped，清理与证据上传成功。F空值修正尚未得到新编译验证，不能称其运行通过。两次CI均未执行实际自有任务，不是两次性能失败，更非ColorOS原生权限否决。
+- 远程证据artifact14605005606，978字节，digest sha256:8323f953f077a8a9e5982d6de1877157f438f88d9cb0e84291ca09eca1888bc1，未过期，有效期2027-02-18T05:28:27Z；本轮仅核实远端元数据，未下载ZIP原始字节。没有可核验的APK、XML运行结果、任务ID、触控/画面/释放、帧耗时或能耗证据。core实查compare 428b618b35ccd5db67d8e66abe6616bff23feeae...workbench2/core identical。未修改实验或生产代码、依赖、工作流、系统权限、签名，未启动新CI、分支、PR或双任务实验。
+- 严格执行F停止制度：本次已用完原有明确编译修正及续编范围，停止继续触发CI，不改变依赖版本、不加未经验证镜像、不降低门禁。该阻塞属于实际构建环境访问限流，不需要重写承载架构或等待OPPO技术回复；保留全部实验源码，不能据此淘汰其性能假设。若有可信的依赖访问恢复条件、且机主明确另行批准一次原SHA构建恢复，优先只重跑失败job，不创建新提交/工作流或循环 retries；若仍失败或无实际运行条件即止。恢复后也须逐项验证E单任务真实证据才能进入双任务。现无自动监测/后台续编承诺。普通GPT-6 Medium核验、High仅后续实际工程，不启用Work。官方询证作为独立渠道，不影响本实验停止制度。当前唯一负责人不变。
+
+---
+
 ## 第十五阶段 F · 驻留实验首次构建失败的单点修正与一次续编（2026-11-20）
 
 - 继承E cdf493d6f04b438ccab51c17a94522890d366d0c。实查CI44680916366/job136103821611最终completed/failure，原始日志65451字符。SDK/Java准备成功，05:27:26Z在:compileDebugAndroidTestKotlin明确报ResidentSingleTest.kt:131:65 nullable MotionEvent?接收者不可直接recycle，BUILD FAILED in 1m37s。模拟器和真实单任务均skipped，实际任务运行0次；非系统授权、运行时或架构性能失败。远端证据artifact14604102598仅979字节，digest sha256:5b1ef8be06e4a74630e69794dc6b9ba7bb2dc4313e73d74501c218811a50a4dc，未过期，本轮仅元数据核验，未下载ZIP字节；没有完整编译产物、运行XML、帧数据或原签名APK。
