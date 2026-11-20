@@ -90,7 +90,6 @@ class SystemWindowResizeTest {
         val activityObject = requireNotNull(activityHeader.matchEntire(activityLine)).groupValues[1]
 
         val taskHeader = Regex("""^[ \t]*\*?[ \t]*Task\{([0-9a-fA-F]+) #(\d+)(?:\s|\})[^\r\n]*""")
-        val activityIndent = activityLine.takeWhile { it == ' ' || it == '\t' }.length
         val taskStack = mutableListOf<Pair<Int, MatchResult>>()
         for (line in lines.take(activityIndex)) {
             val match = taskHeader.matchEntire(line) ?: continue
@@ -122,7 +121,7 @@ class SystemWindowResizeTest {
         ).find(record) ?: error("No system-reported ActivityRecord task bounds for task=$id")
         val v = bounds.groupValues.drop(1).map { it.toInt() }
         val identity = taskStack.joinToString("/") { "${it.second.groupValues[1]}#${it.second.groupValues[2]}" } + "/leaf#$id"
-        Log.i("WB2SystemWindow", "SYSTEM_TASK task=$id taskChain=${identity} leafTaskId=${taskId} activityRecord=${activityObject} bounds=${Rect(v[0],v[1],v[2],v[3])}")
+        android.util.Log.i("WB2SystemWindow", "SYSTEM_TASK task=$id taskChain=${identity} leafTaskId=${taskId} activityRecord=${activityObject} bounds=${Rect(v[0],v[1],v[2],v[3])}")
         return identity to Rect(v[0],v[1],v[2],v[3])
     }
 
