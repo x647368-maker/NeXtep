@@ -14,6 +14,16 @@
 
 ---
 
+## 第十六阶段 R · 独立平台级服务一次性可实施性预检结算（2026-11-20，最新生效）
+
+- 继承Q权威检查点d0ab6759cd07c376682865ab5bbcf9b3a333143b及已验收核心3003dbea4fa7d4f5dd5e84d66845fa665d89de8d（46 Android+5自有图层像素）。机主授权方案B一次严格隔离的可实施性预检，不授权改变生产架构、刷机、修改系统分区、扩大作用域或降低门禁。本轮按此范围结算，不重复OEM逆向、公开API搜索、AAOS/VD实验及既有核心测试。
+- 实际本地环境预检：Linux x86_64，/dev/kvm不存在；PATH内无adb、emulator、repo、cvd、launch_cvd、avbtool、docker，java/git存在；overlay 32G总容量/30G可用，内存5.8GiB/可用4.7GiB、无swap。检查/opt/android、/opt/android-sdk、/opt/aosp、/mnt/data/aosp、/workspace、/src，未发现这些路径的现成平台源码树。两OEM原件仍挂载，但不是可构建系统平台；无本轮可访问的目标设备执行连接。此仅当前容器实际状态，不推断所有云端环境均不可用。
+- 实际查询固定core SHA的递归Git tree，1021项、truncated=false；确认7项workbench2专属workflow，未找到device/vendor/system/frameworks/build/make顶层平台源根、Android.bp或Cuttlefish平台配置等匹配项。定向回读workbench2-aosp-experiment.yml（blob5c3ebd3ac785b55606d34dd8c8f65d04a9082abd，官方预构建AAOS35镜像+CTS模块，非自建平台）、workbench2-native-adapter.yml（bloba3c7a59cafb631740e515f70bb80c1d4c5291501，官方编译桩+Gradle实验APK+预构建AAOS）、workbench2-system-window-lab.yml（blob64f3c4e8169051780a6fa7bc841b12c5b998ddb2，官方Desktop37.1镜像与自有probe测试）。已有GitHub CI确实能够编译/运行部分独立Android实验，不代表已有可构建、签署及部署独立平台服务的工程。未启动runner、未测试其新平台构建容量，不宣称GitHub无法构建AOSP。
+- 方案B准入结论NO-GO：现有ColorOS目标仍无经系统认可的独立服务部署/任务委托及独立归还契约；没有已经落实的自有可控平台构建与运行环境，且独立AOSP验证本身不授予原ColorOS部署权限。因此本次一次性预检到此结束，未实施/编译/运行平台服务，未产生新的原生承载或性能证据。不得通过以root或宿主身份绕过权限、系统分区修改、替换桌面或重开既已停止的实验来填补缺口；本次也未找到证明能够保持原ColorOS、原签名、跨机型通用性及全部冻结产品效果的立即可执行方案。
+- 决策：A仍是正式主选但生产后端暂停；B保留为条件性备选，不自行立项平台工程；C保持停止。全部已验证核心、历史产品、原签名数据、通用性和永久制度原样继承。此次仅保存预检结论，无生产源码/CI/APK/分支/PR/真机变更。下一步采用事件触发而非继续指令循环：只有获得具体可核验的受支持系统委托/部署/独立归还依据，或取得实际可用且另获批准的独立系统环境并有明确产品落地价值时，才做对应准入和最小真实任务实验。不把OPPO回复作为唯一来源，已有回复监测保持不变。无新增条件则结束本专项，不要求机主再发继续、上传原件、操作手机或更换窗口。日常核证普通聊天中等推理；具体新证据/实际工程才使用高推理；Work关闭。此记录不是产品开发进度。
+
+---
+
 ## 第十六阶段 Q · 原生后端部署架构决策门与生产止损（2026-11-20，最新生效）
 
 - 继承P权威检查点1bb09d6bb193ca924aa4b65d2c47816b131160a9，核心3003dbea4fa7d4f5dd5e84d66845fa665d89de8d（46+5），本轮实际回读该固定SHA的ReceiptBridge.kt blob0035c67cc990d16e19696fb2be4bc651e430db32及UnifiedCore.kt blob182b04876b0c0ccd408988300f2af9bd6def0998，核实NativePort.dispatch/stopLocalCallbacks/requestAttachCancellation、绑定firmware/hostVersion/hostInstance的回执及TaskReturnProof的独立无破坏性清理要求均存在。没有再造核心的必要。实际本地读取两原件与内层JAR，三层CRC全通过，哈希分别4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e、0b6a3eac17c8428017e0a9e46eefafa22b14de13cabb5e70c835f87636e85203、76cfdaeedebbe8249090d563532a49abd5b2a16149726ca2af6ef31a8b437450，与P一致；manifest明确production_admitted=false。未重复DEX逆向，不上传OEM原件。比较依据为已实际回读的十三T、十四Z、十五D/X/S/U及十六K/L/M/P；本轮不将已有研究包装为新证据。
