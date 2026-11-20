@@ -14,6 +14,16 @@
 
 ---
 
+## 第十六阶段 N · 新会话授权候选边界核查与停止决策（2026-11-20，最新生效）
+
+- 继承 M 终验 c04c12fd41d1fb8bf17c5e19faaeeca7a21bed83，机主明确冻结已通过 46 Android+5 自有图层像素的自主核心 3003dbea4fa7d4f5dd5e84d66845fa665d89de8d，非具体缺陷或真实后端接入不改。不重复 CI、既有模拟器、历史逆向或实机实验。本轮读取已有权威记录核对候选是否已排除；公开 OPPO 11171 检索结果仍是已知主动分屏/浮窗适配，页面直接打开无正文，未获得新的授权契约，不重复该路径。容器实际仅有旧接管 ZIP、截图和 M 的 runtime ZIP，无目标 OEM APK/JAR 原件或设备连接，不声称重新反编译。
+- 新定向反例：Android Developers https://developer.android.com/ai/computer-control （页面更新 2026-05-13，实际读取 49–81 行）明确 Computer Control 为 OEM 预装助手、ACCESS_COMPUTER_CONTROL 特权许可、用户逐应用同意、一个活动会话且最多六个目标应用顺序执行，使用后台虚拟显示、屏幕内容及模拟输入；https://developer.android.com/reference/android/companion/virtual/VirtualDeviceManager 实读1918–1932行另要求 agent/target 名单、ASSISTANT 当前角色及预装系统支持。不是任意既有任务的同时驻留、原生图层交换或独立归还；不改变助手、不申请不相干角色、不将合成画面或输入注入用于产品。
+- 新定向反例：AOSP Android17 release https://android.googlesource.com/platform/frameworks/base/+/android17-release/core/res/AndroidManifest.xml#5130 实读5130–5138行：REQUEST_COMPANION_PROFILE_VIRTUAL_DEVICE 受 enable_limited_vdm_role flag 且 signature|privileged，明确面向设备关联/流式传输，不是普通第三方任务委托权限。不得通过建立虚假设备或身份规避。两项均是新候选的公开契约边界，不是目标固件运行证据，更不构成穷尽所有 OEM 扩展接口。
+- 结论仍缺实际授权的 ColorOS 任务会话及独立系统清理终态观测。L 次实机有 pscanvas release 日志而缺 init 记录、taskId/instance 可见性；launcher 只有加载与到期。另一次自有任务只读观察可以区分第一轮日志缺口和宿主参与，但即使成功也不能授予主动控制或证明延迟删除队列终结，因此不能把第二次实验当作必然解阻。只有在获得新、可验证、受支持的控制入口证据，或已可访问足以判别委托/归还语义的新原始材料且此前未研究时继续定点研发；若机主另行选择独立系统集成验证，需先说明不等同现有 ColorOS 生产部署的重大取舍并取得授权。没有新条件不循环搜索、不修改核心、不出新包、不要求机主重复手机操作。现有官方回复监测沿用，不视作唯一技术来源。
+- 本轮实际新结果是两项候选权限和产品适用性的排除，未实现真实后端，无生产代码、CI、APK、新分支/PR、实机测试。不再将文档增量计入工程完成率。保持唯一负责人、全部冻结产品功能、原签名、数据、底层通用性和安全门禁。下一有效节点必须具有新增可执行工程入口或实际独立系统证据。
+
+---
+
 ## 第十六阶段 M 终验与容量中断恢复（2026-11-20，最新生效）
 
 - 机主明确授权当前「核验CI修复状态」窗口为唯一生产研发负责人，「修复预检脚本」及此前窗口转为只读。恢复原权威检查点 ebdd2d91cbaa7ae092763eafa300bf9bf8c3ad85，实际远程 core 3003dbea4fa7d4f5dd5e84d66845fa665d89de8d；已更新既有 registry，提交 8a804a60945d0839beadcd9915533d40dd6fc27c。旧窗口未保存的逐字聊天或临时文件不宣称完整恢复。容量中断时只恢复最近有效检查点，不要求重复正式交接。
