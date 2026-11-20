@@ -1,4 +1,43 @@
-# 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，当前生产负责人在任）
+# 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，原负责人已交接、待新窗口接任）
+
+## 第十六阶段 T · 完整无损交接、外部AI原件永久索引及第二轮定向审查结算（2026-11-20，最新生效）
+
+**负责人状态：** 机主明确授权本窗口执行最终检查点与无损交接，并在完成后转只读历史档案、解除生产职责。自本次交接提交起，本窗口不再修改生产代码、不再推进研发；新窗口必须先按本节及永久制度核验实际仓库与资料再正式接任。此记录优先于下文历史“在任”描述，不删除历史内容。未授予其他AI写代码权限。唯一研发分支仍workbench2/core，最多一个对应研发PR。
+
+**实际仓库核验：** 交接前治理HEAD=297fee4a9d4c1d2e0da43b7ace492107d09c93b2，原档blob=1b81a84eed6ae9cb15156e859d703fe21718d02a，原档全部正文保留（仅标题负责人状态更新并前置本节）。core HEAD及唯一已验收有效源码=ed40df41de8336dea0f2c2d743722eaf88f3b727；main=20ab39cf7e319898fcbc4028bc403df57a6c1a0b。实际开放PR仅历史#175 b625f22558c1d4127101f86e6c4f64a7b263d72f、#176 305f595220a6c193202d6acbdb2ac20f6e250df4，均非2.0 PR，保持冻结。未创建分支/PR、未改main或历史分支；未重新执行全库治理或重新分页统计全部历史分支，不将上述核验当作全仓清理验收。当前源码直接使用GitHub workbench2/core固定SHA，不从旧接管ZIP覆盖现有工程。
+
+**真实CI和原始证据最终校验：** CI44761080432 completed/success（https://github.com/x647368-maker/NeXtep/actions/runs/44761080432），原始runtime/compile artifact分别14641901071/14640753194。交接本轮实际在容器重新核验原始ZIP（非仅照抄历史摘要）：runtime 165278 bytes、77成员、CRC全通过、SHA256 d3af3a7f9e572ef7abc27b1dbc7730fccb1666b7c65861d6e8acd8c48a741f49；47唯一XML testcase、0 failure/error/skipped、实际退出码0，initial/interrupted/rollback/swapped/detached各一次PIXELS_OK。compile 200254 bytes、5成员、CRC全通过、SHA256 57736b1d83d521b1d29b2d7f9738f17c03e278899ffee3d1814f34576a8b2b4f；checkout-sha.txt精确绑定ed40df41…，AAR SHA256 77eb290894cfa9202f2db13db10fcfff3a5804a6b97f86e225f51a080f200214与包内aar.sha256一致。此为Android模拟器实际运行+自有图层像素+编译验收，非ColorOS第三方真任务/真机性能/原签名发布验收。两份未改动原始证据ZIP已经实传个人Library，路径 /台前调度2.0/44761080432-runtime.zip（libfile_fdca380daddc8191979103b04e46f975）、/台前调度2.0/44761080432-compile.zip（libfile_8e2abc2acf208191a84d77e833a37e3c），避免CI产物到期后丢失。历史G阶段CI44728295668的Android17 Desktop自有单任务几何/输入/身份保持与恢复只证明隔离实验，历史真机日志、ROM证据、47+5不可互相替代。没有新真机试验、签名或性能结果。
+
+### 外部AI一手材料实际持久化（机主明确要求）
+
+统一私有个人Library目录 /台前调度2.0/外部AI原始分析/。本次通过文件工具成功上传八份用户原始附件的原始快照，加一份用户粘贴的DeepSeek第二轮正文按原文转存TXT（不是原始下载附件；末尾换行等文本包装可能不同）。以下记录完整文件名、Library canonical ID、当前保存版本SHA256（原附件字节在容器实际计算）；新窗口优先用files.search/read，scope.surfaces=["library"]，以目录、文件名及canonical ID定位；需要字节时再materialize。所有八份原附件上传成功，DeepSeek粘贴转存上传成功。原件存于私有Library而不是公开GitHub，避免把用户提供的完整资料及设备环境公开；权威GitHub索引持久化，允许机主日后自行授权公开。不要要求用户再次逐份上传，不把以下原始报告的建议当作已验证源码或系统权限。
+
+| 轮次/AI | 原件名称 | Library ID | SHA256 |
+|---|---|---|---|
+| 1 DeepSeek | Atomic_Workbench_2.0.txt | libfile_86211cc78ee08191a420637c7e2f2d88 | e1e3157131bbc3deca1f4848c319a06e960c591273b7bbca82a809c9a51165f7 |
+| 1 千问 | 台前调度_AtomicWorkbench2.0_底层架构攻关方案.md | libfile_29c2cb8a675881918f054a4c1db426f7 | 90196c45ba5ef748935042762db0a26f599ee8211c6566282d606e291a5218f2 |
+| 1 Kimi | kimi 简单模式.txt | libfile_5c62dbcac5908191b799bc1c0da6dc1b | 4e37afe4d41d92b83ac7cf60bebecda2c9e5dd852406b05fa6c726f9b06f59d0 |
+| 1 豆包 | 豆包.txt | libfile_ff5c7edde60c819194fb659d99f8571c | f7f39fd8e9a6721e1a4db792b69ecc604b7f646e5b7fdc3a055138cfc2fd620c |
+| 1 Gemini | gemini.txt | libfile_a7723a1ca318819192fdb3c824e5ef9d | faec77118f0bc9e434070a4308cac39a4fd4c975c0ebb5774b001ce6c4859caf |
+| 1 Claude | 台前调度 2.0 · 底层架构独立攻关方案.docx | libfile_790ea05b803c81919d59f45611c045c5 | 75c9e877cde2ddb5cb8f0f5614b152c37a408c43b59ab8ef71ff4e930bd4ee20 |
+| 2 DeepSeek | DeepSeek第二轮-用户粘贴原文.txt | libfile_9b8071306a3c8191b530c89918e8bc7f | ad30cf81d99acb47d03aef3581ae4cd1ca948ed247c771b951ff487be7fdc9b5 |
+| 2 Gemini | gemini222.txt | libfile_bfbdb0c8d8e08191a720f07939f3a956 | 7aafa74aa3b4586f71695bd99b81d888ab22987761916674e5dbfdbed227f053 |
+| 2 千问 | 千问 2.txt | libfile_8d6f9b843af8819184a5f7e194e82aad | a7406b254e0c7d5db8c6ed3ed4bb5a07ecdc3fc1e027506b4a64d2eb572f401f |
+
+Claude第二轮尚未发出有效结果；机主截图显示Sonnet 5.5超高、额度耗尽、星期六04:10重置（当地界面显示；不推定后台任务或订阅权益）。已给六个定向问题：合法限域委托、消除死亡/异步删除竞态、固定画布性能反例、输入/IME/焦点/旋转、竞品公开证据、唯一可执行突破；并要求补足首轮仅有8页且缺失的第8节以后、尤其§11。机主可在恢复后发送，非研发前提，不要求付费。下一次只接受具体新发现，不再让六家重复泛答，不以模型名/报告长短判定正确。原始附件及本次保存的索引均未经OEM真机验证；不能宣称第二轮Claude已经完成。
+
+### 最终审查与架构决策（长期继承）
+
+- 第一轮六家逐项结论继承下文S终验与S补充。DeepSeek原生TaskView、千问原生Shell转场、Kimi事件驱动无轮询、豆包OEM已有窗口编排、Gemini统一状态与独立恢复、Claude Pod固定任务舱/Stage显示几何解耦及独立Return Agent是有效**设计原则/待验证候选**，不是六套重做架构。保留现有UnifiedCore/NativePort/ReceiptBridge/Flight及已验收成果，拒绝无收益微优化或重复造轮子。
+- 第二轮DeepSeek：其按windowingMode注册Organizer及mDeferRemoval证明混用历史AOSP接口/当前机制。当前AOSP主线TaskOrganizer.registerOrganizer()无mode参数、TaskOrganizerController.getTaskOrganizer()选最后注册组织器；不能以私有mode1000证明隔离，可能影响系统任务管理。旧mDeferRemoval动画延迟仅延迟删除不取消；当前组织器清理存在removeImmediately路径；ColorOS还有独立死亡及异步删除。不能用200–500ms抢救、微小动画、重注册辅助组件或延迟回调当可靠任务归还。主线MANAGE_ACTIVITY_STACKS保护级别signature、MANAGE_ACTIVITY_TASKS signature|recents，不能由priv-app白名单直接推定获得；OEM实机定义以原件为准。拒绝私有windowingMode、第二全局organizer、动画拖延、priv-app/常驻代理的盲试，不据此全面否定OEM授权会话方向。主线与历史源码参考：https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/window/TaskOrganizer.java 、https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/TaskOrganizerController.java 、https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/res/AndroidManifest.xml ；此为审查依据定位，非目标ROM运行测试。
+- 第二轮Gemini：指出固定任务身份≠固定全尺寸渲染、图层几何≠输入几何、删除竞态必须从会话起点解耦；采纳反例与约束。按槽位规格改变逻辑尺寸可能引发configuration、重排、重建、播放影响；全尺寸运行五份buffer可能增加PSS/Graphics/GPU带宽/温升；不得预设任意方案必胜，更不得降低画质/刷新率/窗口数量、冻结画面或牺牲状态。后续在**真实双任务**可用后同机同负载实测不同逻辑画布策略，交换期间避免无必要bounds变化；固定身份与呈现分离而非永久全尺寸的产品承诺。Gemini所谓系统侧代理调用、拦截删除不是现成已授权API，未找到新的受支持契约；不以注入特权宿主自动视为授权，不Hook权限/删除检查。
+- 第二轮千问：Non-Owner Mode的目标是任务所有权归系统，工作台仅展示/编排；复用已有组织器、BLASTSync/Transitions、真实输入与视觉同步可参考。其推论“非Organizer身份=子任务不会删”“容器销毁必然回退桌面”不成立，AOSP WindowContainer.removeImmediately存在递归子容器移除；WCT.reparent是真实任务层级操作并受权限/父容器限制，不等于SurfaceControl视觉变换；空WCT不构成归还；同进程DeathRecipient不能保障宿主强杀后的归还；InputWindowHandle/InputTransfer等提议无已验证可调用契约，BLASTSync有超时/异常结束，不保证100%同步/零开销。拒绝强杀SystemUI主力机M0、未授权reparent/新scope，尤其不能仅凭一次单任务可见/回到最近任务就证明五窗或独立归还。源码参考：https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/WindowContainer.java 、https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/WindowOrganizerController.java 、https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/BLASTSyncEngine.java 。
+- 最终主线不是“继续找更多AI”或重新选A/B/C。保持现有自主核心、原生驻留及最小化系统接入，首要目标com.oplus.pscanvas（Multi Windows）+com.android.launcher（系统桌面）+自身，不追求盲目零注入，不未经授权增加SystemUI/system_server等scope；独立系统环境仅战略备选，VD/V89停止。系统任务所有权与显示宿主生命周期必须从会话准入时解耦，正常归还及异常归还都须保护真实task/user/token/原parent/display/mode/bounds，证明无pending destructive cleanup/迟到重挂；未知结果保留归还义务，不清日志、不假造ACK、不强制全屏冒充原归属恢复。root/pidfd/epoll/WAL只可作为已经合法授权且证明需要时的条件性工具，绝非权限或竞态解决方案。已有PMS110原件确证safe.WINDOW权限保护（诸如startFlexibleWindowForRecentTasks、setEmbeddedContainerTask、removeEmbeddedContainerTask），detach及死亡分支可能removeTask，异步map先清再执行删除。持有Root/Vector不等于合法任务会话。现有只读host-runtime实际加载不是调用授权，绝不伪造Capability/回执。无新证据不再反编译相同原件、不重跑已验收合成测试、不乱加实验或外围任务。
+- **未完成唯一关键任务：** 找到可核验证据支持的、系统允许的限域原生任务托管及独立生命周期归还契约/适当隔离实验环境；现有资料并未证明不存在其他路线，也未证明已经可实施。仅当有真实新增条件时：先确认准入/身份/失败清理，实施一项可丢弃自有任务真实显示/输入/同身份/正常与异常安全归还，完成后才扩展双任务原位交换（真实图层、IME/焦点、视频播放和滚动连续、像素与帧同步），再五窗及同机Perfetto/FrameTimeline/CPU/GPU/线程/PSS/Graphics/功耗/温升，之后恢复上层冻结功能。若明确不具备权限或任务安全证据，直接停止该实验；不等待官方作为唯一前提，已有OPPO邮件监测继续备用。新权限、额外Root守护、重大架构/系统部署、付费环境及必要真机操作必须先说明风险收益取得明确机主授权；不让机主跑终端/ADB/电脑，不让重复装包取证，不降低标准。没有新条件时不重复要求同义继续指令或虚构工作进度。
+- 永久要求：历史F01–F21完整产品效果、原一大四小/顶部横排/侧排、主窗比例圆角、液态玻璃、快捷栏、智能侧栏、工作组、通知栏/系统手势、更新中心和诊断以及N5内外屏/Y700/N3/ColorOS多版本兼容保护；原包名、实际有效原签名、原数据、署名与Apache-2.0，正式发布前原签名验证与机主真机验收；此前历史签名及数据迁移风险详见原文，不在本次交接改动。不使用旧ZIP覆盖最新源码，不重复上层设计，不公开OEM文件、签名材料及私人资料。
+- 新窗口设置：同一「台前调度2.0｜研发中心」项目内普通聊天；有具体高难工程时用最高可用推理（通常High/更高可用档），简单核对用较低推理，关闭Work，不付费换其他AI解决权限问题。新窗口读本固定检查点的最新节及必要历史定位后验证core实际HEAD/CI/原件索引，不重新做全部历史研究。每轮主动给实际成果/可核对SHA/真实阻塞/是否需机主操作/完整下一条必要指令及模型配置；无事项不用重复发指令。遇上下文风险先更新本文，再解除负责人角色。此次仅权威交接与原件保护，无生产代码变更，无新CI、APK、分支或PR。
+
+---
 
 ## 永久底层通用性要求及新增验收门禁（机主正式授权，2026-11-20，即刻生效）
 
