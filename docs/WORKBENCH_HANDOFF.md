@@ -14,6 +14,17 @@
 
 ---
 
+## 第十六阶段 L · 获批双宿主限时自有任务只读实验候选（2026-11-20）
+
+- 机主正式批准一次严格隔离的双宿主只读实机验证，可交付一份独立验签私测APK；仅Multi Windows/com.oplus.pscanvas、系统桌面/com.android.launcher及自身应用，观察正常系统操作产生的会话，不修改原有调用行为、不主动调用受保护OEM接口、不扩大权限/作用域、不恢复V89。继承4004dce5fc6bf36539f31a09d12510280cfe1e75及最后已验收核心1ca3d73e73393ac1eff02ee80381ba3105fd1d7d（46 Android+5自有图层像素）。本授权不是OEM主动任务控制许可或系统异常终止许可。
+- 实际回读现有host-runtime全套源码、Manifest、Gradle、scope、严格CI及旧3项测试。新定点对应：桌面DEX classes2 #25406 +0x11/+0x15明确Bundle键intent，+0x23为FlexibleTaskView.init(Bundle)；pscanvas历史实机元数据/宿主引用明确init(int,float,float,Rect,Intent,int,int)，两者均公开void实例；release()亦为既有真实公开签名。实读OplusLauncher.apk签名块v2/v3内证书摘要均为e49802409584ce53152a9000820a51e4fa8a723b7bcc263e335240acf100bf9e（提取证书摘要并非完整APK密码学验签），与历史pscanvas证书一致。核对libxposed 102.0.0公开Javadoc的Chain.getArgs、getThisObject、proceed原参一次及HookHandle.unhook契约；不引入其他框架、不复制OEM实现。
+- 已实际原子提交并非强推唯一workbench2/core候选91562f6e57c4602659479c0d7a15298bf2a3c3a1，tree82298bb7dc7158625662c7e7caa8b71cecfe57e9，父1ca3d73e73393ac1eff02ee80381ba3105fd1d7d，ahead1/behind0；仅8个host-runtime/对应CI文件（253新增、77删除，按远端compare逐项11/9、2/2、40/0、9/2、104/64、39/0、47/0、1/0），engine、生产app、历史main及原生产签名未改。复用独立applicationId io.github.x647368maker.atomicworkbench.hostruntime，versionCode3/versionName2.0-dual-observation-3。scope.list严格两外部宿主；增加唯一自有可丢弃可调整SessionActivity正常桌面入口，无权限、服务、接收器、provider、网络、输入注入或常驻线程。实验室固件/版本限制不是正式产品固定依赖。
+- 实现边界：SessionFilter严格检查目标主进程、first、system flag、UID匹配、PMS110/API37/历史完整指纹；未知环境拒绝。每宿主仅2个观察hook（已确认的init签名及release），仅正常调用中明确指向独立自有fixture的Intent才进一步观察，Bundle副本只读取已确认intent键，不记录或保存外部Intent/内容/任务数据。真正记录匹配前通过公开PackageManager核对当前宿主同UID、单证书SHA256、已知版本（launcher170030013，pscanvas20），未获匹配则不记录；注意hook注册早于此运行时证书检查。原链proceed()恰一次，不传新参数、不吞原调用异常、不修改返回；只记录匹配自有view的init进入/正常返回、同一弱引用view的release正常返回、elapsedRealtime及source SHA。每进程一次匹配，180秒事件准入截止，现有主Looper一次延迟清理而非轮询，正常release后请求unhook；进程重启可重新加载，故必须用户单次使用后禁用模块。若主Looper阻塞或unhook失败，实际解除可能延后，事件准入仍有截止；不能承诺全局一次或零风险。Vector hook运行稳定性、实际协同及清理待真机。此只读实验不记录真实第三方内容或任务ID、不主动创建OEM任务、不证明独立归还或主动控制授权。自有页面显示taskId、随机Activity实例、点击、多窗及焦点，需系统正常操作和Vector日志共同取证；时间相关不能单独证明两个宿主共同持有同一task。
+- 既有host metadata 3项Android测试保留，新增exactDualHostGate、onlyOwnExplicitComponentMatches、oneViewAndBoundedLifetime 3项；CI预期6个不同testcase零失败/错误/跳过，精确验证独立包名/版本/零权限/单自有Activity/双scope/无额外类及原签名。确切run https://github.com/x647368-maker/NeXtep/actions/runs/44741398627 已实际in_progress，head91562f6e57c4602659479c0d7a15298bf2a3c3a1，尚无编译/测试结论。未发APK、未验签、未实机；不将候选提交提升为已验收基线，不重复46+5。风险：正常系统入口可能不传显式fixture Intent或不经两个目标init，hook安装与系统兼容性不可仅靠独立模拟器证明；若缺少匹配，记录未观察而非认定无能力，不盲增hook，不让机主强停系统进程或重启到异常状态，发现发热/崩溃停止并禁用。若实验证明仅一个宿主参与或无匹配，按实际证据判定，不强凑双宿主。
+- 下一轮第一动作仅核验现有CI44741398627终态、六项原始XML、APK清单及scope、source SHA、实际签名产物。若失败仅依据明确工程错误最小修复；无签名secret按已有授权的离线签名流程核验真实原证书，不能交付unsigned。通过且原证书核实后仅交独立私测APK，不公开、不覆盖生产。说明实际使用范围、正常系统操作（仅自有测试页）、Vector日志导出、单次限时、停止和卸载方式；不要求电脑/ADB，不主动调用受保护接口。正式生产权限和同任务独立归还仍未知，所有冻结产品、永久通用性、安全、性能门禁不变；非必要上层冻结。当前普通聊天最高可用推理，Work关闭。没有新分支/PR，没有后台研发承诺。
+
+---
+
 ## 第十六阶段 K · 桌面与服务端任务脱离/归还真实静态契约（2026-11-20）
 
 - 继承新增永久通用性制度 e2fac51fb9ee42f2822d730fd2e6440be94ed7b6 及已验收 core 1ca3d73e73393ac1eff02ee80381ba3105fd1d7d；实际核对远端双HEAD。机主将已有 MT 目录中的 oplus-services.jar 再上传，此次实读 30503412 bytes，SHA256 4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e 与十三Y原件一致，全部5 ZIP成员CRC无错，3 DEX。实读仍挂载 OplusLauncher.apk SHA256 add93101fd0ec42de67076f3ea4381a04d0cc3c65ded15714558ba97c717cf99，与J一致。服务 classes3.dex SHA256 ffddbcc8f83adc86df0344383fdeddfbd2a0bd47df3a6286bbd6b577178027fa。按实际DEX字段/方法/指令宽度、寄存器与分支追踪，不以接口名或strings推断执行。未上传OEM原件至仓库、不复制其代码、不重做其他已排除路径。
