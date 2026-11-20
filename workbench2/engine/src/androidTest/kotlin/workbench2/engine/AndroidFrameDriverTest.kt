@@ -39,7 +39,7 @@ class AndroidFrameDriverTest {
             val observed=if(e.op==Op.VERIFY_VISUAL || e.op==Op.VERIFY_FOCUS)e.expected else null
             val attach=if(resource?.kind==Kind.TASK_LEASE)resource.request!!.let {
                 AttachProof(it.id,"container-"+it.id,if(release)null else it.existing,it.component,true,true,
-                    if(release)it.existing?.let { original -> TaskReturnProof(original.task,original.user,original.token,true,true) } else null)
+                    if(release)it.existing?.let { original -> TaskReturnProof(original.task,original.user,original.token,true,true,noPendingDestructiveCleanup=true) } else null)
             } else null
             val receipt=NativeSnapshot("fixture","fixture","fixture-instance",observed,
                 if(e.op==Op.VERIFY_FOCUS)observed!!.owners.first() else null,blocked,
