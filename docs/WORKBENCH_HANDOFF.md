@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 M · 两个本地实验APK核验回传，待一次真机实验授权（2026-11-20，本节最新生效）
+
+- 机主转交Copilot实际本地核验报告，证据目录 ~/local-verification/wb2-resident-lab-build-20261120_163813/。主包 Workbench2ResidentLab-debug.apk 2718611 bytes，SHA256 94ce52b8ef8c238730bc5c1bc24058b598cd5e7da56fc6ad4b2f9687bc1429a4，包名workbench2.residentlab；测试包 Workbench2ResidentLab-debug-androidTest.apk 791658 bytes，正确SHA256 c31499eb8e4393f7bdf48b2e2b5c277a5b44c3cca548730f2fca86922769523d（报告中另有已明确更正的错误短串，不采用），包名workbench2.residentlab.test，target workbench2.residentlab，runner androidx.test.runner.AndroidJUnitRunner。两包据报告v2签名通过、相同Android debug证书SHA256 bd2209dbe19109743be2f8fb14cb8950c666e0440081aa56866d90d9b0d97bd2。两APK哈希与L回传一致，四个摘要格式均为64 hex；此聊天未获取原始文件/原始日志，非独立字节验证。主包版本名/版本号报告UNKNOWN，合并Manifest完整权限列表及meta.txt退出/数量字段未回传；实际安装前同批次检查，不重编译，不将未知值擅改为正式版本。
+- 报告HEAD 428b618b35ccd5db67d8e66abe6616bff23feeae、工作区改动0，BUILD SUCCESSFUL in 1m 22s；build.log SHA256 bd6b0e855f8d3b2432169510c289a4da825f17daaa6f914062f27067a0657f32。本窗口实际GitHub复核core同SHA。首次核验退出126据报告源于apkanalyzer缺用户执行位，后续修复仅该本地SDK工具执行权限并完成核验，未更改APK/源码/生产签名；Copilot之前代理隧道报错后恢复，具体最终代理模式未证实。不再重装SDK、重新构建或网络排查。
+- Copilot报告adb devices无设备、USB列表无一加；未安装未运行。机主尚未发出一次真机授权。下一步机主仅USB连接已授权一加、解锁停留无个人内容的桌面，发送明确限定授权，Copilot在同一批次先核对唯一正确设备、现有实验包不存在、正常温度/电量、两个APK哈希/签名/merged Manifest无非预期权限/版本及元数据、测试入口一致；任一不符停止，不覆盖现存包、不更改设置。只安装该两独立实验包，运行 ResidentSingleTest#ownSingleTaskSameCanvasTextureThenSurface 一次，采集runner结果、两SINGLE_OK/MEASURE及PAIR_SINGLE_OK、task/display身份、尺寸/实际刷新率、红绿像素断言、自有测试输入、120 draws、FrameMetrics、资源清理；仅本地测试截图验证，勿上传个人画面/完整敏感日志。监测温度和异常，系统热警告/显著升温/异常即停止（既有高温风险），不改变手机Root/系统/生产应用，不扩大权限，不重试、不执行双任务。结束核验新建自有task/display/Surface无残留，仅卸载本次新装的两个实验包；若断连不能清理，明确报告并待安全恢复，不清理其他资源。失败保留准确证据，不能以测试结果替代生产第三方准入、完整性能或正式签名验收。API35独立CI门禁仍未通过，OPPO非当前实验前置。
+- 本轮仅更新权威档案，无生产代码/新分支/PR/CI。GPT-6 Medium、Copilot原Agent/Auto/本地/默认审批；当前生产负责人不变。
+
+---
+
 ## 第十五阶段 L · 本地首次完整编译成功，待独立产物与真机准入核验（2026-11-20，本节最新生效）
 
 - 机主转交Copilot完整命令及最终报告。实际系统代理HTTP/HTTPS为127.0.0.1:1082；Copilot报告经该代理访问Google POM、Gradle插件仓库及Maven Central成功，项目未设Gradle代理。一次性执行原构建任务 :assembleDebug :assembleDebugAndroidTest，带 --refresh-dependencies --no-daemon --console=plain --stacktrace 以及 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=1082 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=1082，未改仓库、依赖版本、证书、系统权限。报告耗时约82秒，编译成功、两个APK。此为机主提供Copilot文字证据，未取得原始日志、APK字节、独立签名核验；不能宣称实物已独立验证。源SHA 428b618b35ccd5db67d8e66abe6616bff23feeae，本轮GitHub实查core HEAD同一SHA。
