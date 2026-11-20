@@ -14,6 +14,16 @@
 
 ---
 
+## 第十六阶段 S 终验 · 六家AI独立评审结论与47+5底层基线（2026-11-20，最新生效）
+
+- 补充实际完整读取Gemini报告及Claude文档（台前调度 2.0 · 底层架构独立攻关方案.docx，SHA256 75c9e877cde2ddb5cb8f0f5614b152c37a408c43b59ab8ef71ff4e930bd4ee20，65段、5表）。两者亦明确没有读取权威档案正文或目标OEM代码；Claude参考公开README/logcat/WindowDeck资料，未取得真机接口与性能证据，文档引用§11但实际止于§7/E8。四家早前评审见下节。六家共识仅为原生复用、事件驱动、避免交换时任务迁移、独立归还，非多数投票验证。
+- Gemini可取：单任务正常与异常归还先行，统一状态、独立恢复；拒绝提前提交交换状态、失败仍清空日志、仅凭taskId等弱身份恢复以及降低副窗刷新率。Claude可取：固定任务布局（Pod）与独立显示几何（Stage），交换期间不操作任务bounds，首选OEM已有容器/组织器、不创建第二全局组织器；独立恢复与故障注入思路值得保留。现有UnifiedCore/Flight/ReceiptBridge已部分实现相应抽象，不能把参考数学或自有图层等同真实backend，不复建第二套核心。固定全尺寸逻辑画布与真实窗口重排取舍、输入/IME/折叠态变换、满尺寸缓冲及五窗功耗须实测并保护既有体验，不自行改变产品语义。初版竞品3任务的声明不证明当前固件硬上限。拒绝VD溢出、借宿主身份、自动删除任务、仅关闭removeWithOrganizer便保证归还、以及假设uid0能合法调用全部ATMS接口。
+- Claude Return Agent的pidfd/epoll事件驱动独立死亡通知及预写日志值得作为条件性恢复机制参考，但只能感知死亡，不能证明有授权执行恢复，更不能防止已排队的OEM异步删除；仅恢复LIVE会遗漏LAUNCHING/RETURNING在途义务，记录须具真实跨用户/任务身份、原父容器与终结证据。root常驻进程、控制socket、日志fsync新增安全/资源负担，未获机主授权不实现或部署；如有实际合法归还契约且证明需要，再独立提交风险决策。保持现有核心归还门禁，不将死亡通知代替归还。先自有单任务完成承载/真实输入/正常及异常安全归还，再双任务，再五任务和实测；不将强杀系统进程当作普通真机实验。E0接口考古已有原始材料与静态阶段J等证据，不再盲目复跑或要求重复资料。
+- CI44761080432 head=ed40df41de8336dea0f2c2d743722eaf88f3b727 实际completed/success。下载原始runtime artifact14641901071（165278 bytes，SHA256 d3af3a7f9e572ef7abc27b1dbc7730fccb1666b7c65861d6e8acd8c48a741f49与API一致，ZIP CRC全部通过）；原始XML testcase 47个，名称47唯一，无failure/error/skipped，新增duplicateExistingIdentityIsRejectedBeforeNativeDispatch通过0.026s。_temp/wb2-pixels.txt实际含initial/interrupted/rollback/swapped/detached五次PIXELS_OK及对应COMMIT_OK日志。编译artifact14640753194存在，尚未独立下载其AAR，不宣称独立二进制校验。依据已核实工作流与原始运行证据，提升统一引擎已验收基线至ed40df41de8336dea0f2c2d743722eaf88f3b727（47 Android+5自有图层像素），此前3003dbea…保留历史。不是原生ColorOS后端、真实第三方输入/交换/归还或性能验收。
+- 最终决策：保留机主已选择的自主核心及双作用域目标，不因六份报告擅自改变权限/部署/作用域、重做架构、添加后台代理、恢复VD/V89或开发上层。六份均未给出新增的实际获准OEM委托及独立安全归还接口，现有OEM系统静态证据以及Android17 Desktop单自有任务几何恢复实验继续有效。下次只接受在明确权限边界内、有具体可执行证据的真实后端攻关，不再泛问其他AI、不再复跑既有测试；若需要新的隔离目标机环境、受支持系统扩展或权限/部署变更，应清楚说明必要性与风险，取得授权。此次无生产代码修改、无新CI、分支、PR、APK或真机操作，不声称解除后端阻塞；上层冻结，原签名/数据及全量永久制度持续有效。机主无需购买外部AI订阅或重复发送继续。
+
+---
+
 ## 第十六阶段 S 补充 · 四家外部AI独立审查结算及CI清单纠错（2026-11-20，最新生效）
 
 - 机主提供四份独立建议，实际全文已读取，文件名与本地SHA256：DeepSeek Atomic_Workbench_2.0.txt e1e3157131bbc3deca1f4848c319a06e960c591273b7bbca82a809c9a51165f7；千问 台前调度_AtomicWorkbench2.0_底层架构攻关方案.md 90196c45ba5ef748935042762db0a26f599ee8211c6566282d606e291a5218f2；Kimi 简单模式.txt 4e37afe4d41d92b83ac7cf60bebecda2c9e5dd852406b05fa6c726f9b06f59d0；豆包.txt f7f39fd8e9a6721e1a4db792b69ecc604b7f646e5b7fdc3a055138cfc2fd620c（Kimi实际文件名kimi 简单模式.txt）。均自述未读到完整权威档案/项目原码；其输出不是OEM接入验证。四份原文未上传GitHub，不向外部AI发送签名材料、私有数据或OEM原件。
