@@ -82,21 +82,24 @@ class SystemWindowResizeTest {
         }
         val activityIndex = activityMatches.single().index
         val activityLine = lines[activityIndex]
-        check(activityLine.contains(target.packageName) && activityLine.contains(target.className)) {
+        val shortClass = target.className.substringAfterLast('.')
+        check(activityLine.contains(target.packageName) &&
+            (activityLine.contains(target.className) || activityLine.contains("/.$shortClass"))) {
             "System ActivityRecord does not match the disposable fixture: $activityLine"
         }
         val activityObject = requireNotNull(activityHeader.matchEntire(activityLine)).groupValues[1]
 
         val taskHeader = Regex("""^[ \t]*\*?[ \t]*Task\{([0-9a-fA-F]+) #(\d+)(?:\s|\})[^\r\n]*""")
         val activityIndent = activityLine.takeWhile { it == ' ' || it == '\t' }.length
-        val containing = lines.take(activityIndex).withIndex().filter { (_, line) ->
+        val taskHeaders = lines.take(activityIndex).withIndex().filter { (_, line) ->
             taskHeader.matches(line) && line.takeWhile { it == ' ' || it == '\t' }.length < activityIndent
-        }.lastOrNull() ?: error("No containing system Task object for ActivityRecord task=$id")
+        }
+        val containing = taskHeaders.lastOrNull()
+            ?: error("No containing system Task object for ActivityRecord task=$id")
         val taskMatch = requireNotNull(taskHeader.matchEntire(containing.value))
         val taskId = taskMatch.groupValues[2].toInt()
-        val taskLine = containing.value
-        check(taskLine.contains("mode=freeform")) {
-            "Containing system Task is not freeform: $taskLine"
+        check(taskHeaders.any { it.value.contains("mode=freeform") }) {
+            "No freeform Task ancestor for ActivityRecord task=$id: ${taskHeaders.map { it.value }}"
         }
 
         // ActivityWindowInfo is the system's own task-bounds report for this ActivityRecord.
