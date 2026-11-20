@@ -9,6 +9,13 @@
 - 候选为真实Android PopupWindow+LinearLayout/ScrollView/TextView 控件，直接复用第一方历史16dp半透明GlassPane及静态双光边、四组分类及原线性图标、选中蓝色材质、锚点附近有界放置算法及窄宽度回退。使用调用方实际提供的命令ID/子页/可用状态，不产生无功能假菜单。WorkspaceControls.showMenu核对当前MAIN_ACTION/revision/displayEpoch/附着真实anchor/输入资格、实时panelClosed证据，未知或打开则拒绝；旧页面、旧popup、被移除的行不得执行或关闭新菜单；选中叶动作先dismiss再核验并发出带代际请求；bind/clear/detach主动dismiss，不增加定时器/线程/新系统Hook/截图/全屏模糊。新增2项Android自身Activity测试 nativeGlassMenuNavigatesHistoricalGroupsAndDispatchesLeafOnce、nativeGlassMenuRejectsStaleUnknownAndDisabledActions，目标43项Android+5态像素。需严格区分候选与通过：菜单尚未编译/运行，主窗操作仍用H的临时顶部按钮锚点，侧栏/平板历史主窗菜单长按入口、完整实际命令执行、智能侧栏计时/自动收起、真实通知栏状态源、实际菜单尺寸和视觉真机验收仍待恢复；候选使用固定有界滚动高而非旧动态高度，需后续核验视觉合同，不宣称1:1。不是物理系统overlay触控透传或第三方原生任务证明。
 - 接续：先查44662543979最终实际41项+5态；失败先定位修复，不叠加菜单；全部通过时核对HEAD仍为7152d260和候选父/哈希后非强制整合1233fa8fdce39fdb17b76a7d5201020d3cff638b，触发并核验43项+5态，失败修复。通过后继续历史主窗菜单入口/侧栏/智能侧栏生命周期与真实owner交互接线，保护视觉，禁止伪造任务。原生P0仍未取得新增合法授权、隔离环境及独立安全退出证据；本轮未做新的原生调用，不重复已完成ROM/竞品研究，也不要求机主找同行。旧app、main、原签名、冻结分支和NativePort未改，不发APK。普通GPT-6高推理足够。
 
+### 第十四阶段 J 同轮追加有效工程闭环（2026-11-20）
+
+- 继续本轮而非等待用户重新发指令：实际终验 CI 44662543979 job136043977553 completed/success，全部严格41项Android测试+5态合成像素门禁通过，编译产物14596242852 152997 bytes digest sha256:d7cd8ab1ca88e01be2305bcc51b5fb995d61d64994c7ea8231b67ffc1d6c54bb；运行14596143670 165779 bytes digest sha256:232279b17fca65b1b40a6ca32e763e025902d3c032ea2e2b7e5db5656538dd70，均为7152d260cb64800c904ad745a6d6e3d078d16388。未重下载ZIP/XML，非OEM真机。
+- 确认候选六文件哈希、父、compare ahead1/behind0全部一致；按expected_sha非强制将唯一workbench2/core推进到1233fa8fdce39fdb17b76a7d5201020d3cff638b，实查远程HEAD为该SHA。上文菜单候选现已整合，触发准确SHA的CI [44663008614](https://github.com/x647368-maker/NeXtep/actions/runs/44663008614)，初次查询 queued，无最终结论。目标43项+5态，未宣称编译或测试通过。两次实质工程整合均在本轮完成，未新建分支或PR。
+- 下一轮先查44663008614实际结果，失败定位修复；通过后恢复历史主窗菜单入口、智能侧栏真实状态和统一核心交互绑定，不能重复生成已整合菜单。P0原生任务仍未解阻，禁止绕过Y/Z/G门禁。此追加覆盖J上文旧的候选/运行中状态。
+
+
 ---
 
 ## 第十四阶段 I · H编译门禁通过、侧栏恢复手势待整合候选（2026-11-20）
