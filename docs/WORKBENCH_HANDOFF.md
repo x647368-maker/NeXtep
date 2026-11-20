@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 U · 主动寻找反例：MagicDesk 系统持有任务的批量几何编排（2026-11-21）
+
+- 机主明确纠正不能因停止无效试错而被动等待新证据。保留现有原生宿主主线、安全与冻结标准，不把再次泛问六家AI/OPPO作为先决条件。实际回读历史十五C/Z、十六G/K/N/P/Q/R/T等，AppTask自有窗口、普通多窗容量及Shell单任务已经验证/排除部分适用性，不包装为新发现。当前核心仍ed40df41de8336dea0f2c2d743722eaf88f3b727。
+- 新独立开源参考 https://github.com/mekhontsev/magicdesk ，固定main递归tree 8c9e40b3757d36b431dc1e7efbe7216131932e21（3978项，未截断）。实际读取NativeWindowBoundsController、ExistingTaskController、GenericAndroidWindowingDriver、DesktopSessionEndPlan、NativeDesktopController、DesktopWindowLayoutController、TaskRepository、ShellAccess、TaskWindowingCommand、SyncWindowContainerTransaction、ShellWindowTransitionExecutor及docs/compatibility.md。关键可核实事实：TaskRepository blob6bc6261365cf43a60346cbda5485464694251ee0 的applyWindowGeometry将多项任务几何通过ShellAccess批量交给服务；TaskWindowingCommand blob28ea2fcf20a22c640eceba7f1127665ec08f6430 的resizeBounds构建多task token的WCT；SyncWindowContainerTransaction blob8423c231569fedd9fe4f46d9f49dc3c5b334d9ce 有真实同步回调匹配和超时处理。源码证明独立编排客户端+系统原生任务+批量几何有公开工程参考，不证明所有系统支持或连续物理帧、无配置重建、异常安全归还。此为定向静态审查，未安装、运行或复制任何第三方代码。
+- 该项目需要正常获准的广泛Shell/Root服务、可用原生桌面能力及HOME角色切换/设备设置，README注明GPLv3；兼容文档维护者验证RedMagic 11 Pro及OnePlus 5 LineageOS 22.2等，未见PMS110/ColorOS17对应验证。禁止复制GPL代码进现有Apache-2.0项目、照搬其HOME替换/系统配置/全权限服务或其他注入依赖；ExistingTaskController还包含100ms有界轮询，不能当成我们的极简架构。普通原签名客户端不因该项目存在而拥有特权。没有新OEM限域授权或归还契约，不能宣称解决生产部署。
+- 新的最小判别问题（独立系统编排备选，而非重开普通四窗UI或V89）：如果任务始终由系统原生桌面管理、不挂到工作台进程，两个既有真实测试任务能否一笔受系统认可的几何事务原位交换，同task/Activity实例/内容/输入保持且工作台控制端终止后系统仍保有两任务？实际回读现有system-window-lab/SystemWindowResizeTest.kt blob7f4bad487b48dfee434571a86533e7727c404e07，仅已有单自有任务独立resize及恢复，不能代替双任务和控制端异常对照。可复用现有Desktop实验环境、工作流及自有夹具，不重跑既验收项；若要实施此备选部署方向的一次有界双任务验证，先获机主确认（原系统不改、仅云端现成模拟器、系统正常测试授权、两可丢弃任务、不强杀系统、不新分支PR）；缺少真实批量事务运行准入则止，不退化为两个串行命令冒充原位交换。即使机制验证通过，仍需目标设备五窗、授权、原位几何及恢复、性能门禁；不声称已解除ColorOS阻塞。这项是可证伪的新增候选，不擅自更换生产架构/桌面、不要求机主操作手机。无生产源码、CI、APK变化，仅保存本次新源码证据和下一项明确决策。普通聊天High，Work关闭。
+
+---
+
+
 ## 第十六阶段 T 接任核验 · 唯一生产负责人已生效（2026-11-20）
 
 - 机主已明确授权本项目当前新聊天正式接任唯一生产研发负责人，上一窗口转只读。实际读取本档第十六阶段T、S终验及补充、通用性规则、AGENTS.md、docs/DEVELOPMENT_HANDOFF_POLICY.md；原历史记录保留，当前接任状态优先于下文待接任描述。仅本窗口可推进生产研发，外部AI仅供只读审查；永久研发制度、F01–F21、原签名数据、跨设备及性能门禁不变。
