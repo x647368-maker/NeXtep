@@ -1,5 +1,7 @@
 package workbench2.layout
 
+import android.view.WindowInsets
+import android.view.WindowMetrics
 import workbench2.motion.Box
 import workbench2.unified.LaunchRequest
 import workbench2.unified.StartPlan
@@ -8,10 +10,9 @@ import kotlin.math.roundToInt
 
 /**
  * Destination geometry only. No virtual display, task resolution, task identity,
- * view or native session is manufactured here. Run on a layout change, not a frame.
- * Supports horizontal top across device shapes and physically upright side rails.
- * Rotated phone/foldable landscape-side rails require the legacy projection;
- * never silently remap them.
+ * view or native session is manufactured here. Run on layout changes, not frames.
+ * Selected rails remain in panel axes; all rectangles and UI hit tests share
+ * the same physical destination coordinate space.
  */
 object WorkspaceLayout {
     enum class Rail { TOP, LEFT, RIGHT }
@@ -19,13 +20,15 @@ object WorkspaceLayout {
                       val right: Int = 0, val bottom: Int = 0)
     data class Viewport(val width: Int, val height: Int, val dpi: Int,
                         val insets: Insets, val controlHeight: Int,
-                        val sideWidth: Int, val mainInset: Int = 0) {
+                        val sideWidth: Int, val mainInset: Int = 0,
+                        val rotation: Int? = null) {
         init {
             require(width in 2..32768 && height in 2..32768 && dpi in 1..2000)
             require(listOf(insets.left,insets.top,insets.right,insets.bottom).all { it in 0..32768 })
             require(usableWidth > 1 && usableHeight > 1)
             require(controlHeight in 1 until usableHeight && sideWidth in 1 until usableWidth)
             require(mainInset in 0..minOf(usableWidth,usableHeight)/2)
+            require(rotation == null || rotation in 0..3)
         }
         val usableWidth get() = width-insets.left-insets.right
         val usableHeight get() = height-insets.top-insets.bottom
@@ -33,10 +36,23 @@ object WorkspaceLayout {
     }
     data class Card(val slot: Int, val box: Box)
     data class TopActions(val collapse: Box, val main: Box, val add: Box)
+    enum class HitKind { CARD, COLLAPSE, MAIN_ACTION, ADD }
+    data class Hit(val kind: HitKind, val slot: Int? = null)
 
     class Layout internal constructor(val main: Box, val rail: Box,
-        cards: List<Card>, val topActions: TopActions?, val displayEpoch: Long) {
+        cards: List<Card>, val topActions: TopActions?, val displayEpoch: Long,
+        val control: Box, val panelRotationDegrees: Int) {
         val cards: List<Card> = Collections.unmodifiableList(ArrayList(cards))
+        /** UI destinations only; not native task input dispatch or input proof. */
+        fun hitAt(x: Double,y: Double): Hit? {
+            fun hit(b: Box) = x>=b.x && x<b.x+b.w && y>=b.y && y<b.y+b.h
+            topActions?.let { a ->
+                if(hit(a.collapse)) return Hit(HitKind.COLLAPSE)
+                if(hit(a.main)) return Hit(HitKind.MAIN_ACTION)
+                if(hit(a.add)) return Hit(HitKind.ADD)
+            }
+            return cards.firstOrNull { hit(it.box) }?.let { Hit(HitKind.CARD,it.slot) }
+        }
         /** Map by persisted slot identity, never by task ID, and never fill a missing slot. */
         fun startPlan(mainRequest: LaunchRequest, bySlot: Map<Int,LaunchRequest>): StartPlan {
             require(bySlot.keys == cards.map { it.slot }.toSet())
@@ -53,48 +69,129 @@ object WorkspaceLayout {
         outer.contains(inner.x,inner.y) && outer.contains(inner.x+inner.w,inner.y+inner.h)
     private fun intersects(a: Box,b: Box) =
         a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y
-    private fun fitted(region: Box, width: Int, height: Int): Box {
+    private fun fitted(region: Box, width: Int, height: Int, roundRight: Boolean = false): Box {
         val scale=minOf(region.w/width,region.h/height)
         val w=(width*scale).roundToInt(); val h=(height*scale).roundToInt()
         require(w>0 && h>0)
-        return rect(region.x.toInt()+(region.w.toInt()-w)/2,
+        return rect(region.x.toInt()+(region.w.toInt()-w+(if(roundRight) 1 else 0))/2,
             region.y.toInt()+(region.h.toInt()-h)/2,w,h)
     }
-    private fun region(v: Viewport, rail: Rail, depth: Int): Box {
+
+    // Frozen physical display predicates, independent of ROM model strings.
+    private fun wideTablet(width: Int,height: Int): Boolean {
+        val short=minOf(width,height); val long=maxOf(width,height)
+        return short>=1300 && long.toFloat()/short>=1.45f && long.toLong()<2L*short
+    }
+    private fun wideLandscape(v: Viewport) = v.width>v.height && wideTablet(v.width,v.height)
+    private fun nearSquare(v: Viewport) = minOf(v.width,v.height)>=1800 &&
+        maxOf(v.width,v.height).toFloat()/minOf(v.width,v.height)<=1.25f
+    private fun rotatedSide(v: Viewport,rail: Rail) =
+        rail!=Rail.TOP && v.width>v.height && !wideLandscape(v)
+    // Frozen SidebarButtonLayout: LEFT is physical top when toolbar is right.
+    private fun railAtPhysicalTop(v: Viewport,rail: Rail) =
+        (rail==Rail.LEFT) != (v.rotation==1)
+    private fun requireSupported(v: Viewport,rail: Rail) {
+        require(!rotatedSide(v,rail) || v.rotation!=null) {
+            "Rotated side rail requires an explicit display rotation"
+        }
+    }
+    private fun region(v: Viewport,rail: Rail,depth: Int): Box {
+        if(rotatedSide(v,rail)) {
+            return rect(v.insets.left+v.mainInset+(if(v.rotation==1)v.controlHeight else 0),
+                v.insets.top+v.mainInset+(if(railAtPhysicalTop(v,rail))depth else 0),
+                v.usableWidth-v.controlHeight-2*v.mainInset,
+                v.usableHeight-depth-2*v.mainInset)
+        }
         val side=if(rail==Rail.TOP) 0 else depth
-        return rect(v.insets.left+v.mainInset+if(rail==Rail.LEFT) side else 0,
-            v.insets.top+v.controlHeight+v.mainInset+if(rail==Rail.TOP) depth else 0,
+        return rect(v.insets.left+v.mainInset+(if(rail==Rail.LEFT) side else 0),
+            v.insets.top+v.controlHeight+v.mainInset+(if(rail==Rail.TOP) depth else 0),
             v.usableWidth-side-2*v.mainInset,
             v.usableHeight-v.controlHeight-(if(rail==Rail.TOP) depth else 0)-2*v.mainInset)
     }
-
-    // Same physical display predicates as frozen StageDisplayPolicy. No ROM/model guess.
-    private fun wideLandscape(v: Viewport) = v.width>v.height && v.height>=1300 &&
-        v.width.toFloat()/v.height>=1.45f && v.width.toLong()<2L*v.height
-    private fun nearSquare(v: Viewport) = minOf(v.width,v.height)>=1800 &&
-        maxOf(v.width,v.height).toFloat()/minOf(v.width,v.height)<=1.25f
-    private fun requireSupported(v: Viewport,rail: Rail) {
-        require(rail==Rail.TOP || v.height>=v.width || wideLandscape(v)) {
-            "Rotated landscape side rail needs verified legacy projection"
+    private fun control(v: Viewport,rail: Rail): Box = if(rotatedSide(v,rail))
+        rect(v.insets.left+(if(v.rotation==1)0 else v.usableWidth-v.controlHeight),
+            v.insets.top,v.controlHeight,v.usableHeight)
+        else rect(v.insets.left,v.insets.top,v.usableWidth,v.controlHeight)
+    private fun project(rail: Box,degrees: Int,left: Int,top: Int,width: Int,height: Int): Box =
+        when(degrees) {
+            90 -> rect(rail.x.toInt()+rail.w.toInt()-top-height,rail.y.toInt()+left,height,width)
+            -90 -> rect(rail.x.toInt()+top,rail.y.toInt()+rail.h.toInt()-left-width,height,width)
+            else -> rect(rail.x.toInt()+left,rail.y.toInt()+top,width,height)
         }
-    }
-    /** Hidden rail refit is geometry only; does not detach/close any existing tasks. */
-    fun focusedMain(v: Viewport, rail: Rail): Box {
-        requireSupported(v,rail)
-        return fitted(region(v,rail,1),v.width,v.height)
+    private fun mainBox(v: Viewport,rail: Rail,depth: Int) =
+        fitted(region(v,rail,depth),v.width,v.height,rotatedSide(v,rail)&&v.rotation!=1)
+
+    private fun presentation(v: Viewport,rail: Rail,priority: Boolean): Viewport {
+        if(!priority) return v
+        val band=(56*v.density).roundToInt().coerceAtLeast(1)
+        val height=minOf(v.controlHeight,band)
+        // Frozen wide landscape tablet retains its side breathing margin.
+        val inset=if(wideLandscape(v)&&rail!=Rail.TOP)
+            (12*v.density).roundToInt().coerceAtLeast(1).coerceAtMost(
+                (minOf(v.usableWidth-v.sideWidth,v.usableHeight-height)/4).coerceAtLeast(1))
+            else 0
+        // Footer overlap remains disabled until independently verified input regions.
+        return v.copy(controlHeight=height,mainInset=inset)
     }
 
     /**
-     * Input slot indices are the active historical slots (0..3). The visual row
-     * compacts, but original indices survive. Resolved dimensions are supplied by
-     * the caller from the actual display/controller; no brand or ROM guess.
+     * Public Android insets boundary for an already verified full-screen window.
+     * The caller must capture dimensions, rotation, density and epoch together.
+     * Stable system bars/cutout constrain only destination geometry.
      */
-    fun calculate(v: Viewport, rail: Rail, activeSlots: List<Int>,
-                  mainPriority: Boolean, displayEpoch: Long): Layout {
+    fun fromWindowMetrics(metrics: WindowMetrics,width: Int,height: Int,dpi: Int,
+                          rotation: Int,rail: Rail,count: Int,priority: Boolean): Viewport {
+        val bounds=metrics.bounds
+        require(bounds.left==0 && bounds.top==0 && bounds.width()==width && bounds.height()==height) {
+            "Full-display coordinate space required"
+        }
+        return fromWindowInsets(width,height,dpi,rotation,metrics.windowInsets,rail,count,priority)
+    }
+
+    fun fromWindowInsets(width: Int,height: Int,dpi: Int,rotation: Int,insets: WindowInsets,
+                         rail: Rail,count: Int,priority: Boolean): Viewport {
+        require(width in 2..32768 && height in 2..32768 && dpi in 1..2000 && rotation in 0..3 && count in 0..4)
+        val d=dpi/160f
+        val i=insets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+        val tablet=wideTablet(width,height)
+        // Old Y700 safety rule: even a ported ROM with a bad reported status inset.
+        val top=if(tablet)maxOf(i.top,(48*d).toInt()) else i.top
+        val safe=Insets(i.left,top,i.right,i.bottom)
+        val uw=width-safe.left-safe.right; val uh=height-safe.top-safe.bottom
+        require(uw>1 && uh>1)
+        val landscape=width>height
+        val expanded=minOf(width,height)*160f/dpi>=600f
+        val toolbar=((if(priority)56 else if(expanded)112 else 96)*d).roundToInt()
+        val short=if(landscape)uh else uw
+        val fraction=if(landscape) { if(tablet).33f else .25f }
+            else if(rail!=Rail.TOP && count>0) {
+                if(tablet) when(count){1->.16f;2->.18f;3->.20f;else->.22f}
+                else when(count){1->.215f;2->.235f;else->.25f}
+            } else .25f
+        val side=(short*fraction).roundToInt().coerceAtLeast(2)
+        val normalInset=if(priority)0 else (12*d).roundToInt()
+        return presentation(Viewport(width,height,dpi,safe,toolbar,side,normalInset,rotation),rail,priority)
+    }
+
+    /** Geometry only, never detaches tasks. Retains the historical fold handle reserve. */
+    fun focusedMain(viewport: Viewport,rail: Rail,mainPriority: Boolean = false): Box {
+        requireSupported(viewport,rail)
+        val v=presentation(viewport,rail,mainPriority)
+        val depth=if(rail!=Rail.TOP && nearSquare(v))
+            minOf(v.sideWidth,(44*v.density).roundToInt().coerceAtLeast(2)) else 1
+        return mainBox(v,rail,depth)
+    }
+
+    /** Sparse slots retain identity and an optional persisted visual permutation. */
+    fun calculate(viewport: Viewport,rail: Rail,activeSlots: List<Int>,
+                  mainPriority: Boolean,displayEpoch: Long,
+                  visualOrder: List<Int> = listOf(0,1,2,3)): Layout {
         require(displayEpoch>=0 && activeSlots.size<=4 &&
             activeSlots.all { it in 0..3 } && activeSlots.distinct().size==activeSlots.size)
-        requireSupported(v,rail)
-        val slots=activeSlots.sorted()
+        require(visualOrder.sorted()==listOf(0,1,2,3))
+        requireSupported(viewport,rail)
+        val v=presentation(viewport,rail,mainPriority)
+        val slots=visualOrder.filter { it in activeSlots }
         val count=slots.size
         val d=v.density; val x=v.insets.left; val y=v.insets.top+v.controlHeight
         val w=v.usableWidth; val h=v.usableHeight-v.controlHeight
@@ -103,16 +200,17 @@ object WorkspaceLayout {
         val railBox: Box
         val actions: TopActions?
         val depth: Int
+        val rotated=rotatedSide(v,rail)
+        val degrees=if(!rotated)0 else if(v.rotation==1)-90 else 90
         if(rail==Rail.TOP) {
             val gutter=dp(8)
             val cap=when(count){1->.38f;2->.34f;3->.30f;else->1f}
             val cardWidth=if(count==0) 0 else minOf((w-(count+1)*8*d)/count,w*cap).toInt()
-            // The former 720:1120 canvas is retained ONLY as a card-design ratio 9:14.
+            // Former 720:1120 retained only as card-design ratio, not task resolution.
             val desired=if(count==0) (56*d).roundToInt()
                 else (cardWidth*1120f/720f+(if(mainPriority)56 else 64)*d).roundToInt()
             val minMain=((if(v.width>v.height)160 else 220)*d).roundToInt()
             val limit=minOf(w-1,h-minMain)
-            // Exact historical TOP-only caps: unfolded foldable 24%, wide landscape tablet 32%.
             val shapeCap=when {
                 nearSquare(v)->(v.usableHeight*.24f).roundToInt()
                 wideLandscape(v)->(v.usableHeight*.32f).roundToInt()
@@ -135,24 +233,31 @@ object WorkspaceLayout {
             require(controls.indices.all { i->(i+1 until controls.size).none { intersects(controls[i],controls[it]) } })
         } else {
             depth=v.sideWidth
-            railBox=rect(if(rail==Rail.LEFT)x else x+w-depth,y,depth,h)
+            railBox=if(rotated) rect(x+(if(v.rotation==1)v.controlHeight else 0),
+                v.insets.top+(if(railAtPhysicalTop(v,rail))0 else v.usableHeight-depth),
+                w-v.controlHeight,depth)
+                else rect(if(rail==Rail.LEFT)x else x+w-depth,y,depth,h)
             actions=null
             if(count>0) {
                 val gap=d.toInt().coerceAtLeast(1)
                 val maxWidth=depth-gap
-                // Preserve legacy upright side card aspect using usable viewport,
-                // not a fabricated task buffer. Actual content uses Pose.fit.
+                val logicalHeight=if(rotated)railBox.w.toInt() else h
+                // Card envelope only. Actual task content uses the existing Pose.fit.
                 val height=minOf((maxWidth.toDouble()*v.usableHeight/w).toInt(),
-                    (h-gap*(count-1))/count)
+                    (logicalHeight-gap*(count-1))/count)
                 val width=minOf(maxWidth,(height.toDouble()*w/v.usableHeight).toInt())
-                val pad=(h-height*count-gap*(count-1))/2
+                val pad=(logicalHeight-height*count-gap*(count-1))/2
                 for((i,slot) in slots.withIndex())
-                    cards.add(Card(slot,rect(railBox.x.toInt(),y+pad+i*(height+gap),width,height)))
+                    cards.add(Card(slot,project(railBox,degrees,0,pad+i*(height+gap),width,height)))
             }
         }
-        val main=fitted(region(v,rail,depth),v.width,v.height)
+        val main=mainBox(v,rail,depth)
+        val controls=control(v,rail)
+        val safe=rect(v.insets.left,v.insets.top,v.usableWidth,v.usableHeight)
+        require(listOf(main,railBox,controls).all { fits(it,safe) })
+        require(!intersects(main,railBox) && !intersects(main,controls) && !intersects(railBox,controls))
         require(cards.all { fits(it.box,railBox) && !intersects(it.box,main) })
         require(cards.indices.all { i->(i+1 until cards.size).none { intersects(cards[i].box,cards[it].box) } })
-        return Layout(main,railBox,cards,actions,displayEpoch)
+        return Layout(main,railBox,cards,actions,displayEpoch,controls,degrees)
     }
 }
