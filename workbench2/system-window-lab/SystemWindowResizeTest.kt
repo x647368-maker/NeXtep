@@ -68,23 +68,54 @@ class SystemWindowResizeTest {
         info.taskId == id && info.topActivity == target
     }
 
-    // Independent WM dump, fail closed on an unknown format or ambiguous task.
-    // Task object's printed identity is corroboration, not a stable Binder token.
+    // Desktop freeform tasks may be child tasks inside a system-owned Desk root.
+    // Verify the exact ActivityRecord/task id and its containing Task object rather
+    // than assuming every app task is itself a top-level "* Task" entry.
     private fun systemTask(id: Int): Pair<String, Rect> {
         check(own(id)) { "Not the exact disposable fixture task" }
         val dump = shell("dumpsys activity activities")
-        val header = Regex("""(?m)^[ \t]*\* Task\{([0-9a-fA-F]+) #$id(?:\s|\})[^\r\n]*""")
-        val matches = header.findAll(dump).toList()
-        check(matches.size == 1) { "Unknown/ambiguous system task identity" }
-        val m = matches.single()
-        check(m.value.contains("mode=freeform")) { "System did not enter supported freeform mode: "+m.value }
-        val tail = dump.substring(m.range.last + 1).trimStart('\r', '\n')
-        val block = tail.lineSequence().firstOrNull { it.isNotBlank() } ?: error("Empty system task dump")
-        // Restrict to the first task dump header's bounds; no guessing.
-        val b = Regex("""(?m)^[ \t]*mBounds=Rect\((-?\d+),\s*(-?\d+)\s*-\s*(-?\d+),\s*(-?\d+)\)""")
-            .find(block) ?: error("No independently observable task bounds")
-        val v = b.groupValues.drop(1).map { it.toInt() }
-        return m.groupValues[1] to Rect(v[0],v[1],v[2],v[3])
+        val lines = dump.lineSequence().toList()
+        val activityHeader = Regex("""^[ \t]*\* Hist[ \t]+#\d+:[ \t]+ActivityRecord\{([0-9a-fA-F]+)[ \t]+u\d+[ \t]+[^\r\n]*\bt$id\}""")
+        val activityMatches = lines.withIndex().filter { activityHeader.matches(it.value) }
+        check(activityMatches.size == 1) {
+            "No unique system ActivityRecord for task=$id count=${activityMatches.size}"
+        }
+        val activityIndex = activityMatches.single().index
+        val activityLine = lines[activityIndex]
+        check(activityLine.contains(target.packageName) && activityLine.contains(target.className)) {
+            "System ActivityRecord does not match the disposable fixture: $activityLine"
+        }
+        val activityObject = requireNotNull(activityHeader.matchEntire(activityLine)).groupValues[1]
+
+        val taskHeader = Regex("""^[ \t]*\*?[ \t]*Task\{([0-9a-fA-F]+) #(\d+)(?:\s|\})[^\r\n]*""")
+        val activityIndent = activityLine.takeWhile { it == ' ' || it == '\t' }.length
+        val containing = lines.take(activityIndex).withIndex().filter { (_, line) ->
+            taskHeader.matches(line) && line.takeWhile { it == ' ' || it == '\t' }.length < activityIndent
+        }.lastOrNull() ?: error("No containing system Task object for ActivityRecord task=$id")
+        val taskMatch = requireNotNull(taskHeader.matchEntire(containing.value))
+        val taskId = taskMatch.groupValues[2].toInt()
+        val taskLine = containing.value
+        check(taskLine.contains("mode=freeform")) {
+            "Containing system Task is not freeform: $taskLine"
+        }
+
+        // ActivityWindowInfo is the system's own task-bounds report for this ActivityRecord.
+        // Fall back only to the same record's CurrentConfiguration mBounds; never use
+        // the root Desk bounds or the host Activity's requested launch bounds.
+        val recordLines = lines.drop(activityIndex + 1).takeWhile { line ->
+            !Regex("""^[ \t]*\* Hist[ \t]+#\d+:""").containsMatchIn(line) &&
+                !taskHeader.matches(line)
+        }
+        val record = recordLines.joinToString("\n")
+        val bounds = Regex(
+            """taskBounds=Rect\((-?\d+),\s*(-?\d+)\s*-\s*(-?\d+),\s*(-?\d+)\)"""
+        ).find(record) ?: Regex(
+            """CurrentConfiguration=.*?mBounds=Rect\((-?\d+),\s*(-?\d+)\s*-\s*(-?\d+),\s*(-?\d+)\)"""
+        ).find(record) ?: error("No system-reported ActivityRecord task bounds for task=$id")
+        val v = bounds.groupValues.drop(1).map { it.toInt() }
+        val identity = "${taskMatch.groupValues[1]}#${taskId}/leaf#${id}"
+        Log.i("WB2SystemWindow", "SYSTEM_TASK task=$id parentOrRoot=${taskId} object=${taskMatch.groupValues[1]} activityRecord=${activityObject} bounds=${Rect(v[0],v[1],v[2],v[3])}")
+        return identity to Rect(v[0],v[1],v[2],v[3])
     }
 
     private fun click(a: NormalWindowSessionActivity, before: State): State {
