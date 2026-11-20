@@ -13,9 +13,13 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 24
     env:
-      EVIDENCE: ${{ runner.temp }}/wb2-aosp-experiment
       CTS_URL: https://dl.google.com/dl/android/cts/android-cts-15_r10-linux_x86-x86.zip
     steps:
+      - name: Initialize isolated evidence directory
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/wb2-aosp-experiment"
+          printf 'EVIDENCE=%s/wb2-aosp-experiment\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
