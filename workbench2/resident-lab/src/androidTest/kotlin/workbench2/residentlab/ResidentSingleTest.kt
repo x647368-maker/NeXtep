@@ -128,7 +128,8 @@ class ResidentSingleTest {
                     size = 1f
                 }), 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, display, 0,
                 MotionEvent.CLASSIFICATION_NONE)
-            try { instr.sendPointerSync(event) } finally { event.recycle() }
+            val pointer = requireNotNull(event) { "Cannot construct test touch event for display $display" }
+            try { instr.sendPointerSync(pointer) } finally { pointer.recycle() }
         }
     }
 
