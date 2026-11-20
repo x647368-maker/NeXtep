@@ -14,6 +14,16 @@
 
 ---
 
+## 第十六阶段 S · 机主底层优先纠偏与重复任务准入缺陷修复候选（2026-11-20，最新生效）
+
+- 机主明确纠正：先把底层框架和地基做好，暂不推进其他功能；不要反复讨论A/B/C及相同阻塞，若现负责人没有突破能力应允许独立AI审查。此前建议并行开发上层产品工程未获授权，现撤回。现阶段仅真实原生任务后端、底层生命周期/资源安全及确切性能缺陷；已有上层控件、交互、数据兼容成果一律保护冻结，不新增产品模块或空壳，不恢复V89，不降低门禁。未授权变更唯一生产负责人；其他AI可只读独立审查，正式接任须机主明确授权并保存接任记录。当前没有直接调用另一独立模型的能力，不假称委托完成。
+- 本轮实际读取已验收SHA3003dbea4fa7d4f5dd5e84d66845fa665d89de8d的UnifiedCore.kt、ReceiptBridge.kt、OwnerLooperPort.kt、AndroidFrameDriver.kt、MotionMath.kt及既有EngineLooperTest/DualTaskReceiptTest。发现确定的预检缺陷：StartPlan只要求LaunchRequest.id不同，两个existing Owner即使指向相同task或相同token仍可进入STARTING；此前重复身份检查发生于第二个TASK_LEASE的真实挂载回执，可能在冲突失败前已对同一个任务发出第二次实际借用请求。不能将已发生的OEM系统损坏说成事实，此为源码可定位的前置安全缺陷。
+- 已实际提交最小修复候选2a3ded29bdd5780af914ab56c731b086eada3065，parent=3003dbea4fa7d4f5dd5e84d66845fa665d89de8d，tree=b1dce194cf312d711fa2f9d95aee55f189454b6a，expected_sha非强制更新唯一workbench2/core成功。compare显示ahead1/behind0，仅两个文件：UnifiedCore.kt blob03b0f8d6afcbc6a6ceadc88827368ab8085f428d（+5/-0）、EngineLooperTest.kt blob55b5cbbf65beaa09c06563b61d9deb8df6a46058（+32/-0）。在复制冻结启动计划后、epoch/generation更新及任何资源分配前检查existing task及token各自唯一；新建任务真实身份仍使用原动态回执门禁。不增加常驻线程、计时器、Hook、状态机、帧热路径操作或额外回执字段；只在最多5项请求的启动准入执行。新增一个必要回归，包含相同身份、仅task相同、仅token相同三类反例无资源/无native dispatch/epoch不变，以及不同task/token正例可启动。不代表运行期OEM任务已测试。
+- 现有push workflow自动触发[44752516299](https://github.com/x647368-maker/NeXtep/actions/runs/44752516299)，实际API查询head=2a3ded29bdd5780af914ab56c731b086eada3065、status=in_progress、conclusion=null。尚未获得编译或测试终态，已验收基线仍3003dbea4fa7d4f5dd5e84d66845fa665d89de8d（46 Android+5自有图层独立像素）。只核验本次候选真实CI结果及原始证据；成功且证据完整才提升基线，失败定位具体原因不盲目重试。无新分支、PR、APK、真机操作。这个缺陷修复不构成原生后端解阻，不再以追加合成模型/细小测试冒充关键研发进度。
+- 后续按机主最新顺序：完成此次必要底层回归闭环后，唯一P0仍是可部署的真实原生任务接入与独立归还；上层开发继续冻结。不重复既有架构选择、公开API、ROM、云端、权限研究或无关微优化。若没有实质新技术条件，优先建议另一个独立高推理AI在严格只读权限内反向审查能否给出此前未验证、可执行、受支持的原生接入契约及最小实验；不让它重复已有分析，不允许两个窗口共同改码，无法实际授权/部署即如实结算。无实际新条件不假称能突破，不要求机主操作手机/电脑或重复发相同指令。永久制度、全部冻结功能、签名数据及性能目标不变。后续每轮仅报告实际成果、真实阻塞、检查点、必要操作/完整下一步指令；普通聊天，具体高难度技术攻关高/最高推理，不滥用Work。
+
+---
+
 ## 第十六阶段 R 补充 · 云端平台构建条件与成本决策（2026-11-20，最新生效）
 
 - 机主要求直接继续，明确不遗漏后续指令。此轮仅核证上一轮未覆盖的外部云端平台构建条件，不重复R的本地环境检查、OEM逆向、历史API路线、模拟器实验或46+5核心测试。官方AOSP构建要求 https://source.android.com/docs/setup/start/requirements ：至少400GB可用磁盘，Google使用72核/64GB构建机器；官方Cuttlefish https://source.android.com/docs/devices/cuttlefish/get-started 需可用KVM，Google Cloud官方 https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/overview 及 https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/enabling 给出嵌套虚拟化环境条件。云端自有AOSP构建原则上有资源方案，但未创建、开通或实际运行任何云资源，不能等同产品部署。
