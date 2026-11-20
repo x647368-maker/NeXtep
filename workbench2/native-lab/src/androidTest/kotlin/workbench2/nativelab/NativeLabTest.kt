@@ -77,7 +77,7 @@ class NativeLabTest {
     private inner class LabPort(val host:HostActivity,val car:Car,val controller:CarTaskViewController,
                                 val firmware:String,val version:String,val instance:String):NativePort {
         val queue=ArrayBlockingQueue<Work>(1)
-        private val user=Process.myUserHandle().identifier
+        private val user=TaskIdentity.userId(Process.myUserHandle())
         private val target=ComponentName(host,TargetActivity::class.java)
         private var view:ControlledRemoteCarTaskView?=null
         private var presentation:ControlledRemoteCarTaskView?=null
@@ -312,7 +312,7 @@ class NativeLabTest {
             val p=LabPort(host,c,controller,firmware,version,instance);port=p
             val driver=main{AndroidFrameDriver(p,firmware,version,instance,240)}
             val target=ComponentName(host,TargetActivity::class.java).flattenToString()
-            val plan=StartPlan(listOf(LaunchRequest(1,Process.myUserHandle().identifier,target,null)),
+            val plan=StartPlan(listOf(LaunchRequest(1,TaskIdentity.userId(Process.myUserHandle()),target,null)),
                 listOf(box(main{rect(host.slot)})),0)
             // Isolated one-shot admission only after actual controller authorization and token access
             // on the exact independently validated AAOS build; all effect receipts remain gated.
