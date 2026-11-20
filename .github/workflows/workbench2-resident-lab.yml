@@ -1,0 +1,87 @@
+name: Workbench 2 isolated resident task admission
+on:
+  push:
+    branches: ['workbench2/core']
+    paths:
+      - 'workbench2/resident-lab/**'
+      - '.github/workflows/workbench2-resident-lab.yml'
+permissions:
+  contents: read
+jobs:
+  resident-single:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Initialize evidence
+        run: |
+          mkdir -p "$RUNNER_TEMP/wb2-resident"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/wb2-resident/checkout-sha.txt"
+          printf '%s\n' 'Same-UID new tasks only; instrumentation touch not host touch forwarding; test compositor screenshots only; no third-party, dual-task, ColorOS, power, signature or product admission.' > "$RUNNER_TEMP/wb2-resident/scope.txt"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Build independent experimental APKs
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+          bash gradlew -p workbench2/resident-lab :assembleDebug :assembleDebugAndroidTest --no-daemon --console=plain --stacktrace
+          find workbench2/resident-lab/build/outputs/apk -name '*.apk' -exec sha256sum {} + > "$RUNNER_TEMP/wb2-resident/apk.sha256"
+          test "$(wc -l < "$RUNNER_TEMP/wb2-resident/apk.sha256")" -eq 2
+      - name: Provision existing stock Android 15 test environment
+        run: |
+          set -euo pipefail
+          sdkmanager 'platform-tools' emulator 'system-images;android-35;google_apis;x86_64'
+          sudo chmod 666 /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-resident-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-resident --path "$ANDROID_AVD_HOME/wb2-resident.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_7
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/wb2-resident.avd" > "$ANDROID_AVD_HOME/wb2-resident.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd wb2-resident -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 2048 -cores 2 -gpu swiftshader_indirect > "$RUNNER_TEMP/wb2-resident/emulator.log" 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb shell getprop ro.build.fingerprint > "$RUNNER_TEMP/wb2-resident/fingerprint.txt"
+          adb shell wm size > "$RUNNER_TEMP/wb2-resident/display-size.txt"
+          adb shell wm density > "$RUNNER_TEMP/wb2-resident/density.txt"
+      - name: Execute actual single-task paired experiment
+        run: |
+          set -euo pipefail
+          bash gradlew -p workbench2/resident-lab :connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          root=pathlib.Path('workbench2/resident-lab/build/outputs/androidTest-results/connected')
+          cases=[t for f in root.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
+          assert len(cases)==1 and cases[0].get('name')=='ownSingleTaskSameCanvasTextureThenSurface'
+          assert all(cases[0].find(s) is None for s in ('failure','error','skipped'))
+          PY
+          timeout 30 adb logcat -d -s WB2Resident:I > "$RUNNER_TEMP/wb2-resident/resident.log"
+          for mode in texture surface; do
+            grep -F "SINGLE_OK mode=$mode " "$RUNNER_TEMP/wb2-resident/resident.log"
+            grep -F "MEASURE mode=$mode " "$RUNNER_TEMP/wb2-resident/resident.log"
+          done
+          grep -F 'PAIR_SINGLE_OK ' "$RUNNER_TEMP/wb2-resident/resident.log"
+      - name: Preserve failure or success evidence
+        if: always()
+        timeout-minutes: 2
+        run: |
+          timeout 30 adb logcat -d > "$RUNNER_TEMP/wb2-resident/logcat.txt" || true
+          timeout 20 adb shell dumpsys activity activities > "$RUNNER_TEMP/wb2-resident/activities.txt" || true
+          timeout 20 adb shell dumpsys display > "$RUNNER_TEMP/wb2-resident/displays.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wb2-resident-single-evidence
+          path: |
+            ${{ runner.temp }}/wb2-resident/
+            workbench2/resident-lab/build/outputs/androidTest-results/connected/
+            workbench2/resident-lab/build/reports/androidTests/connected/
+          if-no-files-found: error
