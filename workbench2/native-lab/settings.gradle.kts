@@ -4,5 +4,8 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "Workbench2NativeLab"
-include(":engine")
-project(":engine").projectDir = file("../engine")
+includeBuild("../engine") {
+    dependencySubstitution {
+        substitute(module("workbench2:engine")).using(project(":"))
+    }
+}

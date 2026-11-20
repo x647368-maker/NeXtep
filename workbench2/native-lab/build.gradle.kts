@@ -14,7 +14,7 @@ android {
     }
 }
 dependencies {
-    implementation(project(":engine"))
+    implementation("workbench2:engine")
     compileOnly(files(requireNotNull(System.getenv("WB2_CAR_STUB"))))
     androidTestCompileOnly(files(requireNotNull(System.getenv("WB2_CAR_STUB"))))
     androidTestImplementation(files(requireNotNull(System.getenv("WB2_IDENTITY_HELPER"))))
