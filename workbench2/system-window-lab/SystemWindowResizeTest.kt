@@ -91,15 +91,20 @@ class SystemWindowResizeTest {
 
         val taskHeader = Regex("""^[ \t]*\*?[ \t]*Task\{([0-9a-fA-F]+) #(\d+)(?:\s|\})[^\r\n]*""")
         val activityIndent = activityLine.takeWhile { it == ' ' || it == '\t' }.length
-        val taskHeaders = lines.take(activityIndex).withIndex().filter { (_, line) ->
-            taskHeader.matches(line) && line.takeWhile { it == ' ' || it == '\t' }.length < activityIndent
+        val taskStack = mutableListOf<Pair<Int, MatchResult>>()
+        for (line in lines.take(activityIndex)) {
+            val match = taskHeader.matchEntire(line) ?: continue
+            val indent = line.takeWhile { it == ' ' || it == '\t' }.length
+            while (taskStack.isNotEmpty() && taskStack.last().first >= indent) {
+                taskStack.removeAt(taskStack.lastIndex)
+            }
+            taskStack.add(indent to match)
         }
-        val containing = taskHeaders.lastOrNull()
-            ?: error("No containing system Task object for ActivityRecord task=$id")
-        val taskMatch = requireNotNull(taskHeader.matchEntire(containing.value))
+        check(taskStack.isNotEmpty()) { "No containing system Task object for ActivityRecord task=$id" }
+        val taskMatch = taskStack.last().second
         val taskId = taskMatch.groupValues[2].toInt()
-        check(taskHeaders.any { it.value.contains("mode=freeform") }) {
-            "No freeform Task ancestor for ActivityRecord task=$id: ${taskHeaders.map { it.value }}"
+        check(taskStack.any { it.second.value.contains("mode=freeform") }) {
+            "No freeform Task ancestor for ActivityRecord task=$id: ${taskStack.map { it.second.value }}"
         }
 
         // ActivityWindowInfo is the system's own task-bounds report for this ActivityRecord.
@@ -116,8 +121,8 @@ class SystemWindowResizeTest {
             """CurrentConfiguration=.*?mBounds=Rect\((-?\d+),\s*(-?\d+)\s*-\s*(-?\d+),\s*(-?\d+)\)"""
         ).find(record) ?: error("No system-reported ActivityRecord task bounds for task=$id")
         val v = bounds.groupValues.drop(1).map { it.toInt() }
-        val identity = "${taskMatch.groupValues[1]}#${taskId}/leaf#${id}"
-        Log.i("WB2SystemWindow", "SYSTEM_TASK task=$id parentOrRoot=${taskId} object=${taskMatch.groupValues[1]} activityRecord=${activityObject} bounds=${Rect(v[0],v[1],v[2],v[3])}")
+        val identity = taskStack.joinToString("/") { "${it.second.groupValues[1]}#${it.second.groupValues[2]}" } + "/leaf#$id"
+        Log.i("WB2SystemWindow", "SYSTEM_TASK task=$id taskChain=${identity} leafTaskId=${taskId} activityRecord=${activityObject} bounds=${Rect(v[0],v[1],v[2],v[3])}")
         return identity to Rect(v[0],v[1],v[2],v[3])
     }
 
