@@ -14,6 +14,15 @@
 
 ---
 
+## 第十六阶段 M 终验与容量中断恢复（2026-11-20，最新生效）
+
+- 机主明确授权当前「核验CI修复状态」窗口为唯一生产研发负责人，「修复预检脚本」及此前窗口转为只读。恢复原权威检查点 ebdd2d91cbaa7ae092763eafa300bf9bf8c3ad85，实际远程 core 3003dbea4fa7d4f5dd5e84d66845fa665d89de8d；已更新既有 registry，提交 8a804a60945d0839beadcd9915533d40dd6fc27c。旧窗口未保存的逐字聊天或临时文件不宣称完整恢复。容量中断时只恢复最近有效检查点，不要求重复正式交接。
+- CI [44745371217](https://github.com/x647368-maker/NeXtep/actions/runs/44745371217) job 136319180806，head=3003dbea4fa7d4f5dd5e84d66845fa665d89de8d，completed/success，updated_at=2026-11-20T13:38:08Z。实际核验 job 全步骤成功、原始日志 76292 字符，46 tests 启动及结束、BUILD SUCCESSFUL、正式五态像素总门禁 success。实际下载 runtime artifact 14632069517，142638 bytes，SHA256 cfd0ae4303ea21fc020ebda8dbf69b9c3d0b8375c01ff467f4ad42aa80fde78c 与服务端摘要精确一致，76 ZIP 成员 CRC 全通过；原始 XML 46 tests / 0 failures / 0 errors / 0 skipped，46 个不同 (classname,name)；全部 test case 无 failure/error/skipped 子节点，time=21.255s（并非性能数据）。前轮三项帧驱动测试及两项新增借用任务归还反例均通过。独立 wb2-pixels.txt 四次 COMMIT_OK 0/0.25/0/1，五态 PIXELS_OK initial/interrupted/rollback/swapped/detached，最终采样两点 ff000000；stock API35 fingerprint google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys。前轮 AAR 字节码验收继续有效；新 compile artifact 14632024621 登记为可用但未重复下载检查。此次 HEAD 相对 a1835990f483931707e9214995248b597c6123b2 唯一差异 AndroidFrameDriverTest.kt 一行显式合成回执条件，生产源码不变。
+- 自此提升自主核心已验收工程基线为 3003dbea4fa7d4f5dd5e84d66845fa665d89de8d（46 Android+5 自有图层独立采样），取代 1ca3d73e... 的旧验收状态；不代表真实 ColorOS 原生后端验收、五真实任务、完整生产 APK、流畅性或功耗成果。旧基线、实验包和失败记录保留。此次只做验收与负责人登记，无新核心改动、分支、PR、APK 或重复 CI，不安排第二次实机。
+- 接续重点仍为真实原生后端及独立归还观察器。K/L 已证实系统受保护接口与延迟删除风险、有限双宿主加载和一次自有视图释放，尚未证实原签名应用任务控制授权、同任务身份连续、独立清理队列终态。禁止重复加合成字段或外围框架，不通过借用系统身份或绕过权限实现。若无合法且可执行的新入口，明确停止原因；仅有新的可判别证据时设计受控实验，第二次真机仍需单独许可。保护所有冻结产品功能、通用性、签名数据及永久制度。普通聊天最高可用推理、Work关闭；每个有效节点立即保存检查点。
+ 
+---
+
 ## 第十六阶段 M · 延迟任务删除风险的底层归还门禁修复候选（2026-11-20）
 
 - 继承L首次真机观察1d14c21e86bc1b9eb4c599279bb67f3dd1ec6d17、已通过独立实验候选91562f6e57c4602659479c0d7a15298bf2a3c3a1及最后已验收自主核心1ca3d73e73393ac1eff02ee80381ba3105fd1d7d（46+5）。当前任务是主动利用已有真实证据继续底层研发，不擅自安排第二轮真机、不恢复V89、不扩大权限/作用域。实际核对唯一研发分支与治理HEAD、回读L日志记录及当前UnifiedCore/ReceiptBridge源码。结合K已存的服务端异步删除调用链（本轮未重新读取原始OEM二进制），明确：pscanvas真机release返回不证明服务端任务清理队列已终止，launcher仅加载与到期，不证实共同承载。缺失的init日志/任务身份连续性仍未补齐。无新增合法主动控制授权。
