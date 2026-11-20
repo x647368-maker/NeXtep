@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十六阶段 B · 帧调度终验与系统真实窗口几何验证（2026-11-20，最新生效）
+
+- 机主明确永久收尾要求：每轮交代实际做了什么、已完成/未完成、剩余关键问题、明确下一步计划、可直接复制的接续指令及模型/模式配置；严格区分源码、编译、模拟器、目标真机与正式验收，不用泛化进度百分比。继续普通聊天最高可用推理、Work关闭，不要求Mac/Copilot或手机操作。双外部作用域pscanvas+launcher、必要Root/Vector、低开销自主核心、真实任务、历史冻结合同与安全边界不变。
+- 第十六阶段A实际终验：CI44721926792/job136239567354 completed/success，绑定ab3e3bb5ae061adaa7aed7f51b8c25ed307aba9e，编译、类及来源核验、API35模拟器、45项准确集合Android回归、5态独立合成像素门禁及产物上传对应步骤均completed/success。远端artifact14622671066 engine-compile 199508 bytes SHA256 5ca3ac57128217b15757686091ffc0ae21f09f440d2398c2552f73fc55c8a0b0；14621868844 api35-runtime 135837 bytes SHA256 53995db0463086adab39e2cacf06d6c3e608dca8c34935affa55bd05da614200；均绑定准确SHA，本次仅查远端元数据与严格步骤，不称独立下载XML复验。实际优化已通过既有合成/回执测试，尚无真机性能或竞品同机证据。
+- 原生方向实际复核：十三O/S/Y已证明宿主现有原生布局及生命周期接口、服务端safe.WINDOW签名/privileged边界与死亡移除反例，不能把正常系统会话、公开符号或既有Root载入当成正式任意任务承载授权。复读既有NormalWindowSessionActivity.kt blobc38014abb96576e9bcccb0766a3214b8204d8873 和已有Manifest/测试，确认原自有观察页具有任务ID、逻辑状态/实例、真实点击、窗口生命周期日志，未另造测试APP。新增受限云端验证依据机主本轮实际工程验证要求，仅限可丢弃的自有任务及标准测试身份；不把这项范围理解成生产授权、真实第三方任务调用或扩scope。此前Z的云端几何候选现仅实施在隔离环境，无系统设置/权限修改、不强制启用自由窗。
+- 真实提交b392b68eeac6c4668ab95a6dcc8bae1110b12e31（parent ab3e3bb5ae061adaa7aed7f51b8c25ed307aba9e，tree44174d84b3610701e7cbb22e1561e9729d224718），精确两个新增文件：workbench2/system-window-lab/SystemWindowResizeTest.kt blob310983a27040b316706be4aaa62885f66c5ab0bf（222行）与.github/workflows/workbench2-system-window-lab.yml blobbdb1810b45825af0de579918b72cc2b15c822fe5（103行）；读回逐字验证、compare ahead1/behind0，expected_sha非强制更新唯一core并回读一致。早期未推送候选c91df4d1已替换，非额外分支。原engine、旧app、scope、签名、权限及正式回归CI未变，无新增分支/PR。工作流只由实验路径触发，在CI临时检出目录复制单一测试源到已存在field androidTest，严格单测试过滤与XML门禁，不改已存在的9项field或45项engine集合。
+- 实验内容：标准API35 stock模拟器平板设备配置，真实检查freeform系统feature及调试接口；缺则NO_GO、CI失败而非伪通过，不编译试图绕过。由自有测试页经公开launchBounds正常申请原生窗，拒绝非freeform或非新建自有任务，独立WM dump与Activity自身Bounds匹配后再由正常UiAutomation测试Shell请求调整该自有任务几何；再次核对同taskId、同一打印的系统Task对象标识、display0、实际窗口bounds、页面marker与点击计数，三阶段真实测试点击，屏幕截图只作实物证据，正常恢复原几何并清理；失败保留证据、尽力恢复并清理可丢弃任务/关闭隔离模拟器。无Root/权限配置变动、无第三方任务、无生产输入合成。打印对象标识并非Binder身份令牌，截图非自动像素全帧验收；未证明原父容器、异常宿主归还、五窗、ColorOS可用性或动画功耗。精确Android15 tag网页抓取失败，代码依赖实际支持特征及严谨解析，格式不符即失败，不能当作OEM否决。实验已提交，尚未编译运行，存在环境/格式不匹配的风险。
+- 新真实CI44723291371/job136244239790（https://github.com/x647368-maker/NeXtep/actions/runs/44723291371）精准绑定b392b68e，最新in_progress，checkout及Java成功、SDK准备进行中，后续原生feature preflight与单任务运行pending。下一轮优先核查该次最终状态/原始日志/产物。若缺freeform或正常启动不进入原生窗，结算本候选，不反复开系统设置/改权限或重复跑；若实际通过，核查截图、输入与恢复证据后再审查能否用于双作用域架构，不能直接外推PMS110。实际两宿主授权与原生真实任务后端仍阻塞，用户无需操作电脑或手机，不能宣称产品已完成。未调用Work、未发APK，不承诺后台聊天工作。
+
+---
+
 ## 第十六阶段 A · 双外部作用域目标与动画帧调度减负实际工程（2026-11-20，最新生效）
 
 - 机主明确要求争取实现与WindowDeck相同两外部作用域、动画相互媲美。接受必要Root/Vector模块，目标com.oplus.pscanvas与com.android.launcher加应用自身；尽量不注入SystemUI/android/system，不因追求单作用域降低真实任务、交互、稳定性、历史21项冻结合同或性能。实读旧app scope blob37c0536d5c4b141784b8c21f7599baa6a9f98ba7为7项声明（不等于7个进程或7个实际Hook）；独立只读host-runtime scope b0451b52c670e80ab0326ac1997691d29cc58ba8仅pscanvas。减少至2项是约71.4%声明数目标非CPU/功耗结论。尚无获准真实承载NativePort，不将空scope或未接线模块冒充成品。本轮未修改任何作用域、Root授权、签名、系统设置或旧APP；用户明确产品架构目标，未授权绕过权限或注入额外系统进程。
