@@ -1,0 +1,131 @@
+name: Workbench 2 isolated AOSP task-view experiment
+on:
+  push:
+    branches: ['workbench2/core']
+    paths: ['.github/workflows/workbench2-aosp-experiment.yml']
+permissions:
+  contents: read
+concurrency:
+  group: workbench2-aosp-experiment
+  cancel-in-progress: false
+jobs:
+  automotive-cts:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 24
+    env:
+      EVIDENCE: ${{ runner.temp }}/wb2-aosp-experiment
+      CTS_URL: https://dl.google.com/dl/android/cts/android-cts-15_r10-linux_x86-x86.zip
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Admit disposable official automotive emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          printf '%s\n' "$GITHUB_SHA" > "$EVIDENCE/checkout-sha.txt"
+          sdkmanager --list > "$EVIDENCE/sdk-list.txt"
+          image=$(awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $1); if($1 ~ /^system-images;android-35(-ext15)?;android-automotive;x86_64$/) print $1}' "$EVIDENCE/sdk-list.txt" | sort -u | sort -r | head -n1)
+          test -n "$image"
+          printf '%s\n' "$image" > "$EVIDENCE/image.txt"
+          test -c /dev/kvm
+          sudo chmod 666 /dev/kvm
+          sdkmanager 'platform-tools' emulator 'build-tools;36.0.0' "$image"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-aosp-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-aosp --path "$ANDROID_AVD_HOME/wb2-aosp.avd" --package "$image"
+          sdklevel=$(printf '%s' "$image" | cut -d';' -f2)
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=%s\n' "$ANDROID_AVD_HOME/wb2-aosp.avd" "$sdklevel" > "$ANDROID_AVD_HOME/wb2-aosp.ini"
+          nohup "$ANDROID_HOME/emulator/emulator" -avd wb2-aosp -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 3072 -cores 2 -gpu swiftshader_indirect > "$EVIDENCE/emulator.log" 2>&1 &
+          timeout 150 adb -s emulator-5554 wait-for-device
+          timeout 240 bash -c 'until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb -s emulator-5554 shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb -s emulator-5554 shell getprop ro.build.fingerprint > "$EVIDENCE/fingerprint.txt"
+          adb -s emulator-5554 shell pm list features > "$EVIDENCE/features.txt"
+          grep -F 'feature:android.hardware.type.automotive' "$EVIDENCE/features.txt"
+          adb -s emulator-5554 shell service list > "$EVIDENCE/services.txt"
+          grep -E 'car_service|android.car.ICar' "$EVIDENCE/services.txt"
+          adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/before-activities.txt"
+          adb -s emulator-5554 shell dumpsys car_service > "$EVIDENCE/car-service.txt"
+          adb -s emulator-5554 shell wm dismiss-keyguard
+      - name: Fetch only the official CTS task-view test module from the matching suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h "$RUNNER_TEMP" > "$EVIDENCE/disk.txt"
+          # Download the official suite, but do not expand other test modules.
+          test "$(df -Pk "$RUNNER_TEMP" | awk 'NR==2{print $4}')" -gt 8500000
+          curl --fail --location --retry 0 --connect-timeout 20 --max-time 420 --max-filesize 8000000000 "$CTS_URL" -o "$RUNNER_TEMP/cts15.zip"
+          sha256sum "$RUNNER_TEMP/cts15.zip" > "$EVIDENCE/cts-sha256.txt"
+          python3 - <<'PY'
+          import os, pathlib, zipfile, hashlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])
+          out=pathlib.Path(os.environ["EVIDENCE"])
+          with zipfile.ZipFile(p/"cts15.zip") as z:
+              hits=[i for i in z.infolist() if pathlib.PurePosixPath(i.filename).name=="CtsCarTestCases.apk"]
+              assert hits, "Official matching CTS module unavailable"
+              assert all(0<i.file_size<150_000_000 for i in hits)
+              first=z.read(hits[0])
+              assert all(z.read(i)==first for i in hits), "Ambiguous APK variants"
+              (p/"CtsCarTestCases.apk").write_bytes(first)
+              (out/"module-provenance.txt").write_text(hits[0].filename+"\n"+hashlib.sha256(first).hexdigest()+"\n")
+          PY
+          rm "$RUNNER_TEMP/cts15.zip"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$RUNNER_TEMP/CtsCarTestCases.apk" > "$EVIDENCE/cts-apk-certificate.txt"
+      - name: Run single-task startup and touch on real system host
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only Google CTS disposable fixtures; no production APK, no root, no permission patches.
+          adb -s emulator-5554 install -t "$RUNNER_TEMP/CtsCarTestCases.apk" | tee "$EVIDENCE/install.txt"
+          adb -s emulator-5554 shell pm list instrumentation > "$EVIDENCE/instrumentation.txt"
+          grep -F 'instrumentation:android.car.cts/androidx.test.runner.AndroidJUnitRunner (target=android.car.cts)' "$EVIDENCE/instrumentation.txt"
+          for name in createControlledRemoteCarTaskView_startsTheTask remoteCarTaskView_receivesTouchInput; do
+            cls="android.car.app.cts.CarTaskViewControllerTest#$name"
+            # Discovery proves that the exact method exists in the matching release, not just main.
+            timeout 45 adb -s emulator-5554 shell am instrument -w -r -e log true -e class "$cls" android.car.cts/androidx.test.runner.AndroidJUnitRunner | tee "$EVIDENCE/$name-discovery.txt"
+            grep -F "INSTRUMENTATION_STATUS: test=$name" "$EVIDENCE/$name-discovery.txt"
+            adb -s emulator-5554 logcat -c
+            timeout 120 adb -s emulator-5554 shell am instrument -w -r -e class "$cls" android.car.cts/androidx.test.runner.AndroidJUnitRunner | tee "$EVIDENCE/$name-run.txt"
+            adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/$name-after-activities.txt"
+            adb -s emulator-5554 logcat -d -v threadtime > "$EVIDENCE/$name-logcat.txt"
+            python3 - "$EVIDENCE/$name-run.txt" "$name" <<'PY'
+          import pathlib,re,sys
+          text=pathlib.Path(sys.argv[1]).read_text()
+          statuses=[int(x) for x in re.findall(r'^INSTRUMENTATION_STATUS_CODE:\s*(-?\d+)\s*$',text,re.M)]
+          assert statuses==[1,0], (sys.argv[2],statuses)
+          assert re.search(r'^INSTRUMENTATION_STATUS: test='+re.escape(sys.argv[2])+r'\s*$',text,re.M)
+          assert re.search(r'^INSTRUMENTATION_CODE:\s*-1\s*$',text,re.M)
+          assert "OK (1 test)" in text and "FAILURES!!!" not in text
+          PY
+            # Normal teardown must remove the disposable CTS activity, not merely report release.
+            if grep -E 'ActivityRecord\{.*android\.car\.cts/.*(EmbeddedTestActivity|CarTaskViewControllerTest)' "$EVIDENCE/$name-after-activities.txt"; then
+              echo "Test activity still exists after normal teardown"; exit 1
+            fi
+          done
+          echo 'CTS single task creation, real input and disposable test cleanup verified; no ColorOS, product adapter, borrowed-task return or independent pixel proof.' > "$EVIDENCE/result-scope.txt"
+      - name: Collect bounded evidence and stop disposable emulator
+        if: always()
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          mkdir -p "$EVIDENCE"
+          timeout 20 adb -s emulator-5554 logcat -d -v threadtime > "$EVIDENCE/final-logcat.txt" || true
+          timeout 15 adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/final-activities.txt" || true
+          timeout 15 adb -s emulator-5554 emu kill || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wb2-aosp-taskview-evidence
+          path: ${{ env.EVIDENCE }}/
+          if-no-files-found: error
