@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 Q · 原始日志分析完成、现有普通私有显示器路线暂停（2026-11-20，本节最新生效）
+
+- 机主转交Copilot对现存instrument.txt及resident-evidence.log的实际只读分析报告：ownSingleTaskSameCanvasTextureThenSurface 在ResidentSingleTest.kt:160调用 ActivityManager.isActivityStartAllowedOnDisplay(host,id,intent) 得false；Host UID10543/PID27824/taskId1219/display0；未启动Target，未进入画面/触控/120 draw/FrameMetrics/任务连续性。报告没有系统具体拒绝分支、私有display ID/ownerUID/trusted/canHostTasks实测或调用者权限证据，不能认定为ColorOS专有限制。本聊天未取得原始字节，以下哈希为本地报告：instrument.txt 175ade8b57b51e4d76af153f4b06ca12477f9f0435b41609c2a0166068056b95；resident-evidence.log 6a06fbecec0e26debd5c47540b42b5f6c48a159b5ef4045fe0fe6da4a19f9dcc；install-main.txt与install-test.txt均781a31c82430c97897af612ece5e0ca2205e301cb5ff121ce2660541ea5182c7；目录~/local-verification/wb2-resident-lab-stageO-20261120_172053。
+- 新清理证据据报告：Host PAUSED/STOPPED/DESTROYED、任务消失、窗口及客户端Surface移除、进程结束、两包卸载、最终进程记录空；未独立证实私有虚拟显示器消失及全部资源释放，不能宣称完整清理门禁通过。此次只读分析未重装/运行、清系统日志或修改权限。P记录的执行缺陷仍须保护，禁止复用其未限类与logcat -c脚本。
+- 针对P假设实际查阅AOSP android-17.0.0_r1 ActivityTaskSupervisor.java https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/wm/ActivityTaskSupervisor.java 与DisplayManagerService.java同tag、官方Activity launch policy https://source.android.com/docs/core/display/multi_display/activity-launch 及CTS MultiDisplaySecurityTests.java https://android.googlesource.com/platform/cts/+/428fd9f7d69/tests/framework/base/windowmanager/src/android/server/wm/MultiDisplaySecurityTests.java 。AOSP先检查有效显示/canHostTasks等，再检查untrusted下FLAG_ALLOW_EMBEDDED及ACTIVITY_EMBEDDING或calling UID已经在该显示器，最后才判断private owner UID。缺allowEmbedded只是一个候选差异，单独加标记也不能保证首次启动；不能把Android10概括文档当Android17实机许可，更不能把CTS使用shell权限的成功当普通应用授权。可信显示器的创建受额外权限约束，不扩大权限、不跳过断言。上述AOSP并非该机ColorOS服务端实际分支，不能确定具体失败原因。普通私有VD同条件试验暂停，不用新的编译/安装证据制造进度。
+- 决策：不再让机主发重复的Copilot诊断指令；Mac/USB暂时不用操作。下一步只在有可核验新条件时开展针对Android17/ColorOS真实授权契约的独立架构审查，优先复用已有原生服务端/宿主取证、原签名及历史停止制度，明确区分普通应用、获准系统集成与OEM授权。若存在无新增权限、受支持且可证伪的具体自有任务方案，先说明差异及安全归还门禁、获机主批准再实施；若没有，报告原生产品接入硬阻塞，保留现有成果与官方咨询，不以OPPO回复本身承诺解锁。不得改系统flag/权限、借用身份、恢复V89或旧VD产品路线；无新条件不做重复试验。当前没有可安全立即执行的双任务或五任务研发条件。
+- 本轮GitHub实时core HEAD仍428b618b35ccd5db67d8e66abe6616bff23feeae；仅更新原交接，不改工程、不新建分支/PR、不触发CI。普通GPT-6 High用于独立架构判定，Copilot暂停，Work不开；机主无需重新上传已有文件、执行终端命令或反复发送继续。
+
+---
+
 ## 第十五阶段 P · 首次真机单任务实验已运行，启动许可门禁失败（2026-11-20，本节最新生效）
 
 - 机主确认两次手机安装提示均已操作，转交Copilot完整Python执行命令和结果：两实验APK安装成功；指定测试ownSingleTaskSameCanvasTextureThenSurface实际执行一次，约1801ms，1 test/1 failure，ResidentSingleTest.kt:160 "Own activity launch allowed"。尚未执行TargetActivity实际启动、TextureView/SurfaceView对照、输入、120 draws、FrameMetrics或任务连续性；不得声称原生承载、性能或双任务通过。报告两实验包已卸载、无实验包/进程残留；缺少独立display/task/Surface残留核验、温度前后证据和原始日志，不能称完整清理门禁通过。本轮已消耗一次真机运行授权，不自行重复。证据目录据回传为 ~/local-verification/wb2-resident-lab-stageO-20261120_172053，instrument.txt、resident-evidence.log、install-main.txt、install-test.txt；报告另有重复Users路径笔误，需按实际目录读取；本聊天未取得Mac原始字节。
