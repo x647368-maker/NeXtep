@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 Y · 继续实际研发：未决挂载撤销缺陷修正及 Android CI（2026-11-20，本节最新生效）
+
+- 机主明确要求不因原生P0接入阻塞而整体停工，充分利用普通聊天最高可用推理进行实际高质量工程，Work关闭；不依赖官方、不问同行、不操作Mac/手机、不恢复旧框架。此次选择针对已存在的自主核心异常路径修复，非新增外围功能或降低原生准入条件。继承X 92d2c075db1d9acfeaef0d14c48ae67d1416f4d2，基线428b618b35ccd5db67d8e66abe6616bff23feeae。实际读UnifiedCore、ReceiptBridge、AndroidFrameDriver、OwnerLooperPort、EngineLooperTest与既有CI；发现具体缺陷：收到不确定挂载回执或不匹配宿主实例的回执时，核心保留未决effect进入RECOVERY，ReceiptBridge却只停止本地回调，未沿已有stop/timeout路径请求该笔挂载的撤销。显式stop/timeout能取消，不能保证后端主动失败路径也会取消。属于源码级反例，尚无目标机复现；不能由此宣称曾实际发生任务泄漏。
+- 实际建立原子Git commit 321791c9d93aa22a3721095bcd5e10f453bee2fb，tree dfdbb46ba65116b3d36cd418923edbbce04f4672，parent 428b618b35ccd5db67d8e66abe6616bff23feeae。三个文件逐字回读一致，compare ahead1/behind0，生产HEAD以expected_sha非强制更新并实际回读一致。仅 ReceiptBridge.kt blob43b20a01e6bf9a7223d031c2016f0a79cb2f3b2e (+8/-2)，EngineLooperTest.kt 219be9d65b2fdc3ce02f995ab59252d85a82b84e (+60)，既有.github/workflows/workbench2-engine.yml 6153c704ff1590ed7158b6c248f922922589ef60 (+1/-1)。不新建分支或PR，不动main、冻结分支、原签名、旧app或其它核心模块。
+- 实现：错误宿主回执与进入DRAINING/RECOVERY的后端回执路径，复用已存在的cancelPendingAttach，仅对当前未决ACQUIRE TASK_LEASE的原始effect按原去重规则最多请求一次撤销；不根据错误回执构造请求，不以取消响应替代terminal evidence，不删除pending、资源或归还义务，不扩大权限、不延伸NativePort契约、无新增线程/定时器/Hook。新增实际Android instrumentation用例 uncertainAttachReceiptRequestsCancellationOnceAndRetainsSettlement 在主Looper合成回执覆盖未结算、错误hostInstance、UNKNOWN三类场景，无显式stop/timeout即观察撤销请求，重复回执/stop不重复取消，保留未决及外层资源，晚到真实匹配的合成terminal回执后按quiesce→task归还证明→gate恢复→host释放顺序结算。回执为测试数据，不是真实OEM任务/触控/归还。既有43项Android严格集合和5态合成像素均保留，目标44+5。本轮未处理stopLocalCallbacks本身抛异常等其他边界，不宣称消除所有恢复缺陷或真机性能提升。
+- 真实CI 44719542144（https://github.com/x647368-maker/NeXtep/actions/runs/44719542144）已自动启动，job136231457229，head精确匹配321791c9。最新读取in_progress，checkout/Java/Android SDK准备均success，Compile isolated engine正在进行，其余门禁pending。尚无新编译成功、运行结果或产物，不将新候选称为已验收稳定核心。保留上一已验收43+5证据，不把新测试数算通过。下一轮唯一先核查此次CI最终结果及原始证据；若失败按明确根因修复，环境限流不得盲重试，出现负优化/回归阻断整合；完成后继续检查自主核心真实缺陷与已冻结产品必需的无后端依赖工程，不能无限制造外围任务，不重复已停止的私有VD/AAOS实验。ColorOS真实承载及独立归还准入仍未取得，无新APK、签名、真机操作，无本轮Work调用。无需机主操作电脑或重新安装。权威档案记载实际CI，不承诺后台由Chat持续工作。
+
+---
+
 ## 第十五阶段 X · 组合式窗口架构边界核验与普通聊天资源策略（2026-11-20，本节最新生效）
 
 - 继承W 68d0cc4fca8fbb5631f88d99453036201b50b71d；机主明确普通聊天最高可用推理作为复杂主研发资源，称12月前其普通聊天最高推理不计代理式额度。此为机主提供的使用情况，未核实账户账单/剩余额度，不宣称无限使用。Work保留用于确有必要且具可执行目标时；本轮未调用Work，不操作Mac/Copilot/ADB/手机，不扩权、不联系同行、不继承旧框架。实时core仍428b618b35ccd5db67d8e66abe6616bff23feeae；实际回读W、十五B/C/D、十三H/M、十四M/P，普通系统窗口编排已有PMS110四界面实测及不足五窗/编排授权的历史结论，不能重包装为新候选。
