@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十六阶段 A · 双外部作用域目标与动画帧调度减负实际工程（2026-11-20，最新生效）
+
+- 机主明确要求争取实现与WindowDeck相同两外部作用域、动画相互媲美。接受必要Root/Vector模块，目标com.oplus.pscanvas与com.android.launcher加应用自身；尽量不注入SystemUI/android/system，不因追求单作用域降低真实任务、交互、稳定性、历史21项冻结合同或性能。实读旧app scope blob37c0536d5c4b141784b8c21f7599baa6a9f98ba7为7项声明（不等于7个进程或7个实际Hook）；独立只读host-runtime scope b0451b52c670e80ab0326ac1997691d29cc58ba8仅pscanvas。减少至2项是约71.4%声明数目标非CPU/功耗结论。尚无获准真实承载NativePort，不将空scope或未接线模块冒充成品。本轮未修改任何作用域、Root授权、签名、系统设置或旧APP；用户明确产品架构目标，未授权绕过权限或注入额外系统进程。
+- 定向实读WindowDeck固定公开版本2e3a14ea0f72b62fef79a130c597a8711fc47b16中LayoutMotionController.java blob9c6006677faee4cab78c0ef4a1ee3be0f060413a（602行，重点269–370的固定源帧、几何曲线及顶部spring路径、456–482有界呈现检查）与LeashTransactions.java blob9dafedd75bfb8647887226770baae685401bfeb5；只作为架构对照，不复制未确认许可的源码、不声称真机动画或功耗已相等。自有MotionMath.kt 95c176540e60429f28d868a91279b5da66908775 已复用静态卡片姿态/统一标量时钟/各向同性缩放；原生后端应避免跨显示迁移、逐帧IPC及重复布局。不得用合成层/Screenshot冒充真实任务。
+- 本轮实际源码优化：AndroidFrameDriver 原路径每次成功FRAME回执后kick先post Handler再arm Choreographer。新路径仅实际当前FRAME结算且仍FLYING、无未决effect时直接调用scheduleFrame，在同一owner事件注册下一vsync，初始0帧结算后才启动时钟；其他effect仍使用非递归posted pump；已等待回执、旧回执、异常回收、单在途effect、取消检查及末端视觉/焦点门禁保持。减少每个非末端正常帧一次额外Handler调度，未实测收益。不修改几何/圆角/帧率/动画时长配置，未增加线程、计时器、Hook。新测试settledInitialFrameArmsVsyncImmediatelyAndSameTurnStopCancelsIt验证初始结算当场arm真实Choreographer且同一owner事件stop可取消、只提交0帧、完整回收，不冒充OEM任务。既有44项及5独立合成像素门禁保留，目标45+5。
+- 实际原子commit ab3e3bb5ae061adaa7aed7f51b8c25ed307aba9e parent321791c9d93aa22a3721095bcd5e10f453bee2fb tree a537109deb8d91599c0dbfe1a3b11f8972e820d6，三个文件回读逐字一致、compare ahead1/behind0，非强制按expected_sha更新唯一workbench2/core并验证HEAD。AndroidFrameDriver.kt blobbe4e656d25c151465544063fb7c78e557d1238c3 (+18/-6)，AndroidFrameDriverTest.kt 493ef8a357d1a7dd428497e973235230c0ff9c86 (+32)，原workbench2-engine.yml 5f2aaa30b6f8c414cedfdd2ffed8f13f40838448 (+1/-1)。真实CI 44721926792 https://github.com/x647368-maker/NeXtep/actions/runs/44721926792 已启动in_progress，绑定新SHA，尚无编译/测试终验，不将45+5称为已通过。上一版本321791c9已有44+5 CI成功证据，保留。
+- 接续先实际验收此次CI，失败按明确原因处理，不盲目重跑；原生真实承载仍是主攻方向，未取得可直接生产接入的现成授权，不用Root借身份绕过系统权限。目标两个作用域仅作架构上限及实测标准，不因减少scope跳过独立归还与触控门禁。普通聊天最高可用推理，Work关闭，不要求机主操作电脑或手机，不依赖官方回复、不联系同行。当前未签名/无新APK/无真机或竞品同机性能对比；不宣称已实现双作用域原生成品或动画媲美。
+
+---
+
 ## 第十五阶段 Z · 原生任务优先：系统调试编排独立候选与授权决策（2026-11-20，本节最新生效）
 
 - 机主明确要求本轮聚焦原生任务限制，不转向外围功能，不依赖厂商回复、不询问同行、不继承旧框架。实际核实core 321791c9d93aa22a3721095bcd5e10f453bee2fb；Y的新CI 44719542144/job136231457229已实际完成engine编译、来源校验、编译产物上传及API35模拟器启动，Android运行门禁仍in_progress，五态像素pending，未宣称44+5通过。只保留Y稳定性修复，不本轮继续外围改动。
