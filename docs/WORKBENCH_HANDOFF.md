@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 K · 本地SDK安装成功、AGP依赖连接仍阻塞（2026-11-20，本节最新生效）
+
+- 机主Mac连接手机热点；Mac Shadowrocket从美国高速03切换日本高速03，按会话建议调整代理模式（具体最终路由配置未独立核实）。机主截图显示浏览器成功下载官方repository2-1.xml及gradle-9.3.0.pom；此前同地址ERR_CONNECTION_CLOSED。Copilot报告初次curl探测两地址HTTP200，随后sdkmanager官方组件安装成功：platforms;android-36.1、build-tools;36.0.0、platform-tools 37.0.3。以上为机主回传截图/文字证据，不是本窗口直接访问Mac或独立核验文件；保留所有已安装组件、源码与缓存，不重新搭建。
+- Copilot在原SHA执行原始构建及一次--refresh-dependencies重试，均报告AGP 9.3.0解析失败，未进入源码编译，APK计数0；后续探测dl.google.com及plugins.gradle.org出现LibreSSL握手错误，AGP缓存缺失。首次新构建日志 ~/local-verification/wb2-resident-lab-build-20261120_162700/build.log；刷新重试另有时间戳build.log，确切路径未回传。未取得原始日志或HTTP状态原始行，不推断Gradle JVM具体异常；curl命令用grep首个HTTP行也不足以独立排除代理CONNECT响应。AGP插件标记应同时看现有google()仓库内真实marker，不将Plugin Portal单一地址当成必需或不存在证明。Mac脚本find -printf非BSD兼容，后续用stat -f等核验，非当前构建根因。机主已收到Copilot停止报告：未修改源码、未提交、手机未连。
+- 本轮GitHub实际fetch_commit确认core HEAD仍428b618b35ccd5db67d8e66abe6616bff23feeae；只更新既有权威交接，不触发CI或新分支/PR。已查Gradle官方 https://docs.gradle.org/current/userguide/networking.html ：JVM支持明确的HTTP/HTTPS或SOCKS代理参数。下一步只允许读取两次现有build.log的准确失败URL/HTTP/异常原因及已有Mac代理设置（本机监听地址/端口，脱敏，不访问凭证），不再安装或重试。若证实普通网络路径失败且本机可信代理可用，先单次定向验证经现有代理的官方实际marker/POM/module/必要仓库访问；通过后才用一次临时Gradle JVM显式代理参数构建，不改源码/依赖/系统网络/证书校验，不清缓存或固定IP，不承诺必成；若失败结束本地路线，待独立可信runner恢复条件再使用原授权CI，亦可另外评估已有授权的稳定网络环境。无需机主拍照、敲命令或升级会员。SDK完成不等于编译成功，更不等于ColorOS真实任务准入。后续保留独立实验授权门禁及历史冻结成果，OPPO协助非当前前置。普通GPT-6 Medium，Copilot原Agent/Auto/本地/默认审批。
+
+---
+
 ## 第十五阶段 J · 本地构建失败止损及网络单点解阻（2026-11-20，本节最新生效）
 
 - 机主转交Copilot最终专项报告，确认其本地HEAD完整SHA 428b618b35ccd5db67d8e66abe6616bff23feeae，与本轮GitHub实时core HEAD一致；本地clean状态及原始日志尚未独立取得。官方命令行工具据报告已下载解压至 ~/Library/Android/sdk/cmdline-tools/latest，截图证实sdkmanager曾启动并出现3% Fetch remote repository。platforms;android-36.1、build-tools;36.0.0、SDK内platform-tools均未确认已安装（既有Homebrew ADB另计）。本地无APK，AGP 9.3.0解析失败，未进入源码编译；日志据报告保存在 ~/local-verification/resident-lab-build-20261120_155729.log，未取得原始字节，不声称已查验日志。
