@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 X · 组合式窗口架构边界核验与普通聊天资源策略（2026-11-20，本节最新生效）
+
+- 继承W 68d0cc4fca8fbb5631f88d99453036201b50b71d；机主明确普通聊天最高可用推理作为复杂主研发资源，称12月前其普通聊天最高推理不计代理式额度。此为机主提供的使用情况，未核实账户账单/剩余额度，不宣称无限使用。Work保留用于确有必要且具可执行目标时；本轮未调用Work，不操作Mac/Copilot/ADB/手机，不扩权、不联系同行、不继承旧框架。实时core仍428b618b35ccd5db67d8e66abe6616bff23feeae；实际回读W、十五B/C/D、十三H/M、十四M/P，普通系统窗口编排已有PMS110四界面实测及不足五窗/编排授权的历史结论，不能重包装为新候选。
+- 本轮针对历史档案中未单列的组合机制进行有限核查（非重新遍历OEM原件）：①官方 https://developer.android.com/reference/android/view/SurfaceControlViewHost 的setView/getSurfacePackage/release与API37新增LayoutParams重布局，https://developer.android.com/reference/android/view/SurfaceControlViewHost.SurfacePackage 及 https://developer.android.com/reference/android/view/WindowManager 的transferTouchGesture 明确可组合交互式嵌入View、SurfacePackage、相互关联的InputTransferToken。该契约以提供方创建的View/图层及既有输入关联为基础，不是获取任意既有Activity任务、图层或输入的授权；不能把自有或双方配合的交互View演示算作真实第三方任务。②实际读取AOSP固定提交25bde8f19773a0edb459c3ffa87f989d689fb37f的Transitions.java 1413–1495，外部Binder registerRemote/getHomeTaskOverlayContainer经executeRemoteCallWithTaskPermission；历史辅助函数引入提交b4dfa621f7b8e4f16efb9532b8936dc174f9ea6c的注释明确MANAGE_ACTIVITY_TASKS检查。精确Android17 tag的Transitions及同固定提交ExecutorUtils网页获取失败，故仅为有权限门的AOSP对照，不声称已复验目标固件。系统转场提供动画管理并不自动授予持久承载、原生输入或归还契约。③官方 https://developer.android.com/media/grow/media-projection 与API37 https://developer.android.com/reference/android/media/projection/AppContentProjectionService （2505–2555）证实投射内容选择与由应用主动提供内容、会话结束清理语义；仅取得用户同意的画面捕获或协作输出不是任务所有权、物理屏原生输入或既有任务归还。不将镜像/录屏或Accessibility模拟操作作为冻结产品后端。
+- 新组合判定：须区分图层呈现、输入关联、转场控制、任务组织权及独立归还。前几项可以在合法协作视图条件下组合，但其组合不会凭空产生任意第三方任务的实际会话授权。当前缺少的是任务层授权及归还责任，并非再造动画/图层接口。保留原自主核心及单NativePort方案，不启动搭建替代demo/参考模型/普通浮窗重试，不据API存在宣称新技术已可部署。未发现可立即执行的PMS110合法接入路径；未穷尽系统全部可能机制。若未来明确改变目标平台（例如自有可控AOSP系统）或产品范围，只有经机主单独批准且具备运行条件才实施；不得当作现有ColorOS产品已经突破。
+- 本轮不修改生产源码，不新增CI、APK、分支、PR、真机或模拟器测试；仅新增静态边界对照与额度策略记录。没有实质新条件前，停止主动生成同义深挖指令和重复交接；不要求机主切换工作模式或操作电脑。已有邮件监测是备用渠道，不是研发前置依赖。保留全部历史成果、21项冻结合同、43+5历史证据及原签名数据门禁。真实新系统契约出现时优先普通聊天最高可用推理完成证据审查和可执行工程，按现有安全分级推进。未宣称后台研发、额度消耗值或产品完成率。
+
+---
+
 ## 第十五阶段 W · 极简集成授权边界结算与研发额度治理（2026-11-20，本节最新生效）
 
 - 机主确认普通聊天承担主研发，严格节约Work最高模型额度；手机截图5小时剩38%/约4小时重置、每周剩32%/约5天重置，此为当时截图不是实时接口值。保留每周20%作为建议储备，不擅自重置、购买点数或追加付费。机主本轮授权独立极简集成审查，不扩大权限、不操作Mac/Copilot/手机、不依赖OPPO答复、不询问同行、不继承旧框架。继承V 3b389d05b3877af768c2b5c0f44cbb162bc5accc；实际核实core仍428b618b35ccd5db67d8e66abe6616bff23feeae；V与U固定提交全文逐字比较，剔除新增V段后原U全文完全一致，补足上一轮断线未完成的核验。
