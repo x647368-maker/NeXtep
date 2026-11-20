@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十四阶段 L · 独立实验环境准入核查（2026-11-20）
+
+- 按机主指令继承K 5b47481adba057aff2ab600667c93f0710c6b3e1；实查唯一生产HEAD 1233fa8fdce39fdb17b76a7d5201020d3cff638b、K档案blob 3848883f00171ef564f58d178a800bda38450feb，43项Android与5态合成像素已通过基线保持。未重新读取WindowDeck或ColorOS DEX，不新增模型、APK、分支、PR及生产源码。
+- 实查当前本地执行容器x86_64、32GB文件系统（约30GB空闲），只有Java，PATH无adb/emulator/sdkmanager/gradle，无已见Android SDK目录或/dev/kvm，未发现可直接操作的物理Android设备接口；未在本地启动设备。已连接工具中没有Android设备运行工具，插件检索Android emulator/remote device testing lab/ColorOS/OPPO未返回适用设备控制服务（非穷尽插件市场）。现有CI workflow blob ef1a7b30fe4062125a08955cbf546cba2e2f1c97 实查仅push至workbench2/core及指定路径触发，ubuntu-26.04 runner使用Android35 google_apis x86_64 Pixel 7 AVD，既有CI证明此标准模拟器能运行；没有现成OEM隔离镜像或独立可调度实验任务。未为启动无关实验而更改工作流。
+- 新的独立参考证据（不重读竞品）：AOSP官方Cuttlefish可用预构建userdebug镜像，但需宿主KVM及配套工具：https://source.android.com/docs/devices/cuttlefish/get-started 。官方Android Automotive OS有模拟器及合法远程真实任务承载架构：https://developer.android.com/training/cars/testing/emulator ，AOSP CTS CarTaskViewControllerTest https://android.googlesource.com/platform/cts/+/refs/heads/main/tests/tests/car/src/android/car/app/cts/CarTaskViewControllerTest.java 实读99–172、174–257、259–313行：取得控制器需测试环境的跨用户及车载系统UI管理权限、已注册车载SystemUI代理；原生新建任务测试、共享宿主内多个TaskView测试；正常release/宿主正常销毁的预期是测试Activity销毁、TaskInfo清空，自动重启用例预期taskId改变。说明宿主服务/客户端分离与独立槽位已有官方实装范例，同时再次排除把release、自动重启冒充原任务归还。此为源码测试合同，未执行CTS，并非PMS110授权、已有任务借用、安全归还证明。普通应用跨应用Activity Embedding需要被嵌入应用主动信任授权，属于Activity/任务内部布局，不等价任意独立现有任务承载：https://developer.android.com/develop/ui/views/layout/activity-embedding 。不将这些方案冒充ColorOS解阻或直接切换产品架构。
+- 实查 OPPO 官方开放平台 https://open.oppomobile.com/ 提供远程真机/自动化测试/设备开放；公开介绍未证明PMS110匹配固件、获准系统级任务会话或独立异常恢复权限。云真机存在不等于研究用OEM权限可用，当前未登录预约、未联系厂商、无付费或设备操作。当前无足够条件实际进行K定义的OEM实验。Work云浏览器或更高推理本身不提供OEM授权、Android设备或KVM保证；无需调用Work重复查找。
+- 结论：本轮新增有效证据为真实运行环境核查、官方原生共享宿主实例及其释放语义的反例、明确候选隔离环境与局限。尚未执行原生单任务实验，不宣称突破，不修改容器唯一性约束，不降低安全门禁。建议停止同一阻塞的循环请求；真正重开触发条件是可操作的获准OEM隔离设备/系统集成契约（且有独立安全退出措施），或机主明确批准另立范围极小的自有AOSP系统实验（非目标ColorOS交付，不能把CTS启动/销毁算借用归还），或机主明确改变产品战略。后两者涉及范围/重大取舍需用户授权。默认保留唯一生产分支及历史成果，不要求机主执行命令、重复提取ROM或联系同行。下一轮简单决策可用Chat GPT-6 Medium，高难证据审查用High；无额外可执行环境不启用Work。若今后确有环境而Chat不足，先核实Work实际可操作能力，选可用Astra中推理、标准速度起步，限制为一个单任务实验；无设备/授权/独立恢复立即停止，不承诺额度或后台执行。
+
+---
+
 ## 第十四阶段 K · 原生入口与共享宿主契约定向复核（2026-11-20）
 
 - 继承a9dac4ea3aaa3140e5afd55d40fc1f0d0c580090、全部永久制度及43项Android+5态合成像素验收基线。实际远程唯一生产HEAD仍1233fa8fdce39fdb17b76a7d5201020d3cff638b，档案blob bafdf70b59321a6b355e5d7535869e684fcdd4bb。暂停非必要外围扩展。按机主要求补齐此前尚未独立追踪的入口、交接契约及运行成本，不重复系统DEX反编译或等待同行。
