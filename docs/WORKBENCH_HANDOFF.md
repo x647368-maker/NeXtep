@@ -1,5 +1,36 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十六阶段 E · 完整检查点封存、Desktop实际能力新证据与唯一负责人交接（2026-11-20，最新生效）
+
+### 1. 交接生效及治理
+- 机主明确要求本窗口执行完整无损交接，完成后正式只读，解除生产研发负责人职责，停止生产代码修改。当前窗口在此检查点封存后无生产写入授权；接任仅在机主向本项目内唯一新聊天发送完整接任指令后生效，建议新窗口名「双作用域原生研发接任」。旧窗口仅供历史查阅，不得并行研发。同步更新已有docs/workbench-registry.json的owner与exit字段，不创建重复档案、分支或PR。此是项目治理授权，不是撤销GitHub账号技术权限。
+- 真实核验治理起点3baf72dc75f427f5e3a4678aed8e1c2369dd854f、唯一工程HEAD29f7f0c5755b4f06f299e2d17ed0e1c02c7e5a14、main20ab39cf7e319898fcbc4028bc403df57a6c1a0b。完整分页146远程分支，仅workbench2/core属于workbench2/；7 protected：atomic-update-feed、atomic-workbench/v89-coordinate-only-20261118、atomic-workbench/v89-domain-regression-recovery-20261119、atomic-workbench/v89-held-receipt-current-20261119、governance/workbench、main、workbench2/core。registry全部11 frozen SHA实际一致、required无缺、相对于baseline与required无未登记分支。开放仅历史#175 b625f22558c1d4127101f86e6c4f64a7b263d72f、#176 305f595220a6c193202d6acbdb2ac20f6e250df4，2.0 PR=0；不合并关闭或扩大清理。此次未重新独立读取规则集详情，沿用历史规则集27649939的生效证据。已实际读取AGENTS.md、docs/DEVELOPMENT_HANDOFF_POLICY.md及registry；旧PR/分支管理条款以机主更新后的唯一负责人、一core、最多一个对应PR制度为准。
+- 历史完整性：当前权威档原blob8e2fdd8000e07aabc3870afe881a633703119eb0，310334字符、130个二级标题，与固定D提交全文逐字一致。此次仅在顶部插入E，旧正文完整保留；包括全部永久制度、F01–F21/109历史合同、各阶段真机/源码/CI证据、失败与授权记录、签名与迁移要求、阶段W/X/Y/Z及十六A–D。历史包不作为最新源码，不重复生成接管ZIP或要求机主上传。原私密OEM原件及签名材料不上传GitHub；需要使用时必须实际确认新窗口能访问，不能保证跨窗口全部文件自动可读。无新增生产代码、CI、APK、权限、作用域、分支、PR、设备操作、Work调用或外联。已存在自动化监督和OPPO邮件监测保持原样，不重复建任务。
+
+### 2. 本窗口实际工程成果与最新有效基线
+- 自主核心故障修复321791c9d93aa22a3721095bcd5e10f453bee2fb（十五Y）：ReceiptBridge对不确定/错误宿主挂载回执沿已有撤销链最多一次取消，保留真实结算及资源归还义务。真实CI44719542144/job136231457229 44 Android+5独立合成像素门禁通过。
+- 动画调度精简ab3e3bb5ae061adaa7aed7f51b8c25ed307aba9e（十六A/B）：已结算FRAME同一owner事件直接arm Choreographer，省去每个正常非末端帧一次额外Handler pump；保留单在途、取消、真实视觉及焦点门禁。CI44721926792/job136239567354 success，45 Android+5独立合成像素；compile artifact14622671066、runtime14621868844及摘要见B。仅核验严格步骤/远端元数据，不称独立重下载XML或真机性能证明。最新engine有效验收SHA仍ab3e3bb5；实际core HEAD29f7f0c5相对此SHA ahead3/behind0，仅两个system-window-lab实验文件增加，生产engine/旧app/签名/scope均未变。
+- 原生实验工程b392b68eeac6c4668ab95a6dcc8bae1110b12e31：复用自有NormalWindowSessionActivity（blobc38014abb96576e9bcccb0766a3214b8204d8873），新增隔离测试workbench2/system-window-lab/SystemWindowResizeTest.kt（blob310983a27040b316706be4aaa62885f66c5ab0bf）及.github/workflows/workbench2-system-window-lab.yml。8248e5e7a4c49b92bcc75e67dec199949826c9a9切换有发行证据的Android17.1 Desktop Preview；29f7f0c5按原始SDK证据将错误desktop_api37改为desktop_medium，当前workflow blob8d3d36fe4f4e46cce4f51716460624137357844b。普通API35实验44723291371缺freeform；Desktop首次44723999089旧profile名称错误；都未进入真实任务测试。禁止重跑上述错误环境或增加其它模拟器/测试框架。详细原始日志、产物哈希、回读及源码见B/C/D。
+
+### 3. 交接最新真实CI终验（本节覆盖D运行中状态）
+- 实查44724612029/job136248747423 completed/failure，head29f7f0c5755b4f06f299e2d17ed0e1c02c7e5a14；原始job日志55088字符。11:05:17Z实际SDK列出目标37.1 Desktop x86_64镜像，11:06:06Z profile id9 desktop_medium，11:06:34.6103312Z明确输出feature:android.software.freeform_window_management，随后exit1。环境预检step5失败、单任务step6 skipped、清理及上传success。
+- 实际下载artifact14622983689 ZIP，29224 bytes，SHA256 8e412a2fb95438f5e0445888bd3668c16455fba26e15ab3afb920579aa177b2a与远端一致，11成员CRC全部通过。相应checkout-sha.txt精确匹配29f7f0c5；fingerprint.txt为google/sdk_gdesktop_x86_64/emu64xa:17/CLE3.260929.004/16489338:userdebug/dev-keys；features.txt实际存在android.software.freeform_window_management及activities_on_secondary_displays。由源工作流SDK=37断言顺序、实际日志与产物共同证明这次Desktop AVD已经真实启动并通过freeform特征门。cleanup.txt为OK: killing emulator, bye bye / OK，确认已关闭；并无截图/运行XML/GEOMETRY_OK或result.txt，不声称测试成功。am-help.txt实际显示两行：'task [COMMAND] [...]: sub-commands for operating on activity tasks.'及下属'       resize <TASK_ID> <LEFT> <TOP> <RIGHT> <BOTTOM>'，其说明仅multi-window/freeform mode时resize。既有workflow在feature成功后执行grep -F 'task resize'，因帮助格式分行而exit1。该错误是我方预检字符串假阴性，不是系统能力缺失。没有真实任务调整操作、触控、归还、编译测试或性能结果。CI https://github.com/x647368-maker/NeXtep/actions/runs/44724612029 ，artifact https://github.com/x647368-maker/NeXtep/actions/runs/44724612029/artifacts/14622983689 。无需新窗口重新搜索SDK目录或重新定位以上根因。
+- 下一窗口首项实际工程任务：在核验HEAD仍29f7f0c5后，复用现有workflow和同一Desktop镜像/profile，以已有原始am-help.txt为证据，将错误的单行grep修正为严格识别task子命令块中的确切resize用法（不能只查任意resize字符串、删除预检或放宽feature条件）。仅这一处明确脚本缺陷修正；核对diff、通过expected_sha非强制提交唯一core，确认实际触发CI并核验准确SHA；不重复环境选型、不另建分支/PR、不开隐藏feature/改系统权限、不恢复旧APP。原单任务测试与严格运行门禁保持，若再出现环境能力缺失则停止该环境支线；若出现真实可定位的编译/运行问题，按具体证据判断一次最小修复，禁止无限试错。运行前仍须确保测试只限隔离可丢弃自有任务，经正常测试身份控制、不强制窗口模式、不用Root扩权。
+- 实际任务实验成功标准沿B：同taskId及系统打印对象标识（非稳定Binder token）、display0、独立系统bounds/Activity bounds、页面marker/真实测试点击计数、调整前后及恢复画面证据、原几何恢复与清理，标明Activity是否重建；失败如实归类。成功也只证明标准Desktop自有任务窗口几何能力，不等同ColorOS原生借用/安全归还、第三方任务承载、双外部作用域运行、真机动画/热/功耗。禁止以测试回执或截图冒充真实任务。
+
+### 4. 永久目标、用户取舍、有效授权与禁止事项
+- 机主明确性能优先，不追求零Root或零注入。继续自主精简2.0核心；目标外部作用域仅com.oplus.pscanvas（Multi Windows）与com.android.launcher（系统桌面），加应用自身；允许必要Root/Vector，争取不用SystemUI/android/system等其它scope，不新增额外Root辅助模块除非明确必要且获批。旧版声明7外部scope到目标2为配置数减少约71.4%，非功耗或实际Hook数变化；当前2.0仅有pscanvas只读试验scope，实际双宿主任务后端未实现。机主明确产品目标、现有Root/Vector依赖容许及隔离自有任务云端验证，不等于允许扩大权限、借身份、关闭系统安全检查或改系统配置。重大架构、权限、部署、数据损失及降低门禁必须单独明示风险并获得授权。无需依赖OPPO回复、无需询问同行；既有官方邮件监测仅备用。不恢复V89，不继承旧冗杂框架、不照搬未明确许可的WindowDeck源码。
+- 真实目标：降低CPU/GPU额外负担、线程、内存、热、耗电、卡顿、黑影、黑闪、形变、闪烁；无工作尽量无额外唤醒，运行尽量低额外功耗，不能承诺零耗电。对标WindowDeck运行性能和vivo原子工作台动画；原生任务驻留优先，避免跨显示迁移、重复缓冲、逐帧IPC、重复布局、无必要全局Hook/线程/定时器/轮询/状态机。保留统一核心、单owner及单在途回执；不以削减分辨率/刷新率/数量、截图、假任务/回执、系统权限绕过或杀任务换回归证据。负优化立即阻断，连续两轮真机无改善停止路线重审。谨记旧版307.359635ms真实图层迁移间隔只说明观测边界，非黑屏原因或保证收益（十五U）；历史性能诊断、S/T失败证据完整保留。
+- 所有F01–F21/109项冻结效果及历史证据不得丢失：一大四小、顶部及左右侧排、大主窗比例位置圆角、主窗优先/完整展示、紧凑液态玻璃菜单、常用栏展开/增删/排序、智能侧栏收起放大及白条恢复、工作组、系统手势/通知栏/控制中心、软件更新修正版A、诊断时效/导出、图标及署名/酷安入口；少于四窗适度放大、加号菜单不漂移；抖音/小红书/微信内容和播放连续、不主动暂停或恢复、不刷新。PMS110 ColorOS17/Android17/Vector2.2、KernelSU/Zygisk环境；N5内/外屏、N3功耗、Y700横竖屏/微信，全部直屏折叠平板及系统版本按历史合同适配。冻结产品效果不是冻结低效旧代码，禁止要求机主重述已知信息。
+- 包名io.github.x647368maker.atomicworkbench，历史绑定证书SHA256 3703b59c48b1c30df872fbcd8fa01905b9a6c684f151ddbb0d05e5b5726468fe，正式交付前仍要核实当前实际在用生产证书、版本递增、包名、APK摘要及配置/工作组数据迁移，绝不公开私钥。原署名ZMW小武×GPT、NeXtep/Jensen Lu、Apache-2.0与第三方声明保留。原签名工程门禁后才交私测APK，用户真机验收后才正式发布。
+
+### 5. 剩余P0、后续实施顺序、资源及接续制度
+- 原生真正阻塞：十三S/Y、十五U/V/W/X/Z说明pscanvas拥有safe.WINDOW签名|privileged许可、普通采集应用未获准，实际服务端死亡观察路径可removeTask；Putt/RemoteTask/助理角色/VD/普通分屏/协作Surface等不能替代已获准任务委托与独立归还。WindowDeck双宿主结构是真实静态证据，不代表本项目已具备其权限与性能，不复制。现有NativePort无真实OEM后端；正常客户端退出/宿主死亡须分别有原task/user/token、原所有权与无再附着证据，不能用本地释放或同taskId假定恢复。不可把上述已反复核实的限制再次当新研究任务；只有实质新证据才推动安全、具体的双作用域实现，不绕过安全机制。前期45+5真实Android/合成验证保留，不重跑未受影响引擎。
+- 实施顺序：先完成本节3明确预检修正及Desktop实际单任务几何试验；如成功，独立核查并对照双宿主OEM真实契约，限定安全可证伪的单任务驻留、触控、正常归还及后续独立异常恢复；再真实双任务交换、原生一大四小、已冻结功能整合、同机同条件帧时间/长尾/CPU/GPU/线程/内存/温度/功耗、原签名后机主真机验收。无真实后端不制造假NativePort、外围任务或无意义报告掩盖P0。机主目前手机使用、不操作Mac/Copilot/ADB、不要求安装额外取证APK；AI负责源码、GitHub、CI、验签及接续。不得承诺后台聊天研发、自动交付或未核实额度。普通聊天GPT-6最高可用推理作主力，Work关闭；机主称现阶段普通高推理暂不计代理额度，为用户提供的情况而非已核实账号政策。节约额度、避免重复交接/构建，简单核验可用较低推理，只有确实需要Work且有可执行目标才经必要授权启用；不购买点数、不要求电脑。每轮结束固定交代实际成果、尚余问题、实施计划、权威检查点、完整下一步可复制指令、模型/模式。任何聊天/项目/模型/版本迁移永久继承权威GitHub与冻结规则。
+- 本窗口即将封存，只提交治理档案与既有登记表，不再推进core。新负责人以机主明确发送接任指令及实时核验为准，直接从本E第3项行动，不重复已完成的技术研究。
+
+---
+
 ## 第十六阶段 D · Desktop证据实物复验与唯一配置名称纠错（2026-11-20，最新生效）
 
 - 继承C检查点4aa2622906ae011865c79c07adb85f8ec3a7fbc3。实查CI44723999089/job136246681689 completed/failure，准确绑定8248e5e7a4c49b92bcc75e67dec199949826c9a9。实际读取54119字符原始日志：11:00:57Z SDK目录列出system-images;android-37.1;android-desktop;x86_64 revision1，11:01:46.7676142Z实际输出NO_GO_DESKTOP_PROFILE_NOT_AVAILABLE，exit1；SDK准备完成，未创建/启动AVD，真实单任务测试skipped。清理及证据上传步骤success不代表真实模拟器关闭（根本未启动）；无任务调整、触控、恢复、性能或OEM授权结论。
