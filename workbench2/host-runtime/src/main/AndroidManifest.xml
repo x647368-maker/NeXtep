@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="台前调度 · 宿主只读取证"
-        android:allowBackup="false" android:hasCode="true"/>
+    <application android:label="台前调度 · 双宿主只读验证"
+        android:allowBackup="false" android:hasCode="true">
+        <activity android:name=".SessionActivity" android:exported="true" android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>

@@ -1,4 +1,4 @@
-name: Workbench 2 isolated host metadata runtime
+name: Workbench 2 isolated dual host observation
 on:
   push:
     branches: ['workbench2/core']
@@ -45,7 +45,7 @@ jobs:
           timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
           test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
           adb shell getprop ro.build.fingerprint > "$RUNNER_TEMP/wb2-emulator-fingerprint.txt"
-      - name: Verify Android metadata-only behavior
+      - name: Verify Android observation boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -53,13 +53,13 @@ jobs:
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           p = pathlib.Path('workbench2/host-runtime/build/outputs/androidTest-results/connected')
-          required = {'onlyExactAuthorizedObservationTargetMatches','publicMetadataDoesNotInitializeOrInvokeFixture','unavailableMetadataDoesNotAdmitOrFabricateSymbols'}
+          required = {'onlyExactAuthorizedObservationTargetMatches','publicMetadataDoesNotInitializeOrInvokeFixture','unavailableMetadataDoesNotAdmitOrFabricateSymbols','exactDualHostGate','onlyOwnExplicitComponentMatches','oneViewAndBoundedLifetime'}
           cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
           assert len(cases) == len(required) and {t.get('name') for t in cases} == required
           assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
           print('Verified stock Android metadata-only tests:', sorted(required))
           PY
-      - name: Verify isolated APK and single scope
+      - name: Verify isolated APK and exact dual scope
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +68,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/wb2-field-evidence"
           analyzer=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' -type f | sort -V | tail -1)
           test "$("$analyzer" manifest application-id "$apk")" = io.github.x647368maker.atomicworkbench.hostruntime
-          test "$("$analyzer" manifest version-code "$apk")" = 2
+          test "$("$analyzer" manifest version-code "$apk")" = 3
           "$analyzer" manifest print "$apk" > "$RUNNER_TEMP/wb2-field-evidence/manifest.xml"
           python3 - "$RUNNER_TEMP/wb2-field-evidence/manifest.xml" "$apk" <<'PY'
           import sys, xml.etree.ElementTree as E, zipfile
@@ -79,18 +79,20 @@ jobs:
           assert not [t for t in root if t.tag.startswith('uses-permission') or t.tag == 'permission']
           app=root.find('application')
           assert app is not None and app.get(a+'allowBackup')=='false'
-          assert not [x for x in app if x.tag in ('activity','activity-alias','service','receiver','provider')]
+          components=[x for x in app if x.tag in ('activity','activity-alias','service','receiver','provider')]
+          assert len(components)==1 and components[0].tag=='activity' and components[0].get(a+'name') in ('.SessionActivity','workbench2.hostruntime.SessionActivity')
+          assert components[0].get(a+'exported')=='true'
           assert app.get(a+'debuggable')!='true'
           with zipfile.ZipFile(sys.argv[2]) as z:
               assert z.testzip() is None
               prefix='META-INF/xposed/'
               assert set(n for n in z.namelist() if n.startswith(prefix) and not n.endswith('/'))=={prefix+x for x in ('java_init.list','scope.list','module.prop')}
-              assert z.read(prefix+'scope.list').decode().splitlines()==['com.oplus.pscanvas']
+              assert z.read(prefix+'scope.list').decode().splitlines()==['com.oplus.pscanvas','com.android.launcher']
               assert z.read(prefix+'java_init.list').decode().splitlines()==['workbench2.hostruntime.HostRuntimeEntry']
               props=dict(l.split('=',1) for l in z.read(prefix+'module.prop').decode().splitlines() if l)
               assert props=={'minApiVersion':'102','targetApiVersion':'102','staticScope':'true','exceptionMode':'protective','autoHotReload':'false'}
               assert 'assets/xposed_init' not in z.namelist()
-          print('Verified zero permissions, zero components, exact single scope, no hot reload')
+          print('Verified zero permissions, one own fixture, exact dual scope, no hot reload')
           PY
           # Confirm the framework API is provided by the loader, not bundled.
           "$analyzer" dex packages --defined-only "$apk" > "$RUNNER_TEMP/wb2-field-evidence/dex-packages.txt"
@@ -144,7 +146,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$out"
           sha256sum "$out" > "$RUNNER_TEMP/wb2-field-verified/APK.sha256"
           cp "$evidence/certificate.txt" "$evidence/checkout-sha.txt" "$RUNNER_TEMP/wb2-field-verified/"
-          printf '%s\n' 'ORIGINAL_CERTIFICATE_VERIFIED: isolated host metadata module only' > "$evidence/signing-status.txt"
+          printf '%s\n' 'ORIGINAL_CERTIFICATE_VERIFIED: isolated dual-host experiment only' > "$evidence/signing-status.txt"
           echo 'ready=true' >> "$GITHUB_OUTPUT"
       - name: Upload verified companion only; never a release
         if: steps.field-sign.outputs.ready == 'true'

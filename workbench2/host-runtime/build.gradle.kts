@@ -10,8 +10,8 @@ android {
         applicationId = "io.github.x647368maker.atomicworkbench.hostruntime"
         minSdk = 35
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0-host-runtime-2"
+        versionCode = 3
+        versionName = "2.0-dual-observation-3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SOURCE_SHA", "\"$revision\"")
     }
