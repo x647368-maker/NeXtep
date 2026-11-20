@@ -133,7 +133,7 @@ class AndroidFrameDriver(
     private fun kick() {
         checkOwner()
         if (advancePosted || core.outstanding() != null) return
-        if (core.phase in setOf(Phase.CLOSED, Phase.ACTIVE, Phase.RECOVERY)) {
+        if (core.phase == Phase.CLOSED || core.phase == Phase.ACTIVE || core.phase == Phase.RECOVERY) {
             cancelClock()
             return
         }

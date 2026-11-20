@@ -26,12 +26,20 @@ class EngineLooperTest {
         var sent: Effect? = null
         var completion: ((NativeSnapshot) -> Unit)? = null
         var cancellations = 0
+        var failStop = false
+        var failAttachDispatch = false
         override fun dispatch(effect: Effect, poses: Map<Owner, Pose>?, complete: (NativeSnapshot) -> Unit) {
             assertSame(Looper.getMainLooper(), Looper.myLooper())
             sent = effect
             completion = complete
+            // Model a dispatch exception after the backend accepted this callback.
+            if (failAttachDispatch && effect.op == Op.ACQUIRE && effect.resource?.kind == Kind.TASK_LEASE)
+                error("fixture dispatch after partial submission")
         }
-        override fun stopLocalCallbacks() { assertSame(Looper.getMainLooper(), Looper.myLooper()) }
+        override fun stopLocalCallbacks() {
+            assertSame(Looper.getMainLooper(), Looper.myLooper())
+            if (failStop) error("fixture local stop failure")
+        }
         override fun requestAttachCancellation(effect: Effect) {
             assertSame(Looper.getMainLooper(), Looper.myLooper())
             assertEquals(sent, effect)
@@ -222,6 +230,67 @@ class EngineLooperTest {
             assertEquals(3, core.resources().size)
             assertTrue(bridge.pump())
             assertEquals(Op.QUIESCE, raw.sent!!.op)
+            raw.completion!!(receipt(Observation.UNKNOWN))
+            assertTrue(bridge.pump())
+            assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)
+            raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null,
+                returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true))))
+            assertTrue(bridge.pump())
+            assertEquals(Kind.INPUT_GATE, raw.sent!!.resource!!.kind)
+            raw.completion!!(receipt(Observation.ABSENT, inputBlocked = false))
+            assertTrue(bridge.pump())
+            assertEquals(Kind.HOST, raw.sent!!.resource!!.kind)
+            raw.completion!!(receipt(Observation.ABSENT))
+            assertFalse(bridge.pump())
+            assertEquals(Phase.CLOSED, core.phase)
+            assertTrue(core.resources().isEmpty())
+            assertEquals(1, raw.cancellations)
+            core.invariant()
+        }
+    }
+
+    @Test fun localStopFailureCannotSuppressCancellationOrBypassQuiescence() = owner {
+        val proof = AttachProof(request.id, "fixture-container", task, request.component, true, true)
+        for (trigger in listOf("stop", "timeout", "dispatch", "receipt")) {
+            val core = UnifiedCore()
+            val raw = Port().apply { failStop = true; failAttachDispatch = trigger == "dispatch" }
+            val bridge = ReceiptBridge(core, OwnerLooperPort(raw, Looper.getMainLooper()),
+                "fixture-fw", "fixture-host", "fixture-instance")
+            assertTrue(core.beginPending(fixture, plan))
+            for (kind in listOf(Kind.HOST, Kind.INPUT_GATE)) {
+                assertTrue(bridge.pump())
+                assertEquals(kind, raw.sent!!.resource!!.kind)
+                raw.completion!!(receipt(Observation.PRESENT))
+            }
+            assertTrue(bridge.pump())
+            val pending = raw.sent!!
+            val complete = raw.completion!!
+            assertEquals(Kind.TASK_LEASE, pending.resource!!.kind)
+            when (trigger) {
+                "stop" -> bridge.stop()
+                "timeout" -> assertTrue(bridge.timeout(pending))
+                "receipt" -> complete(receipt(Observation.UNKNOWN))
+            }
+            assertEquals(1, raw.cancellations)
+            assertEquals(pending, core.outstanding())
+            assertEquals(2, core.resources().size)
+            assertFalse(bridge.pump())
+            bridge.stop()
+            assertEquals(1, raw.cancellations)
+            // Keep the original callback live despite local stop failure.
+            complete(receipt(Observation.PRESENT, attach = proof))
+            assertEquals(Phase.DRAINING, core.phase)
+            assertEquals(3, core.resources().size)
+            assertTrue(bridge.pump())
+            assertEquals(Op.QUIESCE, raw.sent!!.op)
+            raw.completion!!(receipt(Observation.UNKNOWN).copy(callbacksStopped = false))
+            assertEquals(Phase.RECOVERY, core.phase)
+            assertEquals(3, core.resources().size)
+            assertFalse(bridge.pump())
+            assertTrue(core.retryCleanup())
+            assertTrue(bridge.pump())
+            assertEquals(Op.QUIESCE, raw.sent!!.op)
+            raw.failStop = false
             raw.completion!!(receipt(Observation.UNKNOWN))
             assertTrue(bridge.pump())
             assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)

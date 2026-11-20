@@ -11,7 +11,8 @@ data class NativeSnapshot(val firmware:String,val hostVersion:String,val hostIns
 interface NativePort {
     /** Runs asynchronously when needed; completion must be marshalled to the owner Looper. */
     fun dispatch(effect:Effect,poses:Map<Owner,Pose>?,complete:(NativeSnapshot)->Unit)
-    /** Disable our local UI callback sources immediately, NOT global Android input. */
+    /** Request immediate stop of our local UI sources, NOT global Android input.
+     * A local failure must not suppress task cancellation; independent QUIESCE proof remains mandatory. */
     fun stopLocalCallbacks()
     /** Best-effort asynchronous cancellation for this exact creation, if OEM supports it.
      * Must preserve the original settlement callback; cancellation acceptance is NOT settlement. */
@@ -29,18 +30,25 @@ class ReceiptBridge(private val core:UnifiedCore,private val port:NativePort,pri
         cancelRequested=e
         try{port.requestAttachCancellation(e)}catch(_:Exception){ /* original effect remains outstanding */ }
     }
+    private fun stopSourcesAndCancel(){
+        // A partial local-stop failure is not proof of quiescence and cannot erase a
+        // return obligation or prevent cancellation of the original outstanding attach.
+        try { port.stopLocalCallbacks() }
+        catch (ex:Exception) { android.util.Log.w("WB2ReceiptBridge", "Local callback stop failed: " + ex.javaClass.simpleName) }
+        finally { cancelPendingAttach() }
+    }
     fun pump():Boolean{
         checkOwner();if(dispatched!=null)return false
         val e=core.next()?:return false;dispatched=e
-        try{port.dispatch(e,core.pose(e)){s->receive(e,s)}}catch(ex:Exception){if(dispatched==e){core.timeout(e);port.stopLocalCallbacks();cancelPendingAttach()}}
+        try{port.dispatch(e,core.pose(e)){s->receive(e,s)}}catch(ex:Exception){if(dispatched==e){core.timeout(e);stopSourcesAndCancel()}}
         return true
     }
-    fun stop(){checkOwner();core.stop();port.stopLocalCallbacks();cancelPendingAttach()}
-    fun timeout(e:Effect):Boolean{checkOwner();if(dispatched!=e)return false;val r=core.timeout(e);if(r){port.stopLocalCallbacks();cancelPendingAttach()};return r}
+    fun stop(){checkOwner();core.stop();stopSourcesAndCancel()}
+    fun timeout(e:Effect):Boolean{checkOwner();if(dispatched!=e)return false;val r=core.timeout(e);if(r)stopSourcesAndCancel();return r}
     private fun receive(e:Effect,s:NativeSnapshot){
         checkOwner();if(dispatched!=e)return
         // Different host instance/build => no trustworthy settlement receipt. Keep ownership.
-        if(s.firmware!=firmware||s.hostVersion!=hostVersion||s.hostInstance!=hostInstance){core.timeout(e);port.stopLocalCallbacks();cancelPendingAttach();return}
+        if(s.firmware!=firmware||s.hostVersion!=hostVersion||s.hostInstance!=hostInstance){core.timeout(e);stopSourcesAndCancel();return}
         val obs=s.resource
         val verified=when(e.op){
             Op.ACQUIRE,Op.RELEASE->s.submissionVerified
@@ -51,16 +59,14 @@ class ReceiptBridge(private val core:UnifiedCore,private val port:NativePort,pri
             Op.VERIFY_FOCUS->s.contentReady&&s.inputBlocked==false&&s.scene!=null&&s.scene==e.expected&&s.focused==e.expected.owners.first()
         }
         // Unknown or unsuccessful acquire/release observation must not become success.
-        val effective=if(e.op in setOf(Op.ACQUIRE,Op.RELEASE)&&!verified) Observation.UNKNOWN else obs
+        val effective=if((e.op==Op.ACQUIRE||e.op==Op.RELEASE)&&!verified) Observation.UNKNOWN else obs
         val receipt=Evidence(e,s.settled,effective,verified,s.scene,s.focused,s.inputBlocked==true,s.attach,s.inputBlocked)
         core.receipt(receipt)
         if(core.outstanding()!=e){dispatched=null;cancelRequested=null}
-        if(core.phase in setOf(Phase.DRAINING,Phase.RECOVERY)){
-            port.stopLocalCallbacks()
+        if(core.phase==Phase.DRAINING||core.phase==Phase.RECOVERY){
             // A backend-originated uncertain receipt can enter recovery without an explicit
-            // stop/timeout call. Cancel only the original outstanding attach, at most once;
-            // retain its settlement callback and all existing return obligations.
-            cancelPendingAttach()
+            // stop/timeout call. Preserve settlement even if stopping local sources fails.
+            stopSourcesAndCancel()
         }
     }
 }
