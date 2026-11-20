@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 L · 本地首次完整编译成功，待独立产物与真机准入核验（2026-11-20，本节最新生效）
+
+- 机主转交Copilot完整命令及最终报告。实际系统代理HTTP/HTTPS为127.0.0.1:1082；Copilot报告经该代理访问Google POM、Gradle插件仓库及Maven Central成功，项目未设Gradle代理。一次性执行原构建任务 :assembleDebug :assembleDebugAndroidTest，带 --refresh-dependencies --no-daemon --console=plain --stacktrace 以及 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=1082 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=1082，未改仓库、依赖版本、证书、系统权限。报告耗时约82秒，编译成功、两个APK。此为机主提供Copilot文字证据，未取得原始日志、APK字节、独立签名核验；不能宣称实物已独立验证。源SHA 428b618b35ccd5db67d8e66abe6616bff23feeae，本轮GitHub实查core HEAD同一SHA。
+- 报告主实验APK Workbench2ResidentLab-debug.apk SHA256 94ce52b8ef8c238730bc5c1bc24058b598cd5e7da56fc6ad4b2f9687bc1429a4；AndroidTest APK Workbench2ResidentLab-debug-androidTest.apk SHA256 c31499eb8e4393f7bdf48b2e2b5c277a5b44c3cca548730f2fca86922769523d。证据build.log、SHA256SUMS.txt、meta.txt，确切输出目录未回传；脚本末尾find -printf可能不兼容BSD/macOS，故下一项只读检查用stat -f/SDK工具，不重建APK。Copilot报告未修改源码、未提交、未接手机、未安装。固定保留SDK、Gradle缓存及原代理参数（不默认每次刷新依赖、不持久化代理凭证/配置、不重复检查网络）。
+- 下一步先只读确认现有两个APK实际路径、字节数、SHA256、build.log中BUILD SUCCESSFUL、meta.txt BUILD_EXIT=0及APK_COUNT=2，使用SDK apksigner verify --print-certs（核验两者调试证书匹配，不输出私钥）及aapt/aapt2或等效SDK工具确认主包workbench2.residentlab、测试包及instrumentation target/runner与源码一致、Manifest无新增权限，准确HEAD与clean状态；检查当前实验专用任务的清理、隔离及恢复方案。已有正式生产签名/数据不得动用，debug实验不得覆盖旧版。核验不通过即停，不降门禁。用户明确批准一次隔离真机自有单任务实验后才可接手机安装/运行这两个测试APK；不操作第三方任务、不提权、不修改系统设置或Root、不强制关闭他人应用。测试前确认唯一已授权目标设备及无实验包覆盖冲突，电量温度正常、无个人内容暴露；验证真实task/display身份、独立合成红绿像素、自身测试输入、120 draw及FrameMetrics、两种路径同尺寸同实际刷新率、任务/display/资源释放，保存runner结果及脱敏证据；失败/异常即停，按预审清理方案只处理实验包及其自有任务，确认无残留。不得未经明确授权自动进入真机或双任务修改。保留API35独立CI门禁，Mac成功不证明云端429恢复。
+- 下一轮不重装、不重建、不重复网络试错；通过只读产物准入后请求机主明确授权隔离实验，再定向真机。现阶段不能证明第三方承载、双任务交换、OEM授权、安全归还、五窗、性能或正式签名。OPPO协助非自有实验前置，正式第三方准入仍依证据决定。原Agent/Auto/本地/默认审批，普通GPT-6 Medium；本轮仅权威档案增量更新，无生产代码修改、无新分支/PR/CI，不将工具链完成冒充2.0完成。
+
+---
+
 ## 第十五阶段 K · 本地SDK安装成功、AGP依赖连接仍阻塞（2026-11-20，本节最新生效）
 
 - 机主Mac连接手机热点；Mac Shadowrocket从美国高速03切换日本高速03，按会话建议调整代理模式（具体最终路由配置未独立核实）。机主截图显示浏览器成功下载官方repository2-1.xml及gradle-9.3.0.pom；此前同地址ERR_CONNECTION_CLOSED。Copilot报告初次curl探测两地址HTTP200，随后sdkmanager官方组件安装成功：platforms;android-36.1、build-tools;36.0.0、platform-tools 37.0.3。以上为机主回传截图/文字证据，不是本窗口直接访问Mac或独立核验文件；保留所有已安装组件、源码与缓存，不重新搭建。
