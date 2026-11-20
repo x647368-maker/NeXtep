@@ -93,20 +93,27 @@ class DualTaskReceiptTest {
         }
     }
     @Test fun swapCoalescesFramesAndPublishesOnlyAfterVisualAndFocus() {
-        val s=Session();s.activate();s.firstFrame()
+        val s=Session();s.activate();val frozen=requireNotNull(s.firstFrame().expected)
         owner {
             assertTrue(s.core.frame(0.25));assertTrue(s.core.frame(0.75));assertFalse(s.core.frame(0.5))
-            assertTrue(s.core.frame(1.0));assertFalse(s.bridge.pump());assertEquals(scene,s.core.current())
+            assertFalse(s.bridge.pump());assertEquals(scene,s.core.current())
+            try { (frozen.owners as MutableList<Owner>).clear();fail("Expected owners must be immutable") }
+            catch (_: UnsupportedOperationException) {}
+            try { (frozen.places as MutableList<Box>).clear();fail("Expected places must be immutable") }
+            catch (_: UnsupportedOperationException) {}
         }
         s.send()
-        assertEquals(1.0,s.issue(Op.FRAME).progress!!,0.0)
+        val middle=s.issue(Op.FRAME);assertEquals(0.75,middle.progress!!,0.0);assertSame(frozen,middle.expected)
+        owner { assertTrue(s.core.frame(1.0));assertFalse(s.bridge.pump()) }
+        s.send()
+        val end=s.issue(Op.FRAME);assertEquals(1.0,end.progress!!,0.0);assertSame(frozen,end.expected)
         s.send()
         owner { assertEquals(scene,s.core.current()) }
-        s.issue(Op.VERIFY_VISUAL);s.send(observed=target,ready=true)
+        assertSame(frozen,s.issue(Op.VERIFY_VISUAL).expected);s.send(observed=target,ready=true)
         owner { assertEquals(scene,s.core.current());assertEquals(Phase.VERIFY_FOCUS,s.core.phase) }
-        s.issue(Op.VERIFY_FOCUS);s.send(blocked=false,observed=target,focus=b,ready=true)
+        assertSame(frozen,s.issue(Op.VERIFY_FOCUS).expected);s.send(blocked=false,observed=target,focus=b,ready=true)
         owner {
-            assertEquals(Phase.ACTIVE,s.core.phase);assertEquals(target,s.core.current())
+            assertEquals(Phase.ACTIVE,s.core.phase);assertEquals(target,s.core.current());assertSame(frozen,s.core.current())
             val count=s.port.count
             repeat(20){assertFalse(s.bridge.pump())}
             assertEquals(count,s.port.count);s.core.invariant();s.bridge.stop()

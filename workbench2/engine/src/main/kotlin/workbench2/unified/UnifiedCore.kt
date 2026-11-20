@@ -60,7 +60,6 @@ class UnifiedCore {
     private var stopping=false
     private var quiesced=false
     private var blockedRecovery=false
-    private fun snapshot(s:Scene)=s.copy(owners=java.util.Collections.unmodifiableList(ArrayList(s.owners)),places=java.util.Collections.unmodifiableList(ArrayList(s.places)))
     fun current():Scene? { owner();return scene }
     fun outstanding():Effect? { owner();return pending }
     fun resources():Set<Resource> { owner();return held.toSet() }
@@ -77,7 +76,7 @@ class UnifiedCore {
     private fun buildScene():Scene? {
         val p=plan?:return scene
         val owners=p.requests.map { req -> order.firstOrNull { it.kind==Kind.TASK_LEASE && it.request==req }?.owner?:return null }
-        return Scene(owners,p.places,p.displayEpoch)
+        return Scene(owners,p.places,p.displayEpoch).frozenSnapshot()
     }
     /** Called only while a creation/return effect is outstanding. No guessed ownership. */
     private fun attachProofValid(e:Effect,r:Evidence):Boolean {
@@ -140,7 +139,9 @@ class UnifiedCore {
         if(!valid)drain()
     }
     private fun issue(op:Op,r:Resource?=null,p:Double?=null,s:Scene?=null):Effect =
-        Effect(epoch,++serial,op,r,generation,p,s?.let(::snapshot)).also { pending=it }
+        // All expected scenes originate from buildScene or the frozen Flight target.
+        // Reuse immutable identity across effects; independent receipt checks remain unchanged.
+        Effect(epoch,++serial,op,r,generation,p,s).also { pending=it }
     /** No automatic idle polling; adapters call only on relevant events. */
     fun next():Effect? {
         owner();if(pending!=null || blockedRecovery)return null
@@ -208,7 +209,7 @@ class UnifiedCore {
             Op.FRAME -> if(r.runtimeVerified && r.blocked && r.inputBlockedObserved==true){progress=e.progress!!;serialFrameStarted=true;if(progress==1.0){queuedProgress=null;phase=Phase.VERIFY_VISUAL}}else drain()
             Op.VERIFY_VISUAL -> if(r.runtimeVerified && r.blocked && r.inputBlockedObserved==true && r.observedScene==e.expected)phase=Phase.VERIFY_FOCUS else drain()
             Op.VERIFY_FOCUS -> if(r.runtimeVerified && r.observedScene==e.expected && r.focused==e.expected!!.owners[0] && !r.blocked && r.inputBlockedObserved==false){
-                scene=snapshot(e.expected);flight=null;phase=Phase.ACTIVE
+                scene=e.expected;flight=null;phase=Phase.ACTIVE
                 val q=requested;requested=null;if(q!=null)request(q)
             }else drain()
             else -> error("Unexpected active effect $e")

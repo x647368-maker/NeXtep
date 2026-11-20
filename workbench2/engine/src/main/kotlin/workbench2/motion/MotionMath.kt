@@ -4,7 +4,7 @@ import kotlin.math.min
 
 /** Offline mathematical reference: no Android, Binder, Surface, or OEM dependency. */
 data class Box(val x: Double, val y: Double, val w: Double, val h: Double) {
-    init { require(listOf(x,y,w,h).all { it.isFinite() } && w > 0 && h > 0 && (x+w).isFinite() && (y+h).isFinite()) }
+    init { require(x.isFinite() && y.isFinite() && w.isFinite() && h.isFinite() && w > 0 && h > 0 && (x+w).isFinite() && (y+h).isFinite()) }
     val cx get() = x+w/2
     val cy get() = y+h/2
     fun contains(px: Double, py: Double, tolerance: Double = 0.0) =
@@ -63,10 +63,15 @@ data class Scene(val owners: List<Owner>, val places: List<Box>, val displayEpoc
         return copy(owners=next.toList())
     }
 }
+// Freeze both lists at the ownership boundary, not on every frame. The element types are immutable.
+internal fun Scene.frozenSnapshot(): Scene = copy(
+    owners = java.util.Collections.unmodifiableList(ArrayList(owners)),
+    places = java.util.Collections.unmodifiableList(ArrayList(places)))
+
 /** A frame is a pure plan, not proof of transaction submission, latch or physical presentation. */
 class Flight(val generation: Long,val from: Scene,val side: Int,val mainRadius: Double,val sideRadius: Double) {
     init { require(generation>0 && mainRadius>=0 && sideRadius>=0 && mainRadius.isFinite() && sideRadius.isFinite()) }
-    val to=from.swap(side)
+    val to=from.swap(side).frozenSnapshot()
     val changedOwners=java.util.Collections.unmodifiableSet(setOf(from.owners[0],from.owners[side]))
     private val start=java.util.Collections.unmodifiableMap(from.owners.mapIndexed { i,o ->
         o to Pose.fit(from.places[i],o.canvas,if(i==0)mainRadius else sideRadius) }.toMap())

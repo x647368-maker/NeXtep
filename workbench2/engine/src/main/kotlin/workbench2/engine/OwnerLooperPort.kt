@@ -31,12 +31,14 @@ class OwnerLooperPort(
     override fun dispatch(effect: Effect, poses: Map<Owner, Pose>?, complete: (NativeSnapshot) -> Unit) {
         checkOwner()
         delegate.dispatch(effect, poses) { snapshot ->
-            val stable = snapshot.copy(scene = snapshot.scene?.let { scene ->
-                scene.copy(
+            // Receipts without a scene contain only immutable values. Avoid a second
+            // snapshot allocation on the usual frame acknowledgement path.
+            val stable = snapshot.scene?.let { scene ->
+                snapshot.copy(scene = scene.copy(
                     owners = Collections.unmodifiableList(ArrayList(scene.owners)),
                     places = Collections.unmodifiableList(ArrayList(scene.places))
-                )
-            })
+                ))
+            } ?: snapshot
             if (Looper.myLooper() === owner) complete(stable)
             else handler.post { complete(stable) }
             // A rejected post cannot justify native release or production admission.
