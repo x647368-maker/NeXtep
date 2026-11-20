@@ -122,12 +122,16 @@ jobs:
         run: |
           dir="$RUNNER_TEMP/wb2-system-window"
           mkdir -p "$dir"
-          timeout 20 adb logcat -d -v raw -s WB2Batch:I WB2BatchTarget:I > "$dir/batch-log.txt" 2>&1 || true
-          for phase in before swapped postdeath; do
+          timeout 20 adb logcat -d -v raw -s WB2Batch:I WB2BatchTarget:I WB2BatchTouch:I > "$dir/batch-log.txt" 2>&1 || true
+          for phase in setup exchange before swapped postdeath; do
             if [ ! -s "$dir/$phase.png" ]; then
               timeout 15 adb pull "/data/local/tmp/wb2-batch-$phase.png" "$dir/$phase.png" >> "$dir/pull-status.txt" 2>&1 || true
             fi
           done
+          for phase in setup exchange; do
+            timeout 15 adb pull "/data/local/tmp/wb2-batch-$phase-input.txt" "$dir/$phase-input.txt" >> "$dir/pull-status.txt" 2>&1 || true
+          done
+          timeout 20 adb shell dumpsys input > "$dir/end-input.txt" 2>&1 || true
           timeout 20 adb shell dumpsys activity activities > "$dir/end-activities.txt" 2>&1 || true
           timeout 20 adb emu kill > "$dir/cleanup.txt" 2>&1 || true
       - uses: actions/upload-artifact@v4

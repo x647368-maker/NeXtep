@@ -69,7 +69,8 @@ with (d/"instrumentation.txt").open("w") as out:
             x,y=current["x"],current["y"]
             l,t,r,b=map(int,current["bounds"].split(","))
             assert l<=x<r and t<=y<b
-            adb("shell","input","tap",str(x),str(y))
+            (d/("postdeath-input-"+slot+".txt")).write_text(adb("shell","dumpsys","input"))
+            adb("shell","input","touchscreen","-d","0","tap",str(x),str(y))
             counts[slot]+=1
             end=time.monotonic()+8
             while time.monotonic()<end and latest()[slot]["clicks"]!=counts[slot]: time.sleep(.2)

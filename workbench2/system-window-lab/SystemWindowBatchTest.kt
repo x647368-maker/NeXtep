@@ -11,6 +11,8 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import android.view.InputDevice
+import android.view.MotionEvent
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
 import org.junit.Test
@@ -89,6 +91,9 @@ class SystemWindowBatchTest {
         val apply=organizerClass.getMethod("applyTransaction",wctClass)
         val permissions=arrayOf("android.permission.MANAGE_ACTIVITY_TASKS","android.permission.REAL_GET_TASKS")
         val ui=ins.uiAutomation
+        // AOSP TestApi: waits for WindowManager animation and native input-window publication.
+        // A normal unavailable API remains a hard stop, never a hidden-API exemption.
+        val syncInput=android.app.UiAutomation::class.java.getMethod("syncInputTransactions")
         ui.adoptShellPermissionIdentity(*permissions)
         try {
             check(permissions.all { ctx.checkSelfPermission(it)==PackageManager.PERMISSION_GRANTED }) { "NO_GO test permissions" }
@@ -141,26 +146,49 @@ class SystemWindowBatchTest {
                     }
                 }
             }
+            fun inputCheckpoint(phase:String) {
+                check(phase=="setup" || phase=="exchange")
+                syncInput.invoke(ui)
+                assertIdentity()
+                shell("dumpsys input > /data/local/tmp/wb2-batch-"+phase+"-input.txt")
+                shell("screencap -p /data/local/tmp/wb2-batch-"+phase+".png")
+                log("INPUT_WINDOWS_SYNCED "+phase)
+            }
             fun tap(slot:String) {
+                syncInput.invoke(ui)
                 val s=states(); val j=s.getValue(slot)
                 val other=if(slot=="A")"B" else "A"
                 check(active(j))
                 val x=j.getInt("x"); val y=j.getInt("y")
                 val r=j.getString("bounds").split(",").map(String::toInt)
                 check(x in r[0] until r[2] && y in r[1] until r[3])
-                shell("input tap "+x+" "+y)
+                log("PHYSICAL_TEST_TAP slot="+slot+" task="+j.getInt("task")+" display=0 x="+x+" y="+y)
+                // Official synchronous instrumentation injection, not direct View.performClick.
+                // The touchscreen pointer defaults to display 0; both real tasks were verified there.
+                val down=SystemClock.uptimeMillis()
+                for(action in listOf(MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP)) {
+                    val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x.toFloat(),y.toFloat(),0)
+                    try {
+                        e.source=InputDevice.SOURCE_TOUCHSCREEN
+                        check(ui.injectInputEvent(e,true)) { "NO_GO system rejected physical test input" }
+                    } finally { e.recycle() }
+                }
                 await("real input "+slot) {
                     val n=states()
-                    n.getValue(slot).getInt("clicks")==j.getInt("clicks")+1 &&
-                        n.getValue(other).getInt("clicks")==s.getValue(other).getInt("clicks")
+                    check(n.getValue(other).getInt("clicks")==s.getValue(other).getInt("clicks")) {
+                        "NO_GO cross-window input intended="+slot+" actual="+other
+                    }
+                    n.getValue(slot).getInt("clicks")==j.getInt("clicks")+1
                 }
             }
             batch(a,b); geometry(a,b)
+            inputCheckpoint("setup"); geometry(a,b)
             tap("A"); tap("B")
             val before=states()
             val records=ids.mapValues { record(it.value).first }
             shell("screencap -p /data/local/tmp/wb2-batch-before.png")
             batch(b,a); geometry(b,a)
+            inputCheckpoint("exchange"); geometry(b,a)
             val swapped=states()
             for(slot in ids.keys) {
                 val o=before.getValue(slot); val n=swapped.getValue(slot)

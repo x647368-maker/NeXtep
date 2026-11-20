@@ -8,6 +8,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Button
 import android.util.Log
+import android.view.MotionEvent
+import android.view.ViewTreeObserver
 import android.os.Process
 import org.json.JSONObject
 import java.util.UUID
@@ -20,13 +22,16 @@ class BatchTargetActivity : Activity() {
     private var clicks=0
     private lateinit var button: Button
     private lateinit var label: TextView
+    private lateinit var panel: LinearLayout
+    private var destroyed=false
+    private val layoutListener=ViewTreeObserver.OnGlobalLayoutListener { report("LAYOUT") }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         slot=requireNotNull(intent.getStringExtra("slot"))
         require(slot=="A" || slot=="B")
         marker=savedInstanceState?.getString("marker") ?: UUID.randomUUID().toString()
         clicks=savedInstanceState?.getInt("clicks") ?: 0
-        val panel=LinearLayout(this).apply {
+        panel=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
             gravity=Gravity.CENTER
             setBackgroundColor(if(slot=="A") Color.rgb(24,95,160) else Color.rgb(148,73,31))
@@ -40,7 +45,7 @@ class BatchTargetActivity : Activity() {
         panel.addView(button)
         setContentView(panel)
         updateText()
-        panel.viewTreeObserver.addOnGlobalLayoutListener { report("LAYOUT") }
+        panel.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
     }
     private fun updateText() { label.text="Fixture "+slot+" count="+clicks+" "+marker.take(8) }
     override fun onSaveInstanceState(outState: Bundle) {
@@ -52,9 +57,23 @@ class BatchTargetActivity : Activity() {
         super.onWindowFocusChanged(focus)
         if(::button.isInitialized) button.post { report("FOCUS") }
     }
-    override fun onDestroy() { if(::button.isInitialized) report("DESTROY"); super.onDestroy() }
+    override fun onDestroy() {
+        if(::button.isInitialized) report("DESTROY")
+        destroyed=true
+        if(::panel.isInitialized && panel.viewTreeObserver.isAlive) {
+            panel.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
+        }
+        super.onDestroy()
+    }
+    override fun dispatchTouchEvent(ev:MotionEvent):Boolean {
+        if(ev.actionMasked==MotionEvent.ACTION_DOWN || ev.actionMasked==MotionEvent.ACTION_UP) {
+            Log.i("WB2BatchTouch", "slot="+slot+" task="+taskId+" instance="+instance+
+                " action="+ev.actionMasked+" raw="+ev.rawX+","+ev.rawY+" local="+ev.x+","+ev.y)
+        }
+        return super.dispatchTouchEvent(ev)
+    }
     private fun report(event:String) {
-        if(!::button.isInitialized || button.width<=0 || button.height<=0) return
+        if(destroyed || !::button.isInitialized || button.width<=0 || button.height<=0) return
         val xy=IntArray(2); button.getLocationOnScreen(xy)
         val b=windowManager.currentWindowMetrics.bounds
         Log.i("WB2BatchTarget",JSONObject()
