@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十六阶段 C · 原生窗口实验环境纠错与一次有依据的续验（2026-11-20，最新生效）
+
+- 继承第十六阶段B检查点27372b569e3a1128f536e6edbe08f9d48d2a4ee8。实际核验CI44723291371/job136244239790 completed/failure，绑定b392b68eeac6c4668ab95a6dcc8bae1110b12e31；读取54000字符原始日志，2026-11-20T10:57:01.3460339Z实际输出NO_GO_NATIVE_FREEFORM_FEATURE_ABSENT; no task manipulation performed，exit 1。SDK与模拟器启动成功，系统未声明freeform feature，真实单任务测试整步skipped，清理及证据上传成功；无任何任务尺寸、触控、恢复、动画性能结果，不能误判ColorOS限制或架构失败。artifact14622667627（19125 bytes，SHA256 73429900dd25657700628c4d51d49438cef6b6218e7bbd40ffddb881940b96ac）远端元数据核实，未独立下载ZIP。旧普通API35镜像停止重复实验。
+- 独立寻找新的合适环境而非开启隐藏功能：实际查阅Google Chromium SDK packager 2026-10-22固定提交cf653967c7f5cedaf3cce977a40041da3e0c0512（https://chromium.googlesource.com/chromium/src/third_party/android_sdk/+/cf653967c7f5cedaf3cce977a40041da3e0c0512），证实API37.1 Google APIs Desktop Preview x86_64镜像的Beta渠道打包定义（x86_64.yaml blob893288d4e3b288677c154d8e1b53908021ed0514）；另有第三方SDK使用说明 https://elements.docs.remobjects.com/Tutorials/FirstApp/Fire/Android/ 记录37.0 Desktop profile desktop_api37，不能保证37.1环境同样存在；Google镜像目录XML直接访问失败。AOSP Android17 r1 TaskFragment.java dumpInner证实非空请求bounds紧随任务片段头输出，但Task.java精确tag未能打开，仍保留原独立观测门禁，不声称实际输出格式通过。此次新环境有具体来源，与重复旧镜像不同；仍非ColorOS系统或目标机。
+- 唯一core分支实际更新8248e5e7a4c49b92bcc75e67dec199949826c9a9（父b392b68eeac6c4668ab95a6dcc8bae1110b12e31），回读源码逐字一致、compare ahead1/behind0、仅修改既有.github/workflows/workbench2-system-window-lab.yml blobd2e2d89705a4049b5015968b85326c3a79b8543e（+21/-8）。限定一次替换为发行的API37.1 Desktop Beta镜像；先核查实际sdk目录、desktop_api37设备profile、SDK37、原生freeform feature及调试命令，缺任一退出，不覆盖系统设置、不强制开启freeform、不替换其他镜像、不放宽判定。4GiB RAM、最长30分钟job，保留原单任务测试文件blob310983a27040b316706be4aaa62885f66c5ab0bf、所有身份/几何/触控/恢复、失败清理及证据门禁。机主只授权隔离工程验证；未操作手机、Mac、改生产权限、Root设置、scope、签名、engine、旧APP，未创建分支/PR/新工作流，未调用Work。45+5已验收自主核心保持不变。
+- 新真实CI44723999089/job136246681689 https://github.com/x647368-maker/NeXtep/actions/runs/44723999089 精确绑定8248e5e7，已in_progress，checkout/Java成功，SDK准备中；Desktop实际镜像、硬件profile与原生功能尚未确认，单任务运行未开始。新增成果是明确失败定位、针对性的环境纠错与实际CI执行，不是任务承载突破。
+- 接续：先核验这次CI最终结果及原始日志。若确有真实任务运行，独立核对身份、窗口变化、点击和原几何恢复证据，区分生命周期重建与同一实例连续；未通过时只修可验证的单个明确工程缺陷，若无镜像/profile或系统不具备能力，则停止这个环境支线，不换更多镜像碰碰运气。原生P0仍须取得双作用域可用的真实会话/安全退出契约；可用Root/Vector必要集成，但不能用调试身份、宿主借权或测试通过替代发布权限。继续普通聊天最高可用推理，禁止重复已排除研究或把合成层/截图冒充真实任务。每轮交代实际成果、余项、下一步、检查点和接续指令。无产品APK与性能验收，无后台聊天工作承诺。
+
+---
+
 ## 第十六阶段 B · 帧调度终验与系统真实窗口几何验证（2026-11-20，最新生效）
 
 - 机主明确永久收尾要求：每轮交代实际做了什么、已完成/未完成、剩余关键问题、明确下一步计划、可直接复制的接续指令及模型/模式配置；严格区分源码、编译、模拟器、目标真机与正式验收，不用泛化进度百分比。继续普通聊天最高可用推理、Work关闭，不要求Mac/Copilot或手机操作。双外部作用域pscanvas+launcher、必要Root/Vector、低开销自主核心、真实任务、历史冻结合同与安全边界不变。
