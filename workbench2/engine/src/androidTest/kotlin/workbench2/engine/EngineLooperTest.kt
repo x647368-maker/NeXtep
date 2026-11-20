@@ -181,6 +181,66 @@ class EngineLooperTest {
         }
     }
 
+    @Test fun uncertainAttachReceiptRequestsCancellationOnceAndRetainsSettlement() = owner {
+        val proof = AttachProof(request.id, "fixture-container", task, request.component, true, true)
+        val uncertain = listOf(
+            receipt(Observation.PRESENT, settled = false, attach = proof),
+            receipt(Observation.PRESENT, attach = proof, instance = "different"),
+            receipt(Observation.UNKNOWN, attach = proof)
+        )
+        for (bad in uncertain) {
+            val core = UnifiedCore()
+            val raw = Port()
+            val bridge = ReceiptBridge(core, OwnerLooperPort(raw, Looper.getMainLooper()),
+                "fixture-fw", "fixture-host", "fixture-instance")
+            assertTrue(core.beginPending(fixture, plan))
+            for (kind in listOf(Kind.HOST, Kind.INPUT_GATE)) {
+                assertTrue(bridge.pump())
+                assertEquals(kind, raw.sent!!.resource!!.kind)
+                raw.completion!!(receipt(Observation.PRESENT))
+            }
+            assertTrue(bridge.pump())
+            val pending = raw.sent!!
+            assertEquals(Kind.TASK_LEASE, pending.resource!!.kind)
+            val complete = raw.completion!!
+            // No explicit stop or timeout: the invalid/uncertain receipt itself
+            // must cancel the original request, without treating cancellation as settlement.
+            complete(bad)
+            assertEquals(Phase.RECOVERY, core.phase)
+            assertEquals(pending, core.outstanding())
+            assertEquals(1, raw.cancellations)
+            assertEquals(2, core.resources().size)
+            complete(bad)
+            bridge.stop()
+            assertEquals(1, raw.cancellations)
+            assertFalse(bridge.pump())
+            assertFalse(core.retryCleanup())
+            core.invariant()
+            // A late authenticated terminal attach can still establish the return obligation.
+            complete(receipt(Observation.PRESENT, attach = proof))
+            assertEquals(Phase.DRAINING, core.phase)
+            assertEquals(3, core.resources().size)
+            assertTrue(bridge.pump())
+            assertEquals(Op.QUIESCE, raw.sent!!.op)
+            raw.completion!!(receipt(Observation.UNKNOWN))
+            assertTrue(bridge.pump())
+            assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)
+            raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null,
+                returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true))))
+            assertTrue(bridge.pump())
+            assertEquals(Kind.INPUT_GATE, raw.sent!!.resource!!.kind)
+            raw.completion!!(receipt(Observation.ABSENT, inputBlocked = false))
+            assertTrue(bridge.pump())
+            assertEquals(Kind.HOST, raw.sent!!.resource!!.kind)
+            raw.completion!!(receipt(Observation.ABSENT))
+            assertFalse(bridge.pump())
+            assertEquals(Phase.CLOSED, core.phase)
+            assertTrue(core.resources().isEmpty())
+            assertEquals(1, raw.cancellations)
+            core.invariant()
+        }
+    }
+
     // Reducer admission on Android's main Looper. The owners/evidence below are
     // synthetic; actual Binder identity and presentation observations belong to the authorized backend.
     private fun pendingExistingAttach(): Pair<UnifiedCore, Effect> {

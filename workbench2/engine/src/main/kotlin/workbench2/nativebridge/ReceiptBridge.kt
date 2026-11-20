@@ -40,7 +40,7 @@ class ReceiptBridge(private val core:UnifiedCore,private val port:NativePort,pri
     private fun receive(e:Effect,s:NativeSnapshot){
         checkOwner();if(dispatched!=e)return
         // Different host instance/build => no trustworthy settlement receipt. Keep ownership.
-        if(s.firmware!=firmware||s.hostVersion!=hostVersion||s.hostInstance!=hostInstance){core.timeout(e);port.stopLocalCallbacks();return}
+        if(s.firmware!=firmware||s.hostVersion!=hostVersion||s.hostInstance!=hostInstance){core.timeout(e);port.stopLocalCallbacks();cancelPendingAttach();return}
         val obs=s.resource
         val verified=when(e.op){
             Op.ACQUIRE,Op.RELEASE->s.submissionVerified
@@ -55,6 +55,12 @@ class ReceiptBridge(private val core:UnifiedCore,private val port:NativePort,pri
         val receipt=Evidence(e,s.settled,effective,verified,s.scene,s.focused,s.inputBlocked==true,s.attach,s.inputBlocked)
         core.receipt(receipt)
         if(core.outstanding()!=e){dispatched=null;cancelRequested=null}
-        if(core.phase in setOf(Phase.DRAINING,Phase.RECOVERY))port.stopLocalCallbacks()
+        if(core.phase in setOf(Phase.DRAINING,Phase.RECOVERY)){
+            port.stopLocalCallbacks()
+            // A backend-originated uncertain receipt can enter recovery without an explicit
+            // stop/timeout call. Cancel only the original outstanding attach, at most once;
+            // retain its settlement callback and all existing return obligations.
+            cancelPendingAttach()
+        }
     }
 }
