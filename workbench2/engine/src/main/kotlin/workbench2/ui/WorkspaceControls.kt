@@ -35,6 +35,8 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
     private var handleDown: HandleDown?=null
     private val origin=IntArray(2)
     private var listener: ((Request)->Unit)?=null
+    private val menu=WorkspaceGlassMenu(context)
+    internal val menuContent: View? get()=menu.contentView
 
     private fun owner()=check(Looper.myLooper()===Looper.getMainLooper())
     private fun dp(n: Int)=n*resources.displayMetrics.density
@@ -82,7 +84,18 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
         if(revision<=latest)return false
         invalidateControls();latest=revision;frame=null;requestLayout();return true
     }
+    /** Caller must supply live panel-closed and owner input evidence. */
+    fun showMenu(request: Request,entries: List<WorkspaceGlassMenu.Entry>,selectedLabels: Set<String>,
+                 panelClosed: ()->Boolean,onSelect: (WorkspaceGlassMenu.Selection)->Unit): Boolean {
+        owner();val f=ready()?:return false
+        if(request.action!=Action.MAIN_ACTION || request.revision!=f.revision ||
+            request.displayEpoch!=f.layout.displayEpoch || box(f,2)==null || !main.isAttachedToWindow)return false
+        return menu.show(main,f.layout,f.revision,entries,selectedLabels,
+            {ready()===f && main.visibility==VISIBLE && panelClosed()},onSelect)
+    }
+    fun dismissMenu(){owner();menu.dismiss()}
     private fun invalidateControls() {
+        menu.dismiss()
         applied=-1L;measuredRevision=-1L;gesture=-1L;handleDown=null
         for(i in 0 until childCount) {
             getChildAt(i).apply {
