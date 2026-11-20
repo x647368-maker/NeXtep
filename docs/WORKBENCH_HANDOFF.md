@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十六阶段 D · Desktop证据实物复验与唯一配置名称纠错（2026-11-20，最新生效）
+
+- 继承C检查点4aa2622906ae011865c79c07adb85f8ec3a7fbc3。实查CI44723999089/job136246681689 completed/failure，准确绑定8248e5e7a4c49b92bcc75e67dec199949826c9a9。实际读取54119字符原始日志：11:00:57Z SDK目录列出system-images;android-37.1;android-desktop;x86_64 revision1，11:01:46.7676142Z实际输出NO_GO_DESKTOP_PROFILE_NOT_AVAILABLE，exit1；SDK准备完成，未创建/启动AVD，真实单任务测试skipped。清理及证据上传步骤success不代表真实模拟器关闭（根本未启动）；无任务调整、触控、恢复、性能或OEM授权结论。
+- 实际下载artifact14623421815原始ZIP，10803 bytes，计算SHA256 c330f65b38f30021ea8e6923554490e03e5328ac1aac11b71db92facf45c9c10与远端一致，CRC全通过，9成员；checkout-sha.txt精确匹配8248e5e7，result.txt为NO_GO_DESKTOP_PROFILE_NOT_AVAILABLE，cleanup.txt为error: no emulator detected。实际sdk-catalog.txt证实目标x86_64 Desktop镜像存在；device-profiles.txt明确列出Google desktop_large/id8、desktop_medium/id9、desktop_small/id48，三者均Tag android-desktop。无desktop_api37。此前依据第三方旧名称选择profile是我方配置错误，不是系统不支持原生自由窗的新证据。不是再换镜像或扩大权限；C禁止盲目续试继续有效，本次仅依据已下载原始证据修复确定的名称错误，选中等尺寸desktop_medium避免无必要的大桌面分辨率。
+- 实际更新唯一workbench2/core为29f7f0c5755b4f06f299e2d17ed0e1c02c7e5a14，父8248e5e7a4c49b92bcc75e67dec199949826c9a9；compare ahead1/behind0，唯一文件.github/workflows/workbench2-system-window-lab.yml blob8d3d36fe4f4e46cce4f51716460624137357844b，仅2行替换（查找profile及avdmanager --device），源码回读逐字一致，真实远程HEAD匹配。仍使用同一个API37.1 Desktop镜像、同一单任务实验及全部能力/身份/几何/输入/恢复门禁；不改变feature、系统安全设置、生产权限、Root、scope、签名、旧APP、engine，不增工作流、分支、PR或新诊断APK。45+5旧验收保留。
+- 新真实CI44724612029/job136248747423 https://github.com/x647368-maker/NeXtep/actions/runs/44724612029 精确绑定29f7f0c5，最新in_progress，checkout及Java已成功，Android SDK准备中。尚无模拟器启动、freeform支持、编译/运行、真机或原生承载成功证据。本轮成果是完整原始证据包复验、确切根因定位与最小配置纠错，不称产品功能进展、不报告百分比。
+- 下一轮先核验44724612029最终状态、下载原始产物并核对日志。此次为同镜像的一次明确配置纠错，不再无限换配置/镜像；若仍不具备必要环境能力，结算Desktop支线；若确实进入实际单任务实验，按B全部门禁核查结果，不以几何变化冒充安全原生借用归还或ColorOS双作用域接入。真正OEM原生任务承载后端仍为阻塞，只有出现明确新证据才推进实际系统集成，不绕过系统安全、不恢复V89、不依赖官方回复、不询问同行。允许必要Root/Vector；普通聊天最高推理为主力，Work关闭，机主不用Mac/手机操作。不承诺后台聊天研发。每轮汇报实际成果、剩余事项、计划、完整指令及模型配置。
+
+---
+
 ## 第十六阶段 C · 原生窗口实验环境纠错与一次有依据的续验（2026-11-20，最新生效）
 
 - 继承第十六阶段B检查点27372b569e3a1128f536e6edbe08f9d48d2a4ee8。实际核验CI44723291371/job136244239790 completed/failure，绑定b392b68eeac6c4668ab95a6dcc8bae1110b12e31；读取54000字符原始日志，2026-11-20T10:57:01.3460339Z实际输出NO_GO_NATIVE_FREEFORM_FEATURE_ABSENT; no task manipulation performed，exit 1。SDK与模拟器启动成功，系统未声明freeform feature，真实单任务测试整步skipped，清理及证据上传成功；无任何任务尺寸、触控、恢复、动画性能结果，不能误判ColorOS限制或架构失败。artifact14622667627（19125 bytes，SHA256 73429900dd25657700628c4d51d49438cef6b6218e7bbd40ffddb881940b96ac）远端元数据核实，未独立下载ZIP。旧普通API35镜像停止重复实验。
