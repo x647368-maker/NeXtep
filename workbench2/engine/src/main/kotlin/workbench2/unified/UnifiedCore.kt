@@ -70,6 +70,11 @@ class UnifiedCore {
         owner();if(phase!=Phase.CLOSED || !c.usable())return false
         check(held.isEmpty() && pending==null)
         val p=initial.copy(requests=java.util.Collections.unmodifiableList(ArrayList(initial.requests)),places=java.util.Collections.unmodifiableList(ArrayList(initial.places)))
+        // Reject known duplicate task identities before acquiring any system resource.
+        // A new request's resolved identity is still checked against live leases.
+        val existing=p.requests.mapNotNull { it.existing }
+        if(existing.map { it.task }.distinct().size!=existing.size ||
+            existing.map { it.token }.distinct().size!=existing.size)return false
         epoch++;generation++;scene=null;plan=p
         order=listOf(Resource(Kind.HOST),Resource(Kind.INPUT_GATE))+p.requests.flatMap { listOf(Resource(Kind.TASK_LEASE,request=it),Resource(Kind.BORROWED_PRESENTATION,request=it)) }+listOf(Resource(Kind.OBSERVER))
         stopping=false;quiesced=false;blockedRecovery=false;phase=Phase.STARTING;return true

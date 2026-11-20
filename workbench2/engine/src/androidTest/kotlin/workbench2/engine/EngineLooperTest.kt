@@ -65,6 +65,38 @@ class EngineLooperTest {
         core.invariant()
     }
 
+    @Test fun duplicateExistingIdentityIsRejectedBeforeNativeDispatch() = owner {
+        val core = UnifiedCore()
+        val raw = Port()
+        val bridge = ReceiptBridge(core, OwnerLooperPort(raw, Looper.getMainLooper()),
+            "fixture-fw", "fixture-host", "fixture-instance")
+        val secondPlace = Box(600.0, 0.0, 180.0, 400.0)
+        for (alias in listOf(task, task.copy(token = task.token + 1),
+            task.copy(task = task.task + 1))) {
+            val invalid = StartPlan(listOf(request, request.copy(id = 2, existing = alias)),
+                plan.places + secondPlace, plan.displayEpoch)
+            assertFalse(core.beginPending(fixture, invalid))
+            assertEquals(Phase.CLOSED, core.phase)
+            assertEquals(0L, core.epoch)
+            assertTrue(core.resources().isEmpty())
+            assertNull(core.outstanding())
+            assertFalse(bridge.pump())
+            assertNull(raw.sent)
+            core.invariant()
+        }
+        val distinct = task.copy(task = task.task + 1, token = task.token + 1)
+        val valid = StartPlan(listOf(request, request.copy(id = 2, existing = distinct)),
+            plan.places + secondPlace, plan.displayEpoch)
+        assertTrue(core.beginPending(fixture, valid))
+        assertEquals(Phase.STARTING, core.phase)
+        assertEquals(1L, core.epoch)
+        core.stop()
+        assertNull(core.next())
+        assertEquals(Phase.CLOSED, core.phase)
+        assertNull(raw.sent)
+        core.invariant()
+    }
+
     @Test fun metadataOnlyAdmissionAndLegacyScenePathCannotBorrowTasks() = owner {
         val core = UnifiedCore()
         val raw = Port()
