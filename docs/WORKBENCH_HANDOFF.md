@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十四阶段 Q · 自有原生适配器实验准入审查（2026-11-20）
+
+- 继承P 9acec7865c95e583188b5cb635ebb30ebbac790c；实际核实HEAD c33e18b630631be0b4c9a93995e431047c11b708、P档案blob a6d41279507771427336b9ec11017734a29749c2，重读现有ReceiptBridge.kt、UnifiedCore.kt、AndroidFrameDriver.kt确认必须填入独立真实观测。官方CTS 2/2不重跑，43+5自主工程历史证据不变；本轮无新运行、生产源码、分支、PR、APK或权限变化。
+- 新具体编译与实验候选：AOSP官方 https://android.googlesource.com/platform/prebuilts/sdk/+/refs/heads/build-tools-release/35/system/ 实读tree ee16325d2379cc969bcc550fc970935f0d83f5d5 中 android.car-system-stubs.jar，确认系统编译库存在但尚未下载或javap确认目标方法，需固定版本/哈希且仅compileOnly，不打包stub实现。CTS Android.bp固定3921935dc32d6f381e4965b9cb21d301ec39dbb3 blob4db0f0a3fdfd19950c8b3d497825807b86615456 显示platform_apis:true，不能假定独立Gradle普通SDK等价。CTS另一个固定版本3b8c954dcb411275de7ce7168fb0a74210c260c2 的CarTaskViewControllerTest 99–145行有明确限域Instrumentation UiAutomation测试权限委托与释放（INTERACT_ACROSS_USERS、MANAGE_CAR_SYSTEM_UI），官方 https://developer.android.com/reference/android/app/UiAutomation#adoptShellPermissionIdentity(java.lang.String...) 定义为测试期间指定shell已有权限、并非给普通生产APK永久授予特权；此前P使用的源码版本d831906aac6ac57f9727dd2a621d65518f81fa27 则未见该setUp委托，R10精确源码仍未核实，因此不声称P成功的APK必然采用同一身份路径。当前没有自有测试客户端实际授权证据。仅在已批准的可丢弃AAOS模拟器内由标准官方instrumentation测试环境提供确切需用且系统允许的测试权限，禁止向目标ColorOS、生产app或常驻进程移植、修改权限配置、借用系统进程身份、隐藏API规避、root或扩大注入。若普通可用官方编译桩和正式测试权限不足即止。
+- 提案仅待机主新增实验授权：复用已成功AAOS API35-ext15镜像与同一隔离CI通路（不再获取/运行CTS APK）；独立测试模块，不改engine/生产app，使用现有AAR、一个新建可丢弃测试Activity（最好独立测试进程）、测试客户端和真实CarTaskView系统服务。先编译前置检查官方系统stub与运行版本、系统proxy、确切运行授权；失败不继续。随后一次单任务原生启动/真实TaskInfo与真实token关联、由独立系统WM/输入焦点观察确认边界、实际像素采样与受控测试触摸（测试框架输入仅在模拟器，不加入产品）、正常release+任务实际消失及无挂起创建。先限制为新任务请求existing=null；不能取得证据时保持UNKNOWN而不是构造成功。测试设备无真实用户数据且可销毁，失败清理测试任务并结束镜像。
+- NativePort接通目标需按现有契约实际验证HOST/INPUT_GATE/TASK_LEASE/BORROWED_PRESENTATION/OBSERVER，确认真实门控触摸阻断及重新开放，task/user/token/bounds/真实呈现/焦点均来自实测；只有在实际条件充分时才让AndroidFrameDriver走CLOSED→STARTING→VERIFY_VISUAL→VERIFY_FOCUS→ACTIVE→DRAINING→CLOSED。现有beginPending的Capability.usable必须保持，不把仅有符号/CTS结果转换为授权或release=true；若宿主无法提供独立输入门/呈现/终结证明，最多记录真实部分证据，不修改核心绕开门禁，不造空壳NativePort或伪回执。正常销毁新建可丢弃任务不等于已有任务归还，TaskReturnProof保持。此提案不验证双任务、异常进程死亡、ColorOS接入、性能或正式发布；无实际后端不得声称能完全接通。物理宿主、原生槽及租约标识分开，未验证多槽前不改去重。预算为一次限域CI，沿用24分钟上限，不再次下载20GB CTS或构建全ROM；遇stub/权限/门控/身份/环境不足即止并记录实证，不循环研究。无需用户执行命令。若机主批准则GPT-6 High普通聊天继续，默认速度，无Work；仅在明确需要且有可操作环境时再评估Work。
+ 
+---
+
 ## 第十四阶段 P · 独立AOSP原生单任务实验最终通过（2026-11-20）
 
 - 继承O 0c95de0edeed603cc2a53205ab7d408b9b82e0a9及机主一次独立实验授权。实查 CI 44666895971 job136058257998 completed/success；step6官方车载模拟器启动、step7官方CTS模块提取及签名验证、step8真实单任务及输入、step9安全清理和step10证据上传均success。实际读取74943字符原始job日志，不以工作流名称猜测结果。两次发现模式与两次实际运行严格区分：createControlledRemoteCarTaskView_startsTheTask 实际4.418秒、remoteCarTaskView_receivesTouchInput 实际4.539秒，均状态序列[1,0]、INSTRUMENTATION_CODE=-1、OK (1 test)，2/2实测通过，不计发现运行。
