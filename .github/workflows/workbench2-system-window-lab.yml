@@ -47,11 +47,11 @@ jobs:
           export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
           mkdir -p "$ANDROID_AVD_HOME"
           avdmanager list device > "$dir/device-profiles.txt"
-          if ! grep -F '"desktop_api37"' "$dir/device-profiles.txt"; then
+          if ! grep -F '"desktop_medium"' "$dir/device-profiles.txt"; then
             echo 'NO_GO_DESKTOP_PROFILE_NOT_AVAILABLE' | tee "$dir/result.txt"
             exit 1
           fi
-          echo no | avdmanager create avd --force --name wb2-native-window --path "$ANDROID_AVD_HOME/wb2-native-window.avd" --package "$image" --device desktop_api37
+          echo no | avdmanager create avd --force --name wb2-native-window --path "$ANDROID_AVD_HOME/wb2-native-window.avd" --package "$image" --device desktop_medium
           printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-37.1\n' "$ANDROID_AVD_HOME/wb2-native-window.avd" > "$ANDROID_AVD_HOME/wb2-native-window.ini"
           "$ANDROID_HOME/emulator/emulator" -avd wb2-native-window -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 4096 -cores 2 -gpu swiftshader_indirect > "$dir/emulator.log" 2>&1 &
           timeout 150 adb wait-for-device
