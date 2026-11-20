@@ -67,24 +67,83 @@ jobs:
         run: |
           set -euo pipefail
           df -h "$RUNNER_TEMP" > "$EVIDENCE/disk.txt"
-          # Download the official suite, but do not expand other test modules.
-          test "$(df -Pk "$RUNNER_TEMP" | awk 'NR==2{print $4}')" -gt 8500000
-          curl --fail --location --retry 0 --connect-timeout 20 --max-time 420 --max-filesize 8000000000 "$CTS_URL" -o "$RUNNER_TEMP/cts15.zip"
-          sha256sum "$RUNNER_TEMP/cts15.zip" > "$EVIDENCE/cts-sha256.txt"
-          python3 - <<'PY'
-          import os, pathlib, zipfile, hashlib
+          # Read only the central directory and matching APK from the same official ZIP.
+          # No full-download fallback and no increase to the original 8GB ceiling.
+          timeout 420 python3 - <<'PY'
+          import os, pathlib, zipfile, hashlib, io, re, json, urllib.request, urllib.parse, time
           p=pathlib.Path(os.environ["RUNNER_TEMP"])
           out=pathlib.Path(os.environ["EVIDENCE"])
-          with zipfile.ZipFile(p/"cts15.zip") as z:
-              hits=[i for i in z.infolist() if pathlib.PurePosixPath(i.filename).name=="CtsCarTestCases.apk"]
-              assert hits, "Official matching CTS module unavailable"
-              assert all(0<i.file_size<150_000_000 for i in hits)
-              first=z.read(hits[0])
-              assert all(z.read(i)==first for i in hits), "Ambiguous APK variants"
-              (p/"CtsCarTestCases.apk").write_bytes(first)
-              (out/"module-provenance.txt").write_text(hits[0].filename+"\n"+hashlib.sha256(first).hexdigest()+"\n")
+          url=os.environ["CTS_URL"]
+          class Archive(io.RawIOBase):
+              def __init__(self):
+                  self.pos=0
+                  self.total=None
+                  self.validator=None
+                  self.used=0
+                  self.calls=0
+                  self.start=time.monotonic()
+                  self.fetch(0,1)
+              def fetch(self, off, n):
+                  if not n: return b""
+                  assert 0<n<=160_000_000 and self.used+n<=256_000_000, "Selective CTS download budget exceeded"
+                  assert self.calls<64 and time.monotonic()-self.start<390, "Selective download time/request budget exceeded"
+                  self.calls+=1
+                  hdr={"Range":f"bytes={off}-{off+n-1}", "Accept-Encoding":"identity"}
+                  if self.validator: hdr["If-Range"]=self.validator[1]
+                  with urllib.request.urlopen(urllib.request.Request(url,headers=hdr),timeout=40) as r:
+                      assert urllib.parse.urlsplit(r.geturl()).scheme=="https" and urllib.parse.urlsplit(r.geturl()).hostname=="dl.google.com", "Unexpected download origin"
+                      assert r.status==206, "Official server did not honor byte ranges"
+                      m=re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)",r.headers.get("Content-Range",""))
+                      assert m and int(m[1])==off and int(m[2])==off+n-1, "Invalid Content-Range"
+                      total=int(m[3])
+                      etag=r.headers.get("ETag")
+                      modified=r.headers.get("Last-Modified")
+                      validator=("ETag",etag) if etag and not etag.startswith("W/") else ("Last-Modified",modified)
+                      assert validator[1], "No archive version validator"
+                      if self.total is None:
+                          self.total=total
+                          self.validator=validator
+                      assert total==self.total and validator==self.validator, "Remote archive changed"
+                      assert r.headers.get("Content-Encoding","identity")=="identity", "Unexpected response encoding"
+                      data=r.read(n+1)
+                      assert len(data)==n, "Truncated or oversized response"
+                      self.used+=n
+                      return data
+              def readable(self): return True
+              def seekable(self): return True
+              def tell(self): return self.pos
+              def seek(self, off, whence=0):
+                  new=off if whence==0 else self.pos+off if whence==1 else self.total+off
+                  if new<0: raise OSError("negative ZIP offset")
+                  self.pos=new
+                  return new
+              def read(self,n=-1):
+                  length=max(0,self.total-self.pos)
+                  n=length if n<0 else min(n,length)
+                  data=self.fetch(self.pos,n)
+                  self.pos+=len(data)
+                  return data
+          remote=Archive()
+          try:
+              with zipfile.ZipFile(remote) as z:
+                  hits=[i for i in z.infolist() if pathlib.PurePosixPath(i.filename).name=="CtsCarTestCases.apk"]
+                  assert hits, "Official matching CTS module unavailable"
+                  assert all(0<i.file_size<150_000_000 and 0<i.compress_size<150_000_000 for i in hits)
+                  # Reject conflicting duplicate modules before fetching their contents.
+                  assert all((i.CRC,i.file_size)==(hits[0].CRC,hits[0].file_size) for i in hits), "Ambiguous APK variants"
+                  assert len(hits)==1 or all(i.compress_size==hits[0].compress_size for i in hits), "Ambiguous compressed variants"
+                  first=z.read(hits[0])
+                  digest=hashlib.sha256(first).hexdigest()
+                  for i in hits[1:]:
+                      assert hashlib.sha256(z.read(i)).hexdigest()==digest, "Ambiguous APK variants"
+                  (p/"CtsCarTestCases.apk").write_bytes(first)
+                  (out/"module-provenance.txt").write_text(hits[0].filename+"\n"+digest+"\n")
+                  print("Official CTS module extracted:",hits[0].filename,digest,flush=True)
+          finally:
+              info={"url":url,"archive_size":remote.total,"validator":remote.validator,"downloaded_bytes":remote.used,"requests":remote.calls,"whole_archive_sha256_verified":False}
+              (out/"cts-range-provenance.json").write_text(json.dumps(info,indent=2))
+              print(json.dumps(info),flush=True)
           PY
-          rm "$RUNNER_TEMP/cts15.zip"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$RUNNER_TEMP/CtsCarTestCases.apk" > "$EVIDENCE/cts-apk-certificate.txt"
       - name: Run single-task startup and touch on real system host
         shell: bash
