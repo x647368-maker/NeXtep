@@ -1,5 +1,88 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 U · 旧版真实换栈时序、原始服务端复核与 2.0 实验纠错
+
+本轮机主授权独立审查、云端隔离验证及本档更新，普通聊天仍是唯一生产负责人。治理起点 `10aa5effea10383782e91438c98e78c0b7889482`，原档全文 Git blob `a2ab90e399049c1562ea1ccead645be6bf83b132`（495347 bytes，本轮重算匹配）。实查研发 HEAD `428b618b35ccd5db67d8e66abe6616bff23feeae`；开放 #175、#176 为历史线。本轮未推送任何工程源码、分支、PR、工作流或 APK。F01–F21、109 项历史证据、43 项 Android 运行回归与 5 项独立合成像素沿用原证据范围，未重跑或增加其通过数。
+
+### 从原始真机轨迹新得到的结果
+
+本轮实际恢复旧版 PMS110 取证 ZIP `台前调度-单次取证-1795068136250.zip`，SHA-256 `0621b809dcf68c0b18f21e95c9753fe0c214ba0b077b9746810ab596f85ca3c4`，CRC 通过；解码 `trace.pftrace` 73865406 bytes，SHA-256 `36c03ad65a60fd9399c6ae1a730232f9a5b1de3394ad4c80d59edf605c085ab7`。4625 个 TracePacket，441 张 SurfaceFlinger 图层快照，157181 条图层记录，4166 个 FrameTimeline 包、3 个 Shell transition 包、0 个 SF transaction 包。每张快照均列出内屏 1272×2772、录屏虚拟屏、4 个名为 NeXtep-slot-0 至 -3 的 720×1120 虚拟显示；其 layer stack 为 4–7。录屏是额外负载。四个显示对象存在不能证明四个槽都有活动任务、独立输入或可见新帧。
+
+| 快照序号（从 1 起） | 原始任务图层 1005（id/original_id 250）的 stack | 原始任务图层 1008（id/original_id 412）的 stack |
+|---|---:|---:|
+| 1–265 | 0 | 4 |
+| 266–294 | 0 | 0 |
+| 295–441 | 4 | 0 |
+
+从首快照起算，1008 在 2.122814426 s 首次观察到换栈，1005 在 2.430174061 s 首次观察到换栈，相差 307359635 ns。仅按相同时间域、相同原始图层身份比较，未把镜像或录屏层计作任务。两边界前相邻采样间隔约 8.29/8.31 ms；同栈的 29 张观察不保证所有中间状态均被采到。内屏还在第 213–441 张记录了对应两个 MirrorRoot 层 461/463，不能据存在推断可见内容或覆盖时间。另以原生 libprotoc 3.13.0 独立解码边界快照 265/266/294/295，栈对依次为 (0,4)/(0,0)/(0,0)/(4,0)。该 307.36 ms 为一个旧样本的图层归属观察差，不能解释为黑屏、卡顿时长、主线程用时、去掉迁移即可节省的时间或因果分解。SF 图层 owner_uid 不等于显示器创建 UID、ATMS 调用 UID 或 Binder 授权。字段可复查 [Perfetto SF schema](https://android.googlesource.com/platform/external/perfetto/+/5c3de4a4a4c6be1446fb3ac897e4e4e736f7616b/protos/perfetto/trace/android/surfaceflinger_layers.proto)。
+
+### 实验错误与权限反证
+
+- 固定工程 resident-lab 的主 Manifest、Fixture.kt、构建文件和 ResidentSingleTest.kt 已实读。第 150 行以普通 flags=0 建新显示，第 159 行 NEW_TASK | MULTIPLE_TASK 请求可丢弃新任务，160–161 行先做放置预检，162 行才实际启动。首轮真机结果沿用 P/Q 的本地回传，此轮未取得该次 Mac 原始日志字节。已越过 feature/表面/刷新率检查，尚未实际启动目标；现有证据不足以锁定该固件首个拒绝条件。Android 17 r1 的 ActivityTaskSupervisor 425–456、1287–1375 先后检查多屏支持、显示有效性及受限显示、未可信嵌入条件、私有屏归属以及适用的内容策略；普通所有者身份不能覆盖前置条件。flags=0 的非公有且非自动镜像配置已隐含 own-content-only 语义，把同一位显式加回没有新验证价值。另版 ATMS 固定源显示预检先保留 Binder 调用 UID/PID 再解析/传入，不拿它冒充本机固件。默认屏正向预检也可能短路。[Android 17 主管源码](https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/wm/ActivityTaskSupervisor.java) · [ATMS 对照版本](https://android.googlesource.com/platform/frameworks/base/+/64eaba03c5db8b431aef8a88d40593631951fe99/services/core/java/com/android/server/wm/ActivityTaskManagerService.java#1854) · [公开显示标志](https://developer.android.com/reference/android/hardware/display/DisplayManager#VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY)
+- 第 174–180 行从目标内容取坐标，直接向目标 display 发 instrumentation 触摸。即使红变绿，也没有验证从物理屏槽位经过宿主、命中映射、焦点或 IME。第 193 行 FrameMetrics 监听 t.window，Fixture 的 120 次 onDraw 和首尾中央红绿像素无法区分中间物理屏是否停帧。两次 runCase 创建不同任务，且固定 Texture 在先，不能证明既有任务连续性或给出输出优劣。真实输出比较需有物理 DisplayFrame/目标层可关联的呈现证据，缺覆盖应记未知；同机同条件平衡顺序，测帧长尾、空闲及工作负载 CPU/GPU/内存/温度。过往 Copilot 未限类、尝试清全局日志及失败清理核验不全已由 P/Q 记录；此轮不复用这些脚本。[FrameTimeline 说明及 SurfaceView 覆盖限制](https://github.com/google/perfetto/blob/main/docs/data-sources/frametimeline.md)
+- 本轮已重新找到并实读 `oplus-services.jar`、宿主 APK 归档及 manifest.json，纠正 R 中“当时未找到”的可访问状态。服务 JAR CRC 正常、SHA-256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`；宿主 APK `d5d4bc23890d8473f670dc3ee528fe5f0a8f6f40ebd29b7324968dd5c8d096e7`。宿主记录 safe.WINDOW protection raw=18，host_granted=true，collector_granted=false；当前 app 主 Manifest blob c43c5caa444f25cd0f48cded2ec951822cc36c0e 未声明该权限。未取得原签名安装 UID 当前 grant 实测。复核 classes3.dex 方法表 #20954/#20958/#21019/#21002/#20847/#20992/#20834 与十三 Y 相符；本次定点按方法表/指令核对 #13872 code_item 0x2685a8 中 +0x6f 查 Task、+0x85 检查 isRemoveTaskWhenDetach、+0x103 调用 removeTask。删除有条件，未声称本次手机任务被删。目标公共预检方法名/主管判定方法名在这三份 DEX 的 string_ids 中未找到，故该 OEM 扩展原件不足以定位首次 false。未重新分析完整 OTA。宿主观察者不作无副作用的运行探针。
+- vivo 历史研究包 CRC 正常，实读方法轨迹和审计文本，证实其系统多窗路径把任务动画启动、事务、首窗绘制与取消清理分段；资料不足以辨认每个工作台手势的完整 Shell 曲线。WindowDeck 的系统原生任务视图、局部图层事务、世代核对和后台重试沿用十三 I、十四 K 的固定源码证据。没有同机消耗比较，也未复制实现。
+
+### 主选、备选与唯一接续任务
+
+主选架构保留 `workbench2/engine/src/main/kotlin/workbench2/unified/UnifiedCore.kt` 的单所有者、单在途 effect 和帧合并，通过 `nativebridge/ReceiptBridge.kt` 的 NativePort 连接一个已获系统准入的任务宿主。仅由宿主持有实际会话/输入/图层。换位尽量保持原任务、显示及内容生产者，只改变几何和层序。按事件处理开始、呈现、焦点、退出及撤销；几何在宿主本地更新，避免将每个 FRAME 映射成跨进程请求，保留终点呈现及内容重排验证。未发现足以要求重写整个状态机或声称省电的证据。自主核心无需等厂商或同行，但本机尚无已验证可供原签名客户端使用的限域会话。原签名、包名、数据、署名、原生输入、系统手势、五窗及多形态适配均沿用冻结门禁。
+
+备选仅限系统公开代开系统窗口，或双方同意的 Activity Embedding，用于匹配其权限范围的对照；前者没有授予宿主图层编排句柄，后者为同 task 内自愿嵌入。已有系统多窗录屏也未验证产品五窗。无单任务委托证据时不得切换它们作为产品。普通私有显示、重复设置 own-content-only、更换 Surface、Root/Vector 可加载、车载 CTS 宿主均不能继承为本机现成后端。[OPPO 主动分屏/浮窗契约](https://open.oppomobile.com/documentation/page/info?id=11171) · [Android Activity Embedding](https://developer.android.com/develop/ui/views/layout/activity-embedding)
+
+**唯一阻塞与可证伪实现**：生产负责人的下一项判定是取得并核验一个系统实际接受的、限定原签名调用方与单个任务的会话契约（并明确谁负责宿主死亡后的撤销/恢复）；先查相应实现证据，不重新搜索已排除的入口。若出现该条件，再在获准隔离环境只使用已打开的自有可丢弃任务：记录原 task/user/token、父容器、显示与可变内容；仅经系统会话 attach 一次，核实同任务和独立呈现；在宿主所在物理屏点选离中心标记，核实系统路由、目标接收坐标与内容变化；正常退出后核实原归属、旧请求终结和可交互。宿主与客户端异常退出单独验证，独立观察者需存活；尚不要求最小 B 先完成五窗或全套死亡测试。新建 fixture 可用于验证正向启动，但不能冒充既有任务归还。缺少契约、发生任务删除/重建、只得事务 ACK 或必须扩大权限，停在对应层级。达到正常与异常单任务门禁后才进入双任务、五窗和同机性能。当前云端未发现 adb/emulator/Android SDK 或 /dev/kvm；已有 CI/AAOS 和旧 C 的结果不作为新 B。本轮无新 B/C/D、无机主操作。同条件不重跑，两轮无改善止损。
+
+工程证据包 `WB2-Stage-U-evidence.zip`（5234 bytes，SHA-256 `ce6069ea48caea517851e4555bfb2159c8cee78bab98c50bb75882c16e1cfb9b`）含固定 trace 的可执行离线复算器、其真实 JSON 输出、下列测试补丁及使用范围。私有证据包不含原始 trace、个人屏幕、OEM 字节或密钥。补丁在上述 core SHA 的实际测试文件（blob `89bf5e1b2afdafe85b7c874e5a1eeac1af369e6f`）上已通过 git apply --check、实际临时应用与逐字比对。仅保留为主研发窗口可核验的测试候选；未合入、未编译、未在 Android 上运行。默认屏与 VD 预检差异不会自行产生新的运行授权或值得重试的条件。
+
+<details><summary>隔离 androidTest 源码候选（固定基线）</summary>
+
+```diff
+--- a/workbench2/resident-lab/src/androidTest/kotlin/workbench2/residentlab/ResidentSingleTest.kt
++++ b/workbench2/resident-lab/src/androidTest/kotlin/workbench2/residentlab/ResidentSingleTest.kt
+@@ -157,8 +157,18 @@
+             assertTrue(rate > 0 && rate.isFinite())
+             val intent = Intent(instr.targetContext, TargetActivity::class.java)
+                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+-            assertTrue("Own activity launch allowed",
+-                am.isActivityStartAllowedOnDisplay(host, id, intent))
++            val component = requireNotNull(intent.component)
++            val targetInfo = host.packageManager.getActivityInfo(component, 0)
++            val callerUid = android.os.Process.myUid()
++            assertEquals("Disposable target must share the caller UID",
++                callerUid, targetInfo.applicationInfo.uid)
++            val control = am.isActivityStartAllowedOnDisplay(host, Display.DEFAULT_DISPLAY, intent)
++            val allowed = am.isActivityStartAllowedOnDisplay(host, id, intent)
++            Log.i("WB2Resident", "ADMISSION mode=$mode callerUid=$callerUid " +
++                "targetUid=${targetInfo.applicationInfo.uid} targetFlags=${targetInfo.flags} " +
++                "display=$id displayFlags=${d.flags} defaultAllowed=$control slotAllowed=$allowed")
++            assertTrue("Default-display placement preflight for own fixture", control)
++            assertTrue("Own activity launch allowed", allowed)
+             val t = instr.startActivitySync(intent,
+                 ActivityOptions.makeBasic().setLaunchDisplayId(id).toBundle()) as TargetActivity
+             target = t
+@@ -208,7 +218,7 @@
+             assertTrue("Target FrameMetrics samples", durations.isNotEmpty())
+             val sorted = durations.sorted()
+             fun p(q: Double): Long = sorted[(kotlin.math.ceil(q*sorted.size).toInt()-1).coerceIn(0,sorted.lastIndex)]
+-            Log.i("WB2Resident", "MEASURE mode=$mode task=$taskId display=$id rate=$rate draws=120 frameSamples=${sorted.size} callbackDrops=$lost p50ns=${p(.5)} p95ns=${p(.95)} p99ns=${p(.99)}")
++            Log.i("WB2Resident", "MEASURE mode=$mode scope=target_window task=$taskId display=$id rate=$rate draws=120 frameSamples=${sorted.size} callbackDrops=$lost p50ns=${p(.5)} p95ns=${p(.95)} p99ns=${p(.99)}")
+             main { t.finishAndRemoveTask() }
+             assertTrue("New disposable target destroyed",t.destroyed.await(10,TimeUnit.SECONDS))
+             val deadline = SystemClock.elapsedRealtime()+8000
+@@ -219,7 +229,7 @@
+             val until = SystemClock.elapsedRealtime()+5000
+             while(dm.getDisplay(id)!=null && SystemClock.elapsedRealtime()<until) SystemClock.sleep(80)
+             assertNull("Private display still allocated",dm.getDisplay(id))
+-            Log.i("WB2Resident","SINGLE_OK mode=$mode task=$taskId display=$id rate=$rate")
++            Log.i("WB2Resident","SINGLE_OK mode=$mode input=direct_target_display task=$taskId display=$id rate=$rate")
+             return rate
+         } finally {
+             main {
+```
+
+</details>
+
+---
+
 ## 第十五阶段 T · 历史真机原始证据恢复与承载契约缺口确认（2026-11-20，本节最新生效）
 
 - 机主批准继承S 2b9f5c1970a133626f1b9fec7b00e6c76f8205b8，仅查历史实际运行证据，不批准重开旧VD/V89、扩大权限或新实验。实际恢复Library两份ZIP字节并CRC全通过：台前调度-单次取证-1795068136250.zip 7155823 bytes SHA256 0621b809dcf68c0b18f21e95c9753fe0c214ba0b077b9746810ab596f85ca3c4（file_0000000033dc81fa9050e31efd7cc6e0）；AtomicWorkbench-real-device-evidence-audit.zip 6337711 bytes SHA256 1edc180e13a731e43963ca86a8b604cacd6c3bf429fa3be81a7c016456f9111e（file_00000000ded08211835d5b965eb03004）。前件实际读取report.txt/config.pbtxt/query.txt：PMS110 API37，原报告441 layer snapshots、0 transaction packets、trace.pftrace 73865406 bytes（本轮未解析trace protobuf，不宣称独立图层/帧验证）；配置仅SurfaceFlinger layers含虚拟显示、FrameTimeline和WM Shell transition，无创建权限、完整WM状态、Binder调用及输入日志数据源。query为服务注册/生产者清单，确认当次SystemUI、system_server、原包APK各自PID/UID不同，不等同任务创建调用者或权限证明；root_exit为历史采集工具退出值，不是任务授权。后件读取原始8 TXT、CSV及说明，含71–76、83(N5)、84，不混同机型；在8份TXT中未命中ownerUid/ADD_TRUSTED_DISPLAY/INJECT_EVENTS/virtual_display_flags/callerUid/Created slot/Resolved candidates。历史资料已有，无需机主重发。
