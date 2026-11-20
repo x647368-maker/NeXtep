@@ -14,6 +14,15 @@
 
 ---
 
+## 第十六阶段 M · 延迟任务删除风险的底层归还门禁修复候选（2026-11-20）
+
+- 继承L首次真机观察1d14c21e86bc1b9eb4c599279bb67f3dd1ec6d17、已通过独立实验候选91562f6e57c4602659479c0d7a15298bf2a3c3a1及最后已验收自主核心1ca3d73e73393ac1eff02ee80381ba3105fd1d7d（46+5）。当前任务是主动利用已有真实证据继续底层研发，不擅自安排第二轮真机、不恢复V89、不扩大权限/作用域。实际核对唯一研发分支与治理HEAD、回读L日志记录及当前UnifiedCore/ReceiptBridge源码。结合K已存的服务端异步删除调用链（本轮未重新读取原始OEM二进制），明确：pscanvas真机release返回不证明服务端任务清理队列已终止，launcher仅加载与到期，不证实共同承载。缺失的init日志/任务身份连续性仍未补齐。无新增合法主动控制授权。
+- 确定的工程缺口：TaskReturnProof此前只要求originalOwnershipRestored及noPendingReattach，attachProofValid在既有任务ACQUIRE取消/失败和RELEASE返回ABSENT时均可在缺少待执行破坏性清理的独立证明情况下接受归还。历史K的系统服务端延后removeTask路径与L真实释放事件表明两种负条件不能混同；这不是声称实际观察到本次任务被删除。新增noPendingDestructiveCleanup:Boolean=false，与原身份/所有权/无待重挂接条件同时成立才接受；旧调用者省略字段默认拒绝，不自动提升能力。该字段必须来自真正独立系统观察，不能由释放成功、一次截图、固定延时、队列本地为空或合成成功值推断。未知时保留原effect及lease、input gate和host回收义务，不盲目重试。不增加Hook、线程、轮询或帧路径工作，不声称整机性能收益。此是修正自主核心的真实风险契约，不是已实现OEM后端/归还观察器。
+- 实际非强推原子提交a1835990f483931707e9214995248b597c6123b2，父91562f6e57c4602659479c0d7a15298bf2a3c3a1，tree df803cb88f21cdf29763112dc9dc27cc71096537，远端compare ahead1/behind0，三文件回读逐字一致：UnifiedCore.kt +6/-3、EngineLooperTest.kt +9/-5、DualTaskReceiptTest.kt +1/-1。合计+16/-9。扩展现有borrowedTaskAbsenceDuringAcquireRequiresReturnProof、borrowedTaskReleaseWaitsForOriginalOwnershipAndTerminalReparent两项实际Android测试的反例（显式false或默认缺省都保留未决effect及资源、禁止retry；正向fixture明确true后才继续）。其余既有正向fixture按新契约显式设置true，仅代表合成测试条件，不能视为实际系统证据。不删除既有测试，保持46+5数量、原测试名及CI不改。host-runtime/生产app/签名、历史main、冻结功能、永久通用性不改。没有第二次真机实验或APK、无新分支/PR。
+- 现有engine CI https://github.com/x647368-maker/NeXtep/actions/runs/44744338267 已触发，head=a1835990f483931707e9214995248b597c6123b2，保存时in_progress，无编译/运行终验。核心最后已通过仍1ca3d73e...，候选不提前验收。下一轮仅核验既有CI终态、实际AAR与runtime原始XML及5像素门禁，按更新源码与新增反例核查，失败仅具体工程缺陷最小修复；不重跑L隔离宿主测试。完成后须继续区分真实系统授权/任务后端、独立系统清理终态观测与合成回执。ReceiptBridge固定hostInstance的匹配保护不可用伪造实例或任意放宽解决宿主死亡观察；后续受支持的独立恢复来源与可信身份需明确契约后实现，不提前制造回执。没有必要再次让机主提取文件或安装包；若真有区别于L的实机判别价值，第二次单独请求授权。原生任务接入仍有实际控制权限阻塞，禁止将本轮门禁修复冒充突破。普通聊天最高可用推理，Work关闭；每轮主动给实际成果及下一步接续指令。
+
+---
+
 ## 第十六阶段 L · 获批双宿主限时自有任务只读实验候选（2026-11-20）
 
 - 机主正式批准一次严格隔离的双宿主只读实机验证，可交付一份独立验签私测APK；仅Multi Windows/com.oplus.pscanvas、系统桌面/com.android.launcher及自身应用，观察正常系统操作产生的会话，不修改原有调用行为、不主动调用受保护OEM接口、不扩大权限/作用域、不恢复V89。继承4004dce5fc6bf36539f31a09d12510280cfe1e75及最后已验收核心1ca3d73e73393ac1eff02ee80381ba3105fd1d7d（46 Android+5自有图层像素）。本授权不是OEM主动任务控制许可或系统异常终止许可。
