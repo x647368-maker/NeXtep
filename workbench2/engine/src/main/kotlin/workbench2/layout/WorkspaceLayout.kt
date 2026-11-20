@@ -43,13 +43,14 @@ object WorkspaceLayout {
     class Layout internal constructor(val main: Box, val rail: Box,
         cards: List<Card>, val topActions: TopActions?, val displayEpoch: Long,
         val control: Box, val panelRotationDegrees: Int,
-        val viewport: Viewport, val addAction: Box?, val recovery: Recovery) {
+        val viewport: Viewport, val addAction: Box?, val recovery: Recovery,
+        val collapseAction: Box) {
         val cards: List<Card> = Collections.unmodifiableList(ArrayList(cards))
         /** UI destinations only; not native task input dispatch or input proof. */
         fun hitAt(x: Double,y: Double): Hit? {
             fun hit(b: Box) = x>=b.x && x<b.x+b.w && y>=b.y && y<b.y+b.h
+            if(hit(collapseAction)) return Hit(HitKind.COLLAPSE)
             topActions?.let { a ->
-                if(hit(a.collapse)) return Hit(HitKind.COLLAPSE)
                 if(hit(a.main)) return Hit(HitKind.MAIN_ACTION)
             }
             addAction?.let { if(hit(it)) return Hit(HitKind.ADD) }
@@ -296,6 +297,16 @@ object WorkspaceLayout {
         val recovery=Recovery(mainBox(v,rail,reserve),rect(rx,ry,rw,rh),horizontal)
         require(fits(recovery.handle,safe) && !intersects(recovery.handle,recovery.main) &&
             !intersects(recovery.handle,controls))
-        return Layout(main,railBox,cards,actions,displayEpoch,controls,degrees,v,addAction,recovery)
+        // Frozen side handle: 48dp at the toolbar end; top row retains its own anchor.
+        val collapseAction=actions?.collapse ?: run {
+            val size=minOf(dp(48).coerceAtLeast(1),controls.w.toInt(),controls.h.toInt())
+            val pad=dp(8)
+            if(rotated) rect(controls.x.toInt()+(controls.w.toInt()-size)/2,
+                maxOf(controls.y.toInt(),(controls.y+controls.h).toInt()-pad-size),size,size)
+            else rect(maxOf(controls.x.toInt(),(controls.x+controls.w).toInt()-pad-size),
+                controls.y.toInt()+(controls.h.toInt()-size)/2,size,size)
+        }
+        require(fits(collapseAction,if(actions==null)controls else railBox))
+        return Layout(main,railBox,cards,actions,displayEpoch,controls,degrees,v,addAction,recovery,collapseAction)
     }
 }

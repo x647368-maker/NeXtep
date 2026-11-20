@@ -8,6 +8,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewConfiguration
+import kotlin.math.abs
 import android.widget.TextView
 import workbench2.layout.WorkspaceLayout
 import workbench2.motion.Box
@@ -29,6 +31,8 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
     private var measuredRevision=-1L
     private var applied=-1L
     private var gesture=-1L
+    private data class HandleDown(val revision: Long,val pointer: Int,val x: Float,val y: Float,val action: Action)
+    private var handleDown: HandleDown?=null
     private val origin=IntArray(2)
     private var listener: ((Request)->Unit)?=null
 
@@ -51,7 +55,11 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
     private val collapse=button("‹›","收起小窗",14f,Action.COLLAPSE,Color.argb(210,28,43,53),12)
     private val main=button("•••","主窗口操作",14f,Action.MAIN_ACTION,Color.TRANSPARENT,12)
     private val restore=button("│","展开小窗",18f,Action.RESTORE,Color.TRANSPARENT,12)
-    init { isClickable=false;isFocusable=false;clipChildren=true }
+    init {
+        isClickable=false;isFocusable=false;clipChildren=true
+        collapse.setOnTouchListener { view,event -> handleTouch(view,event,Action.COLLAPSE) }
+        restore.setOnTouchListener { view,event -> handleTouch(view,event,Action.RESTORE) }
+    }
 
     fun setRequestListener(value: ((Request)->Unit)?) { owner();listener=value }
 
@@ -75,7 +83,7 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
         invalidateControls();latest=revision;frame=null;requestLayout();return true
     }
     private fun invalidateControls() {
-        applied=-1L;measuredRevision=-1L;gesture=-1L
+        applied=-1L;measuredRevision=-1L;gesture=-1L;handleDown=null
         for(i in 0 until childCount) {
             getChildAt(i).apply {
                 cancelPendingInputEvents();isPressed=false;isEnabled=false;visibility=INVISIBLE
@@ -87,7 +95,7 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
         val l=f.layout
         return when(index) {
             0 -> l.addAction
-            1 -> l.topActions?.collapse
+            1 -> l.collapseAction
             2 -> l.topActions?.main
             else -> null
         }
@@ -110,6 +118,43 @@ class WorkspaceControls(context: Context) : ViewGroup(context) {
         val index=indexOfChild(view)
         if(view.visibility!=VISIBLE || !view.isEnabled || box(f,index)==null)return
         listener?.invoke(Request(action,f.revision,f.layout.displayEpoch))
+    }
+    private fun handleTouch(view: View,event: MotionEvent,action: Action): Boolean {
+        val f=ready()
+        if(f==null || !view.isEnabled || view.visibility!=VISIBLE) {
+            handleDown=null;view.isPressed=false;return false
+        }
+        when(event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                handleDown=HandleDown(f.revision,event.getPointerId(0),event.rawX,event.rawY,action)
+                view.isPressed=true
+            }
+            MotionEvent.ACTION_POINTER_DOWN,MotionEvent.ACTION_POINTER_UP,MotionEvent.ACTION_CANCEL -> {
+                handleDown=null;view.isPressed=false
+            }
+            MotionEvent.ACTION_MOVE -> Unit
+            MotionEvent.ACTION_UP -> {
+                val start=handleDown
+                handleDown=null;view.isPressed=false
+                if(start==null || start.revision!=f.revision || start.action!=action ||
+                    event.getPointerId(0)!=start.pointer)return true
+                val dx=event.rawX-start.x;val dy=event.rawY-start.y
+                if(!dx.isFinite() || !dy.isFinite())return true
+                val slop=ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+                if(maxOf(abs(dx),abs(dy))<=slop) { view.performClick();return true }
+                val horizontallyPlaced=f.layout.recovery.horizontal
+                val along=if(horizontallyPlaced)dy else dx
+                val across=if(horizontallyPlaced)dx else dy
+                val threshold=maxOf(24*f.layout.viewport.density,slop*2)
+                if(abs(along)<threshold || abs(along)<=abs(across)*1.25f)return true
+                val positiveOutward=if(horizontallyPlaced)f.layout.rail.cy>f.layout.main.cy
+                    else f.layout.rail.cx>f.layout.main.cx
+                val outward=(along>0)==positiveOutward
+                if((action==Action.COLLAPSE && outward) || (action==Action.RESTORE && !outward))
+                    view.performClick()
+            }
+        }
+        return true
     }
     override fun onMeasure(widthMeasureSpec: Int,heightMeasureSpec: Int) {
         val w=MeasureSpec.getSize(widthMeasureSpec);val h=MeasureSpec.getSize(heightMeasureSpec)

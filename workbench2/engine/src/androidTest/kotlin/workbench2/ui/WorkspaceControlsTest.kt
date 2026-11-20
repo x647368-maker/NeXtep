@@ -173,4 +173,75 @@ class WorkspaceControlsTest {
             }
         } finally { onMain { activity.finish() } }
     }
+
+    private fun swipe(v: WorkspaceControls,b: Box,dx: Float,dy: Float,cancel: Boolean=false) {
+        val start=SystemClock.uptimeMillis()
+        for((action,x,y) in listOf(Triple(MotionEvent.ACTION_DOWN,b.cx.toFloat(),b.cy.toFloat()),
+            Triple(MotionEvent.ACTION_MOVE,b.cx.toFloat()+dx/2,b.cy.toFloat()+dy/2),
+            Triple(if(cancel)MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP,b.cx.toFloat()+dx,b.cy.toFloat()+dy))) {
+            val event=MotionEvent.obtain(start,SystemClock.uptimeMillis(),action,x,y,0)
+            try { v.dispatchTouchEvent(event) } finally { event.recycle() }
+        }
+    }
+
+    @Test fun nativeSideHandlePreservesPhysicalDirectionAndDoesNotCommitPresentation()=onMain {
+        val view=create()
+        val seen=mutableListOf<WorkspaceControls.Request>()
+        view.setRequestListener {seen.add(it)}
+        var revision=0L
+        val landscape=Viewport(2354,1080,480,Insets(left=132),192,270,rotation=3)
+        val cases=listOf(phone to Rail.LEFT,phone to Rail.RIGHT,phone to Rail.TOP,
+            landscape to Rail.LEFT,landscape to Rail.RIGHT,
+            landscape.copy(rotation=1,insets=Insets(right=132)) to Rail.LEFT,
+            landscape.copy(rotation=1,insets=Insets(right=132)) to Rail.RIGHT)
+        for((vp,rail) in cases) {
+            val layout=WorkspaceLayout.calculate(vp,rail,listOf(0,2),true,50)
+            val collapse=locate(view,"收起小窗")
+            val restore=locate(view,"展开小窗")
+            assertTrue(view.bind(layout,++revision,false,true));arrange(view,vp.width,vp.height)
+            bounds(collapse,layout.collapseAction)
+            assertEquals(WorkspaceLayout.HitKind.COLLAPSE,
+                layout.hitAt(layout.collapseAction.cx,layout.collapseAction.cy)!!.kind)
+            val horizontal=layout.recovery.horizontal
+            val positive=if(horizontal)layout.rail.cy>layout.main.cy else layout.rail.cx>layout.main.cx
+            val delta=if(positive)110f else -110f
+            val dx=if(horizontal)0f else delta
+            val dy=if(horizontal)delta else 0f
+            val n=seen.size
+            swipe(view,layout.collapseAction,-dx,-dy)
+            assertEquals(n,seen.size)
+            swipe(view,layout.collapseAction,dx,dy)
+            assertEquals(WorkspaceControls.Request(WorkspaceControls.Action.COLLAPSE,revision,50),seen.last())
+            assertEquals(n+1,seen.size)
+            assertEquals(View.VISIBLE,collapse.visibility)
+            assertEquals(View.INVISIBLE,restore.visibility)
+            assertTrue(view.bind(layout,++revision,true,true));arrange(view,vp.width,vp.height)
+            bounds(restore,layout.recovery.handle)
+            swipe(view,layout.recovery.handle,dx,dy)
+            assertEquals(n+1,seen.size)
+            swipe(view,layout.recovery.handle,-dx,-dy)
+            assertEquals(WorkspaceControls.Request(WorkspaceControls.Action.RESTORE,revision,50),seen.last())
+            assertEquals(n+2,seen.size)
+            assertEquals(View.VISIBLE,restore.visibility)
+        }
+    }
+
+    @Test fun cancelledOrAmbiguousRailHandleGestureNeverDispatches()=onMain {
+        val view=create();val seen=mutableListOf<WorkspaceControls.Request>()
+        view.setRequestListener {seen.add(it)}
+        val layout=WorkspaceLayout.calculate(phone,Rail.LEFT,listOf(0,1),false,52)
+        assertTrue(view.bind(layout,1,true,true));arrange(view,phone.width,phone.height)
+        val handle=layout.recovery.handle
+        swipe(view,handle,110f,0f,true)
+        swipe(view,handle,110f,110f)
+        swipe(view,handle,0f,110f)
+        assertTrue(seen.isEmpty())
+        val down=SystemClock.uptimeMillis()
+        assertTrue(touch(view,handle,MotionEvent.ACTION_DOWN,down))
+        assertTrue(view.bind(layout,2,true,true));arrange(view,phone.width,phone.height)
+        assertFalse(touch(view,handle,MotionEvent.ACTION_UP,down))
+        assertTrue(seen.isEmpty())
+        assertTrue(locate(view,"展开小窗").performClick())
+        assertEquals(WorkspaceControls.Request(WorkspaceControls.Action.RESTORE,2,52),seen.single())
+    }
 }
