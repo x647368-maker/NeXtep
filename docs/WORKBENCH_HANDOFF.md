@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 V · 机主批准系统持有双任务批量几何及控制端死亡隔离实验（2026-11-21）
+
+- 机主明确批准U提出的一次隔离Desktop实验，不授权变更生产部署、手机系统、默认桌面、安全权限或恢复VD/V89。实际核对core原HEAD=ed40df41de8336dea0f2c2d743722eaf88f3b727；继承47 Android+5自有图层像素已验收基线和G段单任务真实实验，不回跑。官方AOSP固定test-current.txt https://android.googlesource.com/platform/frameworks/base/+/44000eb69a1df2440f32a38c9305e1969a559cb7/core/api/test-current.txt 484–492、4352–4385、4428–4432行声明TaskInfo.getToken/getParentTaskId/getDisplayId、WindowContainerTransaction.setBounds和WindowOrganizer.applyTransaction/applySyncTransaction；Shell官方Manifest https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/packages/Shell/AndroidManifest.xml 的REAL_GET_TASKS与MANAGE_ACTIVITY_TASKS，正常UiAutomation限域测试委托可用性需实际运行确认；TestApi不等于生产公开API。AOSP主线TaskOrganizerController.getChildTasks还限制organizer创建root，故不注册第二个Organizer、不依赖遍历其他组织器的root，使用正常授权的getRunningTasks并严格限制可丢弃目标身份。Android17精确运行期符号、实际授权仍待CI，不通过即止，无豁免、无改系统安全配置。
+- 已实际一次原子提交 e81153da1aff9c5838240d3ac38b03c6ce5d90c8（parent ed40df41…、tree f5f4806870b7e124c6c1bb9faac3f0d3e1f24f55），非强制expected_sha更新唯一workbench2/core成功；compare ahead1/behind0，仅四文件：原workbench2-system-window-lab.yml +54/-44；BatchTargetActivity.kt +69、SystemWindowBatchTest.kt +193、verify_batch.py +85均在原system-window-lab。生产引擎、历史产品、原签名、原field组件及已有单任务源码均未改；没有新分支/PR/发布。未复制MagicDesk代码。沿用现有官方Desktop37.1镜像与现有CI runner。工作流仅在临时CI checkout生成两个独立debug包batchtarget/batchcontroller（不是真机交付APK）；目标两个不同真实任务，独立应用UID/进程与控制端隔离。先校验SDK、freeform、shell UID及两权限实际grant；运行时仅正常解析文档列出的TestApi成员，UiAutomation只限两项测试权限，若失败不寻找隐藏API豁免；严格核对目标TaskInfo、独立令牌/父容器/display、系统ActivityRecord与实际目标bounds，一笔WCT含两个setBounds准备布局，一笔WCT含两个setBounds交换。绝不使用两个串行resize替代。实际尺寸不同，核对同Activity实例、同内容marker/计数、防止跨窗错误触控、同task身份；采存before/swapped及postdeath真实模拟器画面。不是全帧同步、原签名或第三方真机性能证明。
+- 独立host Python在收到正确source绑定的READY_FOR_CONTROLLER_DEATH且确认控制端真实pid存活及与目标pid不同后，仅force-stop实验controller包，绝不强停系统或目标，独立读取两个存续任务原ActivityRecord、bounds、目标实例/进程/内容及两个实际触控增量。该路径刻意终止instrumentation，不能按JUnit成功计数，只有独立host完整证据才通过。若控制端停止前失败，保留原始日志，终止实验并关闭可丢弃模拟器。此次不额外执行原几何恢复或物理帧级测量，退出使用隔离模拟器整体销毁；控制端强停存续是实际实验门禁，不能推断所有异步死亡、OEM归还安全。未测试全尺寸渲染/槽位性能或PMS110，不将自有两个任务等同真实任意第三方。
+- 实际push CI https://github.com/x647368-maker/NeXtep/actions/runs/44771108339 head=e81153da…、job136408698465，最后API状态in_progress/conclusion=null，setup checkout Java Android SDK均success，正在Provision official Desktop preview simulator and verify feature；编译双包、真实双任务运行、证据上传尚pending，不能宣称编译或实验通过。已验收有效核心仍ed40df41…；最新研发分支包含未验收隔离实验e81153da…，二者必须区分。下次首项只核验该次CI终态及原始日志、两包清单、实际两任务身份/几何/输入/控制端强停原始证据；若存在确切夹具缺陷且不需重复真实任务实验，做最小纠错并按一次实验授权和停止制度评估；若权限/运行接口确实不具备或目标连续性失败，按真实原因止损，不盲目重跑、不降低门禁。此轮已有实际工程、提交及触发运行，但尚无原生后端解阻结果。无需机主操作手机或电脑。普通聊天High/最高可用推理，Work关闭；保护全部永久制度。
+
+---
+
+
 ## 第十六阶段 U · 主动寻找反例：MagicDesk 系统持有任务的批量几何编排（2026-11-21）
 
 - 机主明确纠正不能因停止无效试错而被动等待新证据。保留现有原生宿主主线、安全与冻结标准，不把再次泛问六家AI/OPPO作为先决条件。实际回读历史十五C/Z、十六G/K/N/P/Q/R/T等，AppTask自有窗口、普通多窗容量及Shell单任务已经验证/排除部分适用性，不包装为新发现。当前核心仍ed40df41de8336dea0f2c2d743722eaf88f3b727。
