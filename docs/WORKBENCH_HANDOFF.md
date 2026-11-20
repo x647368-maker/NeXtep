@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，当前生产负责人在任）
 
+## 第十六阶段 H · 底层优先冻结与高频路径精简候选（2026-11-20，最新生效）
+
+- 机主明确调整研发优先级：底层完整、极致精简、稳定及真实性能是非必要上层恢复前门禁；暂停UI、美化和外围专项。WindowDeck作为效率/流畅性/省电/低热比较基准、vivo原子工作台为动画标杆；尚无同机实测对比。允许必要Root/Vector，目标仅双外部作用域加自身，不绕过系统安全，继续保留全部冻结功能/签名/数据/许可证/归还门禁。双宿主授权阻塞不能阻断其余独立有明确价值的底层优化。
+- 实际继承66b4676b69972c8f1f770b39d778e004040992a5；源基线932c8375c821c7376022b2ee178a47bbfef3b250，当前唯一研发分支workbench2/core最新候选6b9a0fd0ae8efe356037581cac46a1a7560becb6，非强推、一次原子提交，ahead1/behind0，3 main Kotlin文件+1既有Android测试，31 insertions/16 deletions；main实查20ab39cf7e319898fcbc4028bc403df57a6c1a0b（不写），不建分支/PR，不动历史源码。实际列出工程树、逐文件回读UnifiedCore、ReceiptBridge、AndroidFrameDriver、OwnerLooperPort、OwnedSurfaceBatch、MotionMath、HostRuntimeEntry、HostMetadata、scope、Gradle及相关既有Android回归和CI。底层核心热路径本轮已审计，尚非全面终验；生产OEM后端不存在，无法核验真实Binder/GPU/资源寿命及CPU功耗。未重新分析已排除OEM路径/同行源码，不把缺失后端伪装为已完成。
+- 发现经过已验收的A阶段静态姿态缓存之后，UnifiedCore.issue仍每个FRAME创建Scene及其owners、places的防御性复制并重走Scene.init；Flight的目标在整段交换中不变。这次MotionMath新增内部Scene.frozenSnapshot，将两个List固定为不可变防御副本；Flight.to只在构造时冻结，UnifiedCore.buildScene冻结初始真实任务列表；issue直接采用这些模块内部产生的不可变目标，视觉/焦点成功后复用同一目标Scene。外部NativeSnapshot仍由OwnerLooperPort独立防御复制其非空scene，两份数据相等不能替代真实观察；没有删除回执、授权、输入或返回证明。Box.init将4个坐标有限性检查从listOf/all改为等价短路标量检查，保留正宽高及x+w/y+h溢出检查；OwnerLooperPort无scene的不可变回执直接复用，非空scene仍复制列表。不改曲线、半径、帧率、尺寸、动画时间、状态门禁、原签名。源码减少分配是静态确定收益，不推算GC/功耗/帧率。追加现有DualTaskReceiptTest.swapCoalescesFramesAndPublishesOnlyAfterVisualAndFocus断言：初始、中间0.75、末尾1.0、独立视觉/焦点验证、最终current引用同一目标；两个列表拒绝可变cast clear；仍验证0.25被0.75合并、拒绝回退、在途不重入与安全清理。维持45项原测试清单及5像素门禁，未删测试。
+- 实际CI已触发 https://github.com/x647368-maker/NeXtep/actions/runs/44731851819 （job136273359606，绑定6b9a0fd0ae8efe356037581cac46a1a7560becb6），保存时状态in_progress/尚无结论；此前job查询SDK安装成功、isolated engine编译in_progress。此为新候选，**尚未验收**；最后已通过独立引擎基线仍ab3e3bb5ae061adaa7aed7f51b8c25ed307aba9e（45 Android+5合成像素），G真实Desktop单任务证据932c8375...保持，不重跑。未取得本轮真机/性能改善证据、未生成产品APK。下一轮第一动作仅终验此run的真实结果、编译产物SHA、XML及5像素状态，不启动重复CI；若明确本次改动defect仅一次最小修复，失败阻断候选验收。
+- 静态进一步边界：AndroidFrameDriver使用调用方现有Looper、Handler及Choreographer，无新增Thread/固定周期；OwnerLooperPort Handler共享同一Looper，不等同新增线程；UnifiedCore单reducer和单在途；host-runtime只有一次性daemon元数据观察、无Hook、无OEM调用且scope仅pscanvas；engine无额外生产依赖、host Java-only/compileOnly Xposed。不能把这些等同正式产品零后台负担。ReceiptBridge在DRAINING/RECOVERY收到回执会重复请求stopLocalCallbacks，可能有冗余但实际后端幂等与重激活契约未实现，暂不擅删；OwnedSurfaceBatch每帧setCrop/setVisibility有静态重复候选但仅自有合成图层实验，不抢占原生真实后端优先级、不外推产品。后续底层审计只做源证据明确、有独立实际收益的方案，尽量阶段性一次提交、完整回归；不再发明大量参考模型。双作用域准入、真实任务驻留/独立归还、生产图层/输入仍为核心P0，保持G停止条件，实质新授权契约或可执行条件才恢复该专项。若本次CI通过且无明确的新有价值缺陷，保留成果而不是继续无收益微优化。普通聊天最高可用推理、Work关闭，无后台ChatGPT研发承诺。
+
+---
+
 ## 第十六阶段 G · Desktop原生单任务几何、触控、连续性与恢复验收（2026-11-20，最新生效）
 
 - 继承F bb0034c1501b8388aa13ee363eea25844de8330b，当前窗口仍唯一生产负责人，旧窗口只读。中断后实际核对远端core与治理HEAD，不重复接任/预检修复/选型/构建。
