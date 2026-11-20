@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 D · 战略纠偏与任务驻留、真实图层换位候选（2026-11-20，待机主授权）
+
+- 继承C c42cee3fb6fa771e4e34d38e192ad8c493042049；机主授权重审技术路线，未授权恢复VD、增加系统权限或降低标准。实查core cdd1ca6c1e827ef7a25640e18e580539f1efabed compare identical。实际读取 UnifiedCore.kt blob07217f951e3d9b305a08b53f1ced5e66b90e0316（229行）、ReceiptBridge.kt blob40f1de8381aa5bc803e704b731dd32d8388b7e5c（61行）；现有NativePort.dispatch/stopLocalCallbacks/attach cancellation 与统一事件环已是后端分离起点，Capability目前仍依赖原生宿主/符号/授权/embedding/input/release等，不假定任意候选可直接接入，不硬编码能力或改弱回执。保留现有核心，不创建新状态机或多后端同时运行。
+- 本轮定向读冻结b625f22558c1d4127101f86e6c4f64a7b263d72f实际树（未截断），app/src/main/kotlin/io/github/lujinxin/nextep/display/VirtualDisplayFactory.kt blob8b565e0a9a73858a33ef330f02ed2faaa3ba1290（24–28行Surface/60Hz请求/create），VirtualDisplaySlot.kt blob52cf016e4072d3d69579fff4bdff1a20664f6765（102–110行TextureView触控映射与旧input bridge；137–152替换TextureView；198–212输出解绑/接回；234–263尺寸变化/缓冲与销毁；283–293重连），systemui/StageLiveSurfaceExchange.kt blobd5dacf6712c88684bda87960cbe7768713db371d（1096 commitMove，1252–1346多个条件路径，1411 applyFrame）。旧跨显示迁移274–422ms是历史样本，不证明VD本身唯一根因。官方 https://developer.android.com/reference/android/view/TextureView 明确可能慢于SurfaceView，https://developer.android.com/reference/android/hardware/display/VirtualDisplay 定义输出Surface与resize契约；不推断必然硬件合成或零拷贝/省电。
+- 新候选假设：每个真实任务稳定驻留自己的承载上下文，交换仅改变可见真实图层位置、尺寸与主副窗角色；先考虑自有SurfaceView直接输出，避免交换期间迁移task、重新创建display/target/镜像及旧广泛Hook；不复制旧控制面。若采用VD则明确是VD实验，不声称原生。固定逻辑画布可能引起内容裁切/留白、全尺寸持续渲染的功耗与内存成本；不同长宽比/屏幕方向、应用配置、焦点与输入、DRM/安全内容、实际归还与独立死亡恢复尚未解决。若必须变更逻辑尺寸，在独立实验确认同代内容及触控，不以裁切/降清晰度/缩刷新率掩盖。若无系统允许的第三方启动与输入途径，停止，不扩大权限、不借身份、不伪造回执。
+- 仅待机主明确批准一次不同于旧V89/AAOS的独立自有任务对照：先核实合法公开Surface/VD入口和目标环境；在唯一core、独立实验模块，使用新建可丢弃且自有测试Activity/真实动态内容，比较同尺寸同刷新率同工作负载 TextureView 与 SurfaceView 输出，以及两个自有任务稳定驻留后交换真实图层的方案。先单任务正常启动/显示/触控/退出及资源清理，未通过即停止；双任务才测交换期间任务身份、display及Surface世代是否稳定、帧时长P50/P95/P99、掉帧、主线程、事务/迁移次数、CPU/GPU/内存；空闲/持续负载功耗及热使用同机同条件，不能用模拟器推断手机功耗，不宣称自有实验等于第三方承载/生产准入。先核实允许的公开输入/交互路径，缺失即止，不复用旧input注入。原签名私测独立APK仅在门禁/签名条件满足后交用户；不覆盖生产、不新增scope、权限或分支/PR。两轮无实际改善停止；一旦出现安全、内容连续性、画质、刷新率或性能回退阻断。后续是否将合格后端接入现有NativePort、借用第三方实际任务以及正式架构变更另需明确授权和真实系统证据。
+- 本轮仅新技术假设、源代码与官方证据及路线待授权记录，无生产源码、CI、签名或APK变化，不把文档提交算产品进度。保留原生路线优先但不依赖官方或同行；停止C已排除的普通四窗、历史AAOS与V89补丁。下一轮如机主授权该有限自有任务实验，先实查公开权限/环境再实施，不再泛化研究；无可执行条件则明确停止。GPT-6 High普通聊天实际工程，Medium核验，不启用Work。
+
+---
+
 ## 第十五阶段 C · PMS110 真机普通多窗判别完成与候选路线结算（2026-11-20）
 
 - 继承B b1a9fb65d9f76be5730f8893a1c9a3786ca3acfe。实际读取机主新增录屏4815.mp4，139345830字节、SHA256 6425e60a6e76926f3ec6b08331ceed8b4296ef05b5887bed8fcaef9c3b51199f，时长70.724979秒，H264 1080×2354；本地生成2秒全片采样及12–23秒、56–70秒逐秒标记帧并逐段查看。录屏原件不上传仓库，证据摘要供接续。
