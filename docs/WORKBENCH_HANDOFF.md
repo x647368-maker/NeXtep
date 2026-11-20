@@ -14,6 +14,15 @@
 
 ---
 
+## 第十六阶段 S 补充 · 四家外部AI独立审查结算及CI清单纠错（2026-11-20，最新生效）
+
+- 机主提供四份独立建议，实际全文已读取，文件名与本地SHA256：DeepSeek Atomic_Workbench_2.0.txt e1e3157131bbc3deca1f4848c319a06e960c591273b7bbca82a809c9a51165f7；千问 台前调度_AtomicWorkbench2.0_底层架构攻关方案.md 90196c45ba5ef748935042762db0a26f599ee8211c6566282d606e291a5218f2；Kimi 简单模式.txt 4e37afe4d41d92b83ac7cf60bebecda2c9e5dd852406b05fa6c726f9b06f59d0；豆包.txt f7f39fd8e9a6721e1a4db792b69ecc604b7f646e5b7fdc3a055138cfc2fd620c（Kimi实际文件名kimi 简单模式.txt）。均自述未读到完整权威档案/项目原码；其输出不是OEM接入验证。四份原文未上传GitHub，不向外部AI发送签名材料、私有数据或OEM原件。
+- 共同可取：任务/输入/合成交还系统，固定任务容器、事件驱动、原生转场与最小注入，仅真实单任务先行，实测性能。DeepSeek推荐特权宿主/独立组织器，不能推定priv-app获得签名权限或安全注册第二全局组织器；千问建议复用已有WM Shell与BLAST同步，已有本档1390–1403附近原生专项证据，未证明受授权扩展契约，WCT.setBounds仍可能触发配置变更、同进程守护无法保证死亡归还；Kimi自由窗和shell调试编排已在阶段B–G定向研究，普通launchBounds不等于独立任务托管，removeWithTaskOrganizer=true和finally不保证保留原任务；豆包OEM直接自由窗编排值得在真实可控条件成立时考虑，但flexible_window/flexible服务名及setTaskWindowingModeFreeform/setWindowDecorationEnabled等方法均为它的假设，不视为实存，禁止其建议的权限Hook、身份绕过、窗口上限绕过、盲目切全屏及自动降级。无四家实际测量支持的CPU/GPU/功耗/满帧承诺。
+- 已实际回读G阶段：CI44728295668真实自有任务在Android17 Desktop模拟器中同task1000009、同ActivityRecord/实例标识几何调整、真实触控及正常恢复；仅小幅bounds调整，不证明PMS110第三方承载或独立死亡归还。复用该证据不再复跑；现有ColorOS框架/服务端权限与回收语义、两宿主观察均已留档。此次交叉审查没有带来新的已证实OEM合法接口/授权/部署环境，不改主架构，不新增SystemUI scope、权限、root辅助模块或上层功能。无需再让四家重新泛答同一问题。若后续有针对性的独立复核，应给出已经验证的安全边界及缺失契约，而非再问完整架构；只接受可核实的新增证据。机主未授权绕过权限、重大架构调整或系统部署实验。
+- 实核上次CI44752516299最终completed/failure，job136343737049，head=2a3ded29bdd5780af914ab56c731b086eada3065。编译、类/来源校验、模拟器准备成功；Android测试执行步骤中的Python精确测试名称集合断言失败，实际job日志AssertionError列表47项含新增duplicateExistingIdentityIsRejectedBeforeNativeDispatch，源码required集合仍旧46项。责任在本窗口遗漏CI测试清单同步，不认定测试断言本身失败或全部通过；像素采集步骤success，五状态强制验收skipped，原始XML未下载验收。artifact14636905260、14635263378仍可访问。已针对唯一明确原因实际提交ed40df41de8336dea0f2c2d743722eaf88f3b727，仅.github/workflows/workbench2-engine.yml的required集合追加新增测试名（一行替换+1/-1，compare ahead1），不删除原46项、不放宽集合等值/计数/失败错误跳过检查及五像素门禁。实际新CI44761080432 head=ed40df41de8336dea0f2c2d743722eaf88f3b727 in_progress/conclusion=null。未宣称已验收；最后正式有效核心仍3003dbea4fa7d4f5dd5e84d66845fa665d89de8d。下次仅核验本轮CI终态与原始证据，成功且完整才提升核心基线；不上层、不制作APK、不新增分支/PR、不要求机主操作。仅有新原生契约时再重开实质后端开发。
+
+---
+
 ## 第十六阶段 S · 机主底层优先纠偏与重复任务准入缺陷修复候选（2026-11-20，最新生效）
 
 - 机主明确纠正：先把底层框架和地基做好，暂不推进其他功能；不要反复讨论A/B/C及相同阻塞，若现负责人没有突破能力应允许独立AI审查。此前建议并行开发上层产品工程未获授权，现撤回。现阶段仅真实原生任务后端、底层生命周期/资源安全及确切性能缺陷；已有上层控件、交互、数据兼容成果一律保护冻结，不新增产品模块或空壳，不恢复V89，不降低门禁。未授权变更唯一生产负责人；其他AI可只读独立审查，正式接任须机主明确授权并保存接任记录。当前没有直接调用另一独立模型的能力，不假称委托完成。
