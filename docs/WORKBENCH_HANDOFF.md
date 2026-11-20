@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，当前生产负责人在任）
 
+## 第十六阶段 I · 底层回执停止异常修复候选（2026-11-20，最新生效）
+
+- 继承H终验52cadc86c8f4b6526b671143a06578a4119ee3ba，core最后已通过基线6b9a0fd0ae8efe356037581cac46a1a7560becb6（45 Android+5自有图层像素）；不重开44731851819、不重复Desktop。实际核对两分支HEAD、回读H及此前stopLocalCallbacks未处理异常的历史记录，逐字读取ReceiptBridge、OwnerLooperPort、AndroidFrameDriver、UnifiedCore和EngineLooperTest，未重新遍历OEM/竞品资料。机主继续冻结所有非必要上层、UI及外围；目标双外部作用域加自身，必要Root/Vector，不绕过安全及全部冻结产品/签名数据门禁。
+- 明确缺陷：ReceiptBridge先port.stopLocalCallbacks()再cancelPendingAttach()，若前者抛Exception会跳过后者，且回执处理已改变core状态后抛出可能使AndroidFrameDriver跳过后续kick。这是确定的代码路径缺陷，尚无真实ColorOS后端对此异常的运行证据，不能宣称已实际发生真机泄漏。统一五处停止路径为stopSourcesAndCancel；try停止，catch Exception仅记录异常类名（新增android.util.Log.w，异常路径无个人内容），finally保留原cancelPendingAttach及其原effect去重。仍由独立QUIESCE的callbacksStopped/inputBlocked/submissionVerified及原task归还证明控制资源释放，绝不把本地停止请求/异常/撤销响应当作证据。未删除任何安全机制，不改变OEM权限或接口形状；保留真实后端应承担的幂等及独立归还契约，不擅自去重未知后端停止回调。合并ReceiptBridge两处枚举setOf和AndroidFrameDriver.kick一处setOf为等价直接枚举判断，减少正常路径集合分配；不量化实际帧率、CPU或功耗改善。
+- 原子提交1ca3d73e73393ac1eff02ee80381ba3105fd1d7d，单次非强推且expected_sha=6b9a0fd0ae8efe356037581cac46a1a7560becb6，ahead1/behind0，仅ReceiptBridge.kt(+17/-11)、AndroidFrameDriver.kt(+1/-1)、EngineLooperTest.kt(+70/-1)、现有engine CI严格测试名单(+1/-1)。新增Android真实owner Looper用例localStopFailureCannotSuppressCancellationOrBypassQuiescence，使用合成fixture注入本地停止异常，覆盖显式stop、timeout、dispatch部分提交后抛异常、未知回执四种触发；证明撤销一次、原effect保留、晚到terminal继续收取、失败QUIESCE不能释放、显式有界retry后正向QUIESCE及同task归还、gate、host结束。此为预期断言，当前尚未证明通过；不提供任何真实OEM执行/归还证据。45旧项不删，预期46项及原5像素，保持原CI环境。没有实际真机、新OEM授权或生产后端突破，不改scope、不恢复V89、不创建分支/PR、未修改main或发布APK。
+- 现有CI https://github.com/x647368-maker/NeXtep/actions/runs/44733163876 已真实触发，绑定1ca3d73e73393ac1eff02ee80381ba3105fd1d7d，保存时in_progress/尚无结论，job=136277782754。此候选尚未验收，最后通过核心仍6b9a0fd0...；下一轮只终验本run及原始AAR/运行XML/像素证据，不重启已存在CI，若新缺陷仅有证据最小修复，失败阻断候选。待真实已获准NativePort完成前，不能外推实际任务生命周期、图层与Binder性能。旧回执可能先跨线程入队、后被拒绝，未经真实后端契约不丢弃不确定或晚到的归还证据。此次未实施该路径改造，不为微优化重复编译。无新增OEM证据，不重开已排除路径、不制造外围参考模型；底层有新明确缺陷才继续，非必要上层保持冻结。普通聊天最高可用推理、Work关闭。
+
+---
+
 ## 第十六阶段 H · 底层优先冻结与高频路径精简候选（2026-11-20，最新生效）
 
 - 机主明确调整研发优先级：底层完整、极致精简、稳定及真实性能是非必要上层恢复前门禁；暂停UI、美化和外围专项。WindowDeck作为效率/流畅性/省电/低热比较基准、vivo原子工作台为动画标杆；尚无同机实测对比。允许必要Root/Vector，目标仅双外部作用域加自身，不绕过系统安全，继续保留全部冻结功能/签名/数据/许可证/归还门禁。双宿主授权阻塞不能阻断其余独立有明确价值的底层优化。
