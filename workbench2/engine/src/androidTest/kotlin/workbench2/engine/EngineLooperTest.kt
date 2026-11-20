@@ -142,7 +142,7 @@ class EngineLooperTest {
             assertTrue(bridge.pump())
             assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)
         }
-        raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null, returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true))))
+        raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null, returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true, noPendingDestructiveCleanup = true))))
         instr.waitForIdleSync()
         owner {
             assertTrue(bridge.pump())
@@ -234,7 +234,7 @@ class EngineLooperTest {
             assertTrue(bridge.pump())
             assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)
             raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null,
-                returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true))))
+                returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true, noPendingDestructiveCleanup = true))))
             assertTrue(bridge.pump())
             assertEquals(Kind.INPUT_GATE, raw.sent!!.resource!!.kind)
             raw.completion!!(receipt(Observation.ABSENT, inputBlocked = false))
@@ -295,7 +295,7 @@ class EngineLooperTest {
             assertTrue(bridge.pump())
             assertEquals(Kind.TASK_LEASE, raw.sent!!.resource!!.kind)
             raw.completion!!(receipt(Observation.ABSENT, attach = proof.copy(actualOwner = null,
-                returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true))))
+                returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true, noPendingDestructiveCleanup = true))))
             assertTrue(bridge.pump())
             assertEquals(Kind.INPUT_GATE, raw.sent!!.resource!!.kind)
             raw.completion!!(receipt(Observation.ABSENT, inputBlocked = false))
@@ -402,7 +402,7 @@ class EngineLooperTest {
         assertRejectedAttachment(task.copy(canvas = task.canvas.copy(dpi = 420)))
     }
 
-    private fun returnProofForTask() = TaskReturnProof(task.task, task.user, task.token, true, true)
+    private fun returnProofForTask() = TaskReturnProof(task.task, task.user, task.token, true, true, noPendingDestructiveCleanup = true)
 
     @Test fun borrowedTaskAbsenceDuringAcquireRequiresReturnProof() = owner {
         val (core, e) = pendingExistingAttach()
@@ -410,7 +410,9 @@ class EngineLooperTest {
         val valid = returnProofForTask()
         val invalid = listOf(null, valid.copy(token = 903), valid.copy(task = 43),
             valid.copy(user = 1), valid.copy(originalOwnershipRestored = false),
-            valid.copy(noPendingReattach = false))
+            valid.copy(noPendingReattach = false),
+            valid.copy(noPendingDestructiveCleanup = false),
+            TaskReturnProof(task.task, task.user, task.token, true, true))
         for (returned in invalid) {
             assertTrue(core.receipt(Evidence(e, true, Observation.ABSENT, true,
                 attach = empty.copy(returnedTask = returned))))
@@ -443,6 +445,8 @@ class EngineLooperTest {
             empty.copy(returnedTask = valid.copy(task = 43)), empty.copy(returnedTask = valid.copy(user = 1)),
             empty.copy(returnedTask = valid.copy(originalOwnershipRestored = false)),
             empty.copy(returnedTask = valid.copy(noPendingReattach = false)),
+            empty.copy(returnedTask = valid.copy(noPendingDestructiveCleanup = false)),
+            empty.copy(returnedTask = TaskReturnProof(task.task, task.user, task.token, true, true)),
             empty.copy(container = "other-container", returnedTask = valid),
             empty.copy(terminal = false, returnedTask = valid),
             empty.copy(correlated = false, returnedTask = valid),

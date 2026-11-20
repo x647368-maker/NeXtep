@@ -22,7 +22,8 @@ data class StartPlan(val requests:List<LaunchRequest>,val places:List<Box>,val d
  * request, host and effect by the adapter. A missing task, transition enqueue, or a
  * container becoming empty is not proof. These fields are not self-authenticating. */
 data class TaskReturnProof(val task:Int,val user:Int,val token:Long,
-                           val originalOwnershipRestored:Boolean,val noPendingReattach:Boolean)
+                           val originalOwnershipRestored:Boolean,val noPendingReattach:Boolean,
+                           val noPendingDestructiveCleanup:Boolean=false)
 data class AttachProof(val requestId:Long,val container:String?,val actualOwner:Owner?,val actualComponent:String?,val correlated:Boolean,val terminal:Boolean,
                        val returnedTask:TaskReturnProof?=null)
 data class Resource(val kind:Kind,val owner:Owner?=null,val request:LaunchRequest?=null,val container:String?=null)
@@ -90,13 +91,15 @@ class UnifiedCore {
             if(v.actualOwner!=null)return false
             // A borrowed task must still exist in its original WM ownership. Apply this
             // to cancelled/failed acquire as well as release: either can leave a task
-            // detached, deleted or awaiting an old reparent. New-task requests have
+            // detached, deleted or awaiting an old reparent or delayed task removal.
+            // A restored task can still be destroyed by previously queued system cleanup.
+            // Both negative conditions must be independently established. New-task requests have
             // no pre-existing identity; their terminal creation/cleanup proof is unchanged.
             val original=req.existing?:return true
             val returned=v.returnedTask?:return false
             return returned.task==original.task && returned.user==original.user &&
                 returned.token==original.token && returned.originalOwnershipRestored &&
-                returned.noPendingReattach
+                returned.noPendingReattach && returned.noPendingDestructiveCleanup
         }
         if(r.observation!=Observation.PRESENT || v.container.isNullOrBlank())return false
         // A second request cannot borrow the same native container or task/token. Uncertain attribution
