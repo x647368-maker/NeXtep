@@ -59,61 +59,73 @@ jobs:
           test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
           adb shell getprop ro.build.fingerprint > "$dir/fingerprint.txt"
           adb shell pm list features > "$dir/features.txt"
-          adb shell am help > "$dir/am-help.txt"
           if ! grep -Fx 'feature:android.software.freeform_window_management' <(tr -d '\r' < "$dir/features.txt"); then
-            echo 'NO_GO_NATIVE_FREEFORM_FEATURE_ABSENT; no task manipulation performed' | tee "$dir/result.txt"
+            echo 'NO_GO_NATIVE_FREEFORM_FEATURE_ABSENT' | tee "$dir/result.txt"
             exit 1
           fi
-          # The task subcommands are printed on separate, indented lines.
-          if ! awk '
-            { sub(/\r$/, "") }
-            /^[[:space:]]*task \[COMMAND\] \[\.\.\.\]: sub-commands for operating on activity tasks\.[[:space:]]*$/ {
-              indent = match($0, /[^[:space:]]/) - 1; in_task = 1; next
-            }
-            in_task && /[^[:space:]]/ && match($0, /[^[:space:]]/) - 1 <= indent { in_task = 0 }
-            in_task && /^[[:space:]]+resize <TASK_ID> <LEFT> <TOP> <RIGHT> <BOTTOM>[[:space:]]*$/ { print; found = 1 }
-            END { exit !found }
-          ' "$dir/am-help.txt"; then
-            echo 'NO_GO_TASK_RESIZE_USAGE_NOT_VERIFIED; no task manipulation performed' | tee "$dir/result.txt"
-            exit 1
-          fi
-      - name: Reuse original own-task fixture, run one isolated test
+          test "$(adb shell id -u | tr -d '\r')" = 2000
+          adb shell dumpsys package com.android.shell > "$dir/shell-package.txt"
+          grep -F 'android.permission.MANAGE_ACTIVITY_TASKS: granted=true' "$dir/shell-package.txt"
+          grep -F 'android.permission.REAL_GET_TASKS: granted=true' "$dir/shell-package.txt"
+      - name: Build separate disposable target and controller packages
         shell: bash
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/wb2-system-window"
-          lab=workbench2/system-window-lab/SystemWindowResizeTest.kt
-          # CI-only test source; never modifies checked-in probe or original regression suite.
-          into=workbench2/probe/field/src/androidTest/kotlin/workbench2/field/SystemWindowResizeTest.kt
-          test ! -e "$into"
-          sha256sum "$lab" > "$dir/test-source.sha256"
-          cp "$lab" "$into"
-          trap 'rm -f "$into"' EXIT
-          bash gradlew -p workbench2/probe :field:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=workbench2.field.SystemWindowResizeTest --no-daemon --console=plain --stacktrace
+          lab=workbench2/system-window-lab
+          field=workbench2/probe/field
+          sha256sum "$lab/BatchTargetActivity.kt" "$lab/SystemWindowBatchTest.kt" "$lab/verify_batch.py" > "$dir/test-source.sha256"
+          cp "$lab/BatchTargetActivity.kt" "$field/src/main/kotlin/workbench2/field/"
+          cp "$lab/SystemWindowBatchTest.kt" "$field/src/androidTest/kotlin/workbench2/field/"
+          # Local CI checkout only. Never deployed or committed as a production component.
           python3 - <<'PY'
-          import pathlib, xml.etree.ElementTree as E
-          root=pathlib.Path('workbench2/probe/field/build/outputs/androidTest-results/connected')
-          cases=[c for f in root.rglob('TEST-*.xml') for c in E.parse(f).iter('testcase')]
-          assert len(cases)==1 and cases[0].get('name')=='existingOwnTaskChangesAndRestoresNativeGeometry'
-          assert not any(cases[0].find(s) is not None for s in ('failure','error','skipped'))
+          from pathlib import Path
+          p=Path('workbench2/probe/field/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          assert s.count('</application>')==1
+          p.write_text(s.replace('</application>', '<activity android:name=".BatchTargetActivity" android:exported="true" android:resizeableActivity="true" /></application>'))
+          p=Path('workbench2/probe/field/build.gradle.kts')
+          s=p.read_text()
+          old='applicationId = "io.github.x647368maker.atomicworkbench.hostevidence"'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,'applicationId = "io.github.x647368maker.atomicworkbench.batchtarget"'))
           PY
-          adb logcat -d -s WB2SystemWindow:I > "$dir/geometry.txt"
-          grep -F 'GEOMETRY_OK' "$dir/geometry.txt"
-          for phase in before changed restored; do
-            adb pull "/data/local/tmp/wb2-system-window-$phase.png" "$dir/$phase.png"
-            test -s "$dir/$phase.png"
-          done
-          echo 'OWN_NATIVE_GEOMETRY_TEST_PASSED_NOT_OEM_ADMISSION' > "$dir/result.txt"
-      - name: Preserve outcomes and shut down only isolated test emulator
+          bash gradlew -p workbench2/probe :field:assembleDebug --no-daemon --console=plain --stacktrace
+          apk="$field/build/outputs/apk/debug/field-debug.apk"
+          aapt="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          "$aapt" dump badging "$apk" > "$dir/target-manifest.txt"
+          grep -F "package: name='io.github.x647368maker.atomicworkbench.batchtarget'" "$dir/target-manifest.txt"
+          sha256sum "$apk" > "$dir/target.sha256"
+          adb install "$apk"
+          sed -i 's/applicationId = "io.github.x647368maker.atomicworkbench.batchtarget"/applicationId = "io.github.x647368maker.atomicworkbench.batchcontroller"/' "$field/build.gradle.kts"
+          bash gradlew -p workbench2/probe :field:assembleDebug :field:assembleDebugAndroidTest --no-daemon --console=plain --stacktrace
+          testapk="$field/build/outputs/apk/androidTest/debug/field-debug-androidTest.apk"
+          "$aapt" dump badging "$apk" > "$dir/controller-manifest.txt"
+          grep -F "package: name='io.github.x647368maker.atomicworkbench.batchcontroller'" "$dir/controller-manifest.txt"
+          "$aapt" dump badging "$testapk" > "$dir/test-manifest.txt"
+          grep -F "package: name='io.github.x647368maker.atomicworkbench.batchcontroller.test'" "$dir/test-manifest.txt"
+          sha256sum "$apk" "$testapk" > "$dir/controller.sha256"
+          adb install "$apk"
+          adb install -t "$testapk"
+          adb shell pm list instrumentation > "$dir/instrumentation-inventory.txt"
+          grep -F 'io.github.x647368maker.atomicworkbench.batchcontroller.test/androidx.test.runner.AndroidJUnitRunner (target=io.github.x647368maker.atomicworkbench.batchcontroller)' "$dir/instrumentation-inventory.txt"
+      - name: Execute one genuine dual-task batch and independent controller-stop experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/wb2-system-window"
+          python3 workbench2/system-window-lab/verify_batch.py "$dir"
+          grep -Fx 'DUAL_OWN_TASK_BATCH_GEOMETRY_INPUT_AND_CONTROLLER_STOP_PASSED_NOT_OEM_ADMISSION' "$dir/result.txt"
+      - name: Preserve original evidence and destroy isolated emulator
         if: always()
         shell: bash
         run: |
           dir="$RUNNER_TEMP/wb2-system-window"
           mkdir -p "$dir"
-          timeout 20 adb logcat -d -s WB2SystemWindow:I > "$dir/partial-geometry.txt" 2>&1 || true
-          for phase in before changed restored; do
+          timeout 20 adb logcat -d -v raw -s WB2Batch:I WB2BatchTarget:I > "$dir/batch-log.txt" 2>&1 || true
+          for phase in before swapped postdeath; do
             if [ ! -s "$dir/$phase.png" ]; then
-              timeout 15 adb pull "/data/local/tmp/wb2-system-window-$phase.png" "$dir/$phase.png" >> "$dir/pull-status.txt" 2>&1 || true
+              timeout 15 adb pull "/data/local/tmp/wb2-batch-$phase.png" "$dir/$phase.png" >> "$dir/pull-status.txt" 2>&1 || true
             fi
           done
           timeout 20 adb shell dumpsys activity activities > "$dir/end-activities.txt" 2>&1 || true
@@ -121,8 +133,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wb2-system-window-evidence
-          path: |
-            ${{ runner.temp }}/wb2-system-window/
-            workbench2/probe/field/build/outputs/androidTest-results/connected/
+          name: wb2-system-window-batch-evidence
+          path: ${{ runner.temp }}/wb2-system-window/
           if-no-files-found: warn
