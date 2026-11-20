@@ -49,6 +49,15 @@ jobs:
           bash gradlew -p workbench2/native-lab :assembleDebug :assembleDebugAndroidTest --no-daemon --console=plain --stacktrace 2>&1 | tee "$EVIDENCE/build.txt"
           sha256sum $(find workbench2/native-lab/build/outputs/apk -name '*.apk' -type f) > "$EVIDENCE/apks-sha256.txt"
           git ls-tree -r HEAD workbench2/engine/src/main workbench2/native-lab > "$EVIDENCE/source-blobs.txt"
+          # Preserve only disposable lab binaries, never a production release.
+          app=$(find workbench2/native-lab/build/outputs/apk/debug -name '*.apk' -type f -print -quit)
+          testapk=$(find workbench2/native-lab/build/outputs/apk/androidTest/debug -name '*.apk' -type f -print -quit)
+          test -s "$app"; test -s "$testapk"
+          mkdir -p "$EVIDENCE/experimental-apks"
+          cp "$app" "$EVIDENCE/experimental-apks/lab.apk"
+          cp "$testapk" "$EVIDENCE/experimental-apks/lab-test.apk"
+          (cd "$EVIDENCE/experimental-apks" && sha256sum lab.apk lab-test.apk > SHA256SUMS && sha256sum -c SHA256SUMS)
+          echo 'Experimental binaries only; not original-signed release APKs.' > "$EVIDENCE/experimental-apks/SCOPE.txt"
       - name: Admit disposable official automotive emulator
         shell: bash
         run: |
@@ -68,24 +77,195 @@ jobs:
           echo no | avdmanager create avd --force --name wb2-aosp --path "$ANDROID_AVD_HOME/wb2-aosp.avd" --package "$image"
           sdklevel=$(printf '%s' "$image" | cut -d';' -f2)
           printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=%s\n' "$ANDROID_AVD_HOME/wb2-aosp.avd" "$sdklevel" > "$ANDROID_AVD_HOME/wb2-aosp.ini"
+          {
+            command -v adb
+            adb version
+            "$ANDROID_HOME/emulator/emulator" -version
+            df -h "$RUNNER_TEMP"
+            free -m
+          } > "$EVIDENCE/runner-tools.txt" 2>&1
+          timeout 15 adb start-server > "$EVIDENCE/adb-start.txt" 2>&1
+          timeout 10 adb devices -l > "$EVIDENCE/devices-before-launch.txt"
+          # A new runner must not already contain any attached device.
+          python3 - "$EVIDENCE/devices-before-launch.txt" <<'PY'
+          import pathlib,sys
+          lines=pathlib.Path(sys.argv[1]).read_text().splitlines()
+          assert [x.strip() for x in lines if x.strip()]==["List of devices attached"], lines
+          PY
           nohup "$ANDROID_HOME/emulator/emulator" -avd wb2-aosp -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 3072 -cores 2 -gpu swiftshader_indirect > "$EVIDENCE/emulator.log" 2>&1 &
-          timeout 150 adb -s emulator-5554 wait-for-device
-          timeout 240 bash -c 'until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
-          test "$(adb -s emulator-5554 shell getprop ro.build.version.sdk | tr -d '\r')" = 35
-          adb -s emulator-5554 shell getprop ro.build.fingerprint > "$EVIDENCE/fingerprint.txt"
-          adb -s emulator-5554 shell pm list features > "$EVIDENCE/features.txt"
-          grep -F 'feature:android.hardware.type.automotive' "$EVIDENCE/features.txt"
-          adb -s emulator-5554 shell service list > "$EVIDENCE/services.txt"
-          grep -E 'car_service|android.car.ICar' "$EVIDENCE/services.txt"
-          adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/before-activities.txt"
-          adb -s emulator-5554 shell dumpsys car_service > "$EVIDENCE/car-service.txt"
-          adb -s emulator-5554 shell wm dismiss-keyguard
+          export WB2_EMULATOR_PID=$!
+          printf '%s\n' "$WB2_EMULATOR_PID" > "$EVIDENCE/emulator-pid.txt"
+          # Same original boot budgets, followed by a single bounded readiness window.
+          python3 - <<'PY'
+          import datetime,json,os,pathlib,re,subprocess,time
+          p=pathlib.Path(os.environ["EVIDENCE"])
+          serial="emulator-5554"
+          pid=int(os.environ["WB2_EMULATOR_PID"])
+          fingerprint="google/sdk_gcar_x86_64/emulator_car64_x86_64:15/AAI5.260516.001.A6/16618942:userdebug/test-keys"
+          n=0
+          deadline=None
+          def alive():
+              os.kill(pid,0)
+              proc=pathlib.Path("/proc")/str(pid)/"stat"
+              assert proc.exists() and proc.read_text().rsplit(")",1)[1].split()[0]!="Z","Emulator exited"
+          def run(args,limit=12,required=True):
+              global n
+              n+=1
+              alive()
+              begin=time.monotonic()
+              wall=datetime.datetime.now(datetime.timezone.utc).isoformat()
+              budget=limit if deadline is None else min(limit,deadline-begin)
+              assert budget>0,"Readiness deadline reached"
+              try:
+                  q=subprocess.run(args,capture_output=True,text=True,errors="replace",timeout=budget)
+                  rc=q.returncode; out=q.stdout; err=q.stderr
+              except subprocess.TimeoutExpired as e:
+                  rc=124
+                  def decode(x):
+                      return x.decode(errors="replace") if isinstance(x,bytes) else x or ""
+                  out=decode(e.stdout);err=decode(e.stderr)+"\nCOMMAND_TIMEOUT"
+              stem=f"{n:03d}"
+              (p/"admission-commands"/(stem+".stdout")).write_text(out)
+              (p/"admission-commands"/(stem+".stderr")).write_text(err)
+              with (p/"admission-commands.jsonl").open("a") as f:
+                  f.write(json.dumps({"time":wall,"args":args,"exit":rc,"elapsed":round(time.monotonic()-begin,3),"stdout_file":stem+".stdout","stderr_file":stem+".stderr"})+"\n")
+              print(f"admission {stem} rc={rc}: {' '.join(args)}",flush=True)
+              if required:
+                  assert rc==0,(args,rc,err)
+              return rc,out.strip(),err
+          def adb(*args,**kw): return run(["adb","-s",serial,*args],**kw)
+          def pause(seconds=5):
+              left=deadline-time.monotonic()
+              assert left>0,"Readiness deadline reached"
+              time.sleep(min(seconds,left))
+          def state():
+              _,out,_=run(["adb","devices","-l"])
+              lines=[x.strip() for x in out.splitlines() if x.strip()]
+              assert lines and lines[0]=="List of devices attached","Unknown device listing"
+              rows=[x.split() for x in lines[1:]]
+              assert all(len(x)>=2 and x[0]==serial for x in rows) and len(rows)<=1, "Unexpected device present"
+              if not rows:return "absent"
+              assert rows[0][1] in ("device","offline"),("Unapproved device state",rows[0])
+              return rows[0][1]
+          def canon(comp):
+              pkg,cls=comp.split("/",1)
+              return pkg+"/"+(pkg+cls if cls.startswith(".") else cls)
+          (p/"admission-commands").mkdir()
+          adb("wait-for-device",limit=150)
+          deadline=time.monotonic()+240
+          while True:
+              rc,value,_=adb("shell","getprop","sys.boot_completed",required=False)
+              if rc==0 and value=="1": break
+              pause(2)
+          deadline=time.monotonic()+180
+          streak=0
+          last_user=None
+          dismissed=False
+          reconnected=False
+          reconnect_deadline=None
+          help_checked=False
+          while time.monotonic()<deadline:
+              current=state()
+              if current!="device":
+                  streak=0; last_user=None; dismissed=False
+                  if current=="offline" and not reconnected:
+                      _,helptext,helperr=run(["adb","help"])
+                      assert re.search(r"reconnect\s+offline",helptext+"\n"+helperr),"Installed ADB lacks official offline reconnect"
+                      assert state()=="offline","Device changed during recovery admission"
+                      reconnected=True
+                      reconnect_deadline=min(deadline,time.monotonic()+60)
+                      run(["adb","reconnect","offline"])
+                  if reconnect_deadline is not None:
+                      assert time.monotonic()<reconnect_deadline,"Offline recovery did not restore transport in 60 seconds"
+                  elif current=="absent":
+                      # No known offline device: do not issue any reconnect.
+                      print("Waiting for the same emulator to enumerate",flush=True)
+                  pause();continue
+              if reconnect_deadline is not None:
+                  assert time.monotonic()<reconnect_deadline,"Offline recovery exceeded 60 seconds"
+                  reconnect_deadline=None
+              try:
+                  # Recheck the exact build and all prior admission conditions in each sample.
+                  _,sdk,_=adb("shell","getprop","ro.build.version.sdk")
+                  _,fp,_=adb("shell","getprop","ro.build.fingerprint")
+                  assert sdk=="35" and fp==fingerprint,"Unexpected Android build"
+                  _,boot,_=adb("shell","getprop","sys.boot_completed")
+                  assert boot=="1","Boot property regressed"
+                  _,features,_=adb("shell","pm","list","features")
+                  _,services,_=adb("shell","service","list")
+                  assert "feature:android.hardware.type.automotive" in features
+                  assert re.search(r"car_service:\s*\[android\.car\.ICar\]",services),"Missing car service"
+                  if not help_checked:
+                      _,helptext,helperr=adb("shell","am","help")
+                      assert "get-started-user-state" in helptext+"\n"+helperr,"User-state query unavailable"
+                      help_checked=True
+                  _,user,_=adb("shell","am","get-current-user")
+                  assert re.fullmatch(r"\d+",user),"Unknown foreground user"
+                  if user!=last_user: streak=0;dismissed=False
+                  last_user=user
+                  _,user_state,_=adb("shell","am","get-started-user-state",user)
+                  if user_state!="RUNNING_UNLOCKED":
+                      assert user_state in ("BOOTING","RUNNING_LOCKED","RUNNING_UNLOCKING","STOPPING","SHUTDOWN"),("Unknown user state",user_state)
+                      streak=0;dismissed=False;pause();continue
+                  if not dismissed:
+                      adb("shell","wm","dismiss-keyguard")
+                      dismissed=True
+                  _,home,_=adb("shell","cmd","package","resolve-activity","--brief","--user",user,"-a","android.intent.action.MAIN","-c","android.intent.category.HOME")
+                  components=re.findall(r"(?m)^([\w.]+/[\w.$]+)\s*$",home)
+                  assert len(components)==1,("Unknown HOME resolution",home)
+                  home_component=canon(components[0])
+                  _,activities,_=adb("shell","dumpsys","activity","activities")
+                  _,car,_=adb("shell","dumpsys","car_service")
+                  # Actual P/V format: display 0 section, followed by other display sections.
+                  displays=re.split(r"(?m)^\s*Display: mDisplayId=(\d+)[^\n]*\n",activities)
+                  main=[displays[i+1] for i in range(1,len(displays),2) if displays[i]=="0"]
+                  assert len(main)==1,"Cannot identify main display"
+                  focus=re.findall(r"(?m)^\s*mCurrentFocus=(.+)$",main[0])
+                  assert len(focus)==1,"Cannot identify current main-display focus"
+                  keyguard=re.findall(r"(?m)^\s*KeyguardShowing=(true|false)[^\n]* at display=0\s*$",activities)
+                  assert len(keyguard)==1,"Cannot identify keyguard state"
+                  service=re.search(r"(?ms)^\s*\*CarActivityService\*\s*\n(.*?)(?=^\s*\*[A-Za-z][^\n]*\*\s*$|\Z)",car)
+                  assert service,"Cannot identify CarActivityService"
+                  proxy=re.findall(r"(?m)^\s*CarSystemUIProxy registered:\s*\n\s*(true|false)\s*$",service[1])
+                  assert len(proxy)==1,"Unknown proxy registration state"
+                  # A HOME task for this actual user must be visible/running/focused on display 0.
+                  rows=[x for x in service[1].splitlines() if "TaskInfo{" in x and re.search(r"\buserId="+user+r"\b",x) and "displayId=0 " in x and "isFocused=true " in x and "isVisible=true " in x and "isRunning=true " in x]
+                  top=re.findall(r"topActivity=ComponentInfo\{([^}]+)\}","\n".join(rows))
+                  ready=(proxy==["true"] and keyguard==["false"] and focus[0]!="null" and "FallbackHome" not in focus[0] and "FallbackHome" not in home_component and len(top)==1 and canon(top[0])==home_component)
+                  _,end_user,_=adb("shell","am","get-current-user")
+                  assert re.fullmatch(r"\d+",end_user),"Unknown end user"
+                  if state()!="device" or end_user!=user: ready=False;dismissed=False;last_user=None
+                  streak=streak+1 if ready else 0
+                  print(json.dumps({"user":user,"user_state":user_state,"home":home_component,"focus":focus[0],"keyguard":keyguard,"proxy":proxy,"top":top,"ready":ready,"streak":streak}),flush=True)
+                  with (p/"readiness-samples.jsonl").open("a") as f:
+                      f.write(json.dumps({"user":user,"user_state":user_state,"home":home_component,"focus":focus[0],"keyguard":keyguard,"proxy":proxy,"top":top,"ready":ready,"streak":streak})+"\n")
+                  if streak==3:
+                      for name,data in [("fingerprint.txt",fp),("features.txt",features),("services.txt",services),("before-activities.txt",activities),("car-service.txt",car),("admitted-user.txt",user)]:
+                          (p/name).write_text(data+"\n")
+                      (p/"admission-result.json").write_text(json.dumps({"status":"ready","user":user,"consecutive":streak,"offline_reconnect_used":reconnected}))
+                      break
+              except AssertionError:
+                  # Only a real observed transport loss may enter the one recovery path.
+                  if state()=="offline":
+                      streak=0;last_user=None;dismissed=False
+                      pause();continue
+                  raise
+              pause()
+          else:
+              raise RuntimeError("Environment did not meet all stable readiness conditions in 180 seconds")
+          assert (p/"admission-result.json").exists(),"No readiness admission"
+          PY
+          timeout 20 adb -s emulator-5554 logcat -d -v threadtime > "$EVIDENCE/pretest-logcat.txt"
 
       - name: Run one own task using the unchanged real core
         shell: bash
         run: |
           set -euo pipefail
           adb -s emulator-5554 shell getprop ro.build.fingerprint | tr -d '\r' | grep -Fx 'google/sdk_gcar_x86_64/emulator_car64_x86_64:15/AAI5.260516.001.A6/16618942:userdebug/test-keys'
+          test "$(timeout 10 adb -s emulator-5554 get-state)" = device
+          test "$(timeout 10 adb -s emulator-5554 shell am get-current-user | tr -d '\r')" = "$(cat "$EVIDENCE/admitted-user.txt")"
+          test "$(timeout 10 adb -s emulator-5554 shell am get-started-user-state "$(cat "$EVIDENCE/admitted-user.txt")" | tr -d '\r')" = RUNNING_UNLOCKED
+          (cd "$EVIDENCE/experimental-apks" && sha256sum -c SHA256SUMS)
           app=$(find workbench2/native-lab/build/outputs/apk/debug -name '*.apk' -print -quit)
           testapk=$(find workbench2/native-lab/build/outputs/apk/androidTest/debug -name '*.apk' -print -quit)
           test -s "$app"; test -s "$testapk"
