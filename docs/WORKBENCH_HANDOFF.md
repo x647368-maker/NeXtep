@@ -14,6 +14,15 @@
 
 ---
 
+## 第十六阶段 R 补充 · 云端平台构建条件与成本决策（2026-11-20，最新生效）
+
+- 机主要求直接继续，明确不遗漏后续指令。此轮仅核证上一轮未覆盖的外部云端平台构建条件，不重复R的本地环境检查、OEM逆向、历史API路线、模拟器实验或46+5核心测试。官方AOSP构建要求 https://source.android.com/docs/setup/start/requirements ：至少400GB可用磁盘，Google使用72核/64GB构建机器；官方Cuttlefish https://source.android.com/docs/devices/cuttlefish/get-started 需可用KVM，Google Cloud官方 https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/overview 及 https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/enabling 给出嵌套虚拟化环境条件。云端自有AOSP构建原则上有资源方案，但未创建、开通或实际运行任何云资源，不能等同产品部署。
+- GitHub官方 https://docs.github.com/en/actions/concepts/runners/larger-runners 、https://docs.github.com/en/actions/reference/runners/larger-runners ：大型托管runner面向Team/Enterprise Cloud组织或企业；64核Linux规格256GB内存/2040GB磁盘。官方 https://docs.github.com/en/billing/reference/actions-runner-pricing 列出Linux 32核0.082美元/分钟、64核0.162美元/分钟。实际通过已连接GitHub读取目标仓库API元数据，owner.type=User、private=false、default_branch=main；不是组织仓库。未核实其他组织资格、账单、配额、云账号或费用减免，不改变仓库归属、不购买/部署任何资源、不要求机主开通付费服务。现有应用级CI保留。
+- 核心判断：计算与虚拟化条件即使解决，只能验证自有平台中的任务服务，不能产生原ColorOS的特权委托、原签名客户端准入、双外部宿主部署或异常归还契约。无明确可迁移条件，不推荐租用云服务器或升级GitHub计划，不把外部算力作为生产解阻。方案A仍主选；B条件性保留；C和V89不恢复。没有新增可实施生产入口，无生产源码、编译、CI、APK、分支/PR或真机操作。本轮仅保存云端条件及避免无效付费的决策，不将其当作功能研发进展。
+- 后续不再以同义指令循环。仅在取得明确受支持的ColorOS部署/任务委托/独立恢复依据，或能明确解决产品瓶颈的实际新环境与机主授权时重开真实后端工程。当前若需要机主决策，必须直接明确所需唯一事项、价值和风险；无必要事项不要求操作。保持既有官方回复监测，非唯一突破来源；不自行增加监测、支出或后台研发承诺。每轮主动给出结果、阻塞、检查点、必要操作与完整条件式接续指令、模型配置。核心仍3003dbea4fa7d4f5dd5e84d66845fa665d89de8d，所有永久规则、签名与数据、冻结效果、通用性及性能门禁无变化。
+
+---
+
 ## 第十六阶段 R · 独立平台级服务一次性可实施性预检结算（2026-11-20，最新生效）
 
 - 继承Q权威检查点d0ab6759cd07c376682865ab5bbcf9b3a333143b及已验收核心3003dbea4fa7d4f5dd5e84d66845fa665d89de8d（46 Android+5自有图层像素）。机主授权方案B一次严格隔离的可实施性预检，不授权改变生产架构、刷机、修改系统分区、扩大作用域或降低门禁。本轮按此范围结算，不重复OEM逆向、公开API搜索、AAOS/VD实验及既有核心测试。
