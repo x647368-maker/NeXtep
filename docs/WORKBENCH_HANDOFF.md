@@ -14,6 +14,18 @@
 
 ---
 
+## 第十六阶段 K · 桌面与服务端任务脱离/归还真实静态契约（2026-11-20）
+
+- 继承新增永久通用性制度 e2fac51fb9ee42f2822d730fd2e6440be94ed7b6 及已验收 core 1ca3d73e73393ac1eff02ee80381ba3105fd1d7d；实际核对远端双HEAD。机主将已有 MT 目录中的 oplus-services.jar 再上传，此次实读 30503412 bytes，SHA256 4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e 与十三Y原件一致，全部5 ZIP成员CRC无错，3 DEX。实读仍挂载 OplusLauncher.apk SHA256 add93101fd0ec42de67076f3ea4381a04d0cc3c65ded15714558ba97c717cf99，与J一致。服务 classes3.dex SHA256 ffddbcc8f83adc86df0344383fdeddfbd2a0bd47df3a6286bbd6b577178027fa。按实际DEX字段/方法/指令宽度、寄存器与分支追踪，不以接口名或strings推断执行。未上传OEM原件至仓库、不复制其代码、不重做其他已排除路径。
+- **J新增脱离调用的服务端语义明确**：classes3.dex OplusActivityTaskManagerServiceEnhance.removeEmbeddedContainerTask #20981 code_off 0x2e8c40，+0x9 enforceCallingPermission(com.oplus.permission.safe.WINDOW)，随后+0x12进入FlexibleWindowManagerService #14549 0x28afa8。该服务在WM锁内检查容器存在、嵌入任务及场景；匹配的容器关联分支+0x91读取关联、+0x9f setShowRecent、+0xab清除嵌入关系；+0xfc/+0x11f存在条件图层排序，+0x16b处理下一canvas、+0x16e调用removeTaskIfNeed、+0x179移除容器子项；+0x186/+0x18e刷新率策略、+0x1a6更新容器Intent、+0x1a9记录任务快照，+0x1b6另一分支调用removeEmbeddedTaskIfBind，子项清空后可取消容器标记。非单纯Surface释放；返回void，容器不存在亦可直接返回，不可视为原task恢复ACK。未证实原父容器、原display、原身份、真实输入或最终像素。服务端内部快照记录不授权产品用截图代替真实任务。
+- **桌面“不删除”设置具备真实服务端字段语义，而非仅客户端字符串**：TaskExtImpl.setLaunchParams #42096 0x52c984 先经支持场景/配置相关判断，+0x96读取相同detach选项名、+0x98 Bundle.getBoolean、+0x9c存入字段0x56c7 mRemoveTaskWhenDetach；#41854 0x525e78 getter读取该字段；#41961 resetLaunchParams +0x28清零字段；#13958 adjustOptionsForAcrossEmbeddedTask +0x134检查该字段，条件下将其传播到新launch options。J中桌面init配置与服务端读取语义可以关联，但尚未核实客户端框架中间转发、实际目标任务的运行字段值和所有清理路径。不能由一个布尔值断言持久驻留、进程不被杀或异常无损归还，不用该私有选项绕开权限。
+- **正常脱离也可能实际移除任务，且存在异步清理**：#14555 0x28b898调用#14556 0x28b8b4；后者+0x19读取isRemoveTaskWhenDetach，随后场景与isFlexibleEmbedded判断，满足相关条件时+0x71调用ActivityTaskSupervisor.removeTask（日志remove-by-ContainerTask），并有+0xcd另一相关任务清理路径。非删除分支另外受状态及调用方式限制，存在+0x118 moveTaskToBack，不等于返回原任务位置。#14550 0x28b3e0 removeEmbeddedTaskIfBind在特定绑定清理分支+0x91/+0xba调用postRemoveTaskIfNeed；#14526 0x289ee4 将清理项加入pending map并通过ATMS Handler.post，#13860 0x268118 Runnable检查map项后调用removeTaskIfNeed。故本地detach/callback/事务提交不代表后续任务清理已经停止。十三Y死亡观察 #13872 0x2685a8 的+0x85字段检查、+0xf3嵌入关系清除、+0x103有条件真实removeTask与此相符；本次没有复现实际任务删除或死亡恢复，不声称所有分支一定删除。
+- **准入反证**：J桌面最近任务入口 startFlexibleWindowForRecentTasks(ILandroid/graphics/Rect;) 对应服务端#21040 0x2e5c54，+0x9仍强制safe.WINDOW，再委托服务#14703及helper#28094。helper先检查实际任务/支持应用/窗口与加密状态，并有异步启动分支，返回布尔不能确认完成。既有setEmbeddedContainerTask入口#21002同样强制safe.WINDOW。新材料没有公开任意任务委托许可，动态授权与原签名应用实际grant仍未知。只确认系统已有机制，不能借桌面身份/Root/Vector跨越权限。无已获准目标固件执行环境；没有实测真实任务驻留、跨任务交换、归还或功耗。
+- **工程判断**：原生驻留方向仍值得保留；当前统一核心的独立归还、停止生产者/输入、确认最终任务状态与晚到回执门禁有真实服务端风险依据，禁止将detach=false、void返回、Handler提交、已知taskId、窗口隐藏当成归还证明。不因此增造合成模型、微优化或提前大量适配；真实后端条件未满足，不改production core/scope/main、不启动CI、不发APK、不创建分支/PR。46 Android +5自有图层像素不重跑。上层冻结、统一产品APK和跨固件适配制度有效。
+- 下一步触发条件：取得实际支持的限域任务控制授权和可执行的目标固件隔离环境（不把官方回复设为唯一可行来源），才开展可丢弃自有单任务驻留/输入/正常恢复，分别验证客户端及宿主异常结束后独立同任务状态、清理队列终结及无迟到重挂接；再双任务、一大四小和跨设备同条件性能。当前两份文件已具备，继续重复反编译不能解决权限和真实运行取证，不再要求机主重发旧材料，也不要求操作终端/电脑或现在安装测试APK。尚无新条件则停止，不要循环发送继续。普通聊天最高可用推理，Work关闭。此为实质新增静态证据而非生产实现或性能验收。
+
+---
+
 ## 第十六阶段 J · PMS110 系统桌面原件新增静态证据（2026-11-20）
 
 - 继承 I 终验 1a8814c7bfc71a315e49cc68445f73aebeea25cb；唯一有效工程 workbench2/core 1ca3d73e73393ac1eff02ee80381ba3105fd1d7d，46 Android + 5 自有图层像素不重跑。机主在当前手机 MT 管理器从 /system_ext/priv-app/OplusLauncher/ 复制 OplusLauncher.apk 至共享目录并上传，截图与文件独立存在。实读上传 APK 70738743 bytes，SHA256 add93101fd0ec42de67076f3ea4381a04d0cc3c65ded15714558ba97c717cf99，5868 ZIP成员CRC均过，7份DEX。二进制Manifest实解 package=com.android.launcher, versionName=17.3.13, versionCode=170030013, minSDK35, targetSDK37, sharedUserId=oppo.uid.launcher。此为机主设备系统分区原件来源，尚无当前运行桌面 APK/证书/完整指纹匹配及实际grant实测；不把静态Manifest声明视为运行授权。不上传OEM APK至GitHub、不复制其实现代码、不修改原文件。用户无需重复提供旧JAR、pscanvas APK、oat或prof。
