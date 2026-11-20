@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 P · 首次真机单任务实验已运行，启动许可门禁失败（2026-11-20，本节最新生效）
+
+- 机主确认两次手机安装提示均已操作，转交Copilot完整Python执行命令和结果：两实验APK安装成功；指定测试ownSingleTaskSameCanvasTextureThenSurface实际执行一次，约1801ms，1 test/1 failure，ResidentSingleTest.kt:160 "Own activity launch allowed"。尚未执行TargetActivity实际启动、TextureView/SurfaceView对照、输入、120 draws、FrameMetrics或任务连续性；不得声称原生承载、性能或双任务通过。报告两实验包已卸载、无实验包/进程残留；缺少独立display/task/Surface残留核验、温度前后证据和原始日志，不能称完整清理门禁通过。本轮已消耗一次真机运行授权，不自行重复。证据目录据回传为 ~/local-verification/wb2-resident-lab-stageO-20261120_172053，instrument.txt、resident-evidence.log、install-main.txt、install-test.txt；报告另有重复Users路径笔误，需按实际目录读取；本聊天未取得Mac原始字节。
+- 实际核实core HEAD 428b618b35ccd5db67d8e66abe6616bff23feeae；实际回读固定SHA下 workbench2/resident-lab/src/androidTest/kotlin/workbench2/residentlab/ResidentSingleTest.kt blob89bf5e1b2afdafe85b7c874e5a1eeac1af369e6f，Fixture.kt blob742c4b3579ef5f8a40283df78b8d7ba1a0edc4de，Manifest blob0e6a4e24e5ff6d065fc0205c330e23ed80f3de8f。测试238-241 feature/host先行，145-157 output ready/surface valid/flags=0 create VD/private/non-default/positive rate断言已越过（根据首败回传）；160-161 am.isActivityStartAllowedOnDisplay(host,id,intent)为false，162-163实际startActivitySync尚未执行；finally 224-234释放display、ownedSurface并移除view，外层247结束host；实际释放结果仍需证据。Manifest TargetActivity非导出、独立affinity、未声明allowEmbedded、不申请权限。
+- 新根因审查实际读取 AOSP android-17.0.0_r1 ActivityTaskSupervisor.java 1287-1375 https://android.googlesource.com/platform/frameworks/base/+/android-17.0.0_r1/services/core/java/com/android/server/wm/ActivityTaskSupervisor.java ：display不存在/removed/invalid、rear、启用content-mode gate且cannot host tasks，均可先返回false；untrusted display分支检查目标FLAG_ALLOW_EMBEDDED及ACTIVITY_EMBEDDING/uid已在display的条件，随后才走private owner UID逻辑。该AOSP参考不是ColorOS实机服务端证据，不认定具体拒绝分支或厂商独有限制；缺allowEmbedded只是候选差异，单独更改不保证足够，且不擅自扩大嵌入范围/权限。原设计忽略Android17门禁顺序，需纠正。不得删除assert、强行启动、adoptShellPermissionIdentity、改系统flag、Root/Hook/权限扩大、公有VD或旧生产VD复活来绕过。后续仅从现有日志取实际系统拒绝原因，若无则与已有AOSP/CTS基线对照并评估是否存在经授权的标准自有任务路径；无新条件不重跑，保留OPPO协助作为潜在必要条件，不将自有门禁结果外推所有第三方任务。
+- Copilot最新脚本仍使用install -r/-t、logcat -c（在测试前实际尝试清全局日志，是否成功无原始结果）、未按class过滤instrumentation、宽泛Error/Exception日志和无完整try/finally清理，违背N/M定义；下一次必须纠正，不将回传“未修改系统设置”解释为未影响日志。先仅Mac本地读取现有instrument.txt与resident-evidence.log，按本次测试时间及相关包/display权限关键词脱敏提取明确拒绝行，查安装日志与已记录清理证据；不重装、不连接/操作手机、不采全量日志、不执行新测试。若日志不足直接报告证据缺口。当前不修改工程、不新建分支/PR、不触发CI。下一轮架构判断依据原始证据，必要的重大权限/路线调整需机主明确授权。模型GPT-6 High仅用于后续实际架构审查，Copilot Auto本地只读取证，Work不开；不再重复环境搭建、泛化取证或让机主手动录屏。
+
+---
+
 ## 第十五阶段 O · 安装取消原始错误已回传，ADB再次离线（2026-11-20，本节最新生效）
 
 - 机主转交Copilot报告：既有安装原始日志显示 OPLUS_ADB_INSTALL_CANCEL，状态-99，并明确排除macOS缺少timeout为该次原因。机主此前误划走ColorOS安装确认界面而未点击继续安装，现再次确认；二者吻合，但不能证明厂商策略永久禁止或唯一因果。随后Python限时流程在device预检失败即停止，未再发起主APK安装；据报告两实验包均未安装，未运行测试、未修改生产源码/系统/Root。原始日志文件未直接取得，不声称独立验证。当前直接阻塞为ADB在线状态恢复及人工安装确认，非源码、编译环境或原生任务授权结论。
