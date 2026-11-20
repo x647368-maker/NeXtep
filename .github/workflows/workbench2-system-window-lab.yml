@@ -64,7 +64,19 @@ jobs:
             echo 'NO_GO_NATIVE_FREEFORM_FEATURE_ABSENT; no task manipulation performed' | tee "$dir/result.txt"
             exit 1
           fi
-          grep -F 'task resize' "$dir/am-help.txt"
+          # The task subcommands are printed on separate, indented lines.
+          if ! awk '
+            { sub(/\r$/, "") }
+            /^[[:space:]]*task \[COMMAND\] \[\.\.\.\]: sub-commands for operating on activity tasks\.[[:space:]]*$/ {
+              indent = match($0, /[^[:space:]]/) - 1; in_task = 1; next
+            }
+            in_task && /[^[:space:]]/ && match($0, /[^[:space:]]/) - 1 <= indent { in_task = 0 }
+            in_task && /^[[:space:]]+resize <TASK_ID> <LEFT> <TOP> <RIGHT> <BOTTOM>[[:space:]]*$/ { print; found = 1 }
+            END { exit !found }
+          ' "$dir/am-help.txt"; then
+            echo 'NO_GO_TASK_RESIZE_USAGE_NOT_VERIFIED; no task manipulation performed' | tee "$dir/result.txt"
+            exit 1
+          fi
       - name: Reuse original own-task fixture, run one isolated test
         shell: bash
         run: |
