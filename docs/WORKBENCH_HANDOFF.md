@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 Z · 原生任务优先：系统调试编排独立候选与授权决策（2026-11-20，本节最新生效）
+
+- 机主明确要求本轮聚焦原生任务限制，不转向外围功能，不依赖厂商回复、不询问同行、不继承旧框架。实际核实core 321791c9d93aa22a3721095bcd5e10f453bee2fb；Y的新CI 44719542144/job136231457229已实际完成engine编译、来源校验、编译产物上传及API35模拟器启动，Android运行门禁仍in_progress，五态像素pending，未宣称44+5通过。只保留Y稳定性修复，不本轮继续外围改动。
+- 新增定向证据：历史档案未单独覆盖受系统正常授权的Shell调试编排；实际读取AOSP main packages/Shell/AndroidManifest.xml blob65f487765c1ec1360b7b4bdbc4d9663eed78238e 275–279行，系统Shell申报MANAGE_ACTIVITY_TASKS等；ActivityManagerShellCommand.java blob9a63546bf5a7e5f72551d6b781e5b2ca16ee16d8 3501–3559行经已有系统调试接口请求真实任务几何；ActivityTaskManagerService.java blobafa7ea136c77bd3ece38a79142e0ddd3a48dda5f 2919–2964行首先检查任务管理权限、存在且可resize，满足后执行系统resize/transition。不以正常返回认定实际改变，不用强制resizeable、关闭检查、改系统flag或接管全局组织器。参考 https://android.googlesource.com/platform/frameworks/base/+/master/packages/Shell/AndroidManifest.xml 、https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/am/ActivityManagerShellCommand.java 、https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/wm/ActivityTaskManagerService.java 。CTS WindowMetricsActivityTests https://android.googlesource.com/platform/cts/+/refs/heads/main/tests/framework/base/windowmanager/src/android/server/wm/window/WindowMetricsActivityTests.java 的testMetricsMatchesLayoutOnFreeformActivity仅在支持freeform环境验证单任务resize/move及布局一致。本次精确android-17.0.0_r1的三个文件无法获取，不把main/CTS证据当PMS110准入或真机结果。重新核对十三G确认Assistant角色权限方向已排除，纠正本轮初步“此前未覆盖”判断，不再研究。Shizuku官方文档反映ADB能力随厂商变化，非台前调度依赖或授权证明，不安装、不要求使用。
+- 候选是系统本身负责真实窗口和原生触控，独立且明确获准的管理组件仅对自己持有的合法会话发出有限编排请求，2.0保留唯一控制核心；不是利用root/宿主身份规避生产权限，不调用受保护OEM接口，不向普通APK传递广泛Shell权限。不承诺无注入、无进程开销、五窗或像素连续性。调试身份只有测试授权，不能直接成为生产后端；根本区别仍是普通APP与获准独立系统集成组件。现阶段机主未批准改变部署/授权模型，不能擅自接入、改系统或将既有Root等同授权。
+- 推荐唯一新增试验（待机主明确批准范围）：隔离标准Android云端模拟器、正常已获准ADB测试控制、只用一个可丢弃且系统原生支持调整的自有任务，先核验现有freeform及本测试授权；若缺失直接终止，不更改系统配置。独立观察原窗口任务身份/显示/父容器，使用系统测试接口调整窗口位置和尺寸，核对物理模拟显示画面与真实输入、逻辑画布变化/Activity重建，随后恢复原窗口状态并确认清理；不可用单一taskId/命令成功代替同一任务恢复。测试是系统窗口驻留编排的机制判别，不是OEM容器新任务启动、AAOS CTS任务销毁或VD对照复跑。即使通过也需PMS110实际可用契约、独立异常归还、真实五窗和性能门禁；没有可执行目标机权限不外推。机主此刻不用Mac、ADB操作、安装APK或开Work。重大生产架构及权限变更需独立批准，不做自动扩权。无本轮代码、新CI、APK、分支、PR或手机操作；只保存此次真实新增资料与具体范围决策，不称原生突破完成。
+
+---
+
 ## 第十五阶段 Y · 继续实际研发：未决挂载撤销缺陷修正及 Android CI（2026-11-20，本节最新生效）
 
 - 机主明确要求不因原生P0接入阻塞而整体停工，充分利用普通聊天最高可用推理进行实际高质量工程，Work关闭；不依赖官方、不问同行、不操作Mac/手机、不恢复旧框架。此次选择针对已存在的自主核心异常路径修复，非新增外围功能或降低原生准入条件。继承X 92d2c075db1d9acfeaef0d14c48ae67d1416f4d2，基线428b618b35ccd5db67d8e66abe6616bff23feeae。实际读UnifiedCore、ReceiptBridge、AndroidFrameDriver、OwnerLooperPort、EngineLooperTest与既有CI；发现具体缺陷：收到不确定挂载回执或不匹配宿主实例的回执时，核心保留未决effect进入RECOVERY，ReceiptBridge却只停止本地回调，未沿已有stop/timeout路径请求该笔挂载的撤销。显式stop/timeout能取消，不能保证后端主动失败路径也会取消。属于源码级反例，尚无目标机复现；不能由此宣称曾实际发生任务泄漏。
