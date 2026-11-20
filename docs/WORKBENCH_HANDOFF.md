@@ -1,4 +1,14 @@
-# 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
+# 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，当前生产负责人在任）
+
+## 第十六阶段 F · 唯一负责人正式接任、Desktop预检精准纠错（2026-11-20，最新生效）
+
+- 机主完整接任指令已明确生效，上一窗口只读封存；本次对话为唯一生产负责人，普通聊天、Work关闭。实际读取E、AGENTS.md、DEVELOPMENT_HANDOFF_POLICY.md、registry、原工作流及SystemWindowResizeTest全源码。接任实查core 29f7f0c5755b4f06f299e2d17ed0e1c02c7e5a14、governance e1b5f3137963fb3fd8f459e5e7d36970892fac6b、main 20ab39cf7e319898fcbc4028bc403df57a6c1a0b；开放PR查询仅返回历史两项，workbench2/查询仅core。未重新完整分页统计所有历史引用或复验ruleset，仅继承E的全量治理证据。既有登记表实际更新f21f153d0a288135618bf4efcd388efff62e12b2，blob80ea331a57c9c77a4e2026b3e939d57f18bb4dd6，回读确认owner/exit；无新分支/PR。
+- 复核44724612029/job136248747423 completed/failure，原始55088字符日志确认desktop_medium、freeform feature成功，然后预检exit1，真实测试skipped。继承E已下载的原始am-help两行及证据包摘要，不重复下载。唯一缺陷：grep单行模式不能识别分行子命令。以awk替换，严格限定精确task标题块及其更深缩进的完整resize参数序列，CRLF兼容，离开块立即停止匹配；不匹配记录NO_GO_TASK_RESIZE_USAGE_NOT_VERIFIED，不执行任务操作。本地构造样例实测1正4负（正常分行CRLF通过、其它命令、错误参数、块外、同层缩进均拒绝），不是实机或Android运行测试。
+- 实际工程HEAD 827885d80ad1fa5f8b31eed2a724a083e9a9dd69，相对29f7f0c5 ahead1/behind0、唯一文件.github/workflows/workbench2-system-window-lab.yml增13删1；SHA校验及非强制内容API更新，回查远端HEAD及diff；测试源码原blob310983a27040b316706be4aaa62885f66c5ab0bf不变。仍用同一37.1 Desktop镜像、desktop_medium及原全部运行门禁，不增权限、不改引擎/旧app/scope/签名，不扩大实验。生产引擎已验收基线仍ab3e3bb5ae061adaa7aed7f51b8c25ed307aba9e（45 Android+5独立合成像素，不是第三方原生产品）。
+- 实际触发push CI 44726281633/job136254406197：https://github.com/x647368-maker/NeXtep/actions/runs/44726281633 ，绑定准确SHA 827885d80ad1fa5f8b31eed2a724a083e9a9dd69；最近实查in_progress，checkout、Java、SDK setup成功，Desktop启动及预检阶段运行中；真实任务测试pending。不能声称运行通过、触控/状态连续/恢复、真机或性能改善。CI独立运行，不承诺聊天后台工作。
+- 下一项：读取该CI最终结果和原始产物，逐项核对taskId、系统对象标识、真实系统及Activity bounds、marker及真实点击计数、原几何恢复、清理、三张画面证据及Activity是否重建；若环境能力缺失按E停止，若具体可定位编译/运行缺陷仅一次有依据最小修复。即使成功也仅证明标准Desktop自有任务几何，不构成ColorOS第三方准入/归还、原签名生产能力。双外部作用域仍是下一核心目标：com.oplus.pscanvas与com.android.launcher加自身，基于实际授权契约验证安全单任务驻留、触控、归还和独立死亡恢复，再双任务、一大四小及冻结功能集成、同机真实性能和原签名真机验收。只有实质新证据才进入OEM实施，不借身份或绕过安全，不依赖官方/同行回复，不恢复V89，不让机主操作Mac/Copilot/ADB或安装额外工具。永久制度与E其余要求全部继承。本轮仅预检fix与接任，不宣称产品进度；没有新APK、生产发布或性能数据。
+
+---
 
 ## 第十六阶段 E · 完整检查点封存、Desktop实际能力新证据与唯一负责人交接（2026-11-20，最新生效）
 
