@@ -13,7 +13,7 @@ concurrency:
 jobs:
   native-window:
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,24 +26,37 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Provision unmodified stock simulator and verify feature
+      - name: Provision official Desktop preview simulator and verify feature
         shell: bash
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/wb2-system-window"
           mkdir -p "$dir"
           printf '%s\n' "$GITHUB_SHA" > "$dir/checkout-sha.txt"
-          sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0' emulator 'system-images;android-35;google_apis;x86_64'
+          # Chromium SDK packager cf653967c7f5 documents this Beta image.
+          # Use only the distributed image; never enable hidden features or change permissions.
+          image='system-images;android-37.1;android-desktop;x86_64'
+          sdkmanager --channel=1 --list > "$dir/sdk-catalog.txt"
+          if ! grep -F "$image" "$dir/sdk-catalog.txt"; then
+            echo 'NO_GO_DESKTOP_IMAGE_NOT_AVAILABLE' | tee "$dir/result.txt"
+            exit 1
+          fi
+          sdkmanager --channel=1 'platforms;android-36.1' 'build-tools;36.0.0' emulator "$image"
           sudo chmod 666 /dev/kvm
           export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-system-window-user"
           export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
           mkdir -p "$ANDROID_AVD_HOME"
-          echo no | avdmanager create avd --force --name wb2-native-window --path "$ANDROID_AVD_HOME/wb2-native-window.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_tablet
-          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/wb2-native-window.avd" > "$ANDROID_AVD_HOME/wb2-native-window.ini"
-          "$ANDROID_HOME/emulator/emulator" -avd wb2-native-window -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 3072 -cores 2 -gpu swiftshader_indirect > "$dir/emulator.log" 2>&1 &
+          avdmanager list device > "$dir/device-profiles.txt"
+          if ! grep -F '"desktop_api37"' "$dir/device-profiles.txt"; then
+            echo 'NO_GO_DESKTOP_PROFILE_NOT_AVAILABLE' | tee "$dir/result.txt"
+            exit 1
+          fi
+          echo no | avdmanager create avd --force --name wb2-native-window --path "$ANDROID_AVD_HOME/wb2-native-window.avd" --package "$image" --device desktop_api37
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-37.1\n' "$ANDROID_AVD_HOME/wb2-native-window.avd" > "$ANDROID_AVD_HOME/wb2-native-window.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd wb2-native-window -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 4096 -cores 2 -gpu swiftshader_indirect > "$dir/emulator.log" 2>&1 &
           timeout 150 adb wait-for-device
-          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
-          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          timeout 360 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 37
           adb shell getprop ro.build.fingerprint > "$dir/fingerprint.txt"
           adb shell pm list features > "$dir/features.txt"
           adb shell am help > "$dir/am-help.txt"
