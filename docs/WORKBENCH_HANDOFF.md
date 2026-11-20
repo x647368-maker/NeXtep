@@ -7,6 +7,8 @@
 - 独立host Python在收到正确source绑定的READY_FOR_CONTROLLER_DEATH且确认控制端真实pid存活及与目标pid不同后，仅force-stop实验controller包，绝不强停系统或目标，独立读取两个存续任务原ActivityRecord、bounds、目标实例/进程/内容及两个实际触控增量。该路径刻意终止instrumentation，不能按JUnit成功计数，只有独立host完整证据才通过。若控制端停止前失败，保留原始日志，终止实验并关闭可丢弃模拟器。此次不额外执行原几何恢复或物理帧级测量，退出使用隔离模拟器整体销毁；控制端强停存续是实际实验门禁，不能推断所有异步死亡、OEM归还安全。未测试全尺寸渲染/槽位性能或PMS110，不将自有两个任务等同真实任意第三方。
 - 实际push CI https://github.com/x647368-maker/NeXtep/actions/runs/44771108339 head=e81153da…、job136408698465，最后API状态in_progress/conclusion=null，setup checkout Java Android SDK均success，正在Provision official Desktop preview simulator and verify feature；编译双包、真实双任务运行、证据上传尚pending，不能宣称编译或实验通过。已验收有效核心仍ed40df41…；最新研发分支包含未验收隔离实验e81153da…，二者必须区分。下次首项只核验该次CI终态及原始日志、两包清单、实际两任务身份/几何/输入/控制端强停原始证据；若存在确切夹具缺陷且不需重复真实任务实验，做最小纠错并按一次实验授权和停止制度评估；若权限/运行接口确实不具备或目标连续性失败，按真实原因止损，不盲目重跑、不降低门禁。此轮已有实际工程、提交及触发运行，但尚无原生后端解阻结果。无需机主操作手机或电脑。普通聊天High/最高可用推理，Work关闭；保护全部永久制度。
 
+**V阶段CI中途核验（2026-11-21）：** 实际查询44771108339/job136408698465，head=e81153da1aff9c5838240d3ac38b03c6ce5d90c8，status=in_progress/conclusion=null。官方Desktop模拟器准备与feature/shell UID及两项权限预检步骤completed/success；双独立测试包编译步骤in_progress；真实批量几何、输入、控制端停止、证据上传均pending。原始job日志下载返回HTTP404 BlobNotFound，artifact列表total_count=0，尚不能独立验收原始证据，不认定失败也不提前宣布通过。实际compare确认core=e81153da…及治理原HEAD=0dac8cc7dac44236c457d8ab0f4798d7badea674相对指定SHA identical。未修改实验/生产代码、未重跑、未触发新CI，已验收核心保持ed40df41…（47+5）。下一次仅查询此次CI终态与原始日志和产物，按原授权与停止制度处理明确失败原因；无需机主操作设备。当前仅环境预检新增实证，非双任务或ColorOS后端突破。
+
 ---
 
 
