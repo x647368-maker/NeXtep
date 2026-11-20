@@ -129,7 +129,8 @@ class WorkspaceLayoutTest {
                 l.topActions?.let { actions ->
                     assertEquals(WorkspaceLayout.HitKind.COLLAPSE,l.hitAt(actions.collapse.cx,actions.collapse.cy)!!.kind)
                     assertEquals(WorkspaceLayout.HitKind.MAIN_ACTION,l.hitAt(actions.main.cx,actions.main.cy)!!.kind)
-                    assertEquals(WorkspaceLayout.HitKind.ADD,l.hitAt(actions.add.cx,actions.add.cy)!!.kind)
+                    if(count<4)assertEquals(WorkspaceLayout.HitKind.ADD,l.hitAt(actions.add.cx,actions.add.cy)!!.kind)
+                    else assertNull(l.hitAt(actions.add.cx,actions.add.cy))
                     assertNull(l.hitAt(actions.add.x+actions.add.w,actions.add.cy))
                 }
                 assertNull(l.hitAt(l.main.cx,l.main.cy))

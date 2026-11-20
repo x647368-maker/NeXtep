@@ -36,12 +36,14 @@ object WorkspaceLayout {
     }
     data class Card(val slot: Int, val box: Box)
     data class TopActions(val collapse: Box, val main: Box, val add: Box)
+    data class Recovery(val main: Box, val handle: Box, val horizontal: Boolean)
     enum class HitKind { CARD, COLLAPSE, MAIN_ACTION, ADD }
     data class Hit(val kind: HitKind, val slot: Int? = null)
 
     class Layout internal constructor(val main: Box, val rail: Box,
         cards: List<Card>, val topActions: TopActions?, val displayEpoch: Long,
-        val control: Box, val panelRotationDegrees: Int) {
+        val control: Box, val panelRotationDegrees: Int,
+        val viewport: Viewport, val addAction: Box?, val recovery: Recovery) {
         val cards: List<Card> = Collections.unmodifiableList(ArrayList(cards))
         /** UI destinations only; not native task input dispatch or input proof. */
         fun hitAt(x: Double,y: Double): Hit? {
@@ -49,8 +51,8 @@ object WorkspaceLayout {
             topActions?.let { a ->
                 if(hit(a.collapse)) return Hit(HitKind.COLLAPSE)
                 if(hit(a.main)) return Hit(HitKind.MAIN_ACTION)
-                if(hit(a.add)) return Hit(HitKind.ADD)
             }
+            addAction?.let { if(hit(it)) return Hit(HitKind.ADD) }
             return cards.firstOrNull { hit(it.box) }?.let { Hit(HitKind.CARD,it.slot) }
         }
         /** Map by persisted slot identity, never by task ID, and never fill a missing slot. */
@@ -199,6 +201,7 @@ object WorkspaceLayout {
         val cards=mutableListOf<Card>()
         val railBox: Box
         val actions: TopActions?
+        val addAction: Box?
         val depth: Int
         val rotated=rotatedSide(v,rail)
         val degrees=if(!rotated)0 else if(v.rotation==1)-90 else 90
@@ -228,6 +231,7 @@ object WorkspaceLayout {
             actions=TopActions(rect(x+dp(12),y+depth-dp(44),dp(44),dp(32)),
                 rect(x+(w-dp(64))/2,y+depth-dp(40),dp(64),dp(24)),
                 rect(x+w-dp(54),y+depth-dp(48),dp(44),dp(44)))
+            addAction=if(count<4)actions.add else null
             val controls=listOf(actions.collapse,actions.main,actions.add)
             require(controls.all { fits(it,railBox) && cards.none { c->intersects(it,c.box) } })
             require(controls.indices.all { i->(i+1 until controls.size).none { intersects(controls[i],controls[it]) } })
@@ -238,17 +242,32 @@ object WorkspaceLayout {
                 w-v.controlHeight,depth)
                 else rect(if(rail==Rail.LEFT)x else x+w-depth,y,depth,h)
             actions=null
+            val logicalHeight=if(rotated)railBox.w.toInt() else h
+            val button=dp(44)
+            val footer=if(count in 1..3)dp(56) else 0
+            val compactTablet=v.height>v.width && wideTablet(v.width,v.height)
+            val gap=if(compactTablet)(8*d).roundToInt().coerceAtLeast(1) else d.toInt().coerceAtLeast(1)
+            var lastBottom=0
             if(count>0) {
-                val gap=d.toInt().coerceAtLeast(1)
                 val maxWidth=depth-gap
-                val logicalHeight=if(rotated)railBox.w.toInt() else h
-                // Card envelope only. Actual task content uses the existing Pose.fit.
+                val available=logicalHeight-footer-(if(compactTablet)2*gap else 0)
                 val height=minOf((maxWidth.toDouble()*v.usableHeight/w).toInt(),
-                    (logicalHeight-gap*(count-1))/count)
+                    (available-gap*(count-1))/count)
                 val width=minOf(maxWidth,(height.toDouble()*w/v.usableHeight).toInt())
-                val pad=(logicalHeight-height*count-gap*(count-1))/2
-                for((i,slot) in slots.withIndex())
-                    cards.add(Card(slot,project(railBox,degrees,0,pad+i*(height+gap),width,height)))
+                val pad=if(compactTablet)gap else (available-height*count-gap*(count-1))/2
+                for((i,slot) in slots.withIndex()) {
+                    val top=pad+i*(height+gap)
+                    cards.add(Card(slot,project(railBox,degrees,(depth-width)/2,top,width,height)))
+                    lastBottom=top+height
+                }
+            }
+            addAction=if(count==4)null else {
+                val top=when {
+                    count==0 -> (logicalHeight-button)/2
+                    compactTablet -> minOf(lastBottom+gap,logicalHeight-button-gap)
+                    else -> logicalHeight-dp(12)-button
+                }
+                project(railBox,degrees,(depth-button)/2,top,button,button)
             }
         }
         val main=mainBox(v,rail,depth)
@@ -258,6 +277,25 @@ object WorkspaceLayout {
         require(!intersects(main,railBox) && !intersects(main,controls) && !intersects(railBox,controls))
         require(cards.all { fits(it.box,railBox) && !intersects(it.box,main) })
         require(cards.indices.all { i->(i+1 until cards.size).none { intersects(cards[i].box,cards[it].box) } })
-        return Layout(main,railBox,cards,actions,displayEpoch,controls,degrees)
+        require(addAction==null || (fits(addAction,railBox) &&
+            cards.none { intersects(it.box,addAction) }))
+        // Historical smart-rail 44dp reserve and 96dp long, white handle.
+        // This is a proposed geometry only: callers must commit the real main
+        // presentation and input before displaying the recovery control.
+        val horizontal=rail==Rail.TOP || rotated
+        val reserve=minOf(if(horizontal)railBox.h.toInt() else railBox.w.toInt(),
+            (44*d).roundToInt().coerceAtLeast(1))
+        val long=minOf(if(horizontal)railBox.w.toInt() else railBox.h.toInt(),
+            (96*d).roundToInt().coerceAtLeast(1))
+        val rw=if(horizontal)long else reserve
+        val rh=if(horizontal)reserve else long
+        val rx=if(horizontal)railBox.x.toInt()+(railBox.w.toInt()-rw)/2
+            else if(rail==Rail.LEFT)railBox.x.toInt() else (railBox.x+railBox.w).toInt()-rw
+        val ry=if(!horizontal)railBox.y.toInt()+(railBox.h.toInt()-rh)/2
+            else if(rail==Rail.TOP || railAtPhysicalTop(v,rail))railBox.y.toInt() else (railBox.y+railBox.h).toInt()-rh
+        val recovery=Recovery(mainBox(v,rail,reserve),rect(rx,ry,rw,rh),horizontal)
+        require(fits(recovery.handle,safe) && !intersects(recovery.handle,recovery.main) &&
+            !intersects(recovery.handle,controls))
+        return Layout(main,railBox,cards,actions,displayEpoch,controls,degrees,v,addAction,recovery)
     }
 }
