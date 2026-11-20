@@ -1,0 +1,103 @@
+name: Workbench 2 isolated native window geometry experiment
+on:
+  push:
+    branches: ['workbench2/core']
+    paths:
+      - 'workbench2/system-window-lab/**'
+      - '.github/workflows/workbench2-system-window-lab.yml'
+permissions:
+  contents: read
+concurrency:
+  group: workbench2-system-window-lab
+  cancel-in-progress: false
+jobs:
+  native-window:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Provision unmodified stock simulator and verify feature
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/wb2-system-window"
+          mkdir -p "$dir"
+          printf '%s\n' "$GITHUB_SHA" > "$dir/checkout-sha.txt"
+          sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0' emulator 'system-images;android-35;google_apis;x86_64'
+          sudo chmod 666 /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-system-window-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-native-window --path "$ANDROID_AVD_HOME/wb2-native-window.avd" --package 'system-images;android-35;google_apis;x86_64' --device pixel_tablet
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-35\n' "$ANDROID_AVD_HOME/wb2-native-window.avd" > "$ANDROID_AVD_HOME/wb2-native-window.ini"
+          "$ANDROID_HOME/emulator/emulator" -avd wb2-native-window -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 3072 -cores 2 -gpu swiftshader_indirect > "$dir/emulator.log" 2>&1 &
+          timeout 150 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb shell getprop ro.build.fingerprint > "$dir/fingerprint.txt"
+          adb shell pm list features > "$dir/features.txt"
+          adb shell am help > "$dir/am-help.txt"
+          if ! grep -Fx 'feature:android.software.freeform_window_management' <(tr -d '\r' < "$dir/features.txt"); then
+            echo 'NO_GO_NATIVE_FREEFORM_FEATURE_ABSENT; no task manipulation performed' | tee "$dir/result.txt"
+            exit 1
+          fi
+          grep -F 'task resize' "$dir/am-help.txt"
+      - name: Reuse original own-task fixture, run one isolated test
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/wb2-system-window"
+          lab=workbench2/system-window-lab/SystemWindowResizeTest.kt
+          # CI-only test source; never modifies checked-in probe or original regression suite.
+          into=workbench2/probe/field/src/androidTest/kotlin/workbench2/field/SystemWindowResizeTest.kt
+          test ! -e "$into"
+          sha256sum "$lab" > "$dir/test-source.sha256"
+          cp "$lab" "$into"
+          trap 'rm -f "$into"' EXIT
+          bash gradlew -p workbench2/probe :field:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=workbench2.field.SystemWindowResizeTest --no-daemon --console=plain --stacktrace
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as E
+          root=pathlib.Path('workbench2/probe/field/build/outputs/androidTest-results/connected')
+          cases=[c for f in root.rglob('TEST-*.xml') for c in E.parse(f).iter('testcase')]
+          assert len(cases)==1 and cases[0].get('name')=='existingOwnTaskChangesAndRestoresNativeGeometry'
+          assert not any(cases[0].find(s) is not None for s in ('failure','error','skipped'))
+          PY
+          adb logcat -d -s WB2SystemWindow:I > "$dir/geometry.txt"
+          grep -F 'GEOMETRY_OK' "$dir/geometry.txt"
+          for phase in before changed restored; do
+            adb pull "/data/local/tmp/wb2-system-window-$phase.png" "$dir/$phase.png"
+            test -s "$dir/$phase.png"
+          done
+          echo 'OWN_NATIVE_GEOMETRY_TEST_PASSED_NOT_OEM_ADMISSION' > "$dir/result.txt"
+      - name: Preserve outcomes and shut down only isolated test emulator
+        if: always()
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/wb2-system-window"
+          mkdir -p "$dir"
+          timeout 20 adb logcat -d -s WB2SystemWindow:I > "$dir/partial-geometry.txt" 2>&1 || true
+          for phase in before changed restored; do
+            if [ ! -s "$dir/$phase.png" ]; then
+              timeout 15 adb pull "/data/local/tmp/wb2-system-window-$phase.png" "$dir/$phase.png" >> "$dir/pull-status.txt" 2>&1 || true
+            fi
+          done
+          timeout 20 adb shell dumpsys activity activities > "$dir/end-activities.txt" 2>&1 || true
+          timeout 20 adb emu kill > "$dir/cleanup.txt" 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wb2-system-window-evidence
+          path: |
+            ${{ runner.temp }}/wb2-system-window/
+            workbench2/probe/field/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
