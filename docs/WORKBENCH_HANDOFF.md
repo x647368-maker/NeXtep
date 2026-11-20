@@ -1,5 +1,20 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 Z · 真实ColorOS原始文件恢复、私有归档和原生缩放服务准入取证（2026-11-21）
+
+- 机主直接上传五份文件，免启动历史Work窗口。只保存原始系统资料至私有Library，不将原件或反编译代码上传公开GitHub；已有唯一权威档案仅记录校验、出处和结论。实际读取原始文件，五份ZIP/JAR/APK外层CRC均通过，另两个嵌套归档的内层CRC也通过，manifest所记录的内层长度与SHA256均一致。FrameworkExport-v4 APK初次本地挂载缺失，后通过files原始字节取回至独立目录，实际读取校验后归档，无需机主再次发送。五份Library上传success并读回目录列表，路径统一 /台前调度2.0/系统原始证据/ ；原始SHA256及Library ID如下：
+  - oplus-services.jar，30503412 bytes，5 ZIP成员，4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e，libfile_77b33c5022e88191952d9380df981ce4。
+  - PMS110-flexible-framework-code.zip，12311121 bytes，2成员，0b6a3eac17c8428017e0a9e46eefafa22b14de13cabb5e70c835f87636e85203，libfile_9f8f011429b8819199af94151656b649。内层framework-1.jar即提取于/system/framework/oplus-framework.jar，12307995 bytes，76cfdaeedebbe8249090d563532a49abd5b2a16149726ca2af6ef31a8b437450，与原始manifest一致，不需机主再次单独上传oplus-framework.jar。
+  - PMS110-pscanvas-2.0.0-code.zip，9425879 bytes，2成员，368871c78be2009c914106ebd9da3351872db409945fba2081a450946f72eb46，libfile_fb508f28cea08191be156b9a06656443。内层base.apk 9413529 bytes，d5d4bc23890d8473f670dc3ee528fe5f0a8f6f40ebd29b7324968dd5c8d096e7，与manifest一致。
+  - OplusLauncher.apk，70738743 bytes，5868成员，add93101fd0ec42de67076f3ea4381a04d0cc3c65ded15714558ba97c717cf99，libfile_85f9940b54b881918f4451fef7161292。
+  - AtomicWorkbench2-FrameworkExport-v4.apk，2184453 bytes，16成员，88447f1c2b75f8b73f1e24cb545c34b46e76cc23b9fe2acbf4089c91bfa351c6，libfile_7a412eee73f081919af822588749c3bd。历史导出取证工具，非新生产APK、不重新安装；本轮未验签或独立确认该APK的构建来源。
+- 两份提取清单明确同PMS110/SDK37/firmware OnePlus/PMS110/OP64F1L1:17/CP2A.260605.016/C.147dc4b_1201fc3_11f9c73:user/release-keys；framework source ab62e52ee7daca435c8011aa7a6fcde269b45b30，host source acf5a6a1f9b368f467a46101325b612084fd1b63。host manifest直接确认com.oplus.pscanvas 2.0.0/20 system enabled，ContainerActivity exported但safe.WINDOW保护；主机权限记录host granted true、collector false，safe.WINDOW raw protection18。原件CRC/hash不是独立完整固件出处或APK签名验证；services.jar、Launcher未新增同固件来源证明。
+- **新定向原始DEX证据**：通过本地只读解析DEX header/string/type/proto/method/class_data及指令边界（不安装、不调用系统方法、无改写），核实framework classes.dex的FlexibleWindowManager.adjustFlexibleTask(Bundle) 与IOplusActivityTaskManager声明；services classes3.dex中OplusActivityTaskManagerServiceEnhance.adjustFlexibleTask的实际指令调用序列（code_item 0x2e482c）含safe.WINDOW enforceCallingPermission，之后调用FlexibleWindowManagerService.adjustFlexibleTask，再进入FlexibleTaskController。后者内部有scale与bounds分别处理、TaskExtImpl.getScale、getFlexibleTaskVisibleBounds、isValidAdjustEndRect、startAdjustFlexibleTask等真实调用，并有PanoramaWorkStation分支；不是只靠普通WCT。FlexibleTaskScaleManager.scaleAnimEndAndResetTask（0x24de58）真实引用ITaskExt.getScale、updateTaskSurface、resetAndDestroyLeash；另有multiRatioScaleSpringAnimationEnd处理恢复和UX/frame rate状态。该读取只是实际定义和直接调用引用，不是完整反编译/控制流/动态证据，不能宣称输入变换、任意任务固定逻辑尺寸、五窗或异常归还可用。isProportionalScaledInLargeScreen明确引用large-screen/tablet判定；Launcher classes2.dex实际存在IntegrationFlexibleTaskView，尚无限域委托授权证明。OplusZoomTaskController等内部符号不等于安全外部调用权，不测试或绕过未知权限。
+- **研发结论及接续**：真正的OEM原生缩放机制值得继续定向核查，但已确认上述外部adjustFlexibleTask入口保护存在，不能通过签名/权限绕过或利用系统身份进入。下一步仅基于已归档原件查找受支持的独立任务驻留与限域委托会话，在现有两外部作用域许可及不扩大安全边界前提下做定向审查；重点检查实际服务端Task/Surface/Input输入变换及生命周期的闭环，不直接执行尚未证明授权的Binder调用、不重复已失败普通WCT、不把系统内部存在能力当准入。若无新可执行合同，不启动CI。已验收核心仍ed40df41de8336dea0f2c2d743722eaf88f3b727，实际core compare仍41c1e97b9e5ba8f85f41dc5f78bce49741205b43，无生产修改、CI、分支、PR或APK交付；保护全部冻结功能、签名、配置与用户数据。五份原件已经恢复，后续新窗口通过Library精确ID取回并核验，不要求机主再次上传。仅原始归档及初步静态新发现，不宣称完成ColorOS接入或性能提升。
+
+---
+
+
 ## 第十六阶段 Y · 系统原生双任务过渡实装先例与外部准入边界（2026-11-21）
 
 - 继承X f3178152e16fa08506238233b3619178c7b27f19，实核core=41c1e97b9e5ba8f85f41dc5f78bce49741205b43、治理=指定X SHA均identical。保留两轮普通WCT失败及47+5已验收自主核心ed40df41…，不再重跑。当前容器已有两轮CI原件和旧接管包，实际Library /台前调度2.0 完整列举14项（含1目录），无新增OEM服务端/系统宿主原件或运行授权；不声称已重读OEM原始DEX或穷尽全Library。两轮失败原件在该目录仍存在。
