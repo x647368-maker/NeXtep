@@ -64,7 +64,15 @@ class AndroidFrameDriver(
                 val phase = core.phase
                 complete(snapshot)
                 // A stale or duplicate receipt must not create another wakeup.
-                if (core.outstanding() != before || core.phase != phase) kick()
+                if (core.outstanding() != before || core.phase != phase) {
+                    // After the exact frame settles, arm the next vsync on this owner
+                    // event. Avoid an extra Handler turn for every successful frame.
+                    // Other effects still advance through the posted, nonrecursive pump.
+                    if (effect.op == workbench2.unified.Op.FRAME && before == effect &&
+                        core.outstanding() == null && core.phase == Phase.FLYING) {
+                        scheduleFrame()
+                    } else kick()
+                }
             }
         }
         override fun stopLocalCallbacks() {
@@ -139,10 +147,14 @@ class AndroidFrameDriver(
         // At most one dispatch per owner event; synchronous receipts post the
         // next advance rather than recursively entering the reducer.
         if (bridge.pump()) return
-        if (core.phase == Phase.FLYING && !framePosted) {
-            if (startNanos == null) startNanos = System.nanoTime()
-            framePosted = true
-            choreographer.postFrameCallback(frameEvent)
-        }
+        scheduleFrame()
+    }
+
+    private fun scheduleFrame() {
+        checkOwner()
+        if (core.phase != Phase.FLYING || core.outstanding() != null || framePosted) return
+        if (startNanos == null) startNanos = System.nanoTime()
+        framePosted = true
+        choreographer.postFrameCallback(frameEvent)
     }
 }

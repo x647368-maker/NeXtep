@@ -28,6 +28,7 @@ class AndroidFrameDriverTest {
         val samples = mutableListOf<Double>()
         var calls = 0
         var late: (() -> Unit)? = null
+        var onInitialFrameSettled: (() -> Unit)? = null
         override fun dispatch(e: Effect, poses: Map<Owner,Pose>?, complete: (NativeSnapshot)->Unit) {
             assertSame(Looper.getMainLooper(),Looper.myLooper())
             calls++
@@ -55,6 +56,7 @@ class AndroidFrameDriverTest {
                 }
             }
             complete(receipt)
+            if(e.op==Op.FRAME && e.progress==0.0) onInitialFrameSettled?.invoke()
             if(e.op==Op.VERIFY_FOCUS) {
                 if(observed==scene)started.countDown() else swapped.countDown()
             }
@@ -109,6 +111,36 @@ class AndroidFrameDriverTest {
         await(port.closed)
         instr.waitForIdleSync()
         owner { assertEquals(Phase.CLOSED,driver.phase());assertFalse(driver.frameScheduled()) }
+    }
+    @Test fun settledInitialFrameArmsVsyncImmediatelyAndSameTurnStopCancelsIt() {
+        val port=Port()
+        val observed=CountDownLatch(1)
+        lateinit var driver:AndroidFrameDriver
+        owner {
+            driver=AndroidFrameDriver(port,"fixture","fixture","fixture-instance",600)
+            port.onInitialFrameSettled = {
+                // Completion runs on the owner: no Handler pump should be necessary
+                // before arming the real Choreographer callback.
+                assertEquals(Phase.FLYING,driver.phase())
+                assertNull(driver.outstanding())
+                assertTrue(driver.frameScheduled())
+                driver.stop()
+                assertFalse(driver.frameScheduled())
+                observed.countDown()
+            }
+            assertTrue(driver.start(capability,plan))
+        }
+        await(port.started)
+        owner { assertTrue(driver.exchange(b)) }
+        await(observed)
+        await(port.closed)
+        instr.waitForIdleSync()
+        owner {
+            assertEquals(Phase.CLOSED,driver.phase())
+            assertEquals(listOf(0.0),port.samples)
+            assertFalse(driver.frameScheduled())
+            assertEquals(1L,port.swapped.count)
+        }
     }
     @Test fun stopDuringStalledFrameRetainsReceiptAndNeverRestartsClock() {
         val port=Port()
