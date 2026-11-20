@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 N · 真机在线、安全预检通过回传，安装失败待精确定位（2026-11-20，本节最新生效）
+
+- 机主已明确授权一次独立自有单任务实验。此前ADB offline，经一次reconnect和本地server重启未恢复，后续机主操作及改用SDK自带ADB后Copilot报告唯一目标一加Ace 7 Pro Android17/API37已device在线，电量78%、电池30.3°C，无两实验包覆盖冲突、无残留ADB安装进程；原始设备输出未取得。机主截图曾出现WB2 isolated resident test系统安装确认，机主误划走而未确认；随后多次接续指令排队，已建议移除旧排队请求。不能把最初offline归因于数据线或确定版本冲突；当前无需再排查ADB。
+- 最新Copilot报告主实验APK安装失败，未返回可见详细原因，称未安装两包、未执行测试、未修改系统/Root/生产、无残留。回传脚本部分截断，未提供install-main.txt/其他安装原始输出及退出值；不能确认包管理器真正拒绝、用户取消、超时、命令不存在或另一个错误。脚本可见使用timeout 90/180（macOS默认未必提供GNU timeout）、-r覆盖参数、主包失败前仍尝试测试包、logcat -c清全局日志、未限定instrumentation测试类、末尾exit 0；这些均为待纠正执行缺陷，不等同实际已执行或清除了日志。禁止覆盖既有包、清全局日志、整套测试或掩盖失败。保留原始证据，先只读定位最近run目录install-main.txt/install-test.txt/meta.txt的实际输出、退出码、命令可用性和当前两个包状态；若有遗留只处理已确认本次所建资源。未经明确原因及安全条件不得反复安装。若仅确认流程/宿主timeout工具问题且安全预检仍通过，可在此前授权内采用Python subprocess带明确限时、一次主包安装（无-r），主包实际成功且校验后才安装测试包（-t，无-r），提前提醒机主在手机点继续安装（不关闭、不绕过系统防护）；失败即停止并保存原始错误，若断连则待恢复后清理本次资源。只运行ResidentSingleTest#ownSingleTaskSameCanvasTextureThenSurface一次，按M/L完整证据及安全清理门禁，采集限定时间/标签日志，不清除系统日志。若实际系统策略拒绝且不可正常确认，则停止并审查，不提权、不关闭安全机制。未取得真机实验结果、第三方准入或OPPO依赖结论。
+- 实际GitHub核验core HEAD仍428b618b35ccd5db67d8e66abe6616bff23feeae，本轮仅更新原交接档案，无生产代码/分支/PR/CI变动。原SDK、APK、签名与哈希、历史冻结保持不变。普通GPT-6 Medium，Copilot Agent/Auto/本地/默认审批，勿让机主手动执行命令、重复拍照或复装环境。
+
+---
+
 ## 第十五阶段 M · 两个本地实验APK核验回传，待一次真机实验授权（2026-11-20，本节最新生效）
 
 - 机主转交Copilot实际本地核验报告，证据目录 ~/local-verification/wb2-resident-lab-build-20261120_163813/。主包 Workbench2ResidentLab-debug.apk 2718611 bytes，SHA256 94ce52b8ef8c238730bc5c1bc24058b598cd5e7da56fc6ad4b2f9687bc1429a4，包名workbench2.residentlab；测试包 Workbench2ResidentLab-debug-androidTest.apk 791658 bytes，正确SHA256 c31499eb8e4393f7bdf48b2e2b5c277a5b44c3cca548730f2fca86922769523d（报告中另有已明确更正的错误短串，不采用），包名workbench2.residentlab.test，target workbench2.residentlab，runner androidx.test.runner.AndroidJUnitRunner。两包据报告v2签名通过、相同Android debug证书SHA256 bd2209dbe19109743be2f8fb14cb8950c666e0440081aa56866d90d9b0d97bd2。两APK哈希与L回传一致，四个摘要格式均为64 hex；此聊天未获取原始文件/原始日志，非独立字节验证。主包版本名/版本号报告UNKNOWN，合并Manifest完整权限列表及meta.txt退出/数量字段未回传；实际安装前同批次检查，不重编译，不将未知值擅改为正式版本。
