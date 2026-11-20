@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries><package android:name="com.android.car"/></queries>
+    <application android:theme="@android:style/Theme.Material.Light.NoActionBar.Fullscreen"
+        android:label="Workbench2 isolated native lab" android:allowBackup="false">
+        <uses-library android:name="android.car" android:required="true"/>
+        <activity android:name=".HostActivity" android:exported="false" android:resizeableActivity="true"/>
+        <activity android:name=".TargetActivity" android:exported="false" android:resizeableActivity="true"
+            android:taskAffinity="workbench2.nativelab.ownedfixture" android:excludeFromRecents="true"/>
+    </application>
+</manifest>

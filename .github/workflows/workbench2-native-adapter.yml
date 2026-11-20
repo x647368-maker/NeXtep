@@ -1,15 +1,15 @@
-name: Workbench 2 isolated native adapter API admission
+name: Workbench 2 isolated self-owned native task experiment
 on:
   push:
     branches: ['workbench2/core']
-    paths: ['.github/workflows/workbench2-native-adapter.yml']
+    paths: ['.github/workflows/workbench2-native-adapter.yml','workbench2/native-lab/**']
 permissions:
   contents: read
 concurrency:
   group: workbench2-native-adapter
   cancel-in-progress: false
 jobs:
-  api-admission:
+  native-lab:
     runs-on: ubuntu-26.04
     timeout-minutes: 24
     steps:
@@ -18,9 +18,9 @@ jobs:
           persist-credentials: false
       - name: Evidence directory
         run: |
-          mkdir -p "$RUNNER_TEMP/wb2-native-adapter"
-          echo "EVIDENCE=$RUNNER_TEMP/wb2-native-adapter" >> "$GITHUB_ENV"
-          git rev-parse HEAD > "$RUNNER_TEMP/wb2-native-adapter/checkout-sha.txt"
+          mkdir -p "$RUNNER_TEMP/wb2-native-lab"
+          echo "EVIDENCE=$RUNNER_TEMP/wb2-native-lab" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$RUNNER_TEMP/wb2-native-lab/checkout-sha.txt"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -29,92 +29,95 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Fetch and verify official API35 system compile stubs
+      - name: Build isolated own client against verified official compile-only interfaces
         shell: bash
         run: |
           set -euo pipefail
-          base='https://android.googlesource.com/platform/prebuilts/sdk/+/refs/heads/build-tools-release/35/system'
-          curl -fLsS --connect-timeout 20 --max-time 60 --max-filesize 1000000 "$base/android.car-system-stubs.jar?format=TEXT" -o "$RUNNER_TEMP/car-stub.b64"
+          base='https://android.googlesource.com/platform/prebuilts/sdk/+/refs/heads/build-tools-release/35'
+          curl -fLsS --connect-timeout 20 --max-time 60 --max-filesize 1000000 "$base/system/android.car-system-stubs.jar?format=TEXT" -o "$RUNNER_TEMP/car-stub.b64"
           base64 -d "$RUNNER_TEMP/car-stub.b64" > "$RUNNER_TEMP/car-stub.jar"
-          actual=$(git hash-object "$RUNNER_TEMP/car-stub.jar")
-          echo "$actual" | tee "$EVIDENCE/car-stub-git-blob.txt"
-          test "$actual" = 7e438f6f1475f6f2dd6e0b926a48bc01ee166096
-          sha256sum "$RUNNER_TEMP/car-stub.jar" | tee "$EVIDENCE/car-stub-sha256.txt"
-          jar tf "$RUNNER_TEMP/car-stub.jar" > "$EVIDENCE/car-stub-classes.txt"
-      - name: Require real supported task creation and observation surface
+          test "$(git hash-object "$RUNNER_TEMP/car-stub.jar")" = 7e438f6f1475f6f2dd6e0b926a48bc01ee166096
+          curl -fLsS --connect-timeout 20 --max-time 120 --max-filesize 70000000 "$base/test/android.jar?format=TEXT" -o "$RUNNER_TEMP/test-stub.b64"
+          base64 -d "$RUNNER_TEMP/test-stub.b64" > "$RUNNER_TEMP/test-stub.jar"
+          test "$(git hash-object "$RUNNER_TEMP/test-stub.jar")" = 5942338e0c4bfd9897f1f0d8aedafd67895c1fcb
+          sha256sum "$RUNNER_TEMP/car-stub.jar" "$RUNNER_TEMP/test-stub.jar" > "$EVIDENCE/stub-sha256.txt"
+          javac --release 17 -cp "$RUNNER_TEMP/test-stub.jar" -d "$RUNNER_TEMP/identity-classes" workbench2/native-lab/identity/TaskIdentity.java 2>&1 | tee "$EVIDENCE/identity-javac.txt"
+          jar cf "$RUNNER_TEMP/identity.jar" -C "$RUNNER_TEMP/identity-classes" .
+          sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
+          export WB2_CAR_STUB="$RUNNER_TEMP/car-stub.jar"
+          export WB2_IDENTITY_HELPER="$RUNNER_TEMP/identity.jar"
+          bash gradlew -p workbench2/native-lab :assembleDebug :assembleDebugAndroidTest --no-daemon --console=plain --stacktrace 2>&1 | tee "$EVIDENCE/build.txt"
+          sha256sum $(find workbench2/native-lab/build/outputs/apk -name '*.apk' -type f) > "$EVIDENCE/apks-sha256.txt"
+          git ls-tree -r HEAD workbench2/engine/src/main workbench2/native-lab > "$EVIDENCE/source-blobs.txt"
+      - name: Admit disposable official automotive emulator
         shell: bash
         run: |
           set -euo pipefail
-          # Do not substitute reflection, hidden-API exemptions, platform signing, or a mock.
-          # This is a compile admission barrier before allocating any emulator resources.
+          mkdir -p "$EVIDENCE"
+          printf '%s\n' "$GITHUB_SHA" > "$EVIDENCE/checkout-sha.txt"
+          sdkmanager --list > "$EVIDENCE/sdk-list.txt"
+          image=system-images\;android-35-ext15\;android-automotive\;x86_64
+          test -n "$image"
+          printf '%s\n' "$image" > "$EVIDENCE/image.txt"
+          test -c /dev/kvm
+          sudo chmod 666 /dev/kvm
+          sdkmanager 'platform-tools' emulator 'build-tools;36.0.0' "$image"
+          export ANDROID_USER_HOME="$RUNNER_TEMP/wb2-aosp-user"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name wb2-aosp --path "$ANDROID_AVD_HOME/wb2-aosp.avd" --package "$image"
+          sdklevel=$(printf '%s' "$image" | cut -d';' -f2)
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=%s\n' "$ANDROID_AVD_HOME/wb2-aosp.avd" "$sdklevel" > "$ANDROID_AVD_HOME/wb2-aosp.ini"
+          nohup "$ANDROID_HOME/emulator/emulator" -avd wb2-aosp -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -memory 3072 -cores 2 -gpu swiftshader_indirect > "$EVIDENCE/emulator.log" 2>&1 &
+          timeout 150 adb -s emulator-5554 wait-for-device
+          timeout 240 bash -c 'until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          test "$(adb -s emulator-5554 shell getprop ro.build.version.sdk | tr -d '\r')" = 35
+          adb -s emulator-5554 shell getprop ro.build.fingerprint > "$EVIDENCE/fingerprint.txt"
+          adb -s emulator-5554 shell pm list features > "$EVIDENCE/features.txt"
+          grep -F 'feature:android.hardware.type.automotive' "$EVIDENCE/features.txt"
+          adb -s emulator-5554 shell service list > "$EVIDENCE/services.txt"
+          grep -E 'car_service|android.car.ICar' "$EVIDENCE/services.txt"
+          adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/before-activities.txt"
+          adb -s emulator-5554 shell dumpsys car_service > "$EVIDENCE/car-service.txt"
+          adb -s emulator-5554 shell wm dismiss-keyguard
+
+      - name: Run one own task using the unchanged real core
+        shell: bash
+        run: |
+          set -euo pipefail
+          adb -s emulator-5554 shell getprop ro.build.fingerprint | tr -d '\r' | grep -Fx 'google/sdk_gcar_x86_64/emulator_car64_x86_64:15/AAI5.260516.001.A6/16618942:userdebug/test-keys'
+          app=$(find workbench2/native-lab/build/outputs/apk/debug -name '*.apk' -print -quit)
+          testapk=$(find workbench2/native-lab/build/outputs/apk/androidTest/debug -name '*.apk' -print -quit)
+          test -s "$app"; test -s "$testapk"
+          adb -s emulator-5554 install -t "$app"
+          adb -s emulator-5554 install -t "$testapk"
+          adb -s emulator-5554 logcat -c
+          timeout 180 adb -s emulator-5554 shell am instrument -w -r -e class 'workbench2.nativelab.NativeLabTest#selfOwnedNativeTaskTraversesRealCoreOnce' workbench2.nativelab.test/androidx.test.runner.AndroidJUnitRunner | tee "$EVIDENCE/own-task-test.txt"
+          adb -s emulator-5554 logcat -d -v threadtime > "$EVIDENCE/own-task-logcat.txt"
+          adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/after-activities.txt"
           python3 - <<'PY'
-          import os,pathlib,subprocess
+          import os,pathlib,re
           p=pathlib.Path(os.environ["EVIDENCE"])
-          jar=pathlib.Path(os.environ["RUNNER_TEMP"])/"car-stub.jar"
-          methods={
-            "CarActivityManager":["getCarTaskViewController(", "isCarSystemUIProxyRegistered("],
-            "CarTaskViewController":["createControlledRemoteCarTaskView(", "release("],
-            "CarTaskViewControllerCallback":["onConnected(", "onDisconnected("],
-            "ControlledRemoteCarTaskView":["getTaskInfo(", "setObscuredTouchRect(", "release("],
-            "ControlledRemoteCarTaskViewCallback":["onTaskAppeared(", "onTaskVanished(", "onTaskViewReleased("],
-            "ControlledRemoteCarTaskViewConfig$Builder":["setActivityIntent(", "setShouldAutoRestartOnTaskRemoval(", "build("],
-          }
-          missing=[]
-          for clazz, names in methods.items():
-              q=subprocess.run(["javap","-classpath",str(jar),"-public","android.car.app."+clazz],capture_output=True,text=True)
-              (p/(clazz+".txt")).write_text(q.stdout+q.stderr)
-              if q.returncode:
-                  missing.append(clazz+": class missing")
-              else:
-                  missing.extend(clazz+"."+name for name in names if name not in q.stdout)
-          (p/"api-admission.txt").write_text("MISSING: "+str(missing) if missing else "Required declarations present; not runtime authorization")
-          print((p/"api-admission.txt").read_text(),flush=True)
-          assert not missing, "Official API35 compile surface insufficient; stop without privileged fallback"
+          run=(p/"own-task-test.txt").read_text()
+          assert [int(x) for x in re.findall(r"^INSTRUMENTATION_STATUS_CODE:\s*(-?\d+)\s*$",run,re.M)]==[1,0],run
+          assert "OK (1 test)" in run and re.search(r"^INSTRUMENTATION_CODE:\s*-1\s*$",run,re.M)
+          logs=(p/"own-task-logcat.txt").read_text()
+          for mark in ["AUTHORIZED_HOST_OK","NATIVE_TASK_OK","PIXEL_OK","INPUT_GATE_AND_FOCUS_OK","CORE_ACTIVE","NATIVE_RELEASE_OK","CORE_CLOSED"]:
+              assert re.search(r"WB2NativeLab\s*:\s*"+mark,logs),mark
+          assert not re.search(r"ActivityRecord\{[^\n]*workbench2\.nativelab/",(p/"after-activities.txt").read_text())
           PY
-      - name: Compile actual direct task API contract
+      - name: Collect actual evidence and destroy test emulator
+        if: always()
+        timeout-minutes: 2
         shell: bash
         run: |
-          set -euo pipefail
-          sdkmanager 'platforms;android-35'
-          cat > "$RUNNER_TEMP/DirectTaskContract.java" <<'JAVA'
-          import android.app.Activity;
-          import android.app.ActivityManager;
-          import android.car.app.*;
-          import android.content.Intent;
-          import android.graphics.Rect;
-          import java.util.concurrent.Executor;
-          final class DirectTaskContract {
-              static void connect(CarActivityManager manager, Activity host, Executor executor,
-                                  CarTaskViewControllerCallback receiver) {
-                  if (!manager.isCarSystemUIProxyRegistered())
-                      throw new IllegalStateException("No registered system host");
-                  manager.getCarTaskViewController(host, executor, receiver);
-              }
-              static void create(CarTaskViewController controller, Intent ownedActivity,
-                                 Executor executor, ControlledRemoteCarTaskViewCallback events) {
-                  ControlledRemoteCarTaskViewConfig config = new ControlledRemoteCarTaskViewConfig.Builder()
-                      .setActivityIntent(ownedActivity).setShouldAutoRestartOnTaskRemoval(false).build();
-                  controller.createControlledRemoteCarTaskView(config, executor, events);
-              }
-              static ActivityManager.RunningTaskInfo observe(ControlledRemoteCarTaskView view) {
-                  return view.getTaskInfo();
-              }
-              static void localGate(ControlledRemoteCarTaskView view, Rect region) {
-                  view.setObscuredTouchRect(region);
-              }
-              static void close(ControlledRemoteCarTaskView view, CarTaskViewController controller) {
-                  view.release();
-                  controller.release();
-              }
-          }
-          JAVA
-          cp "$RUNNER_TEMP/DirectTaskContract.java" "$EVIDENCE/"
-          javac --release 17 -cp "$ANDROID_HOME/platforms/android-35/android.jar:$RUNNER_TEMP/car-stub.jar" -d "$RUNNER_TEMP/contract-classes" "$RUNNER_TEMP/DirectTaskContract.java" 2>&1 | tee "$EVIDENCE/javac.txt"
-          test -s "$RUNNER_TEMP/contract-classes/DirectTaskContract.class"
-          echo 'Compile admission only; no task execution, no authorization, no NativePort proof.' | tee "$EVIDENCE/result-scope.txt"
+          mkdir -p "$EVIDENCE"
+          timeout 20 adb -s emulator-5554 logcat -d -v threadtime > "$EVIDENCE/final-logcat.txt" || true
+          timeout 15 adb -s emulator-5554 shell dumpsys activity activities > "$EVIDENCE/final-activities.txt" || true
+          timeout 15 adb -s emulator-5554 emu kill || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wb2-native-adapter-api-admission
+          name: wb2-own-native-task-evidence
           path: ${{ env.EVIDENCE }}/
           if-no-files-found: error
