@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 J · 本地构建失败止损及网络单点解阻（2026-11-20，本节最新生效）
+
+- 机主转交Copilot最终专项报告，确认其本地HEAD完整SHA 428b618b35ccd5db67d8e66abe6616bff23feeae，与本轮GitHub实时core HEAD一致；本地clean状态及原始日志尚未独立取得。官方命令行工具据报告已下载解压至 ~/Library/Android/sdk/cmdline-tools/latest，截图证实sdkmanager曾启动并出现3% Fetch remote repository。platforms;android-36.1、build-tools;36.0.0、SDK内platform-tools均未确认已安装（既有Homebrew ADB另计）。本地无APK，AGP 9.3.0解析失败，未进入源码编译；日志据报告保存在 ~/local-verification/resident-lab-build-20261120_155729.log，未取得原始字节，不声称已查验日志。
+- 本地失败报告为 dl.google.com:443 TLS握手 LibreSSL SSL_connect: SSL_ERROR_SYSCALL；截图中曾用curl --resolve 指定IP、尝试重装命令行工具并删除SDK latest目录/安装ZIP；后续手动拉取XML和局部hosts尝试被机主跳过/停止，未确认系统hosts被改动。Copilot曾出现401 token expired or invalid，重试后已能继续并最终汇报，非当前已证实阻塞。TLS异常不等于已证明DNS错误、厂商封锁或证书错误；不再盲目重试、固定IP、关闭TLS校验或替换不可信镜像。不默认安装Android Studio，因为仍依赖相同官方资源。
+- 机主已按止损指令结束本地任务；保留源码、缓存、日志、SDK现状。截图显示已启用VS Code终端规则化自动审批，仍是默认审批，不是无限信任；不得把AI中文提示视作安全保证，禁止全局自动批准和无关OPPO互联个人文件访问。后续减少审批，合并有限任务，不让机主执行命令。暂不连接手机。
+- 本轮GitHub实查core HEAD未变，CI44681254780/job136104941808仍completed/failure；此前CI Maven Central HTTP429与本地Google TLS是不同环境不同失败点。一次有条件的CI续编授权仍未使用，没有可信runner恢复证据；不自动重跑。下一步优先一次独立网络判别：Mac用可信可访问Google的现有网络或切换网络，在Safari打开官方Google Maven AGP 9.3.0 POM及SDK官方仓库索引，作为浏览器可达性线索；不能代替终端/JVM可达性。若有效，再让原Copilot会话一次限域核验终端/Gradle实际访问、固定SHA/clean及缺失SDK组件，复用缓存完成原构建，保留两APK及哈希；不变源码/依赖，不安装或运行APK。若仍失败就结束本地重试，另在有可信恢复条件时优先现有CI，或使用已获授权的可用编译环境。无需购买新Mac或重建环境，不以OPPO回复为前置。单任务、双任务及第三方原生权限门禁仍未通过。本轮仅更新既有权威档案，不改工程、不新建分支/PR、不触发实验CI、不发布APK。普通GPT-6 Medium，Copilot原Agent/Auto/本地/默认审批，Work不启用。
+
+---
+
 ## 第十五阶段 I · H接任及本地编译结果待回传（2026-11-20，本节最新生效）
 
 - 机主在当前新对话明确授权唯一生产研发负责人，旧窗口只读；Copilot仅本地构建及取证。本次实际读取H全文、E/F/G及既有历史制度、F01–F21冻结合同、AGENTS.md和DEVELOPMENT_HANDOFF_POLICY.md；最新规则覆盖旧分支/PR安排。GitHub实时fetch_commit确认治理HEAD 0602b6d7cf6972989eb66975a53a1894a0b3813a（本次更新前）、工程HEAD 428b618b35ccd5db67d8e66abe6616bff23feeae；open PR搜索仅历史两条（H绑定#175/#176）；workbench2/搜索返回core，未重新全量分页统计146旧记录或独立验证规则集。无生产代码变动、无新分支/PR、无CI重跑。
