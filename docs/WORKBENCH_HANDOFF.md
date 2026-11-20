@@ -1,5 +1,13 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-19/20，当前窗口交接封存）
 
+## 第十五阶段 F · 驻留实验首次构建失败的单点修正与一次续编（2026-11-20）
+
+- 继承E cdf493d6f04b438ccab51c17a94522890d366d0c。实查CI44680916366/job136103821611最终completed/failure，原始日志65451字符。SDK/Java准备成功，05:27:26Z在:compileDebugAndroidTestKotlin明确报ResidentSingleTest.kt:131:65 nullable MotionEvent?接收者不可直接recycle，BUILD FAILED in 1m37s。模拟器和真实单任务均skipped，实际任务运行0次；非系统授权、运行时或架构性能失败。远端证据artifact14604102598仅979字节，digest sha256:5b1ef8be06e4a74630e69794dc6b9ba7bb2dc4313e73d74501c218811a50a4dc，未过期，本轮仅元数据核验，未下载ZIP字节；没有完整编译产物、运行XML、帧数据或原签名APK。
+- 机主授权处理明确失败原因且真实实验尚未执行；本轮仅修正实验测试触控构造空值：requireNotNull(event)后发送并finally回收已证实非空对象，若构造失败仍立即失败，不跳过触控或放宽断言。实际commit428b618b35ccd5db67d8e66abe6616bff23feeae，父febc15dc3c35f5cbaa0079a374eba931242f16ea，test blob89bf5e1b2afdafe85b7c874e5a1eeac1af369e6f，compare ahead1/behind0、仅ResidentSingleTest.kt一文件+2/-1。无生产engine/app、CI脚本、权限、签名、历史功能改动，无新增分支/PR。此为针对尚未执行的单次实验的一次明确编译修正；不得无边界继续试错。
+- 新真实CI44681254780 https://github.com/x647368-maker/NeXtep/actions/runs/44681254780 已核实in_progress、绑定428b618...，未核实新编译/运行/任务/触控/画面/资源释放/性能通过。下一轮仅核验该次最终结果、原始日志及完整证据；全部单任务门禁实证通过才按E/D进入双任务驻留交换，否则定位并按停止制度结算，不重复触发、不降低标准、不绕过安全边界。继续禁止V89、旧VD正式生产恢复、AAOS重复路线、全局Hook；本轮无真机操作或产品APK。普通GPT-6 Medium核验，确有后续工程High，不开Work。
+
+---
+
 ## 第十五阶段 E · 经批准的驻留式自有任务独立实验已进入真实 CI（2026-11-20）
 
 - 机主明确批准D 9e59b6bf070c6c0378b40e5db8f85bd007275af3 的一次严格隔离自有测试任务VD/SurfaceView实验，不批准旧VD生产恢复、新系统权限或全局Hook。新证据：Android官方 https://source.android.com/docs/core/display/multi_display/activity-launch 明确私有显示器所有者可启动自有任务；https://developer.android.com/reference/android/app/ActivityManager 的实例方法 isActivityStartAllowedOnDisplay 预查；https://developer.android.com/reference/android/view/MotionEvent API34公开 obtain 重载含 displayId；https://developer.android.com/reference/android/app/Instrumentation 的 sendPointerSync 限仪器化应用所有窗口。此为正常测试专用标准输入路径，并非实际宿主屏幕触控转发或第三方输入授权。https://source.android.com/docs/core/permissions/app-streaming 的 VDM 伴侣应用流式传输角色另有条件，不采用。无强制授权、root/hidden API/扩大注入。
