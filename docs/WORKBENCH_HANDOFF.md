@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## OEM 单任务隔离Android原型实际源码及CI（2026-11-21）
+
+- **实际提交生产唯一分支`workbench2/core`**，从`41c1e97b9e5ba8f85f41dc5f78bce49741205b43`出发新增独立`workbench2/oem-single-task-lab/`工程，含AGP9.3 Android application、manifest、Java `LabActivity`、README。原签名主APK、现有engine、任务布局和系统注入均未改。最新提交`17ab9c37d66a96c01b439b4063ee777a21a47d7b`，只有唯一分支、未新建PR。
+- `LabActivity`通过`PackageManager.checkPermission("com.oplus.permission.safe.WINDOW", ownPackage)`、system/updated-system app flag及OEM `FlexibleTaskView`类存在三重门禁，全部满足后才开放手动任务ID输入。使用已核对PMS110 DEX签名`FlexibleTaskView(Context)`、`init(Bundle)`、`release()`反射，Bundle设`taskId`、`launchBounds`、`flexible_key_remove_task_detach=false`、`allow_task_detach_from_embedding=true`。无hook、无全局Organizer、无后台保活、无自动任务迁移。此代码为**未部署、未通过真实OEM运行的最小宿主试验骨架**，并非可交付/可安装到机主主力设备的完整单任务原型。当前没有安全的release/死亡归还契约，代码故意不调用`release()`，因而不能将其视为完成任务生命周期。必须在安全释放闭环完成前禁止设备安装/调用OEM任务操作。
+- 新增独立GitHub workflow `.github/workflows/wb2-oem-single-task-lab.yml`，仅`assembleDebug`并检查源代码安全门禁，不上传APK、不签原签名、不发布。CI初次`44873917162`失败于`android-actions/setup-android@v3`默认尝试安装已不存在的`tools`包；第二次`44873991199`失败于缺少sdkmanager PATH；第三次`44874040356`失败于直接指定不存在的runner路径。已改为setup-android仅安装`platform-tools`后使用sdkmanager，当前第四次`44874080112`正在执行Gradle编译，结果必须实时核实，不得宣称通过。
+- **尚未满足**：独立系统桥实际`safe.WINDOW`授权、OEM init Bundle完整参数、TaskView跨进程UI集成、单任务Activity/Surface/Input连续、正常release无删除、宿主死亡独立完整归还及性能门禁。下一轮优先核实CI并修复实际编译问题，再做离线安全退出源码闭环；不得要求用户装包或Root改系统来替代尚未完成的安全验证。
+
+---
+
 ## PMS110 FlexibleTaskView 宿主创建、Surface及启动参数闭环补证（2026-11-21）
 
 - 进一步解码`framework-1.jar`的`FlexibleTaskView`方法体，得到比上一节更完整的真实OEM宿主路径：
