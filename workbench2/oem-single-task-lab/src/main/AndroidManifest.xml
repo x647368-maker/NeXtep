@@ -4,5 +4,6 @@
         <activity android:name=".LabActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
+        <service android:name=".OemBridgeService" android:process=":bridge" android:exported="false" android:stopWithTask="true"/>
     </application>
 </manifest>
