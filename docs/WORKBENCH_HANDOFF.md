@@ -1,5 +1,20 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## PMS110 FlexibleTaskView 宿主创建、Surface及启动参数闭环补证（2026-11-21）
+
+- 进一步解码`framework-1.jar`的`FlexibleTaskView`方法体，得到比上一节更完整的真实OEM宿主路径：
+  - `FlexibleTaskView(Context)`公开构造器存在；`init(Bundle)`读取`taskId`、`userId`、`launchBounds`、`intent`、`allow_task_detach_from_embedding`、`flexible_key_remove_task_detach`、容器类型、输入拦截等参数。
+  - `surfaceCreated()`执行`registerTaskOrganizer()`、`startFlexibleActivity()`；此处`registerTaskOrganizer`只是OEM命名，内部创建`EmbeddedWindowTaskOrganizer`并`registerFlexibleWindowObserver`，不是AOSP全局TaskOrganizer。
+  - `prepareActivityOptions()`生成`LaunchCookie`、`LaunchBounds`、`LaunchDisplayId`、`LaunchEmbedded=true`、`LaunchContainerTaskId`、`flexible_key_remove_task_detach`、`allow_task_detach_from_embedding`、`flexible_container_task_activity_token`等Bundle项，并调用`startActivityFromRecentsForFlexible(taskId,bundle)`。
+  - `onTaskAppeared(RunningTaskInfo,SurfaceControl)`获得真实Task leash，校验surface是否已创建，调用`resizeInner`、`reparentInner`、`updateTaskVisibility`和回调；这是一条系统已有真实Task+Surface的宿主实现线索，适合直接复用，不需要我们自己构造WCT或另建Organizer。
+  - `setEmbeddedContainerTask()`调用OEM服务把embeddedTaskId与containerTaskId登记关联；`getContainerTaskId()`来自TaskView所在宿主Activity的Task，意味着需要一个实际前台host Activity/Task作为容器。
+  - `resetBeforeRelease()`调用`FlexibleWindowManager.removeEmbeddedContainerTask(embeddedTaskId,containerTaskId)`；此调用是否删任务取决于上节两个LaunchParams flag及密码任务分支，不能沿用默认或盲目release。
+- **新的最小集成方向**：单独priv-app桥接组件可持有OEM`FlexibleTaskView`，作为系统权限主体及task/surface宿主；原签名主APK通过窄Binder协议发送任务/布局命令。Surface视图集成原APK界面仍未闭环：需评估`SurfaceControlViewHost/SurfacePackage`跨进程承载、输入传递与生命周期，或让桥接Activity成为真正workspace host并把主APK作为控制端。不得预设Remote Surface可直接替代View或无需额外权限。
+- **性能/安全约束**：先单个TaskView/一个真实任务，不建五个全屏持续渲染副本；任务身份、Activity实例、Surface leash/Buffer、InputWindow、正常exit无删除、bridge死亡后系统恢复均分别取证。桥接服务与可见UI生命周期隔离，不能用常驻轮询、频繁唤醒保活；只有有界事件处理和必要前台生命周期。隐私锁/密码保护任务暂时拒绝承载。
+- **当前工程状态不变**：仅OEM DEX静态证据；尚未构建bridge APK/KernelSU模块、未申请safe.WINDOW、未调用OEM API、未真机运行。下一步可以在唯一`workbench2/core`内新增隔离compile-only bridge原型并走现有CI，不另建分支/PR；在原件权限分区、bridge安装/权限grant和UI Surface集成未核实前，不交机主安装、不改原签名APK、不触碰系统分区。
+
+---
+
 ## 第十六阶段 Z后重大突破：PMS110 FlexibleTaskView 受控无删除承载路线（2026-11-21）
 
 - **本轮实质成果：从OEM原始DEX确认一条此前没有收敛出来的真实系统原生路径**，不是普通WCT，也不是TaskOrganizer重实现。原始证据：
