@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 Z后补充：DeepSeek第四轮 system_server 旁路委托候选审查（2026-11-21）
+
+- 机主于2026-11-21上传DeepSeek第四轮原文`deepseek3.txt`，本轮实读原文件13409字节、101行（含末尾无换行的最后一行）、SHA256 `6cd08ce7878f88901d97ccd18d40e28e62f1fd246665626f5ee10355d6d5eb2c`，并上传到私有Library `/台前调度2.0/外部AI原始分析/DeepSeek-第四轮原生框架攻关-20261121.txt`，canonical ID `libfile_09235e9b59148191b62ce4545fcf4499`。原文不公开上传GitHub。本节存结论和索引，不改源代码。报告承认未读取PMS110实际OEM DEX，所谓可执行桥接仅是假设。
+- **核心候选**：DeepSeek建议将受限会话桥放进`system_server`，使其在系统内通过已有`FlexibleTaskController`或`EmbeddedWindowTaskOrganizer`执行任务托管，客户端只持会话handle；其DeathRecipient在客户端死亡后通知OEM侧release，避免注册第二全局Organizer。保留“系统持有真实任务、客户端只拥有受限会话、系统完成归还”的契约原则；**不批准具体实现**：`system_server`注入是新的高敏系统作用域，超出机主既有两个外部scope与自身的最小Root+Vector授权；不因为已有Root就认为`system_server`注入可用、安全、获得OEM授权或符合生产部署。其建议还涉及绕过普通调用方准入边界的系统进程内间接调用，不能称为已受支持的合法第三方授权入口；涉及ROM/SystemServer稳定、重启和崩溃风险，未经单独重大授权不得实施。
+- **报告关键逻辑缺口**：没有提供所假设的OEM受限`sessionId`/descriptor入口、调用方身份/权限契约、幂等release、异常死后无pending delete的终结回执的任何已验DEX方法签名/offset或实际运行证据。历史Z原件已核查`setEmbeddedContainerTask`、`removeEmbeddedContainerTask`、`exitFlexibleEmbeddedTask`、`clearEmbeddedContainerTask`及observer的`safe.WINDOW`门禁和正常/异常解绑破坏性分支；本轮没有推翻这些。函数体未直接含权限检查不代表调用链、外层Binder stub、业务状态没有准入门禁；用“候选三条件满足任一即GO”是错误门槛。相反，静态扫描未找到某几种方法名也不能证明所有OEM合同不存在。
+- **生命周期与性能反例**：`Binder.DeathRecipient`只能感知特定Binder死亡，不能阻止在途OEM异步removeTask、证明原parent/display/bounds/mode恢复、无迟到重挂或应对system_server本身重启。报告提议死亡后5秒成功或10秒失败是任意观察窗口，不替代既有ReceiptBridge的原任务user/token/ownership/noPendingReattach/noPendingDestructiveCleanup终态门禁；不得在主力机kill系统宿主或system_server做此试验。`isInFlexibleEmbedded`/TaskInfo标记只表示某种状态，不证明Activity实例不relaunch、逻辑尺寸稳定、输入逆变换已经通过。又引用历史`TaskOrganizerTaskEmbedder.registerOrganizer(WINDOWING_MODE_MULTI_WINDOW)`，与较新AOSP接口混代，不据此写当前37生产实现。
+- **事实复核**：AOSP`android17-release/core/res/AndroidManifest.xml` MANAGE_ACTIVITY_TASKS确为`signature|recents`（https://android.googlesource.com/platform/frameworks/base/+/android17-release/core/res/AndroidManifest.xml 4850–4853）；较新`TaskOrganizerController`的`DeathRecipient.binderDied`调用`state.dispose`是已证AOSP事实（https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/TaskOrganizerController.java），但不构成ColorOS异常安全归还证明；`WindowOrganizer.applySyncTransaction`要求MANAGE_ACTIVITY_TASKS（https://android.googlesource.com/platform/frameworks/base/+/HEAD/core/java/android/window/WindowOrganizer.java）。既有CI双任务受控TestApi授权而错触，不能以“客户端缺少权限”解释全部实际失败根因。
+- **最小有效后续**：仍以此前已归档的五份PMS110 OEM原件和唯一核心为准，无需机主重新从设备提取。只有出现**具体可复核的受支持委托入口和独立安全归还合同**，并明确不扩大系统注入/安全作用域，才考虑一项真正新的自有单任务隔离Android实验。若新方案非要触及system_server、修改系统部署、扩scope、额外守护或提高风险，必须说明收益/崩溃与数据风险并由机主单独明确授权；现阶段一律不实施。不要重复普通WCT、第三次无效模拟器实验、无证据调用OEM私有接口，也不把外部AI静态推断冒充原生完成。没有新CI、签名APK、工程编译、核心代码或真机结果。保留已验收核心`ed40df41de8336dea0f2c2d743722eaf88f3b727`，实验分支`41c1e97b9e5ba8f85f41dc5f78bce49741205b43`，47＋5与两轮失败证据。
+  
+---
+
 ## 第十六阶段 Z后补充：DeepSeek第三轮原生框架评审与源码纠错（2026-11-21）
 
 - 机主上传 DeepSeek 第三轮原文 deepseek.txt：14913 bytes，122行，SHA256 `5a10efda9c5b9d98c15f68e9205268b0fbb37692249fb9641c04405684bf7f4d`，已实际保存私有Library `/台前调度2.0/外部AI原始分析/DeepSeek-第三轮原生框架审查-20261121.txt`，canonical ID `libfile_10c8835a2e248191840103f660e312aa`。原文不上传公开GitHub；此节只存索引与独立技术判断。作者自承未读取ColorOS OEM原始DEX或框架jar，无其独立OEM/目标机实验/生产PoC结果。
