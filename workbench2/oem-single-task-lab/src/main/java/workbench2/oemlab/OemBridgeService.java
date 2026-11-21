@@ -4,13 +4,11 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
-import android.os.Process;
 import android.os.RemoteException;
 
 /**
@@ -42,8 +40,8 @@ public final class OemBridgeService extends Service {
     }
 
     private boolean handle(Message message) {
-        // Defense in depth: even if manifest export settings change, reject foreign UIDs.
-        if (Binder.getCallingUid() != Process.myUid()) return true;
+        // Manifest exported=false restricts binding to this application.
+        // Handler executes asynchronously: Binder.getCallingUid() is NOT a caller identity here.
         if (message.what != MSG_READ_STATUS || message.replyTo == null) return true;
         Message reply = Message.obtain(null, MSG_STATUS_REPLY);
         reply.getData().putString(EXTRA_PHASE, admission.phase().name());
