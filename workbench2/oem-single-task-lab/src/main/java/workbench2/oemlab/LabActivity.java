@@ -41,7 +41,13 @@ public final class LabActivity extends Activity {
         if (msg.what != OemBridgeService.MSG_STATUS_REPLY) return false;
         status.setText("Bridge process: " +
                 msg.getData().getString(OemBridgeService.EXTRA_PHASE, "unknown") +
-                "; task mutation=" + msg.getData().getBoolean(OemBridgeService.EXTRA_MUTATION, true));
+                "; task mutation=" + msg.getData().getBoolean(OemBridgeService.EXTRA_MUTATION, true)
+                + "; granted=" + msg.getData().getBoolean(OemBridgeService.EXTRA_GRANTED, false)
+                + "; system=" + msg.getData().getBoolean(OemBridgeService.EXTRA_SYSTEM, false)
+                + "; OEM class=" + msg.getData().getBoolean(OemBridgeService.EXTRA_OEM_CLASS, false)
+                + "; owner=" + msg.getData().getString(OemBridgeService.EXTRA_OWNER, "missing")
+                + "; protection=0x" + Integer.toHexString(
+                    msg.getData().getInt(OemBridgeService.EXTRA_PROTECTION, -1)));
         return true;
     }));
     private final ServiceConnection bridgeConnection = new ServiceConnection() {
