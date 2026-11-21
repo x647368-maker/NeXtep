@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## PMS110 OEM DEX 反向调用与删除分支确认（2026-11-21）
+
+- 本轮直接对PMS110原始`oplus-services.jar/classes3.dex`的全部方法定义做invoke反向索引，并进一步解析Dalvik条件分支目标（只读，不动生产源码）。本地可复核脚本`/tmp/wb2_reverse.py`、`/tmp/wb2_branches.py`，输出`/tmp/wb2_reverse_results.txt`、`/tmp/wb2_branch_results.txt`；原始JAR SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`。
+- `cancelPendingRemoveTaskIfNeed(int)`在`FlexibleWindowManagerService.updateFlexibleWindowTask(Task,Task,ActivityOptions,ActivityRecord,ActivityRecord,int,String)`内有**两个直接调用点**（方法体`0x2916a8`，code unit PC 30、38）；它们受不同分支条件控制（PC 24、26、34），不能推断每次更新均执行。另在`postRemoveTaskIfNeed(Task,boolean)`（`0x289ee4`）PC5执行排队前取消旧任务，确认按taskId去重/重排。全DEX反向索引目前未找到其他直接调用者；间接反射/本地调用不能据此排除。
+- `removeTaskIfNeed(Task,boolean)`（`0x28b8b4`）的直接删除调用位于PC113（`remove-by-ContainerTask`）及PC205（`remove-by-ContainerTask-password`）。PC113前存在`isRemoveTaskWhenDetach()`后条件跳转PC30→210、`getLaunchScenario()`后PC44→210、`isFlexibleEmbedded()`后PC58→210，PC62→105；说明**删除并非无条件**，需要精确跟踪寄存器取值和分支目标才能确认各场景。PC205位于另一个任务枚举/过滤循环，可能影响与容器关联的其他任务。禁止将“存在guard”夸大为原始任务必不删除。
+- `removeEmbeddedContainerTask(int,int)`直接调用`removeTaskIfNeed(Task)`，该路径**绕过Handler排队取消机制**。 `FlexibleWindowManagerService$6.run()`在Map检查后移除条目并调用`removeTaskIfNeed(Task,boolean)`，`removeCallbacks`只保证排队时取消，不保证正在执行的Runnable停止；无外部独立恢复契约。
+- 权限侧：`OplusActivityTaskManagerServiceEnhance`四个Binder入口均执行`com.oplus.permission.safe.WINDOW`检查（前轮已实证）。**本轮未取得PMS110系统`packages.xml`、声明该权限的系统包manifest、实际PackageManager grant输出**，因此不能声称某个包确实被授予该权限；仅凭pscanvas APK或框架JAR不能替代设备真实授权记录。原签名APK仍为NO-GO；禁止利用system UID或漏洞绕过门禁。
+- **结论**：异步取消调用者、条件删除位置和直接删除绕过取消三项已确认；“所有异常退出均安全归还”和“原签名可获safe.WINDOW”仍未证明。后续若要推进，需要完整控制流/调用身份及权限授予证据，不能凭静态字符串声称成功；没有安全恢复路径前不做真实Task迁移实验。
+
+---
+
 ## PMS110 OEM DEX 异步清理取消链证据（2026-11-21）
 
 - 本轮只读解析原始`oplus-services.jar/classes3.dex`（SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`），查明此前遗漏的**待执行删任务取消机制**，非仅类名推断。方法体偏移：`FlexibleWindowManagerService.postRemoveTaskIfNeed(Task,boolean)` `0x289ee4`；`cancelPendingRemoveTaskIfNeed(int)` `0x27f4b4`；`FlexibleWindowManagerService$6.run()` `0x268118`；`removeTaskIfNeed(Task,boolean)` `0x28b8b4`。
