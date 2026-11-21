@@ -21,3 +21,22 @@ Next: check OEM `init(Bundle)` full required options, `resetBeforeRelease()` and
 `FlexibleWindowObserverMaps.onCallbackDied()` for safe task restoration; only then
 enable an owned-task end-to-end runtime experiment and measure Activity instance,
 Task ID, buffer/input and exact return geometry. No APK release before real verification.
+
+## Independent bridge checkpoint
+
+`OemBridgeService` runs in a private `:bridge` process, is not exported,
+performs read-only OEM permission and class checks, and exposes only a local
+diagnostic binder. It does not register an OEM observer, start/reparent tasks,
+modify the system, install as a privileged app, or implement recovery.
+`BridgeAdmission` has explicit LOCKED, PERMISSION_VERIFIED,
+RETURN_UNPROVEN and READY_FOR_ISOLATED_TEST states. **All states deny task
+mutation** until a separately reviewed real implementation proves return.
+Unit tests cover missing privilege, partial return, simulated positive evidence,
+restart invalidation, and revocation. A simulated READY state is NOT evidence
+of OEM task restoration or of permission being granted on PMS110.
+
+The service is intentionally not a functioning native task host yet.
+Normal return and crash recovery remain blocked on OEM service behavior,
+legitimate privilege grant, and disposable-device evidence. The user's
+authorization is limited to cloud development and isolated tests, not
+modifying any phone system partition or installing Root modules.
