@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## OEM真实权限只读取证协议与设备验收硬门槛（2026-11-21）
+
+- 本轮实时核验前轮跨进程Messenger CI `44874872088`为`completed/success`（对应`c0bb2607c459fc1d62e42dcaf19e494ee1a4d6a1`）。成功范围是Android云端编译/单元测试，不是PMS110 OEM授权或Task运行。
+- 在唯一`workbench2/core`提交了真正跨进程**只读OEM权限取证协议**：`OemBridgeService`新增返回`PackageManager.checkPermission("com.oplus.permission.safe.WINDOW",ownPackage)`实际grant、`getPermissionInfo`声明包/保护级别、system app flag、OEM class存在；`LabActivity`通过Messenger显示独立桥接进程的这些字段。每次查询刷新grant，避免进程常驻后的过时授权状态。提交`48be0a51393adc5bbe4ffd01ca54cd3975941b77`、`060a559cd17d8b441360b48d8372ac71e7786740`、`90a2eee415c9cacc7ce1d518cfbc31bc3da503ac`，README补充`afd263da1e3f1a732d14a1985fc3895afac2af8e`。没有创建新分支、PR。
+- 严格限制：当前仍为普通安装实验APK而非真实priv-app，`safe.WINDOW`预期不会自动授予；云端runner不是ColorOS PMS110，没有OEM服务、OEM权限授予、真实Task/Surface/Input、异常死亡回归的运行条件。没有安装到任何设备，也未构建可部署的priv-app授权模块。权限owner/protection在代码中可读取，但**尚无真实设备输出**。Task操作硬门禁保持`final boolean admitted=false`及`BridgeAdmission.canMutateTasks()=false`。
+- 本轮云端CI `44875060711`及后续最新运行需要查最终结论；不可将运行中称成功。
+- **下一阶段真实验收仍未达成**：在具有OEM服务的可回滚隔离ColorOS设备上先执行只读grant/owner/protection取证；核实privapp所在分区与允许清单，得到合法grant后再设计有独立可靠恢复者的单任务试验；逐项证明正常exit和宿主异常死亡后的Task身份、Activity实例、Surface、bounds、触控、输入焦点、任务可见性、无删除、内容连续。仅靠OEM `onCallbackDied`不能完成恢复。机主授权范围仅云端开发和隔离验证，未经另行授权不得修改主力机系统/安装Root特权模块。
+- 研发纠错：此前“桥接服务代码完成”≠“桥接权限打通”；“正常编译”≠“真实恢复闭环”；禁止继续通过纯Java状态模型宣称真机验收。缺乏OEM目标设备时必须如实说明硬阻塞，避免无限无效CI与模拟测试。
+
+---
+
 ## OEM跨进程桥接IPC纠错与安全归还阻塞（2026-11-21）
 
 - 真实研发分支`workbench2/core`新增并修复**可编译的跨进程只读诊断协议**：原`OemBridgeService`声明`android:process=":bridge"`却返回Java `LocalBinder`，这无法提供主进程可调用的跨进程对象，属于真实架构缺陷。已替换为Android `Messenger`+Message+replyTo协议，`LabActivity`显式bindService并可通过按钮读取桥接进程`BridgeAdmission`状态，Binder服务`exported=false`；无任务ID指令、无OEM Task变更、无常驻后台循环。提交`813132c96fd6d4ff02d9d6876b9f3dd1d8afc2b6`、`0954c92ba462b8fb7595b76e86aab2ad4882a77c`、`c0bb2607c459fc1d62e42dcaf19e494ee1a4d6a1`。
