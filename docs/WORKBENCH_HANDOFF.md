@@ -1,5 +1,27 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 Z后重大突破：PMS110 FlexibleTaskView 受控无删除承载路线（2026-11-21）
+
+- **本轮实质成果：从OEM原始DEX确认一条此前没有收敛出来的真实系统原生路径**，不是普通WCT，也不是TaskOrganizer重实现。原始证据：
+  - `oplus-services.jar` SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`
+  - `framework-1.jar` SHA256 `76cfdaeedebbe8249090d563532a49abd5b2a16149726ca2af6ef31a8b437450`
+  - pscanvas `manifest.json` SHA256 `5ce53599d9fb2d5787e11546b0144e94baae7d4ecd142f0ba11191185f552ead`
+- **权限链被进一步缩小**：pscanvas清单是`system_or_updated_system_app=true`，显式请求`com.oplus.permission.safe.WINDOW`且`host_granted=true`，其protectionLevel raw=18=0x12，即signature(2)|privileged(0x10)。Android官方权限文档说明privileged app位于相应分区的`priv-app`目录，并按分区privapp allowlist授予signature|privileged权限：https://source.android.com/docs/core/permissions/perms-allowlist 。这给出**独立Root系统桥接包申请safe.WINDOW的可验证安装候选**，但尚未取得PMS110 permission owner/分区、allowlist实际配置、桥接包PackageManager grant的设备实测，不能宣称已授权。pscanvas同时请求`MANAGE_ACTIVITY_TASKS`（raw=33554434=0x02000002=signature|recents），但下述OEM Flexible路径没有直接注册AOSP TaskOrganizer；`EmbeddedWindowTaskOrganizer.start()`实际调用的是OEM `registerFlexibleWindowObserver`，而该Binder入口只检查safe.WINDOW。因此不要把MANAGE_ACTIVITY_TASKS误判为此OEM observer/launch链必需条件；运行时仍需验证。
+- **真正OEM宿主调用链**：framework `FlexibleTaskView(Context)`存在，`registerTaskOrganizer()`构造OEM `EmbeddedWindowTaskOrganizer`并调用其`start()`；后者注册`FlexibleWindowManager.registerFlexibleWindowObserver(IFlexibleWindowObserver,int)`，没有调用AOSP `TaskOrganizer.registerOrganizer()`。`FlexibleTaskView.startActivityAndReparent()`调用`startActivityFromRecentsForFlexible(taskId,Bundle)`；对应服务端`OplusActivityTaskManagerServiceEnhance.startActivityFromRecentsForFlexible`在入口执行`enforceCallingPermission("com.oplus.permission.safe.WINDOW",...)`，保存caller PID/UID、解析SafeActivityOptions、clearCallingIdentity后执行`ActivityTaskSupervisor.startActivityFromRecents`，并先`cancelPendingRemoveTaskIfNeed(taskId)`及`updateFlexibleWindowTask`。这是一条真实的、受OEM权限保护的原生已运行Task启动/嵌入候选，不是伪造UID或普通WCT。
+- **发现决定性退出参数**：`TaskExtImpl.setLaunchParams(ActivityOptions,ActivityRecord)`读取Bundle布尔项`flexible_key_remove_task_detach`（默认false）写入`mRemoveTaskWhenDetach`；读取`allow_task_detach_from_embedding`（默认false）写入`mAllowTaskDetachFromEmbedded`。TaskExtImpl构造初始化`mAllowTaskDetachFromEmbedded=false`，`mRemoveTaskWhenDetach`保持Java boolean默认false；`resetLaunchParams()`重置两者为false。系统`exitFlexibleEmbeddedTask(Task,ActivityOptions,boolean)`检查`isAllowTaskDetachFromEmbedded(Task)`，条件允许后记录snapshot、通知嵌入状态、调用`removeEmbeddedContainerTask`，之后`moveTaskToBack`并调用`resetFlexibleTaskNoAnimation`。后者调用`resetLaunchParams()`、将Surface leash reparent到Task parent surface、`Task.setBounds`、`setWindowCrop`、`setPosition`、`setMatrix`、`Task.resize`并apply Transaction。这是明确的系统原生几何/Surface恢复流程。
+- **删除风险现已可配置而非不可避免**：`removeTaskIfNeed(Task,boolean)`第一条`ActivityTaskSupervisor.removeTask`路径受`isRemoveTaskWhenDetach()`条件控制；`removeEmbeddedTaskIfBind`的`lambda$removeEmbeddedTaskIfBind$31`也把`isRemoveTaskWhenDetach()`作为加入待删除列表的条件。第二条`remove-by-ContainerTask-password`路径由`lambda$removeTaskIfNeed$32`筛选加密应用/容器密码保护任务（`Access_Control_Packages_From_Pocket_Studio`、`Access_Control_From_Container`及PasswordActivity），故第一轮单任务实验必须排除应用锁/隐私密码任务。**候选安全参数组合**：启动时显式`flexible_key_remove_task_detach=false`且`allow_task_detach_from_embedding=true`；成功后走OEM exit接口。该组合从源码上同时允许detach并禁止常规detach删除，但还未在设备验证，不得宣称已证明所有分支绝无删除。
+- **宿主死亡边界**：`FlexibleWindowObserverMaps.onCallbackDied`读取ObserverValue记录的task IDs；若`removeTaskWhenDetach=true`有直接`removeTask`；若false则移除container的embedded child记录、在无children时清除container flag、将embeddedContainerTaskId设为-1。该callback-death路径没有显式调用`resetFlexibleTaskNoAnimation`，故只证明关系清理/避免常规删除，**不证明Surface几何、bounds、焦点和原显示状态完整恢复**。生产桥接应把OEM任务控制器放在独立于UI的低负载常驻服务中；但服务自身死亡仍需单独验证OEM回退行为，不能把RemoteCallbackList死亡通知当作完整return ACK。
+- **实施决策**：原生后端不再从零写Organizer，优先验证OEM `FlexibleTaskView`/observer/startActivityFromRecentsForFlexible/exitFlexibleEmbeddedTask这条路径。独立系统桥是目前最小候选：保留原签名主APK及其数据，另设单独Root安装的priv-app桥接包请求safe.WINDOW；桥接进程承载OEM FlexibleTaskView及受限Binder协议，主APK只发送任务ID/布局/命令。它不是system_server注入，不修改OEM二进制，不伪造身份。**尚未决定桥接UI如何把FlexibleTaskView Surface低延迟嵌入原主APK界面**；需验证SurfaceControlViewHost/SurfacePackage或桥接Activity宿主方式及触控转发，不能先行假设可用。
+- **下一轮具体工程任务**：
+  1. 从已有framework-1.jar继续解码`FlexibleTaskView.init(Bundle)`、`prepareActivityOptions()`、`startActivityFromRecentsForFlexible()`、`resetBeforeRelease()`的准确Bundle键、TaskView容器创建及Surface生命周期；确定容器Task由谁创建。
+  2. 追踪`setLaunchParams`两个flag到TaskExt字段的精确写入顺序，证明上述安全参数组合覆盖普通Task和重用Task所有路径；解析`removeTaskIfNeed`密码分支并给出明确拒绝条件。
+  3. 查清`safe.WINDOW`定义包/分区、PMS110 privapp grant规则及pscanvas真实分区；设计最小伴随priv-app的只读权限探针，优先编译验证，未获得授权不得调用OEM服务。
+  4. 设计单任务受控原型：真实Task ID、Activity实例/onCreate/onDestroy、Task parent/display/bounds、Surface leash/Buffer、InputWindow命中、退出无remove、服务崩溃恢复逐项取证。禁止先做双任务/五任务。
+  5. 对主APK UI与系统桥Surface集成先做技术可行性验证；桥接包若必须接管完整前台Activity，需评估产品包名/更新签名/用户数据影响，未经用户授权不改变主APK包名签名。
+- 本轮没有修改`workbench2/core`生产代码、分支、PR、CI、签名、系统或设备；新路线已从“猜测”升级为OEM DEX方法体支持的强候选，但权限授予、单任务运行、内容连续、异常安全恢复、Surface UI集成、功耗均未通过。既有47+5核心验收和冻结产品标准保持不变。
+
+---
+
 ## PMS110 OEM DEX 反向调用与删除分支确认（2026-11-21）
 
 - 本轮直接对PMS110原始`oplus-services.jar/classes3.dex`的全部方法定义做invoke反向索引，并进一步解析Dalvik条件分支目标（只读，不动生产源码）。本地可复核脚本`/tmp/wb2_reverse.py`、`/tmp/wb2_branches.py`，输出`/tmp/wb2_reverse_results.txt`、`/tmp/wb2_branch_results.txt`；原始JAR SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`。
