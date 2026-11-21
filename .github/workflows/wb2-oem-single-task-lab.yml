@@ -29,5 +29,6 @@ jobs:
       - name: Verify fail-closed source gates
         run: |
           grep -q 'checkPermission(OEM_PERMISSION' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
+          grep -q 'final boolean admitted = false;' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
           grep -q 'start.setEnabled(admitted)' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
           grep -q 'flexible_key_remove_task_detach' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
