@@ -1,6 +1,16 @@
 package workbench2.oemlab;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Rect;
@@ -25,6 +35,32 @@ public final class LabActivity extends Activity {
     private View taskView;
     private TextView status;
     private LinearLayout root;
+    private Messenger bridge;
+    private boolean bound;
+    private final Messenger reply = new Messenger(new Handler(Looper.getMainLooper(), msg -> {
+        if (msg.what != OemBridgeService.MSG_STATUS_REPLY) return false;
+        status.setText("Bridge process: " +
+                msg.getData().getString(OemBridgeService.EXTRA_PHASE, "unknown") +
+                "; task mutation=" + msg.getData().getBoolean(OemBridgeService.EXTRA_MUTATION, true));
+        return true;
+    }));
+    private final ServiceConnection bridgeConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+            bridge = new Messenger(binder);
+            Message request = Message.obtain(null, OemBridgeService.MSG_READ_STATUS);
+            request.replyTo = reply;
+            try { bridge.send(request); }
+            catch (RemoteException e) { status.setText("Bridge IPC failed"); }
+        }
+        @Override public void onServiceDisconnected(ComponentName name) {
+            bridge = null;
+            status.setText("Bridge disconnected; no task operation performed");
+        }
+        @Override public void onBindingDied(ComponentName name) {
+            bridge = null;
+            status.setText("Bridge binding died; no task operation performed");
+        }
+    };
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -40,6 +76,21 @@ public final class LabActivity extends Activity {
         start.setText("Start one OEM task (manual)");
         root.addView(start);
         setContentView(root);
+        Button probe = new Button(this);
+        probe.setText("Probe separate bridge process (read only)");
+        root.addView(probe);
+        probe.setOnClickListener(v -> {
+            if (!bound) {
+                bound = bindService(new Intent(this, OemBridgeService.class),
+                        bridgeConnection, Context.BIND_AUTO_CREATE);
+                if (!bound) status.setText("Bridge binding denied");
+            } else if (bridge != null) {
+                Message request = Message.obtain(null, OemBridgeService.MSG_READ_STATUS);
+                request.replyTo = reply;
+                try { bridge.send(request); }
+                catch (RemoteException e) { status.setText("Bridge IPC failed"); }
+            }
+        });
         boolean permitted = getPackageManager().checkPermission(OEM_PERMISSION, getPackageName())
                 == PackageManager.PERMISSION_GRANTED;
         ApplicationInfo info = getApplicationInfo();
@@ -100,6 +151,7 @@ public final class LabActivity extends Activity {
 
     @Override protected void onDestroy() {
         // No task mutation is enabled; nothing to detach or release.
+        if (bound) { unbindService(bridgeConnection); bound = false; }
         super.onDestroy();
     }
 }
