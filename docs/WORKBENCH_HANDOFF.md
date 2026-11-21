@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## OEM跨进程桥接IPC纠错与安全归还阻塞（2026-11-21）
+
+- 真实研发分支`workbench2/core`新增并修复**可编译的跨进程只读诊断协议**：原`OemBridgeService`声明`android:process=":bridge"`却返回Java `LocalBinder`，这无法提供主进程可调用的跨进程对象，属于真实架构缺陷。已替换为Android `Messenger`+Message+replyTo协议，`LabActivity`显式bindService并可通过按钮读取桥接进程`BridgeAdmission`状态，Binder服务`exported=false`；无任务ID指令、无OEM Task变更、无常驻后台循环。提交`813132c96fd6d4ff02d9d6876b9f3dd1d8afc2b6`、`0954c92ba462b8fb7595b76e86aab2ad4882a77c`、`c0bb2607c459fc1d62e42dcaf19e494ee1a4d6a1`。
+- 同时纠正另一身份判断误区：`Messenger`消息经Handler异步分发后，`Binder.getCallingUid()`不再代表发送方UID，不能用它做调用者授权。当前用manifest`exported=false`限制绑定；如后续做跨包Binder协议，必须在Binder同步入口检查UID/签名并进行任务ID白名单验证，不能简单导出Messenger服务。
+- 前轮CI`44874676774`已实证`success`，对应原桥接骨架的`assembleDebug testDebugUnitTest`；新增Messenger IPC后的CI`44874872088`仍需核实最终结果，不能提前宣称通过。
+- **没有假装闭环**：真实OEM`safe.WINDOW`grant和bridge system partition/privapp allowlist均未取证，`FlexibleTaskView`跨进程UI承载未验证，宿主异常死亡后系统`onCallbackDied`缺少完整`resetFlexibleTaskNoAnimation`恢复，独立bridge如果也死亡仍无可靠事务恢复。纯云端Gradle编译无法证明这些PMS110运行行为。保留任务操作硬门禁`final boolean admitted=false`和`canMutateTasks=false`，不让用户安装，不执行任何真实Task迁移。
+- 下一实际门槛：准备**可逆且仅只读**的OEM权限/宿主运行证据（真实授权者、系统分区、grant状态），和独立于宿主UI的可重入恢复协议，在可回滚隔离设备验证正常/异常退出后再放开单任务迁移。当前用户只授权云端开发与隔离测试，不授权主力手机系统变更。
+
+---
+
 ## 独立OEM桥接云端原型与授权边界（2026-11-21）
 
 - 用户明确授权**云端源码开发、编译和隔离测试独立Root特权桥接方案**，明确**未授权修改手机系统、安装Root模块或更换原签名APK**。不得扩张授权。
