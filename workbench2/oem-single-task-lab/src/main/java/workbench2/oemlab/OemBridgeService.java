@@ -64,6 +64,10 @@ public final class OemBridgeService extends Service {
         // Manifest exported=false restricts binding to this application.
         // Handler executes asynchronously: Binder.getCallingUid() is NOT a caller identity here.
         if (message.what != MSG_READ_STATUS || message.replyTo == null) return true;
+        // Never report stale privilege after a runtime permission/package change.
+        permissionGranted = getPackageManager().checkPermission(OEM_PERMISSION, getPackageName())
+                == PackageManager.PERMISSION_GRANTED;
+        admission.inspect(permissionGranted, systemApp, oemClassPresent);
         Message reply = Message.obtain(null, MSG_STATUS_REPLY);
         reply.getData().putString(EXTRA_PHASE, admission.phase().name());
         reply.getData().putBoolean(EXTRA_MUTATION, false);
