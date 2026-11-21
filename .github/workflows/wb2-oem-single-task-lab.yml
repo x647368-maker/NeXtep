@@ -25,10 +25,12 @@ jobs:
         run: sdkmanager "platforms;android-36.1" "build-tools;36.0.0"
       - name: Compile OEM isolated prototype (NO APK upload, NO install)
         working-directory: workbench2/oem-single-task-lab
-        run: bash ../../gradlew --no-daemon --stacktrace -p . assembleDebug
+        run: bash ../../gradlew --no-daemon --stacktrace -p . assembleDebug testDebugUnitTest
       - name: Verify fail-closed source gates
         run: |
           grep -q 'checkPermission(OEM_PERMISSION' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
+          grep -q 'android:exported="false"' workbench2/oem-single-task-lab/src/main/AndroidManifest.xml
+          grep -q 'return false;' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/BridgeAdmission.java
           grep -q 'final boolean admitted = false;' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
           grep -q 'start.setEnabled(admitted)' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
           grep -q 'flexible_key_remove_task_detach' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
