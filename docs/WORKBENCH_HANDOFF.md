@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## PMS110 OEM DEX 方法体实证：safe.WINDOW权限门禁与异步删除风险（2026-11-21）
+
+- **新增实际DEX方法体证据**，非字符串推断。原始 `oplus-services.jar` SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`；在 `classes3.dex` 用自主Dalvik code_item解析器解码 invoke/const-string，审查精确类、方法与调用次序。解析记录本地 `/tmp/wb2_target_traces.txt`、`/tmp/wb2_trace_extra.txt`（本地辅助文件，非权威持久源）；证据可用原始JAR重复提取。
+- **权限门禁实证**：`Lcom/android/server/wm/OplusActivityTaskManagerServiceEnhance;` 中 `setEmbeddedContainerTask(II)V`（code_item偏移`0x2e8fdc`）、`removeEmbeddedContainerTask(II)V`（`0x2e8c40`）、`clearEmbeddedContainerTask([II)V`（`0x2e7968`）、`exitFlexibleEmbeddedTask(I)V`（`0x2e7a08`）都先加载字符串 `com.oplus.permission.safe.WINDOW` 并调用 `ActivityManagerInternal.enforceCallingPermission(String,String)`，之后才调用 `FlexibleWindowManagerService`。不是无门禁公开Binder API；原签名APK是否拥有该OEM权限须以实际PackageManager及授权证明为准，不得推断Root/Vector自动获得。内部Service方法首部`Binder.clearCallingIdentity`不代表外部入口免权限。
+- **状态变更实证**：`FlexibleWindowManagerService.setEmbeddedContainerTask(II)V`（`0x28d608`）会`ITaskExt.addEmbeddedChildren`、`setEmbeddedContainerTask`、`setContainerTask`、`commitEmbeddedActivityVisibleLocked`，并可`moveTaskToBack`，不是单纯Surface几何变换；Enhance wrapper还修改`setIsReparentToTaskView`和任务可见性。需核对caller/场景和Activity重建。
+- **真实删任务路径实证**：`FlexibleWindowManagerService.removeEmbeddedContainerTask(II)V`（`0x28afa8`）直接调用`removeTaskIfNeed(Task)`和`removeEmbeddedTaskIfBind(Task,boolean)`；后者`0x28b3e0`又调用`postRemoveTaskIfNeed(Task,boolean)`。 `removeTaskIfNeed(Task,boolean)`（`0x28b8b4`）在检查`ITaskExt.isRemoveTaskWhenDetach()`、`getLaunchScenario()`、`isFlexibleEmbedded()`后存在两处真实`ActivityTaskSupervisor.removeTask(Task,boolean,boolean,String)`调用，标记`remove-by-ContainerTask`与`remove-by-ContainerTask-password`。这证实**条件性破坏性路径存在**，但不能仅凭调用清单确定所有分支、删除对象、必然执行或其发生频率。
+- `exitFlexibleEmbeddedTask(Task,ActivityOptions,boolean)`（`0x2807e8`）先检查`isSmartBackendTask`与`isAllowTaskDetachFromEmbedded`，可能`recordSnapshot`、`removeEmbeddedContainerTask`、`moveTaskToBack`、`resetFlexibleTaskNoAnimation`；`isAllowTaskDetachFromEmbedded(Task)`调用`ITaskExt.allowTaskDetachFromEmbedded()`及场景判断。**快照记录不等于无损真实Activity/Task恢复**。 `FlexibleTaskController.adjustInputWindowHandle`（`0x212ea8`）确实调用`InputWindowHandleWrapper.setOplusInputConfig(int,boolean)`，说明OEM输入状态专门处理，但未证明图层/输入最终原子同步。
+- **当前结论**：权限检查位置已查明，删除任务风险有代码级实证；但合法权限授予条件、`removeTaskIfNeed`的精确分支和异步`postRemoveTaskIfNeed`的取消/回滚语义仍待查。禁止宣称已找到安全归还接口、不得直接调用上述嵌入退出API或扩大`system_server`注入，不可在未证明非破坏性前做跨任务写操作/杀宿主实验。原签名、数据、冻结UI、单生产分支和既有工程保持不变。
+  
+---
+
 ## PMS110 OEM DEX 真实方法签名核查（2026-11-21）
 
 - 本轮实际解析PMS110原始`oplus-services.jar/classes3.dex`及`framework-1.jar/classes.dex`方法表和参数类型；非外部AI推断，未修改生产代码或运行真机。
