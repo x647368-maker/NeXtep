@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 Z后补充：DeepSeek/Gemini第五轮交叉审查（2026-11-21）
+
+- **原始证据已持久化，禁止覆盖或重传公开仓库**：DeepSeek第五轮机主上传 `deepseek5.txt`，SHA256 `dfdf97222b676f157ef8d8e8d5f14978a2ce09c09e083cca5f5589306fa63047`，私有Library `/台前调度2.0/外部AI原始分析/DeepSeek-第五轮交叉审查-20261121.txt`，ID `libfile_8d24d2faa7048191b083326d5d4b8504`。Gemini第五轮机主上传 `gemini5.pages`，SHA256 `7c29c21a1682b137300fa21ce6dd48b0599ae3cc2aca951a3fe8cf99befbe20b`，私有Library `/台前调度2.0/外部AI原始分析/Gemini-第五轮交叉审查-20261121.pages`，ID `libfile_67064386a2548191b01647604e595dae`。Gemini Pages实际通过LibreOffice转换docx读取正文，作者明确无PMS110 OEM原件、CI及真机访问，不能称为新OEM实证。
+- **DeepSeek第五轮新线索与边界**：指出`InputMonitor.UpdateInputWindows`可用`SurfaceControl.Transaction.setInputWindowInfo`提交输入窗口信息，但提交、Surface present、InputDispatcher最终生效可能不同步；引述AOSP历史`syncInputTransactions`与`TransitionController` stale InputWindowHandle竞态修复线索。此为值得核验的AOSP源码/提交假设，不是本工程逐帧归因或完整端到端原子性反证。旧双任务错触根因仍UNKNOWN，不能断言“Transitions必然修复”或“Transitions必然无效”。
+- DeepSeek把第四轮OEM受限session降级为无DEX证据的假设，转而提出`system UID TaskFragmentOrganizer`边界；它承认此方案不能证明任意第三方已运行Task可reparent、不能保证Activity不relaunch、没有宿主死亡独立安全归还契约，且仍依赖未获授权的`system_server`注入。它提议“只读探测”却提交`applySyncTransaction`跨任务`reparent`，是**有状态写操作**，不能视为只读；文内还同时声称“不扩大注入”与“在system_server内执行”，自相矛盾。不得实施、不得绕过系统UID/安全权限，不得以CVE-2024-49737漏洞作为合法任务委托依据。
+- **Gemini第五轮**：明确未能访问OEM DEX，确认`pscanvas`/`FlexibleTaskController`/`EmbeddedWindowTaskOrganizer`外部委托、幂等release及宿主死亡无损归还仍无可核验契约。其WM/BLAST/Surface/Input/Activity重建解释合理但属机制分析，未交付新调用入口、源码签名或实际可运行Android实验；建议的“降低非主焦点窗口更新频率”不能作为默认性能方案，违背机主不降低画质/刷新率/窗口体验的冻结标准。仅允许系统原生按可见性自然调度，不自行限制五任务刷新或用截图替代。
+- **共同结论及门禁**：第五轮没有发现合法的原签名第三方真实Task委托+物理图层/触控同步+Activity连续+独立异常归还闭环。保留生产核心、既有Root+Vector双外部scope、原签名、用户数据和所有冻结UI；不恢复裸WCT、第二全局Organizer、逐槽VD，不扩system_server注入，不做无归还保障的跨任务写入/kill-9实验，不创建分支/PR或假称新CI/APK。后续研发应转为**现有PMS110 OEM原件与AOSP具体commit的定向可复核调用链核查**，优先寻找受支持限域入口和安全归还终态证据；没有新证据即停止纯文字外部AI循环。
+  
+---
+
 ## 第十六阶段 Z后补充：Gemini第四轮图层/输入/生命周期独立审查（2026-11-21）
 
 - 机主上传原始`gemini3.pages`，本轮通过本地Pages格式转换完整提取正文9616个Unicode字符；原件SHA256 `7c68eae9f6e89adebada7456fc1a6a79a42246ecdd788d9c98503abcdc221889`。**已实际持久化私有Library** `/台前调度2.0/外部AI原始分析/Gemini-第四轮原生图层输入专项-20261121.pages`，canonical ID `libfile_32be1d0dd770819185a49c11a51d608a`。GitHub只记录技术索引，不公开原文；本轮无生产代码/CI/APK修改。
