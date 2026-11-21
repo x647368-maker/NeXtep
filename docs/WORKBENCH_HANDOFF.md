@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## PMS110 OEM DEX 真实方法签名核查（2026-11-21）
+
+- 本轮实际解析PMS110原始`oplus-services.jar/classes3.dex`及`framework-1.jar/classes.dex`方法表和参数类型；非外部AI推断，未修改生产代码或运行真机。
+- 系统端`FlexibleWindowManagerService`真实定义`setEmbeddedContainerTask(int,int)`、`removeEmbeddedContainerTask(int,int)`、`clearEmbeddedContainerTask(int[],int)`、`exitFlexibleEmbeddedTask(int)`及重载`exitFlexibleEmbeddedTask(Task,ActivityOptions,boolean)`、`exitFlexibleEmbeddedTask(ActivityRecord,Task,ActivityOptions,int,boolean)`；还有`registerEmbeddedWindowContainerCallback(IEmbeddedWindowContainerCallback,int)`。
+- 系统端`FlexibleTaskController`真实定义`adjustInputWindowHandle(WindowState,InputWindowHandleWrapper)`、`resetAndRemoveLeash(SurfaceControl.Transaction,Task)`、`restoreTaskSnapshotWhenExit(Task,int,IOplusFlexibleInfoManager)`。
+- framework的`IOplusActivityTaskManager`与`FlexibleWindowManager`定义相应IPC/包装方法，后者另有`isInFlexibleEmbedded(TaskInfo)`。这证明系统内存在可追踪的嵌入管理/退出/输入处理接口链条**候选**，并未证明普通第三方可获授权调用、宿主死亡安全归还、Activity连续性或触控正确。
+- 下一步须解码这些方法体，核对调用者身份/权限、真实Task与Surface归属、`exit`和`remove`的差别、迟到异步清理与输入窗口变换；只有获得完整可逆契约后才允许最小Android实验。禁止擅自扩大system_server注入；不回退裸WCT、不造新分支/PR、不发布APK。
+
+---
+
 ## 第十六阶段 Z后补充：DeepSeek/Gemini第五轮交叉审查（2026-11-21）
 
 - **原始证据已持久化，禁止覆盖或重传公开仓库**：DeepSeek第五轮机主上传 `deepseek5.txt`，SHA256 `dfdf97222b676f157ef8d8e8d5f14978a2ce09c09e083cca5f5589306fa63047`，私有Library `/台前调度2.0/外部AI原始分析/DeepSeek-第五轮交叉审查-20261121.txt`，ID `libfile_8d24d2faa7048191b083326d5d4b8504`。Gemini第五轮机主上传 `gemini5.pages`，SHA256 `7c29c21a1682b137300fa21ce6dd48b0599ae3cc2aca951a3fe8cf99befbe20b`，私有Library `/台前调度2.0/外部AI原始分析/Gemini-第五轮交叉审查-20261121.pages`，ID `libfile_67064386a2548191b01647604e595dae`。Gemini Pages实际通过LibreOffice转换docx读取正文，作者明确无PMS110 OEM原件、CI及真机访问，不能称为新OEM实证。
