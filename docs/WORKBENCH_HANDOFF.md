@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## Android模拟器真实跨进程桥接测试（2026-11-21）
+
+- 在唯一`workbench2/core`真实新增`workbench2/oem-single-task-lab/src/androidTest/java/workbench2/oemlab/BridgeIpcInstrumentedTest.java`，使用AndroidJUnit4+InstrumentationRegistry在真实Android运行时绑定独立`:bridge`服务，跨进程Messenger发送只读查询，等待reply，验证`taskMutationAllowed=false`及bridge返回的`safe.WINDOW`实际grant与本进程PackageManager一致。提交`714357f80f4f3fd2c7d357a20ac80f993283417f`。
+- `build.gradle.kts`添加Android instrumentation runner及androidx.test依赖（`e96a4a6eed5f4f014b1560d15c6048211163a98d`）。已有CI `.github/workflows/wb2-oem-single-task-lab.yml`新增API35 google_apis x86_64 Android emulator独立`android-ipc` job，执行`connectedDebugAndroidTest`，同时保留`assembleDebug testDebugUnitTest`，提交`20465f3cccb1037e4ee2c39629bc7c10c3d0e139`。本轮CI`44875248857`当前运行中，必须核查最终结果与原始job日志，不得宣称通过。
+- 前轮跨进程只读权限诊断源码CI`44875060711`和`44875100350`已确认`completed/success`，但没有实际OEM grant数据。
+- **边界**：API35模拟器可验证Android Service绑定、Messenger跨进程消息和普通应用权限拒绝，无法验证ColorOS17 OEM FlexibleTaskView、`safe.WINDOW`priv-app合法授权、真正任务驻留或异常死亡后完整Surface/bounds/input恢复。不可把模拟器结果当成OEM真实任务验收。
+- 当前仍没有可回滚ColorOS OEM测试设备/授权安装证据，用户只授权云端开发隔离测试；不改变主力设备，不解锁任务迁移硬门禁，不发布APK。若Android IPC测试通过，下一步应停止重复模拟，集中获得隔离ColorOS真机或等效系统环境并在不改变主力机前提下完成OEM授权及恢复实验。
+
+---
+
 ## OEM真实权限只读取证协议与设备验收硬门槛（2026-11-21）
 
 - 本轮实时核验前轮跨进程Messenger CI `44874872088`为`completed/success`（对应`c0bb2607c459fc1d62e42dcaf19e494ee1a4d6a1`）。成功范围是Android云端编译/单元测试，不是PMS110 OEM授权或Task运行。
