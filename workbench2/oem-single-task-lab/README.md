@@ -40,3 +40,21 @@ Normal return and crash recovery remain blocked on OEM service behavior,
 legitimate privilege grant, and disposable-device evidence. The user's
 authorization is limited to cloud development and isolated tests, not
 modifying any phone system partition or installing Root modules.
+
+## Permission attestation over real IPC
+
+The bridge now uses `Messenger` IPC across `:bridge` and the activity process,
+rather than an invalid cross-process Java LocalBinder. Its read-only reply
+reports PackageManager's actual `safe.WINDOW` grant, permission declaring
+package, raw protection level, system-app flag, and OEM class visibility.
+The grant is refreshed for each diagnostic request; these values are
+**runtime observations only when executed on the target device**, not proof
+of a privilege grant from compiling in GitHub Actions.
+
+No Binder endpoint accepts a task ID or launches, reparents, exits, or removes
+tasks. The hard-coded `admitted=false` and `canMutateTasks=false` gates
+remain mandatory. A real crash-return experiment cannot be performed in a
+generic cloud runner without the PMS110 OEM service and a safely recoverable
+test device. The observed OEM `onCallbackDied` code does not restore all
+surface/bounds/input state. Do not label the prototype as recovered or
+accepted on device.
