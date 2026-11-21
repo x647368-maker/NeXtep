@@ -17,10 +17,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
+          java-version: '21'
       - name: Install Android SDK API 36.1
-        run: sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
+        run: sdkmanager "platforms;android-36.1" "build-tools;36.0.0"
       - name: Compile OEM isolated prototype (NO APK upload, NO install)
         working-directory: workbench2/oem-single-task-lab
         run: bash ../../gradlew --no-daemon --stacktrace -p . assembleDebug
