@@ -1,3 +1,42 @@
+## 2026-11-21｜WindowDeck 原生宿主复用发现与本窗口正式交接（最新）
+
+**本条是本窗口最新审查结果，优先于历史条目中“继续独立OEM桥接主攻”的旧建议。它是技术候选方向，不是已通过真机的2.0原生引擎。**
+
+### 实时核验与权威状态
+- 仓库 x647368-maker/NeXtep；唯一生产分支 `workbench2/core` HEAD `20465f3cccb1037e4ee2c39629bc7c10c3d0e139`；治理分支 `governance/workbench` 写入本条前 HEAD `7c2e5715fb1c60babec18956ac06605ea6c3da7a`。两者通过GitHub git/ref实时核验。治理分支写入本条后以新提交SHA为准。
+- GitHub Actions run `44875248857` 实时查询 `completed/success`，对应生产SHA `20465f3...`。仅证明 Android API35 Messenger 跨进程只读IPC测试/该workflow成功，不证明OEM授权、Task/Surface/Input承载、ColorOS真机或异常归还。
+- 实时开放PR仅 #175、#176（历史V89）；未创建新分支/PR，未改生产源码、原签名或设备。
+- 唯一长期权威文件仍为本文件；先读 AGENTS.md 与 docs/DEVELOPMENT_HANDOFF_POLICY.md，按最新记录优先，勿重复前期取证。
+
+### 本窗口新取得的 WindowDeck 一手源码证据
+- 真实同行项目 `https://github.com/xitc/windowdeck`，公开仓库 main HEAD `2e3a14ea0f72b62fef79a130c597a8711fc47b16`（GitHub实时核验）。README明确：ColorOS17/Android17实验性LSPosed工作台，作用域 `com.oplus.pscanvas` 和 `com.android.launcher`，需Root；在一加13 PJZ110 某固件上有历史真机确认，但新版、跨设备、死亡恢复、长期负载并未全部验收。
+- 实际读取 `module/src/io/github/xitc/windowdeck/HookEntry.java`：Xposed `handleLoadPackage`分别安装 launcher 入口与 pscanvas hook；在 pscanvas 调用 `CanvasContract.load`、`hookWorkbenchActivity`、`LeashTransactions.install`、`CanvasImeBridge.install`。 `hookWorkbenchActivity` Hook `Instrumentation.newActivity(ClassLoader,String,Intent)`，当目标为 `com.oplus.pscanvas.canvasmode.canvas.ContainerActivity` 且Intent有 `windowdeck_workbench_v1=true`，`param.setResult(new WorkbenchActivity())`。另 Hook OEM TaskView `prepareActivityOptions` 调整工作台输入拦截标志。
+- 实际读取 `module/src/io/github/xitc/windowdeck/TaskIngress.java`：Root UID=0 helper调用 `ActivityTaskManager.getService().getTasks`核查源任务身份、用户、全屏状态及不存在既有容器；执行 `am start -W --user 0 ... -n com.oplus.pscanvas/.canvasmode.canvas.ContainerActivity --ez windowdeck_workbench_v1 true`，启动OEM宿主。它不是普通原签名APK外部申请 `safe.WINDOW` 的路线。
+- 实际读取 `module/src/io/github/xitc/windowdeck/EmbeddedLeashBinding.java`：验证 container/task/layer、scenario==2、embeddedContainerTaskId匹配及vanished/skipReparent标志，说明句柄存在不等于可修复所有权。
+- 已打开 `TaskSurfaceRenderer.java` 的部分源码，包含SurfaceControl、真实任务槽与输入角色管理；尚未完整追踪 `CanvasBinding`、`WorkbenchSlot`、`TaskReleaseController`、`LeashTransactions`、`TaskFrontBinder` 的具体任务承载、图层事务和异常归还链。不得虚称已完成完整源码审计。
+- **关键架构差异**：WindowDeck复用已有OEM `pscanvas` 进程/ContainerActivity宿主，并在其Activity创建点注入自有工作台；我们2.0最近主要尝试宿主外独立priv-app权限桥接与Messenger只读探针。前者可能减少外部权限/Surface宿主集成难题，但并不取消系统权限检查，不保证安全归还、跨机型兼容或低功耗。不能未经验证断言注入后的Activity具有全部原组件权限/身份。
+- WindowDeck代码版权/许可证需单独核实；仓库元数据 license=null，不等于代码可自由复制。只借鉴机制并独立实现，不直接拷贝源码。
+
+### 外部AI复核及决策纠错
+- 用户提供Gemini分析：推荐复用ColorOS原生宿主、最小Hook/Root、先真实单任务后双任务再五任务，设GO/NO-GO。其明确无法直接读取WindowDeck/NeXtep源码，因此其具体机制判断来自本窗口转述及公开说明，**不是独立逐行源码验证**；不能将其推断当作额外证据。
+- 另一Gemini评审建议E（历史真实任务实现继承与减负）+ C（合法Android原生机制），B（最小桥接）备用；正确强调减少重复研究，但“精简即省电”“直接删除旧GPU镜像”“普通应用可直接TaskOrganizer”均未证实，禁止先删除历史有效能力。
+- 研发纠错：此前过度押注宿主外OEM授权/异常归还，忽略同行在已授权OEM宿主内的可运行机制；长期重复静态DEX、IPC、JVM模型不能替代真实任务闭环。不得把“WindowDeck能够运行”夸大为已验证所有死亡恢复/温升。
+
+### 下一窗口唯一优先任务（只读审计先行，随后条件性实施）
+1. 实际读取本条、最新生产HEAD、现有 `workbench2/host-runtime`、`engine`、`oem-single-task-lab` 和历史NeXtep真实任务Hook/宿主代码；对照WindowDeck `HookEntry`、`WorkbenchActivity`、`CanvasContract`、`CanvasBinding`、`WorkbenchSlot`、`TaskSurfaceRenderer`、`TaskReleaseController`、`LeashTransactions`、`TaskFrontBinder`、`TaskIngress`，确认是否已有可复用的宿主内注入路径，防止重造轮子。
+2. 产出精确的“入口进程/UID与权限→OEM容器→TaskView/Task leash→Surface事务→触控焦点→正常退出/异常死亡归还”调用链，逐项标注源码证据与未知点。重点审查 `Instrumentation.newActivity` 替换的Activity身份、类加载/资源、系统组件升级兼容性；不得把Root UID等同OEM签名授权。
+3. 若现有源码支持且安全边界明确，在唯一 `workbench2/core` 设计隔离、可撤销的**单任务宿主内接入原型**，先编译/自动化测试，不能在未经机主授权的主力机上安装Root/Hook模块或执行危险任务迁移。独立桥接原型保留为对照，不在替代路线实证前删除。
+4. 真机验收门槛：真实Task/Activity身份、Surface画面、触控/焦点/IME、正常退出、宿主崩溃归还（不丢任务/无输入死区），之后双任务交换（无非预期Activity重建/白区/错触），最后一大四小及性能/折叠屏/平板回归。CI与模拟器/真机证据分别记录；连续两轮无实质改善停止该技术路线。
+5. 一旦有实质工程节点，更新**本文件**并记录真实SHA/CI；不要新建文档、分支、PR。当前窗口交接后转只读，新窗口为唯一生产负责人；不复活V89补丁、普通WCT双任务直接几何编排、重复无意义OEM DEX/IPC实验。
+
+### 永久冻结、授权与保护
+- 一大四小（顶部横排/左右侧排）、主窗比例位置圆角、主小窗交换、真实内容连续、液态玻璃菜单、常用栏、智能侧栏、工作组、通知栏/手势、软件更新中心、诊断、Ace7Pro/FindN5/Y700适配；冻结体验而非旧底层。
+- 保护原包名、原签名、作者署名/Apache-2.0许可、用户数据与工作组；main及历史分支只读，唯一生产分支`workbench2/core`，最多一个2.0生产PR。禁止降画质/帧率/窗口数、截图冒充真实任务、扩大Root/Hook作用域、无证据性能宣称、虚报测试/进度。
+- 机主只负责需求、下载安装原签名APK、真机反馈；当前仅授权云端隔离研发，未授权主力手机系统修改/Root特权模块安装；重大风险必须另行征得授权。
+- 当前没有2.0 OEM真实单任务闭环、没有原签名可验收APK；此窗口没有修改生产代码。
+
+---
+
 ## 2026-11-21｜WindowDeck源码实证、路线纠错与本窗口只读移交
 
 ### 本次交接定位与唯一权限
