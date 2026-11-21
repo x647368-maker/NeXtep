@@ -1,5 +1,17 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 Z后补充：DeepSeek第三轮原生框架评审与源码纠错（2026-11-21）
+
+- 机主上传 DeepSeek 第三轮原文 deepseek.txt：14913 bytes，122行，SHA256 `5a10efda9c5b9d98c15f68e9205268b0fbb37692249fb9641c04405684bf7f4d`，已实际保存私有Library `/台前调度2.0/外部AI原始分析/DeepSeek-第三轮原生框架审查-20261121.txt`，canonical ID `libfile_10c8835a2e248191840103f660e312aa`。原文不上传公开GitHub；此节只存索引与独立技术判断。作者自承未读取ColorOS OEM原始DEX或框架jar，无其独立OEM/目标机实验/生产PoC结果。
+- 可采纳：普通原签名APP缺少已证实的受支持第三方任意任务委托，`safe.WINDOW` 服务端检查是实在准入障碍，普通release/ACK不构成宿主死亡后的安全归还；不能用旧WCT补丁和TaskFragment自有窗口演示冒充真实第三方任务。其NO-GO**仅限当前已证实生产条件**，不能当永久不可实现定理，不构成新的可执行技术突破。保留自主核心已验收47 Android+5自有图层像素、真实WCT双任务两轮失败证据及既有最小Root+Vector范围授权。
+- **确证纠错1—权限定义**：DeepSeek将`android.permission.MANAGE_ACTIVITY_TASKS`称`signature|privileged`且宣称放入`/system/priv-app`即可获得。实际AOSP `android17-release/core/res/AndroidManifest.xml`在MANAGE_ACTIVITY_TASKS处声明`signature|recents`，MANAGE_ACTIVITY_STACKS是`signature`，ACTIVITY_EMBEDDING是`signature|privileged`；不同权限和版本被混淆。固定源码：https://android.googlesource.com/platform/frameworks/base/+/android17-release/core/res/AndroidManifest.xml （约4845–4858）。不能以priv-app位置、Root、Vector推定已获具体任务权限；实际OEM授予另需绑定真机与权限管理证据。
+- **确证纠错2—接口混代**：报告引用`TaskOrganizer.registerOrganizer(int windowingMode)`旧式方法；较新AOSP使用`registerOrganizer()`（参https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/android/window/TaskOrganizer.java），当前生产真实契约不得用旧参数形式编译或注册，不得设私有windowingMode。
+- **确证纠错3—因果断言过度**：报告断言此前两轮WCT图层/输入分离**根因就是普通应用没有MANAGE_ACTIVITY_TASKS**。但既有CI44771108339/44773120993均在Android17 Desktop的受控TestApi准入条件下，报告实际`TEST_API_ADMITTED`，两个真实任务WCT setBounds被接收并改变逻辑bounds，仍出现Activity重建、屏幕旧框/白区及A触摸落B；此现象不能直接归咎于未授权普通客户端。AOSP WindowOrganizerController.applyTransaction和applySyncTransaction均有enforceTaskPermission，但合法授权只解除调用门禁，并不自动获得正确system transition handler、物理图层/输入同终态及Activity连续性。固定源码：https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/WindowOrganizerController.java （约225–303、316–326）。确切Desktop37.1/PMS110物理错触根因仍UNKNOWN，不声称已经定位。
+- **适用范围纠错**：报告称跨应用ActivityEmbedding绝对不可用并仅限同UID；官方明确允许被嵌入应用显式选择可信证书或allowUntrustedActivityEmbedding的跨应用Activity嵌入，参考https://developer.android.com/develop/ui/views/layout/activity-embedding#trust_model 。但这是被目标应用同意的Activity级能力，不能作为任意第三方已有Task的独立驻留/归还或五窗生产方案。其提议再做同UID TaskFragment嵌入及kill-9实验不能证伪OEM受支持托管接口，也不解决真正P0；不启动缺乏新增假设的实验，不强杀宿主/系统进程。
+- **工程结算**：此次完成原文私有保存、与原CI/OEM已知事实交叉审查及源码订正；未找到新安全可执行的ColorOS限域任务接入+独立安全归还契约，不修改生产核心、实验方案、Root/scope、CI、APK、分支或PR。下一步只响应可验证的新受支持系统委托合同、独立部署条件或机主明确批准的实质不同实验；工程前先证明真实Task身份与授权、显示和Input同步、Activity/媒体连续性、正常和独立异常安全归还。避免再向外部AI泛问“有没有办法”，不要将错误权限根因写入产品架构。
+  
+---
+
 ## 第十六阶段 Z后接任补记：Claude/Gemini 11月21日最终反馈的保存边界（2026-11-21）
 
 - 新接任窗口按机主追问补核此前接任报告遗漏的两家最新评审记录。本节为历史证据补录，不覆盖第十六阶段Z原始ColorOS取证、实际工程、批准范围或停线结论，不构成新的原生后端完成声明。实时核验本页修改前治理HEAD b406314cc87e4119e5220f626f7f1a51ea98674e、core HEAD 41c1e97b9e5ba8f85f41dc5f78bce49741205b43；原47 Android＋5自有图层像素已验收核心 ed40df41de8336dea0f2c2d743722eaf88f3b727，普通WCT双任务两轮失败继续封存。
