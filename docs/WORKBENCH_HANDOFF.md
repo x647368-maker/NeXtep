@@ -1,5 +1,14 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## PMS110 OEM DEX 异步清理取消链证据（2026-11-21）
+
+- 本轮只读解析原始`oplus-services.jar/classes3.dex`（SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`），查明此前遗漏的**待执行删任务取消机制**，非仅类名推断。方法体偏移：`FlexibleWindowManagerService.postRemoveTaskIfNeed(Task,boolean)` `0x289ee4`；`cancelPendingRemoveTaskIfNeed(int)` `0x27f4b4`；`FlexibleWindowManagerService$6.run()` `0x268118`；`removeTaskIfNeed(Task,boolean)` `0x28b8b4`。
+- `postRemoveTaskIfNeed`先调用`cancelPendingRemoveTaskIfNeed(taskId)`，创建`FlexibleWindowManagerService$6` runnable，放入`mPendingRemoveTaskIfNeedMap`，经`ActivityTaskManagerService$H.post(Runnable)`排队。 `cancelPendingRemoveTaskIfNeed`确实调用`ArrayMap.remove(taskId)`及`ActivityTaskManagerService$H.removeCallbacks(Runnable)`。Runnable.run从Map按taskId读取，存在移除Map条目后再调用`removeTaskIfNeed(Task,boolean)`的路径。
+- **严格边界**：这证明存在可取消尚未执行清理的内部实现，不证明原签名APK能调用该私有方法，不证明外部宿主死亡后必然调用取消，不保证已开始的Runnable被中止，不保证直接`removeTaskIfNeed`分支可取消，不保证原Task/Activity无损归还。前轮`OplusActivityTaskManagerServiceEnhance`四个外部入口`com.oplus.permission.safe.WINDOW`门禁仍有效。不得擅自调用或把`cancelPendingRemoveTaskIfNeed`当成可部署公共API。
+- 下一步聚焦**调用者反向索引**：谁在什么时候调用`cancelPendingRemoveTaskIfNeed`；在`FlexibleWindowManagerService$6.run`和`removeTaskIfNeed`的控制流中确认精确条件、取消与执行竞态；核查`safe.WINDOW`真实授予主体。若不能证明外部可用的无损恢复契约，维持NO-GO，不扩大system_server注入、不做跨任务写入实验。
+  
+---
+
 ## PMS110 OEM DEX 方法体实证：safe.WINDOW权限门禁与异步删除风险（2026-11-21）
 
 - **新增实际DEX方法体证据**，非字符串推断。原始 `oplus-services.jar` SHA256 `4cd803aa469e01617441eea8870974b8041eaad1f3f959a6cc20abf77f5b9b1e`；在 `classes3.dex` 用自主Dalvik code_item解析器解码 invoke/const-string，审查精确类、方法与调用次序。解析记录本地 `/tmp/wb2_target_traces.txt`、`/tmp/wb2_trace_extra.txt`（本地辅助文件，非权威持久源）；证据可用原始JAR重复提取。
