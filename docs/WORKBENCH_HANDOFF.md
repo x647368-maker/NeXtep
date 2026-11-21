@@ -1,3 +1,37 @@
+## 2026-11-21｜WindowDeck源码实证、路线纠错与本窗口只读移交
+
+### 本次交接定位与唯一权限
+- 机主本轮明确要求完成全部有效成果保存并交接，当前窗口交接后只读、停止生产源码修改。**本窗口本轮没有修改生产分支**，仅核验源码与权威状态，并向已有治理交接文件追加检查点。新窗口只有收到机主明确接任指令后才成为唯一生产负责人；其他旧窗口只读。不得并行改生产代码、另建分支/PR。
+- 用户最终目标不变：台前调度2.0自主精简核心、原生真实任务一大四小、vivo级流畅动画、ColorOS/WindowDeck级低开销，保留全部冻结产品效果，原包名、原签名、用户配置、工作组、署名、Apache-2.0归属、在线更新、诊断、系统手势；不得降画质、刷新率或窗口数，不得截图冒充最终真实任务，不恢复V89无限补丁。
+- 设备：一加Ace 7 Pro PMS110/ColorOS17/Android17/Vector/KernelSU；兼顾Find N5折叠、Y700平板。机主只负责下载安装**原签名且通过安全门禁**的候选APK和真机反馈，不执行终端命令。**当前仅授权云端隔离研发/测试，不授权修改主力机系统、安装特权Root模块或更换原签名APK。**
+
+### 本轮实时核验的权威工程状态
+- GitHub仓库 `x647368-maker/NeXtep`，唯一生产分支 `workbench2/core` 实时HEAD **`20465f3cccb1037e4ee2c39629bc7c10c3d0e139`**；治理分支 `governance/workbench` 写入前HEAD **`7c2e5715fb1c60babec18956ac06605ea6c3da7a`**。本次更新治理文件将产生新的治理SHA，生产HEAD不变。
+- CI [44875248857](https://github.com/x647368-maker/NeXtep/actions/runs/44875248857) 实时核验 **completed/success**，对应生产SHA `20465f3c...`，jobs `compile` 和 `android-ipc` 均success。含Android API35模拟器Messenger跨进程IPC，**不证明**PMS110 OEM权限、真实Task承载、Surface/Input/生命周期或原签名真机验收。
+- 已实际读取 `AGENTS.md`、`docs/DEVELOPMENT_HANDOFF_POLICY.md`、本权威交接文件，核验生产目录 `workbench2/engine`、`host-runtime`、`native-lab`、`resident-lab`、`system-window-lab`、`oem-single-task-lab` 等存在。原OEM实验 `admitted=false`、`taskMutationAllowed=false` 安全封锁，不得误称原生任务已打通。
+- 旧路线失败：普通WCT直接双任务几何编排出现重建/白区/错触；OEM `safe.WINDOW` 为signature|privileged，普通APK没有已证实的grant；`FlexibleTaskView` OEM宿主能力虽有DEX证据，但observer死亡清理不能证明完整bounds/Surface/input归还。不要重做已完成的DEX、Messenger、模拟器验证。
+
+### 本轮新增的决定性同行源码证据（2026-11-21，非Gemini猜测）
+- 真实同行为 [xitc/windowdeck](https://github.com/xitc/windowdeck)，公开仓库 `main` 树SHA `2e3a14ea0f72b62fef79a130c597a8711fc47b16`，README定位C17/Android17 LSPosed多应用工作台，需作用域 `com.oplus.pscanvas` 与 `com.android.launcher`，另有Root授权；**不要求android/system_server作用域**。基线一加13 PJZ110、桌面17.3.9；开发快照及部分新版本真机验证未完成，不能外推PMS110成功。
+- 已实际读取 `module/src/io/github/xitc/windowdeck/HookEntry.java`：`handleLoadPackage` 对launcher安装 `LiveWorkbenchState`、`RotationTransactions`、`LauncherExistingAppHook`、`LauncherSwipeHook`；对pscanvas加载 `CanvasContract`，安装 `hookWorkbenchActivity`、`LeashTransactions`、`CanvasImeBridge` 和返回键兼容。关键 `hookWorkbenchActivity()` Hook `Instrumentation.newActivity(ClassLoader,String,Intent)`：仅当目标类为 `com.oplus.pscanvas.canvasmode.canvas.ContainerActivity` 且Intent布尔标记 `windowdeck_workbench_v1=true`，返回 `new WorkbenchActivity()`。这是**在OEM宿主进程内复用宿主上下文**的强源码证据，非普通APK外部直接申请safe.WINDOW；但需核实宿主权限实际调用身份、类加载/生命周期。
+- 已实际读取 `module/src/io/github/xitc/windowdeck/TaskIngress.java`：Root UID0入口检查已有RunningTaskInfo、taskId/userId、top/base Activity与fullscreen windowingMode、避免重复容器；随后通过 `am start -W --user 0 -n com.oplus.pscanvas/.canvasmode.canvas.ContainerActivity --ez windowdeck_workbench_v1 true`（并传source task/user）启动OEM容器。说明Root辅助是任务入口/启动与身份预检，**不能据此认定所有Surface操作均需Root**。
+- 已读取 `EmbeddedLeashBinding.java`：验证container/task/scenario、embedded关系及layer修复资格；`TaskSurfaceRenderer.java` 是真实大型Surface/布局/输入渲染控制器，已看到`WorkbenchSession`、`CanvasBinding`、`WorkbenchSlot`、`SurfaceControl.Transaction`和`inputRole`等调用结构，但**尚未逐行核对全部TaskView创建、leash、exit和异常死亡链**。不得宣称已证明五任务长期稳定、无重建或安全归还。
+- WindowDeck README明确：最多五个实时任务；切换使用固定Surface尺寸，移出恢复期间**临时任务快照覆盖**，这不等于最终用截图冒充真实任务；进程死亡恢复、复杂IME、多指、长时间负载、OTA/混淆兼容仍待验证。同行源码未明确许可证（仓库API license=null），**只借鉴机制，不复制实现代码**。
+- 关键纠错：之前过度押注“普通APK外部独立priv-app桥接取得OEM权限”，未优先审查**现成pscanvas宿主进程内注入+OEM容器复用**的可运行先例；这可能是三四天受阻的重要研发方向偏差。**这是值得验证的新主候选，不是已获PMS110真机验收**。不能说注入绕过权限，准确说法是借用已获授权的宿主执行环境，仍须验证实际调用身份与安全边界。
+
+### Gemini两轮独立意见及评价（保留结论，不再重复问答）
+- 第一轮Gemini建议历史真实任务基线E + 原生系统机制C、最小Root桥B备用；合理强调保真减负、真实任务闭环，但**未直接读取同行/NeXtep源码**，不能直接认定TaskOrganizer可由普通APK调用，也不能先删除历史GPU/承载实现或仅凭代码精简宣称低功耗。
+- 第二轮Gemini赞同转向pscanvas原生宿主复用、最小Hook/Root、先单任务再双任务再五窗、两轮无改善止损；它再次声明无法逐行访问WindowDeck/NeXtep源码。**本窗口已实际从GitHub读取关键同行源码，证据强于Gemini仅依据公开说明的推演**。不再把Gemini分析当工程验证；如需复审应提供确切文件和调用链，不要让它重复泛论。
+- 不允许把“同行能运行”推断成它已解决所有安全恢复、性能和多设备兼容。也不能把`Instrumentation.newActivity`替换视为无风险：核查Activity组件身份、classloader、权限上下文、生命周期、OTA符号变化。
+
+### 新窗口唯一下一工程任务（先审计后最小实现）
+1. 读取本检查点和生产HEAD，**直接源码对照** WindowDeck `WorkbenchActivity`、`CanvasContract`、`CanvasBinding`、`WorkbenchSlot`、`TaskSurfaceRenderer`、`TaskReleaseController`、`LeashTransactions`、`TaskFrontBinder`、`HookEntry`、`TaskIngress` 的真实TaskView/Surface/input/exit调用链；同时定位NeXtep历史实际Hook、真实任务承载与现有2.0宿主能力。记录准确文件/方法/证据，找出**缺的最小能力**，不重做OEM DEX和IPC。
+2. 评估最小作用域 `com.oplus.pscanvas` 内宿主复用能否在PMS110实现真实单任务，并明确Launcher是否仅入口必要；不要先扩到system_server或常驻特权daemon。检查合法权限边界、Root/Vector加载适配、组件替换与安全归还；若需主力机安装/Root模块，**先取得机主新授权**，当前只能云端隔离代码与CI。
+3. 选择唯一主候选“**OEM现成宿主复用 + 最小必要Hook + 2.0自主精简控制核心**”；独立priv-app桥保留为只读历史备选，不删除其证据，不并行扩大。历史已验收产品效果全部冻结，旧底层可替换但不可先毁可用能力。
+4. 证据充分后仅在唯一 `workbench2/core` 做可回退的最小隔离单任务实现与编译/测试，严格区分模拟器/真机；必须有真实Task显示、触控、焦点、Activity身份、正常退出/异常归还证据才能进入双任务交换；之后一大四小、同条件帧/CPU/GPU/线程/内存/发热验证。连续两轮无新实证或工程改善即NO-GO，负优化立即停止。
+5. 保存最小真实提交SHA、CI运行ID、实际结果与阻塞到**本文件**，不建重复文档/分支/PR，不改main、不合并历史V89、不签发未经原签名和真机验收的APK。
+- 机主偏好：不重复发送“继续”、不让用户跑命令、不要长篇无证据研究；主动纠错、能做则连续执行、不能做则提供明确阻塞和最省成本路径。此窗口移交后只读。
+
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
 ## Android模拟器真实跨进程桥接测试（2026-11-21）
