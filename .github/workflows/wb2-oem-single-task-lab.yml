@@ -1,4 +1,4 @@
-name: WB2 OEM single task lab compile-only
+name: WB2 OEM isolated bridge compile and Android IPC test
 on:
   push:
     branches: [workbench2/core]
@@ -34,3 +34,31 @@ jobs:
           grep -q 'final boolean admitted = false;' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
           grep -q 'start.setEnabled(admitted)' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
           grep -q 'flexible_key_remove_task_detach' workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/LabActivity.java
+
+  android-ipc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=KVM"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-audio -no-snapshot -gpu swiftshader_indirect
+          script: cd workbench2/oem-single-task-lab && bash ../../gradlew --no-daemon --stacktrace connectedDebugAndroidTest
