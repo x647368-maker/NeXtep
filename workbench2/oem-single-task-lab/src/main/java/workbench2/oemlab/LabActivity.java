@@ -1,6 +1,5 @@
 package workbench2.oemlab;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -13,6 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import android.content.pm.PermissionInfo;
 
 /**
  * Isolated proof-of-concept. No TaskOrganizer, hooks, system_server code, or background service.
@@ -23,7 +23,6 @@ public final class LabActivity extends Activity {
     private static final String OEM_PERMISSION = "com.oplus.permission.safe.WINDOW";
     private final Rect requestedBounds = new Rect(0, 0, 500, 800);
     private View taskView;
-    private Method releaseMethod;
     private TextView status;
     private LinearLayout root;
 
@@ -48,9 +47,23 @@ public final class LabActivity extends Activity {
         boolean classPresent;
         try { Class.forName("com.oplus.flexiblewindow.FlexibleTaskView"); classPresent = true; }
         catch (Throwable ignored) { classPresent = false; }
-        final boolean admitted = permitted && system && classPresent;
+        String permissionOwner = "unknown";
+        int protection = -1;
+        try {
+            PermissionInfo p = getPackageManager().getPermissionInfo(OEM_PERMISSION, 0);
+            permissionOwner = p.packageName;
+            protection = p.protectionLevel;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            permissionOwner = "not declared on this device";
+        }
+        // No verified OEM return protocol or host-death rollback yet.
+        // Even a privileged granted process must not mutate an existing task.
+        final boolean admitted = false;
         status.setText("OEM permission granted=" + permitted + "; system app=" + system
-                + "; OEM class present=" + classPresent + ". No operation until all true.");
+                + "; OEM class present=" + classPresent
+                + "; permission owner=" + permissionOwner
+                + "; protection=0x" + Integer.toHexString(protection)
+                + ". Task mutation DISABLED until return and death recovery are proven.");
         start.setEnabled(admitted);
         start.setOnClickListener(v -> {
             if (!admitted || taskView != null) return;
@@ -75,7 +88,6 @@ public final class LabActivity extends Activity {
             options.putBoolean("allow_task_detach_from_embedding", true);
             options.putParcelable("launchBounds", requestedBounds);
             Method init = cls.getMethod("init", Bundle.class);
-            releaseMethod = cls.getMethod("release");
             init.invoke(oem, options);
             taskView = (View) oem;
             root.addView(taskView, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -83,13 +95,11 @@ public final class LabActivity extends Activity {
         } catch (Throwable e) {
             status.setText("OEM host failed closed: " + e.getClass().getSimpleName());
             taskView = null;
-            releaseMethod = null;
         }
     }
 
     @Override protected void onDestroy() {
-        // A release call may have OEM-specific destructive semantics. Do not invoke it
-        // until a safe-return contract is verified. This fixture is not deployable yet.
+        // No task mutation is enabled; nothing to detach or release.
         super.onDestroy();
     }
 }
