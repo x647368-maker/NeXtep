@@ -1,5 +1,15 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 第十六阶段 Z后补充：Gemini第四轮图层/输入/生命周期独立审查（2026-11-21）
+
+- 机主上传原始`gemini3.pages`，本轮通过本地Pages格式转换完整提取正文9616个Unicode字符；原件SHA256 `7c68eae9f6e89adebada7456fc1a6a79a42246ecdd788d9c98503abcdc221889`。**已实际持久化私有Library** `/台前调度2.0/外部AI原始分析/Gemini-第四轮原生图层输入专项-20261121.pages`，canonical ID `libfile_32be1d0dd770819185a49c11a51d608a`。GitHub只记录技术索引，不公开原文；本轮无生产代码/CI/APK修改。
+- Gemini自承**没有读取PMS110 OEM DEX、真实Git/CI原始产物或设备**，其所有ColorOS细节是公开线索和机主提供事实的外推，不能称为OEM新取证。它按AOSP事实、外部证据、推断三类描述旧双任务实验的五项现象：逻辑bounds先于视觉呈现；旧GraphicBuffer与图层crop/position失配导致白区旧框；InputWindow frame/touchableRegion与视觉变换失配导致A点落B；bounds引起ActivityRecord Configuration diff使Activity DESTROY/recreate，即使taskId/marker不变。均为合理的**可证伪机制解释**，不是已逐帧定位的唯一根因。
+- 采纳三条反例门禁：WCT/BLAST/Transition ACK不等于SurfaceFlinger实际present或真实buffer latch；视觉变换矩阵不自动证明InputDispatcher命中区域与坐标逆变换一致；固定逻辑尺寸并不能单独保证第三方Activity、SurfaceView/TextureView、媒体/滚动/焦点连续。任何新原生候选须同时核对Activity实例ID与onCreate/onDestroy、目标Task/token、Surface/Buffer帧、InputWindowHandle触控命中与视觉坐标、视频/滚动/IME连续性及原归属恢复、无pending异步删除。
+- Gemini建议以**已有系统受支持Transition/BLASTSyncEngine/WM Shell通道**取代裸WCT，系统协调几何、SurfaceControl与输入；这是设计方向，不是已找到的ColorOS特定TransitionHandler/可调用授权委托API。报告未给出新的OEM方法签名、合法权限契约、实例不重建机制或宿主死亡独立归还接口。不能把“通过Transition”当成必然解决全部输入、内容和归还问题；必须把input region/变换实际提交与present证据分开。Android17 Desktop受控TestApi双任务WCT失败CI44771108339/44773120993继续封存，不重跑裸WCT，不以权限不足单因解释全部故障。
+- 与DeepSeek第四轮交叉结果：DeepSeek提出system_server旁路OEM受限会话但没有真实委托/安全归还接口，且超出既有注入scope；Gemini提出系统原生Transition但没有宿主可执行入口或同步证据。**两者不可拼接为已可运行的生产后端**。不批准system_server注入、不扩Root/Vector作用域、不新增全局Organizer、不恢复逐槽VD，不做无新增前提的重复模拟器试验。仅在发现已授权的真实任务委托、完整输入/图层协调、可独立安全归还证据后才允许最小受控实验；否则维持生产NO-GO。
+  
+---
+
 ## 第十六阶段 Z后补充：DeepSeek第四轮 system_server 旁路委托候选审查（2026-11-21）
 
 - 机主于2026-11-21上传DeepSeek第四轮原文`deepseek3.txt`，本轮实读原文件13409字节、101行（含末尾无换行的最后一行）、SHA256 `6cd08ce7878f88901d97ccd18d40e28e62f1fd246665626f5ee10355d6d5eb2c`，并上传到私有Library `/台前调度2.0/外部AI原始分析/DeepSeek-第四轮原生框架攻关-20261121.txt`，canonical ID `libfile_09235e9b59148191b62ce4545fcf4499`。原文不公开上传GitHub。本节存结论和索引，不改源代码。报告承认未读取PMS110实际OEM DEX，所谓可执行桥接仅是假设。
