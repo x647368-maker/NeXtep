@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## 独立OEM桥接云端原型与授权边界（2026-11-21）
+
+- 用户明确授权**云端源码开发、编译和隔离测试独立Root特权桥接方案**，明确**未授权修改手机系统、安装Root模块或更换原签名APK**。不得扩张授权。
+- 实际源码已提交唯一`workbench2/core`，最新HEAD`bc85e6c9cb34283a0e667110a0c3d182fa20048f`：`workbench2/oem-single-task-lab/src/main/java/workbench2/oemlab/BridgeAdmission.java`、`OemBridgeService.java`、`src/test/java/workbench2/oemlab/BridgeAdmissionTest.java`，更新AndroidManifest声明`android:process=":bridge"`、`android:exported="false"`、`android:stopWithTask="true"`，Gradle添加JUnit测试依赖，CI执行`assembleDebug testDebugUnitTest`并验证fail-closed门禁，README记录局限。
+- 桥接进程**仅进行只读`safe.WINDOW`检查和OEM类存在检查**，本地Binder仅暴露诊断和`taskMutationAllowed=false`；没有跨应用Binder协议、没有priv-app安装、没有实际权限授予、没有TaskView操作、没有OEM正常退出/死亡恢复。四种状态LOCKED、PERMISSION_VERIFIED、RETURN_UNPROVEN、READY_FOR_ISOLATED_TEST是**纯Java状态模型**；5项单元测试不是真机OEM测试。所有状态都禁止任务迁移；进程重启重置状态，不能将旧状态冒充恢复证据。
+- 本轮新增CI运行`44874655854`和`44874676774`，在记录时仍在运行，必须查询最终结果并修复实际失败；不得宣称通过。此前安全封锁版CI`44874405195`成功。
+- 真正硬阻塞未解决：独立priv-app实际获OEM`safe.WINDOW`授权（需分区/白名单/设备grant证据）、跨进程TaskView可见Surface/触控、系统宿主异常死亡后**完整bounds/leash/input/Activity连续性归还**。OEM `onCallbackDied`仅清理嵌入关系，不执行`resetFlexibleTaskNoAnimation`，不可称已安全。当前没有可交机主的真机单任务候选APK。后续优先拿到OEM安全恢复真实证据与授权契约，再按授权另行征求设备安装/系统变更许可。
+- 治理：无新分支、PR；main/原签名/用户数据/冻结功能不变。禁止无限重复同类参考模型，必须以Android运行和OEM证据推进。
+
+---
+
 ## OEM异常死亡恢复实证与权限诊断安全封锁（2026-11-21）
 
 - **再次直接解析PMS110原始`oplus-services.jar/classes3.dex`方法体**，确认`FlexibleWindowManagerService$FlexibleWindowObserverMaps.onCallbackDied(IFlexibleWindowObserver)`（code_item`0x2685a8`）的完整调用序列：查询观察者关联Task IDs；检查`ITaskExt.isRemoveTaskWhenDetach()`及`getLaunchScenario()`、`isTaskEmbedded()`；删除分支直接调用`ActivityTaskSupervisor.removeTask(Task,boolean,boolean,String)`（PC259，日志`onCallbackDied`）；非删除分支移除container的embedded children（PC202），清空container flag（PC231），将task的embeddedContainerTaskId重置（PC243），并尝试恢复拦截Back的设置（PC290）。**该回调方法体没有调用`resetFlexibleTaskNoAnimation`、`Task.resize`或任何完整Surface几何恢复例程**。这不是“死亡自动无损恢复”证据，反而是其欠缺的重要反证。不得将no-delete标志等同完整return。
