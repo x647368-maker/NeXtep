@@ -1,5 +1,16 @@
 # 台前调度 2.0｜唯一权威研发接任检查点（2026-11-20，新窗口已接任）
 
+## OEM异常死亡恢复实证与权限诊断安全封锁（2026-11-21）
+
+- **再次直接解析PMS110原始`oplus-services.jar/classes3.dex`方法体**，确认`FlexibleWindowManagerService$FlexibleWindowObserverMaps.onCallbackDied(IFlexibleWindowObserver)`（code_item`0x2685a8`）的完整调用序列：查询观察者关联Task IDs；检查`ITaskExt.isRemoveTaskWhenDetach()`及`getLaunchScenario()`、`isTaskEmbedded()`；删除分支直接调用`ActivityTaskSupervisor.removeTask(Task,boolean,boolean,String)`（PC259，日志`onCallbackDied`）；非删除分支移除container的embedded children（PC202），清空container flag（PC231），将task的embeddedContainerTaskId重置（PC243），并尝试恢复拦截Back的设置（PC290）。**该回调方法体没有调用`resetFlexibleTaskNoAnimation`、`Task.resize`或任何完整Surface几何恢复例程**。这不是“死亡自动无损恢复”证据，反而是其欠缺的重要反证。不得将no-delete标志等同完整return。
+- 正常`exitFlexibleEmbeddedTask(Task,ActivityOptions,boolean)`（`0x2807e8`）有条件调用`resetFlexibleTaskNoAnimation`（PC133），但之前先调用`removeEmbeddedContainerTask`（PC56），而后者存在条件性Task删除路径；正常exit也不能未经分支/权限/真机确认就宣称完全无损。不能通过不调用release规避生命周期责任。
+- **修复先前原型的严重安全门禁漏洞**：原始`LabActivity`一旦授予safe.WINDOW且标记system app就允许用户输入任意taskId调用OEM init，然而尚无安全release及death-return；这违反NO-GO。已在唯一`workbench2/core`提交`2775e486760fb9755cd25d83074e1545be76b89a`，将`final boolean admitted = false`硬封锁任务迁移，保留`PackageManager.checkPermission`只读检查，并新增`getPermissionInfo`读取OEM权限声明者及protectionLevel以帮助诊断；不修改系统、不执行OEM Task操作。CI `9b51a58374b1f6dafe6e77782bada5531b39da94`新增强制grep封锁门禁断言。此原型目前只是**可编译权限探针骨架**，不能称能运行任务。
+- 重新核对原始`PMS110-pscanvas-2.0.0-code.zip/manifest.json`：`com.oplus.permission.safe.WINDOW`项为`host_granted=true`、`collector_granted=false`、`protection_level_raw=18 (signature|privileged)`；pscanvas元数据`system_or_updated_system_app=true`。这仅证明OEM宿主有该权限而普通采集器没有，不证明第三方原签名应用可获授权。尚缺OEM permission owner实际分区、privapp-permissions白名单、bridge包实际grant证据；不要建议直接system_server注入、手工绕过权限或修改主APK签名。
+- **硬阻塞/下轮实施门槛**：要实现宿主异常退出后的完整Task bounds/Surface/input恢复，需一个有合法OEM任务权限且独立于宿主UI生命周期的系统级桥接/监护者，并验证异常死亡后是否可在系统回调之外执行原生exit和restore；仅依赖OEM observer death回调不够。Root特权包安装、修改系统权限白名单及潜在系统稳定性风险属重大架构/设备变更，必须得到机主明确授权后才能部署。可先离线完成只读权限识别与受控任务协议、单任务实验代码；在证明可回滚前不得安装到日常主力机。
+- 本轮未签名、未发布、未真机测试；CI新运行`44874395859`和`44874405195`须待最终状态核实，不可虚报。生产功能冻结、原签名和数据保持不变。
+
+---
+
 ## OEM 单任务隔离Android原型实际源码及CI（2026-11-21）
 
 - **实际提交生产唯一分支`workbench2/core`**，从`41c1e97b9e5ba8f85f41dc5f78bce49741205b43`出发新增独立`workbench2/oem-single-task-lab/`工程，含AGP9.3 Android application、manifest、Java `LabActivity`、README。原签名主APK、现有engine、任务布局和系统注入均未改。最新提交`17ab9c37d66a96c01b439b4063ee777a21a47d7b`，只有唯一分支、未新建PR。
