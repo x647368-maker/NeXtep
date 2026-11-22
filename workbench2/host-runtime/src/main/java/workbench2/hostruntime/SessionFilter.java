@@ -18,6 +18,18 @@ final class SessionFilter {
         return host(p) && p.equals(proc) && first && !ss && system && uid
             && HostMetadata.MODEL.equals(model) && sdk == 37 && HostMetadata.FIRMWARE.equals(fp);
     }
+    // Candidate OEM container launch gate only. This does not hook Activity creation,
+    // modify a task, or imply permission to use OEM APIs.
+    static final String OEM_CONTAINER = "com.oplus.pscanvas.canvasmode.canvas.ContainerActivity";
+    static final String OEM_WORKBENCH_MARKER = "atomic_workbench2_host_v1";
+    static boolean markedOemContainer(String packageName, String processName,
+            String activityClass, Intent intent) {
+        return HostMetadata.HOST.equals(packageName)
+            && HostMetadata.HOST.equals(processName)
+            && OEM_CONTAINER.equals(activityClass)
+            && intent != null
+            && intent.getBooleanExtra(OEM_WORKBENCH_MARKER, false);
+    }
     static boolean own(Intent i) {
         return i != null && new ComponentName(PKG, ACTIVITY).equals(i.getComponent());
     }
