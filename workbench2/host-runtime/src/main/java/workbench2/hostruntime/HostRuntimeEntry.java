@@ -1,5 +1,6 @@
 package workbench2.hostruntime;
 
+import android.app.Instrumentation;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
@@ -62,6 +63,24 @@ public final class HostRuntimeEntry extends XposedModule {
             handler=new Handler(Looper.getMainLooper());
             // Serialize registration/cleanup against the timeout. No worker or polling.
             synchronized (this) {
+                // Observe the OEM container entry only; never replace Activity or alter Intent.
+                // This is the first isolated WDeck-path contract check, NOT task admission.
+                if (HostMetadata.HOST.equals(process)) {
+                    Method activityFactory = Instrumentation.class.getDeclaredMethod(
+                        "newActivity", ClassLoader.class, String.class, Intent.class);
+                    handles.add(hook(activityFactory).intercept(chain -> {
+                        try {
+                            java.util.List<Object> args = chain.getArgs();
+                            if (args.size() == 3 && args.get(1) instanceof String activity
+                                    && args.get(2) instanceof Intent intent
+                                    && SessionFilter.markedOemContainer(
+                                        HostMetadata.HOST, process, activity, intent)) {
+                                evidence("OEM_CONTAINER_MARKER_OBSERVED mutation=false");
+                            }
+                        } catch (RuntimeException | LinkageError ignored) {}
+                        return chain.proceed();
+                    }));
+                }
                 handles.add(hook(release).intercept(chain -> {
                     Object obj=chain.getThisObject();
                     Object result=chain.proceed();
