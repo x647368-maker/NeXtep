@@ -53,7 +53,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           p = pathlib.Path('workbench2/host-runtime/build/outputs/androidTest-results/connected')
-          required = {'onlyExactAuthorizedObservationTargetMatches','publicMetadataDoesNotInitializeOrInvokeFixture','unavailableMetadataDoesNotAdmitOrFabricateSymbols','exactDualHostGate','onlyOwnExplicitComponentMatches','oneViewAndBoundedLifetime'}
+          required = {'onlyExactAuthorizedObservationTargetMatches','publicMetadataDoesNotInitializeOrInvokeFixture','unavailableMetadataDoesNotAdmitOrFabricateSymbols','exactDualHostGate','onlyOwnExplicitComponentMatches','oemContainerMarkerMustBeExplicitAndHostBound','oneViewAndBoundedLifetime'}
           cases = [t for f in p.rglob('TEST-*.xml') for t in ET.parse(f).iter('testcase')]
           assert len(cases) == len(required) and {t.get('name') for t in cases} == required
           assert all(not any(t.find(s) is not None for s in ('failure','error','skipped')) for t in cases)
