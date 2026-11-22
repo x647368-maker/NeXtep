@@ -26,6 +26,21 @@ public final class SessionFilterTest {
         Bundle other=new Bundle();other.putParcelable("intent",new Intent().setComponent(new ComponentName("other","other.Main")));
         assertFalse(SessionFilter.ownArgs(List.of(other)));
     }
+    @Test public void oemContainerMarkerMustBeExplicitAndHostBound() {
+        Intent marked = new Intent().putExtra(SessionFilter.OEM_WORKBENCH_MARKER, true);
+        assertTrue(SessionFilter.markedOemContainer(HostMetadata.HOST, HostMetadata.HOST,
+            SessionFilter.OEM_CONTAINER, marked));
+        assertFalse(SessionFilter.markedOemContainer(SessionFilter.LAUNCHER, SessionFilter.LAUNCHER,
+            SessionFilter.OEM_CONTAINER, marked));
+        assertFalse(SessionFilter.markedOemContainer(HostMetadata.HOST, HostMetadata.HOST + ":remote",
+            SessionFilter.OEM_CONTAINER, marked));
+        assertFalse(SessionFilter.markedOemContainer(HostMetadata.HOST, HostMetadata.HOST,
+            "com.oplus.pscanvas.OtherActivity", marked));
+        assertFalse(SessionFilter.markedOemContainer(HostMetadata.HOST, HostMetadata.HOST,
+            SessionFilter.OEM_CONTAINER, new Intent()));
+        assertFalse(SessionFilter.markedOemContainer(HostMetadata.HOST, HostMetadata.HOST,
+            SessionFilter.OEM_CONTAINER, null));
+    }
     @Test public void oneViewAndBoundedLifetime() {
         Object a=new Object(), b=new Object();
         SessionFilter f=new SessionFilter(100);
